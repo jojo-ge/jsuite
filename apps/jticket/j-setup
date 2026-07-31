@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# j-setup — install the jTicket skills globally and pull in Matt Pocock's skills.
+#
+#   ./j-setup              install everything
+#   ./j-setup --skills     only copy the jTicket skills
+#   ./j-setup --pocock     only install mattpocock/skills
+#   ./j-setup --dry-run    show what would happen, change nothing
+#
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SRC_DIR="$REPO_DIR/.claude/skills"
+DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+
+# The skills this repo owns. Everything else under .claude/skills comes from
+# mattpocock/skills and is installed by the `skills` CLI instead.
+JSKILLS=(
+  jimplement
+  jwayfinder
+  to-jticket
+  to-jspec
+  to-jdoc
+)
+
+POCOCK_SOURCE="mattpocock/skills"
+
+DO_SKILLS=true
+DO_POCOCK=true
+DRY_RUN=false
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skills)  DO_POCOCK=false ;;
+    --pocock)  DO_SKILLS=false ;;
+    --dry-run) DRY_RUN=true ;;
+    -h|--help) sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "j-setup: unknown option '$1' (try --help)" >&2; exit 1 ;;
+  esac
+  shift
+done
+
+say()  { printf '%s\n' "$*"; }
+run()  { if $DRY_RUN; then say "  would: $*"; else "$@"; fi; }
+fail() { printf 'j-setup: %s\n' "$*" >&2; exit 1; }
+
+$DRY_RUN && say "(dry run — nothing will be changed)"
+
+if $DO_SKILLS; then
+  say "Installing jTicket skills into $DEST_DIR"
+  [ -d "$SRC_DIR" ] || fail "no skills directory at $SRC_DIR"
+  $DRY_RUN || mkdir -p "$DEST_DIR"
+
+  for skill in "${JSKILLS[@]}"; do
+    src="$SRC_DIR/$skill"
+    dest="$DEST_DIR/$skill"
+
+    if [ ! -f "$src/SKILL.md" ]; then
+      say "  skip $skill (not found in $SRC_DIR)"
+      continue
+    fi
+
+    # An existing entry may be a real directory or a symlink into ~/.agents/skills
+    # (how the skills CLI installs). Either way, replace it outright.
+    if [ -e "$dest" ] || [ -L "$dest" ]; then
+      run rm -rf "$dest"
+    fi
+
+    run cp -R "$src" "$dest"
+    say "  installed $skill"
+  done
+fi
+
+if $DO_POCOCK; then
+  say "Installing $POCOCK_SOURCE"
+  command -v npx >/dev/null 2>&1 || fail "npx not found — install Node.js first"
+  $DRY_RUN || [ -t 0 ] || fail "the skills installer is interactive — run j-setup from a terminal (or use --skills)"
+
+  # No -y on `skills add`: the CLI prompts for which skills and which agents to
+  # install. The -y on npx only skips the "install the skills package?" prompt.
+  run npx -y skills add "$POCOCK_SOURCE" -g
+fi
+
+say "Done."

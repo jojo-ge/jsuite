@@ -1,0 +1,20 @@
+{
+  "name": "@jsuite/documents",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Shared block-based document system (the jExplain format) as a Nuxt layer — model, renderers, /api/documents routes over the shared .data/jexplain pool.",
+  "main": "./nuxt.config.ts",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./types": "./types.ts",
+    "./store": "./server/utils/store.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@jsuite/charting": "workspace:*",
+    "@jsuite/data": "workspace:*",
+    "marked": "^16.0.0",
+    "shiki": "^3.0.0"
+  }
+}

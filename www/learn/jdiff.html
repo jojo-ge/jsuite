@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jDiff — diff reviewer · jSuite</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/jdiff.html">jDiff</a>
+      <a href="/learn/jchart.html">jChart</a>
+      <a href="/learn/jexplain.html">jExplain</a>
+      <a class="nav-cta" href="https://jdiff.local:7443">Open jDiff</a>
+    </nav>
+  </div>
+</header>
+
+<section class="learn-hero" data-app="jdiff">
+  <div class="wrap">
+    <p class="crumb"><a href="/">jSuite</a> / jDiff</p>
+    <h1>jDiff <span class="tag">— the diff reviewer</span></h1>
+    <p class="sub">A local GitHub client that's really good at diffs: <code>gh</code> lists the
+      PRs, <code>git</code> computes the diffs locally. Review a <b>branch before any PR
+      exists</b>, draft comments offline, then open the PR and post them all in one shot.</p>
+    <div class="meta">
+      <span class="pill">https://jdiff.local:7443</span>
+      <span class="pill">port :3002</span>
+      <span class="pill">state: .data/jdiff/</span>
+      <span class="pill">CLI-driven</span>
+    </div>
+    <a class="btn btn-app" href="https://jdiff.local:7443">Open jDiff <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<article class="learn" data-app="jdiff">
+  <section>
+    <h2>Why it exists</h2>
+    <p>Review usually can't start until a PR exists, and PR review UIs are built around
+      the network, not the diff. jDiff inverts both: because the diff is computed by
+      your local <code>git</code>, you can review <b>any branch against main</b> the moment
+      the commits exist — no PR, no push, no waiting.</p>
+    <p>Comments you write are <b>drafts</b>, stored locally alongside ratings, tours,
+      risks and asks. Nothing reaches GitHub until you decide it should — then the
+      whole review posts in one batch instead of trickling out comment by comment.</p>
+  </section>
+
+  <section>
+    <h2>The review flow</h2>
+    <ol class="step-list">
+      <li><b>Point it at the work.</b> <code>jdiff pr 123</code> for an existing PR, or
+        <code>jdiff branch my-feature</code> for a branch with no PR yet.</li>
+      <li><b>Review in the app.</b> Walk the diff file by file; draft comments, flag
+        risks, rate the change. Everything stays on disk.</li>
+      <li><b>Post in one shot.</b> When the review is done (and the PR exists), publish
+        the drafted comments together via <code>gh</code>.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Drive it from the CLI</h2>
+    <p>jDiff has no Claude skill — its interface is the <code>jdiff</code> CLI, which both
+      you and Claude invoke directly:</p>
+    <pre><code>jdiff pr 123              <span class="c"># review PR #123</span>
+jdiff branch my-feature   <span class="c"># review a branch vs main — no PR needed</span>
+jdiff branch my-feature --print
+                          <span class="c"># machine-readable URL, for scripts and agents</span></code></pre>
+    <p>Each invocation prepares the diff and opens (or prints) the review URL at
+      <code>https://jdiff.local:7443</code>.</p>
+  </section>
+
+  <section>
+    <h2>State &amp; integration</h2>
+    <dl class="kv">
+      <dt>State</dt><dd><code>.data/jdiff/</code> — ratings, tours, risks, asks, drafted
+        comments, and caches.</dd>
+      <dt>Host tools</dt><dd>Runs <b>natively on the host</b> (not in Docker) because it
+        needs your real <code>git</code>, <code>gh</code>, the <code>claude</code> CLI, the native
+        folder picker and open-in-VSCode.</dd>
+      <dt>Suite role</dt><dd>The review end of the loop — the branch it reviews is
+        typically the one <code>jimplement</code> built from a jTicket board.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Explore the rest of the suite</h2>
+    <div class="next-links">
+      <a href="/learn/jticket.html"><div class="k">jTicket →</div><div class="v">Where the work being reviewed was planned and tracked.</div></a>
+      <a href="/learn/jexplain.html"><div class="k">jExplain →</div><div class="v">Explain a reviewed PR as a proper walkthrough article.</div></a>
+    </div>
+  </section>
+</article>
+
+<footer class="site">
+  <div class="wrap">
+    <span><a href="/">← Back to jSuite</a></span>
+    <nav>
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/jdiff.html">jDiff</a>
+      <a href="/learn/jchart.html">jChart</a>
+      <a href="/learn/jexplain.html">jExplain</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

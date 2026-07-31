@@ -1,0 +1,38 @@
+# jSuite edge — one container: Caddy as the HTTPS front door for the suite.
+#
+#   jsuite.local:7443  -> static index (./www)
+#   jticket.local:7443 -> host :3000
+#   jdiff.local:7443   -> host :3002
+#
+# The apps run natively on the host (started by ./jsuite), so they keep full
+# filesystem + gh/git/claude access. This container only proxies.
+#
+# Don't run this by hand — `./jsuite start` brings it up together with the apps.
+services:
+  caddy:
+    # Pinned: caddy 2.11.4 sends a TLS internal_error on SNI-matched, tag-restricted
+    # cert-selection policies (the shape `tls <file>` per site generates). 2.11.2
+    # serves the same config cleanly. Revisit when a fixed 2.11.x ships.
+    image: caddy:2.11.2-alpine
+    container_name: jsuite-edge
+    restart: unless-stopped
+    ports:
+      # Single published port. NOT 443 — the kraken/phoenix dev runtime owns it.
+      - "7443:7443"
+      # Caddy advertises HTTP/3 on the same port; without the UDP mapping every
+      # browser session wastes a QUIC attempt before falling back to TCP.
+      - "7443:7443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+      - ./www:/srv/www:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      # Portability: guarantees host.docker.internal resolves to the host even
+      # off Docker Desktop (where it is provided automatically).
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  caddy_data:
+  caddy_config:

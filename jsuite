@@ -1,0 +1,263 @@
+#!/usr/bin/env bash
+# jsuite — one command for the whole local dev suite.
+#
+#   ./jsuite start | stop | restart | status | logs [app] | open [app] | setup
+#
+# The Nuxt apps run natively on fixed ports (they need host git/gh/claude and
+# the macOS GUI, so they are deliberately NOT containerised). A single pinned
+# Caddy container fronts them all, terminating TLS for the .local names on ONE
+# port: 7443. Not 443 — the kraken/phoenix dev runtime owns :80/:443.
+#
+#   https://jsuite.local:7443    index
+#   https://jticket.local:7443   jTicket
+#   https://jdiff.local:7443     jDiff
+#   https://jchart.local:7443    jChart
+set -euo pipefail
+
+# Resolve through symlinks so a shim on PATH (e.g. ~/.local/bin/jsuite) still
+# finds the repo dir this script lives in.
+_src="${BASH_SOURCE[0]}"
+while [[ -L "$_src" ]]; do
+  _dir="$(cd -P "$(dirname "$_src")" && pwd)"
+  _src="$(readlink "$_src")"
+  [[ "$_src" == /* ]] || _src="$_dir/$_src"
+done
+HERE="$(cd -P "$(dirname "$_src")" && pwd)"
+ROOT="$HERE/apps"
+LOGS="$HERE/logs"
+RUN="$HERE/run"
+HTTPS_PORT=7443
+
+# Every app keeps its state in .data/<app>/ via @jsuite/data, which finds this
+# directory on its own. Exporting it anyway pins the location regardless of the
+# cwd an app is launched from, and lets a one-off run redirect somewhere else.
+export JSUITE_DATA_DIR="${JSUITE_DATA_DIR:-$HERE/.data}"
+
+# id | directory (under ./apps) | port | dev command
+# Ports are fixed on purpose — tooling hardcodes them (the to-jticket skill
+# posts to :3000) and the Caddyfile maps the .local names onto them. Keep this
+# table and the Caddyfile in sync; nothing else needs to change to add an app.
+# All apps are pnpm workspace members — deps install once via `pnpm install`
+# at the repo root.
+APPS=(
+  "jticket|jticket|3000|pnpm dev --port 3000"
+  "jdiff|jdiff|3002|pnpm dev --port 3002"
+  "jchart|jchart|3003|pnpm dev --port 3003"
+  "jexplain|jexplain|3004|pnpm dev --port 3004"
+)
+
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local)
+
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+dim() { printf '\033[2m%s\033[0m\n' "$*"; }
+ok() { printf '  \033[32m●\033[0m %s\n' "$*"; }
+bad() { printf '  \033[31m●\033[0m %s\n' "$*"; }
+warn() { printf '  \033[33m●\033[0m %s\n' "$*"; }
+die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+field() { cut -d'|' -f"$1" <<<"$2"; }
+app_row() { # app_row <id> -> the matching APPS entry
+  local a
+  for a in "${APPS[@]}"; do [[ "$(field 1 "$a")" == "$1" ]] && { echo "$a"; return 0; }; done
+  return 1
+}
+port_listening() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+pid_of() { # pid_of <id> -> live pid from the pidfile, or nothing
+  local f="$RUN/$1.pid" pid
+  [[ -f "$f" ]] || return 1
+  pid="$(<"$f")"
+  kill -0 "$pid" 2>/dev/null || return 1
+  echo "$pid"
+}
+
+# ---------------------------------------------------------------- preflight --
+
+check_ready() {
+  [[ -f "$HERE/certs/jsuite.pem" ]] || die "no cert yet — run: $0 setup"
+  [[ -d "$HERE/node_modules" ]] || die "workspace deps not installed — run: pnpm install (in $HERE)"
+  local d missing=()
+  for d in "${DOMAINS[@]}"; do
+    grep -qE "^[^#]*[[:space:]]$d(\$|[[:space:]])" /etc/hosts || missing+=("$d")
+  done
+  ((${#missing[@]} == 0)) || die "/etc/hosts is missing ${missing[*]} — run: $0 setup"
+  docker info >/dev/null 2>&1 || die "Docker isn't running — start Docker Desktop first"
+}
+
+# -------------------------------------------------------------------- start --
+
+start_app() {
+  local id=$1 dir=$2 port=$3 cmd=$4 pid
+  if pid="$(pid_of "$id")"; then ok "$id already running (pid $pid)"; return 0; fi
+  if port_listening "$port"; then
+    warn "$id — port $port is held by something we didn't start:"
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN | tail -n +2 | sed 's/^/      /'
+    return 1
+  fi
+  # `set -m` puts each app in its own process group so stop can signal the whole
+  # tree (pnpm/npm fork the actual nuxt process — killing just the parent orphans it).
+  set -m
+  ( cd "$ROOT/$dir" && exec $cmd ) >"$LOGS/$id.log" 2>&1 &
+  echo $! >"$RUN/$id.pid"
+  set +m
+  ok "$id starting on :$port (pid $(<"$RUN/$id.pid"), log: logs/$id.log)"
+}
+
+wait_for_port() { # wait_for_port <port> <seconds>
+  local i=0
+  while ((i++ < $2 * 4)); do
+    port_listening "$1" && return 0
+    sleep 0.25
+  done
+  return 1
+}
+
+cmd_start() {
+  check_ready
+  mkdir -p "$LOGS" "$RUN"
+  bold "apps"
+  local a failed=0
+  for a in "${APPS[@]}"; do
+    start_app "$(field 1 "$a")" "$(field 2 "$a")" "$(field 3 "$a")" "$(field 4 "$a")" || failed=1
+  done
+
+  bold "edge"
+  docker compose --project-directory "$HERE" up -d >/dev/null 2>&1 \
+    || die "docker compose up failed — try: docker compose --project-directory $HERE up"
+  ok "caddy on :$HTTPS_PORT"
+
+  bold "waiting for dev servers"
+  for a in "${APPS[@]}"; do
+    local id port
+    id="$(field 1 "$a")"; port="$(field 3 "$a")"
+    if wait_for_port "$port" 90; then ok "$id"; else bad "$id — not up after 90s, see logs/$id.log"; failed=1; fi
+  done
+
+  echo
+  cmd_status
+  ((failed == 0)) || exit 1
+}
+
+# --------------------------------------------------------------------- stop --
+
+stop_app() {
+  local id=$1 port=$2 pid
+  if pid="$(pid_of "$id")"; then
+    kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    local i=0
+    while ((i++ < 40)) && kill -0 "$pid" 2>/dev/null; do sleep 0.25; done
+    kill -KILL "-$pid" 2>/dev/null || true
+  fi
+  rm -f "$RUN/$id.pid"
+  # Belt and braces: a dev server that outlived its pidfile still owns the port,
+  # and a stale listener blocks the next start.
+  if port_listening "$port"; then
+    local stragglers
+    stragglers="$(lsof -tnP -iTCP:"$port" -sTCP:LISTEN || true)"
+    [[ -z "$stragglers" ]] || kill -KILL $stragglers 2>/dev/null || true
+  fi
+  port_listening "$port" && bad "$id — port $port still held" || ok "$id stopped"
+}
+
+cmd_stop() {
+  bold "apps"
+  local a
+  for a in "${APPS[@]}"; do stop_app "$(field 1 "$a")" "$(field 3 "$a")"; done
+  bold "edge"
+  if docker info >/dev/null 2>&1; then
+    docker compose --project-directory "$HERE" down >/dev/null 2>&1 || true
+    ok "caddy stopped"
+  else
+    warn "docker not running — nothing to stop"
+  fi
+}
+
+# ------------------------------------------------------------------- status --
+
+cmd_status() {
+  local edge="down"
+  [[ "$(docker inspect -f '{{.State.Running}}' jsuite-edge 2>/dev/null)" == "true" ]] && edge="up"
+  bold "jsuite  (edge: $edge on :$HTTPS_PORT)"
+  local a id dir port url code pid
+  for a in "${APPS[@]}"; do
+    id="$(field 1 "$a")"; dir="$(field 2 "$a")"; port="$(field 3 "$a")"
+    url="https://$id.local:$HTTPS_PORT"
+    pid="$(pid_of "$id" || true)"
+    # Generous timeout: a cold Nuxt dev server compiles on the first request.
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 "$url" 2>/dev/null || true)"
+    if [[ "$code" =~ ^[23] ]]; then
+      ok "$(printf '%-8s %-28s' "$dir" "$url")  :$port  pid ${pid:-?}"
+    elif [[ -n "$pid" ]]; then
+      warn "$(printf '%-8s %-28s' "$dir" "$url")  :$port  pid $pid  (HTTP $code)"
+    else
+      bad "$(printf '%-8s %-28s' "$dir" "$url")  :$port  not running"
+    fi
+  done
+  dim "  index    https://jsuite.local:$HTTPS_PORT"
+}
+
+# ------------------------------------------------------------- logs / open ---
+
+cmd_logs() {
+  if [[ $# -eq 0 ]]; then
+    tail -n 20 -F "$LOGS"/*.log
+  elif [[ "$1" == edge ]]; then
+    docker compose --project-directory "$HERE" logs -f
+  else
+    app_row "$1" >/dev/null || die "unknown app: $1"
+    tail -n 100 -F "$LOGS/$1.log"
+  fi
+}
+
+cmd_open() {
+  local target="${1:-jsuite}"
+  [[ "$target" == jsuite ]] || app_row "$target" >/dev/null || die "unknown app: $target"
+  open "https://$target.local:$HTTPS_PORT"
+}
+
+# -------------------------------------------------------------------- setup --
+
+cmd_setup() {
+  local marker="# --- jsuite edge ---"
+  bold "mkcert root CA"
+  command -v mkcert >/dev/null || die "mkcert not installed — brew install mkcert"
+  mkcert -install
+  bold "cert for: ${DOMAINS[*]}"
+  mkdir -p "$HERE/certs"
+  mkcert -cert-file "$HERE/certs/jsuite.pem" -key-file "$HERE/certs/jsuite-key.pem" "${DOMAINS[@]}"
+  bold "/etc/hosts"
+  # Re-runnable: adding an app to the APPS table above and re-running setup must
+  # pick up the new name, so append whatever is missing rather than bailing out
+  # the moment the block exists.
+  local d missing=()
+  for d in "${DOMAINS[@]}"; do
+    grep -qE "^[^#]*[[:space:]]$d(\$|[[:space:]])" /etc/hosts || missing+=("$d")
+  done
+  if ((${#missing[@]} == 0)); then
+    ok "all ${#DOMAINS[@]} names already present"
+  elif grep -q "$marker" /etc/hosts; then
+    for d in "${missing[@]}"; do
+      printf '127.0.0.1 %s\n' "$d" | sudo tee -a /etc/hosts >/dev/null
+    done
+    ok "added ${missing[*]} (outside the marker block — tidy by hand if it bothers you)"
+  else
+    { echo ""; echo "$marker"
+      for d in "${DOMAINS[@]}"; do echo "127.0.0.1 $d"; done
+      echo "# --- end jsuite edge ---"
+    } | sudo tee -a /etc/hosts >/dev/null
+    ok "entries added"
+  fi
+  echo
+  dim "Ports are host-independent — the cert covers the names, not :$HTTPS_PORT."
+  bold "Now run: $0 start"
+}
+
+case "${1:-start}" in
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  restart) cmd_stop; echo; cmd_start ;;
+  status) cmd_status ;;
+  logs) shift; cmd_logs "$@" ;;
+  open) shift; cmd_open "$@" ;;
+  setup) cmd_setup ;;
+  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup}" ;;
+esac

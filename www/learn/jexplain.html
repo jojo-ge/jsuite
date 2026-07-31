@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jExplain — explainers · jSuite</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/jdiff.html">jDiff</a>
+      <a href="/learn/jchart.html">jChart</a>
+      <a href="/learn/jexplain.html">jExplain</a>
+      <a class="nav-cta" href="https://jexplain.local:7443">Open jExplain</a>
+    </nav>
+  </div>
+</header>
+
+<section class="learn-hero" data-app="jexplain">
+  <div class="wrap">
+    <p class="crumb"><a href="/">jSuite</a> / jExplain</p>
+    <h1>jExplain <span class="tag">— explainers &amp; walkthroughs</span></h1>
+    <p class="sub">Blog-style articles built from <b>typed blocks</b> — prose, code, diffs,
+      callouts, glossary — with live charts shared with jChart. For explainers,
+      walkthroughs, post-mortems and deep dives that deserve better than a wall of
+      chat text.</p>
+    <div class="meta">
+      <span class="pill">https://jexplain.local:7443</span>
+      <span class="pill">port :3004</span>
+      <span class="pill">state: .data/jexplain/</span>
+      <span class="pill">live charts</span>
+    </div>
+    <a class="btn btn-app" href="https://jexplain.local:7443">Open jExplain <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<article class="learn" data-app="jexplain">
+  <section>
+    <h2>Why it exists</h2>
+    <p>When you ask Claude to explain a system, a PR or a decision, the answer usually
+      arrives as chat — unstructured, unshareable, gone when the session ends. jExplain
+      publishes the explanation as an <b>article</b>: each part is a typed block, so code
+      gets syntax highlighting, diffs get proper diff rendering, key terms get a
+      glossary, and warnings get callouts.</p>
+    <p>Reading is only half the loop. <b>Hover any block to pin a note</b> — a question,
+      a correction, a “go deeper here” — and “Copy notes for Claude” bundles all your
+      feedback into one payload for the next revision.</p>
+  </section>
+
+  <section>
+    <h2>The explainer loop</h2>
+    <ol class="step-list">
+      <li><b>Ask for an explainer.</b> The <code>j-explain</code> skill structures the answer
+        into typed blocks and publishes it via <code>explain.py</code>.</li>
+      <li><b>Read it as an article.</b> Open it in jExplain — real typography, rendered
+        code and diffs, live charts.</li>
+      <li><b>Annotate blocks.</b> Pin notes to exactly the paragraphs or code blocks that
+        need work.</li>
+      <li><b>Send notes back.</b> “Copy notes for Claude” hands your feedback to the next
+        session; a <code>--replace</code> publish revises the article in place.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Skills that drive it</h2>
+    <div class="skill-cards">
+      <div class="skill-card">
+        <h3>j-explain</h3>
+        <p>Explains a concept, a PR, a system or a decision as a blog-style article in
+          jExplain — publish, annotate, and revise with <code>--replace</code>. Owns the
+          <code>explain.py</code> publish script and the block dialect.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Live charts, shared with jChart</h2>
+    <p>Figures in a jExplain article aren't screenshots. Through the
+      <code>@jsuite/charting</code> layer, the article embeds charts straight from the shared
+      pool in <code>.data/jchart/</code> — so <b>the chart in the article is the chart jChart
+      opens</b>. Fix a label on the jChart canvas and the article shows the fix; pin a
+      note on either side and Claude sees it.</p>
+  </section>
+
+  <section>
+    <h2>State &amp; integration</h2>
+    <dl class="kv">
+      <dt>State</dt><dd><code>.data/jexplain/&lt;key&gt;.json</code> per article, plus
+        <code>&lt;key&gt;.notes.json</code> for your block notes.</dd>
+      <dt>Charts</dt><dd>Served from the shared pool in <code>.data/jchart/</code> via
+        <code>@jsuite/charting</code> — edits flow both ways.</dd>
+      <dt>Suite role</dt><dd>The narrative end of the loop — write up what jTicket
+        planned, jimplement built, and jDiff reviewed.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Explore the rest of the suite</h2>
+    <div class="next-links">
+      <a href="/learn/jchart.html"><div class="k">jChart →</div><div class="v">The workbench behind every chart these articles embed.</div></a>
+      <a href="/learn/jdiff.html"><div class="k">jDiff →</div><div class="v">Review the PR before you ask for its walkthrough.</div></a>
+    </div>
+  </section>
+</article>
+
+<footer class="site">
+  <div class="wrap">
+    <span><a href="/">← Back to jSuite</a></span>
+    <nav>
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/jdiff.html">jDiff</a>
+      <a href="/learn/jchart.html">jChart</a>
+      <a href="/learn/jexplain.html">jExplain</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

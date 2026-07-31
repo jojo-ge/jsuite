@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jTicket — planning hub · jSuite</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/jdiff.html">jDiff</a>
+      <a href="/learn/jchart.html">jChart</a>
+      <a href="/learn/jexplain.html">jExplain</a>
+      <a class="nav-cta" href="https://jticket.local:7443">Open jTicket</a>
+    </nav>
+  </div>
+</header>
+
+<section class="learn-hero" data-app="jticket">
+  <div class="wrap">
+    <p class="crumb"><a href="/">jSuite</a> / jTicket</p>
+    <h1>jTicket <span class="tag">— the planning hub</span></h1>
+    <p class="sub">Projects, epics and tickets with acceptance criteria and blocked-by edges,
+      plus Confluence-style draft docs. Deliberately <b>not</b> connected to Jira or
+      Confluence — breakdowns and specs land locally first, for you to review before
+      anything goes upstream.</p>
+    <div class="meta">
+      <span class="pill">https://jticket.local:7443</span>
+      <span class="pill">port :3000</span>
+      <span class="pill">state: .data/jticket/</span>
+      <span class="pill">API-only</span>
+    </div>
+    <a class="btn btn-app" href="https://jticket.local:7443">Open jTicket <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<article class="learn" data-app="jticket">
+  <section>
+    <h2>Why it exists</h2>
+    <p>When Claude breaks a plan into work, the natural failure mode is a wall of chat
+      text you skim once and lose. jTicket gives that breakdown a <b>real board</b>:
+      epics containing tickets, each with acceptance criteria and blocked-by edges,
+      that you can inspect, reorder, edit and veto — before any of it is copied into
+      a real tracker.</p>
+    <p>The same applies to documents. Specs, design notes and RFCs are drafted as
+      <b>Confluence-style docs</b> inside jTicket — panels, expand sections, tables of
+      contents, status lozenges — so you review the finished page locally instead of
+      discovering problems after it's published.</p>
+  </section>
+
+  <section>
+    <h2>How a plan becomes a board</h2>
+    <ol class="step-list">
+      <li><b>Plan in conversation.</b> You and Claude settle on what to build, in whatever
+        session that happens.</li>
+      <li><b>Break it down.</b> The <code>to-jticket</code> skill turns the plan into a project
+        with epics and tickets over the HTTP API — acceptance criteria and blocking
+        edges included.</li>
+      <li><b>Review on the board.</b> Open the app, drag things around, tighten criteria,
+        delete what's wrong.</li>
+      <li><b>Implement from it.</b> <code>jimplement</code> claims a ticket, builds it, and
+        records the outcome back on the board — so the board stays the source of truth
+        for what happened.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Skills that drive it</h2>
+    <p>Everything goes through the HTTP API on <code>:3000</code> — the state file is never
+      hand-edited, so every skill and every session sees the same board.</p>
+    <div class="skill-cards">
+      <div class="skill-card">
+        <h3>to-jticket</h3>
+        <p>The general interface: break a plan into tickets, author or update any project,
+          epic, ticket, doc or attachment, and query the board.</p>
+      </div>
+      <div class="skill-card">
+        <h3>to-jspec</h3>
+        <p>Write a spec into jTicket as a doc, using the jdoc markdown dialect — panels,
+          expand, toc, status lozenges, mentions — with the exact publish call. Used
+          whenever any doc body or ticket description is being authored.</p>
+      </div>
+      <div class="skill-card">
+        <h3>to-jdoc</h3>
+        <p>Draft a Confluence-style page into jTicket without posting anything to
+          Confluence — for design notes, RFCs, or any page you want reviewed locally
+          first.</p>
+      </div>
+      <div class="skill-card">
+        <h3>jwayfinder</h3>
+        <p>Plan a chunk of work too big for one agent session: it becomes a shared map of
+          investigation tickets, resolved one at a time until the way to the destination
+          is clear.</p>
+      </div>
+      <div class="skill-card">
+        <h3>jimplement</h3>
+        <p>Implement work already broken down as tickets — claim a ticket, build it, and
+          record the outcome back on the board.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>State &amp; integration</h2>
+    <dl class="kv">
+      <dt>State</dt><dd><code>.data/jticket/jticket.json</code> + <code>attachments/</code> — but
+        <b>API-only</b>: always go through <code>:3000</code>, never edit the file.</dd>
+      <dt>Upstream</dt><dd>None. jTicket is a local staging ground; copying approved work
+        into Jira/Confluence is a separate, deliberate step.</dd>
+      <dt>Suite role</dt><dd>The planning end of the loop — jDiff reviews what
+        <code>jimplement</code> built; jExplain writes up what shipped.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Explore the rest of the suite</h2>
+    <div class="next-links">
+      <a href="/learn/jdiff.html"><div class="k">jDiff →</div><div class="v">Review the branch that implements a ticket — before the PR exists.</div></a>
+      <a href="/learn/jexplain.html"><div class="k">jExplain →</div><div class="v">Turn the shipped work into a walkthrough or post-mortem.</div></a>
+    </div>
+  </section>
+</article>
+
+<footer class="site">
+  <div class="wrap">
+    <span><a href="/">← Back to jSuite</a></span>
+    <nav>
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/jdiff.html">jDiff</a>
+      <a href="/learn/jchart.html">jChart</a>
+      <a href="/learn/jexplain.html">jExplain</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

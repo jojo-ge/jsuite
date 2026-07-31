@@ -1,0 +1,22 @@
+{
+  "name": "jticket",
+  "private": true,
+  "type": "module",
+  "description": "Lean local task tracker (epics + tickets) for LLMs to author into before Jira. No connection to Jira.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.120",
+    "@jsuite/data": "workspace:*",
+    "@jsuite/documents": "workspace:*",
+    "@nuxt/ui": "^4.10.0",
+    "nuxt": "^4.5.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@jsuite/data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared data-directory resolver — every jSuite app stores its state under <monorepo root>/.data/<app>/.",
+  "main": "./index.mjs",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    },
+    "./package.json": "./package.json"
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-12T00:00:00Z",
+  "title": "Design System: jDiff",
+  "extensions": {
+    "colorMeta": {
+      "graphite-base": { "role": "neutral", "displayName": "Graphite Base", "canonical": "#0d1117", "tonalRamp": ["#0d1117", "#161b22", "#1c2129", "#30363d", "#484f58", "#6e7681", "#8b949e", "#e6edf3"] },
+      "graphite-panel": { "role": "neutral", "displayName": "Graphite Panel", "canonical": "#161b22", "tonalRamp": ["#0d1117", "#161b22", "#1c2129", "#30363d", "#484f58", "#6e7681", "#8b949e", "#e6edf3"] },
+      "graphite-raised": { "role": "neutral", "displayName": "Graphite Raised", "canonical": "#1c2129", "tonalRamp": ["#0d1117", "#161b22", "#1c2129", "#30363d", "#484f58", "#6e7681", "#8b949e", "#e6edf3"] },
+      "carve-border": { "role": "neutral", "displayName": "Carve Border", "canonical": "#30363d", "tonalRamp": ["#0d1117", "#161b22", "#1c2129", "#30363d", "#484f58", "#6e7681", "#8b949e", "#e6edf3"] },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#e6edf3", "tonalRamp": ["#0d1117", "#161b22", "#1c2129", "#30363d", "#484f58", "#6e7681", "#8b949e", "#e6edf3"] },
+      "graphite-muted": { "role": "neutral", "displayName": "Graphite Muted", "canonical": "#8b949e", "tonalRamp": ["#0d1117", "#161b22", "#1c2129", "#30363d", "#484f58", "#6e7681", "#8b949e", "#e6edf3"] },
+      "cursor-blue": { "role": "primary", "displayName": "Cursor Blue", "canonical": "#58a6ff", "tonalRamp": ["#0c2d6b", "#1158c7", "#1f6feb", "#388bfd", "#58a6ff", "#79c0ff", "#a5d6ff", "#cae8ff"] },
+      "diff-green": { "role": "semantic", "displayName": "Diff Green", "canonical": "#3fb950", "tonalRamp": ["#04260f", "#033a16", "#0f5323", "#196c2e", "#238636", "#2ea043", "#3fb950", "#7ee787"] },
+      "diff-red": { "role": "semantic", "displayName": "Diff Red", "canonical": "#f85149", "tonalRamp": ["#43060a", "#67060c", "#8e1519", "#b62324", "#da3633", "#f85149", "#ff7b72", "#ffa198"] },
+      "risk-amber": { "role": "semantic", "displayName": "Risk Amber", "canonical": "#d29922", "tonalRamp": ["#341a00", "#4b2900", "#693e00", "#845306", "#9e6a03", "#bb8009", "#d29922", "#e3b341"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The 'jDiff' wordmark only." },
+      "headline": { "displayName": "Headline", "purpose": "PR titles — the largest sans on any screen." },
+      "body": { "displayName": "Body", "purpose": "Prose: summaries, comments, guidance. Reading columns near 700px." },
+      "code": { "displayName": "Code", "purpose": "Diff content, paths, branches, stats, logs — the mono voice of git." },
+      "label": { "displayName": "Label", "purpose": "Badges, buttons, metadata, section labels." }
+    },
+    "shadows": [
+      { "name": "float", "value": "0 8px 24px rgba(0,0,0,0.5)", "purpose": "Only for elements floating over the page: tour bar, notification panel. In-flow elements use borders, never shadows." }
+    ],
+    "motion": [
+      { "name": "spin", "value": "spin 0.8s linear infinite", "purpose": "Loading spinners — currently the system's only animation." }
+    ],
+    "breakpoints": [
+      { "name": "sidebar-collapse", "value": "1100px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "The default control everywhere: rests muted, wakes with a Cursor Blue border on hover.",
+      "html": "<button class=\"ds-btn-quiet\">refresh</button>",
+      "css": ".ds-btn-quiet { border: 1px solid var(--border, #30363d); background: var(--panel, #161b22); color: var(--muted, #8b949e); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; } .ds-btn-quiet:hover { border-color: var(--accent, #58a6ff); color: var(--text, #e6edf3); } .ds-btn-quiet:focus-visible { outline: none; border-color: var(--accent, #58a6ff); }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Cursor Blue fill for the single advancing action in a context (tour 'next', 'post').",
+      "html": "<button class=\"ds-btn-primary\">next →</button>",
+      "css": ".ds-btn-primary { border: 1px solid var(--accent, #58a6ff); background: var(--accent, #58a6ff); color: #fff; border-radius: 6px; padding: 4px 14px; font-size: 12px; cursor: pointer; } .ds-btn-primary:hover { filter: brightness(1.1); } .ds-btn-primary:disabled { opacity: 0.4; cursor: default; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Transparent secondary/dismiss action; hover brings the accent border.",
+      "html": "<button class=\"ds-btn-ghost\">cancel</button>",
+      "css": ".ds-btn-ghost { border: 1px solid var(--border, #30363d); background: transparent; color: var(--muted, #8b949e); border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; } .ds-btn-ghost:hover { border-color: var(--accent, #58a6ff); color: var(--text, #e6edf3); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-pill",
+      "description": "Bordered pill; text and border recolor together per semantic state (green approved, red changes, amber stale).",
+      "html": "<span class=\"ds-badge\">draft</span> <span class=\"ds-badge ds-badge-good\">approved</span> <span class=\"ds-badge ds-badge-bad\">changes</span>",
+      "css": ".ds-badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border, #30363d); color: var(--muted, #8b949e); background: transparent; } .ds-badge-good { color: var(--green, #3fb950); border-color: var(--green, #3fb950); } .ds-badge-bad { color: var(--red, #f85149); border-color: var(--red, #f85149); }"
+    },
+    {
+      "name": "Path Input",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "Mono input for path-like values; focus swaps the border to Cursor Blue.",
+      "html": "<input class=\"ds-input\" placeholder=\"~/code/my-repo\" spellcheck=\"false\">",
+      "css": ".ds-input { padding: 10px 14px; border: 1px solid var(--border, #30363d); border-radius: 6px; background: var(--panel, #161b22); color: var(--text, #e6edf3); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 13px; outline: none; width: 100%; } .ds-input:focus { border-color: var(--accent, #58a6ff); } .ds-input::placeholder { color: var(--muted, #8b949e); }"
+    },
+    {
+      "name": "Panel Card",
+      "kind": "card",
+      "refersTo": "card-panel",
+      "description": "The in-flow container: Graphite Panel fill, carved by a 1px border, never shadowed.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">review rating</div><p class=\"ds-card-body\">Small, focused change with clear intent. Tests cover the new path.</p></div>",
+      "css": ".ds-card { border: 1px solid var(--border, #30363d); border-radius: 8px; background: var(--panel, #161b22); padding: 12px 16px; font-size: 13px; color: var(--text, #e6edf3); } .ds-card-title { font-weight: 600; margin-bottom: 6px; } .ds-card-body { margin: 0; line-height: 1.5; }"
+    },
+    {
+      "name": "Segmented Modes",
+      "kind": "nav",
+      "refersTo": "button-quiet",
+      "description": "Mode switcher: bordered group on the raised layer; active segment gets panel fill plus a 1px ring.",
+      "html": "<div class=\"ds-modes\"><button class=\"ds-mode ds-mode-on\">files</button><button class=\"ds-mode\">groups</button><button class=\"ds-mode\">risk</button></div>",
+      "css": ".ds-modes { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border, #30363d); border-radius: 6px; background: var(--panel-2, #1c2129); } .ds-mode { flex: 1; border: none; background: transparent; color: var(--muted, #8b949e); font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 10px; padding: 3px 10px; border-radius: 4px; cursor: pointer; } .ds-mode:hover { color: var(--text, #e6edf3); } .ds-mode-on { background: var(--panel, #161b22); color: var(--text, #e6edf3); box-shadow: 0 0 0 1px var(--border, #30363d); }"
+    },
+    {
+      "name": "Tour Bar",
+      "kind": "custom",
+      "refersTo": "card-panel",
+      "description": "The signature floating guide: Cursor Blue border, Float shadow, the one element allowed above the diff.",
+      "html": "<div class=\"ds-tour\"><div class=\"ds-tour-head\"><span class=\"ds-tour-step\">2/7</span><span class=\"ds-tour-title\">The new store</span><span class=\"ds-tour-path\">server/utils/riskStore.ts</span></div><div class=\"ds-tour-note\">This introduces the persistence layer the heatmap reads from — check the eviction logic first.</div><div class=\"ds-tour-actions\"><span class=\"ds-tour-keys\">← → esc</span><button class=\"ds-tour-nav\">← prev</button><button class=\"ds-tour-nav ds-tour-primary\">next →</button></div></div>",
+      "css": ".ds-tour { border: 1px solid var(--accent, #58a6ff); border-radius: 10px; background: var(--panel, #161b22); box-shadow: 0 8px 30px rgba(0,0,0,0.5); padding: 10px 14px; font-size: 13px; color: var(--text, #e6edf3); max-width: 680px; } .ds-tour-head { display: flex; gap: 10px; align-items: baseline; } .ds-tour-step { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--accent, #58a6ff); } .ds-tour-title { font-weight: 600; } .ds-tour-path { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; color: var(--muted, #8b949e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .ds-tour-note { margin-top: 6px; color: var(--muted, #8b949e); line-height: 1.5; } .ds-tour-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; } .ds-tour-keys { margin-right: auto; color: var(--muted, #8b949e); font-size: 11px; } .ds-tour-nav { border: 1px solid var(--border, #30363d); background: transparent; color: var(--text, #e6edf3); border-radius: 6px; padding: 3px 12px; cursor: pointer; font-size: 12px; } .ds-tour-nav:hover { border-color: var(--accent, #58a6ff); } .ds-tour-primary { background: var(--accent, #58a6ff); border-color: var(--accent, #58a6ff); color: #fff; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Reading Room",
+    "overview": "jDiff is a quiet, dark study built for one job: reading code with full attention. The diff is the room; every other element — navigation, guidance, notifications — is furniture, arranged so nothing competes with the code for attention. The palette is dimmed graphite: matte, understated layers of blue-black that recede behind syntax-highlighted code, with a single Cursor Blue accent that marks wherever the reviewer's attention should go next. Warmth lives in the words (the tours, the ask-yourself prompts, the patient guidance), never in the chrome.",
+    "keyCharacteristics": [
+      "Dark, flat, border-defined; surfaces are carved by 1px lines, not lifted by shadows.",
+      "Monospace is the voice of anything git-flavored: brand, paths, branches, stats, logs, labels.",
+      "One accent (Cursor Blue) marks interactivity and attention; green/red/amber are reserved semantic signals.",
+      "Small, dense, sturdy controls that rest muted and wake on interaction.",
+      "Lowercase, terse copy."
+    ],
+    "rules": [
+      { "name": "The One Voice Rule", "body": "Cursor Blue is the only decorative accent, and it always means 'attention' or 'interactive'. Green, red, and amber may appear only with their semantic meaning — never as decoration.", "section": "colors" },
+      { "name": "The Wash Rule", "body": "Colored area fills are translucent washes over the graphite (12–30% alpha), never opaque color blocks. Tints layer via background-image so diff coloring and tour highlights stack without erasing each other.", "section": "colors" },
+      { "name": "The Mono Voice Rule", "body": "If it came from git or names the tool — paths, branches, +/− stats, hashes, the brand — it is monospace. If it's for a human to read as prose, it is sans. No exceptions in either direction.", "section": "typography" },
+      { "name": "The Lowercase Rule", "body": "The brand, buttons, and short UI copy are lowercase. Title Case is for PR titles and user content only.", "section": "typography" },
+      { "name": "The Carved Rule", "body": "Depth is drawn, not cast. If an element sits in the page flow, it gets a border, not a shadow. If it floats over the page, it gets the Float shadow — both, always.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep the diff the room: chrome stays graphite and muted, code carries all the color.",
+      "Do carve with 1px Carve Border (#30363d) lines and background steps; reserve the Float shadow for the tour bar and notification panel only.",
+      "Do put anything git-flavored in monospace and keep UI copy lowercase and terse.",
+      "Do rest controls muted and wake them with Cursor Blue on hover/focus.",
+      "Do hold WCAG AA: body text ≥4.5:1, visible focus states, reduced-motion alternatives for any animation.",
+      "Do keep reading columns near 700px while letting the diff layout span the full width."
+    ],
+    "donts": [
+      "Don't ship AI-tool gimmickry: no sparkle icons, purple gradients, glassmorphism, or chat bubbles.",
+      "Don't drift into enterprise-dashboard territory: no KPI tiles, card walls, or chrome that outweighs content.",
+      "Don't read as a GitHub clone: the diff idiom is shared vocabulary, but layouts, voice, and guidance surfaces are jDiff's own.",
+      "Don't go SaaS-glossy or consumer-cute: no onboarding funnels, marketing sheen, bouncy motion, or illustration-heavy friendliness.",
+      "Don't use color decoratively: green/red/amber only with semantic meaning; a second decorative accent is prohibited.",
+      "Don't cast shadows on in-flow elements or use opaque color blocks where a wash belongs."
+    ]
+  }
+}

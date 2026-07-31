@@ -1,0 +1,21 @@
+{
+  "name": "jchart",
+  "private": true,
+  "type": "module",
+  "description": "Local diagram workbench — Claude authors a Mermaid chart, you edit it freehand on an Excalidraw canvas and pin notes to shapes. The canvas itself lives in @jsuite/charting; this app adds storage, notes, and the workbench UI.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.0",
+    "@jsuite/charting": "workspace:*",
+    "@jsuite/data": "workspace:*",
+    "@nuxt/ui": "^4.10.0",
+    "nuxt": "^4.5.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  }
+}

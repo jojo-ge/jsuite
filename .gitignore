@@ -1,0 +1,10 @@
+node_modules/
+.nuxt/
+.output/
+# every app's state — see packages/data
+.data/
+.DS_Store
+logs/
+run/
+# local mkcert material — regenerate with ./jsuite setup
+certs/

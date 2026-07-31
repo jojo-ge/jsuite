@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jSuite — a local product suite for working with Claude</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="#jticket">jTicket</a>
+      <a href="#jdiff">jDiff</a>
+      <a href="#jchart">jChart</a>
+      <a href="#jexplain">jExplain</a>
+      <a href="#ecosystem">How it works</a>
+      <a class="nav-cta" href="#quickstart">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow-pill"><b>Four apps · one edge · one port</b> — everything on <code>:7443</code></span>
+    <h1>A local workbench where <span class="grad">Claude authors and you review</span></h1>
+    <p class="sub">jSuite is four local apps behind one HTTPS edge — plan work, review diffs,
+      sketch diagrams, and publish explainers, all on localhost. Every app has a stable
+      name, so skills and bookmarks never chase a dev-server port.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="#jticket">Tour the apps <span class="arrow">→</span></a>
+      <a class="btn btn-ghost" href="#quickstart">Quick start</a>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-bar"><i></i><i></i><i></i></div>
+      <pre><span class="p">$</span> ./jsuite start
+<span class="ok">✓</span> jticket   <a href="https://jticket.local:7443">https://jticket.local:7443</a>
+<span class="ok">✓</span> jdiff     <a href="https://jdiff.local:7443">https://jdiff.local:7443</a>
+<span class="ok">✓</span> jchart    <a href="https://jchart.local:7443">https://jchart.local:7443</a>
+<span class="ok">✓</span> jexplain  <a href="https://jexplain.local:7443">https://jexplain.local:7443</a>
+<span class="ok">✓</span> edge      Caddy on :7443 <span class="c"># TLS, mkcert, green lock</span></pre>
+    </div>
+  </div>
+</section>
+
+<nav class="app-strip">
+  <div data-app="jticket">
+    <a class="k" href="https://jticket.local:7443">jTicket <span class="ext">↗</span></a>
+    <span class="v">Planning hub — epics, tickets, draft docs</span>
+    <span class="u"><a href="https://jticket.local:7443">jticket.local:7443</a> · <a href="#jticket">tour ↓</a></span>
+  </div>
+  <div data-app="jdiff">
+    <a class="k" href="https://jdiff.local:7443">jDiff <span class="ext">↗</span></a>
+    <span class="v">Diff reviewer — branches before PRs exist</span>
+    <span class="u"><a href="https://jdiff.local:7443">jdiff.local:7443</a> · <a href="#jdiff">tour ↓</a></span>
+  </div>
+  <div data-app="jchart">
+    <a class="k" href="https://jchart.local:7443">jChart <span class="ext">↗</span></a>
+    <span class="v">Diagram workbench — Mermaid to canvas</span>
+    <span class="u"><a href="https://jchart.local:7443">jchart.local:7443</a> · <a href="#jchart">tour ↓</a></span>
+  </div>
+  <div data-app="jexplain">
+    <a class="k" href="https://jexplain.local:7443">jExplain <span class="ext">↗</span></a>
+    <span class="v">Explainers — articles with live charts</span>
+    <span class="u"><a href="https://jexplain.local:7443">jexplain.local:7443</a> · <a href="#jexplain">tour ↓</a></span>
+  </div>
+</nav>
+
+<!-- ============ jTicket ============ -->
+<section class="fold" id="jticket" data-app="jticket">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jTicket · Planning hub <span class="port">:3000</span></p>
+      <h2>Plans land locally first — review before anything goes upstream</h2>
+      <p class="lede">Projects, epics and tickets with acceptance criteria and blocked-by
+        edges, plus Confluence-style draft docs. Not connected to Jira or Confluence —
+        that's the point.</p>
+      <ul class="fold-points">
+        <li><b>Breakdowns become boards.</b> Claude turns a plan into epics and tickets you can actually inspect, reorder and veto.</li>
+        <li><b>Specs become docs.</b> Panels, expands, status lozenges — the Confluence dialect, drafted locally for review first.</li>
+        <li><b>API-only state.</b> Everything goes through the HTTP API on :3000, so every skill sees the same board.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">Drive with skills</span>
+        <span class="chip">to-jticket</span><span class="chip">to-jspec</span><span class="chip">to-jdoc</span>
+        <span class="chip">jwayfinder</span><span class="chip">jimplement</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jticket.local:7443">Open jTicket <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="/learn/jticket.html">Learn more</a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jticket.local:7443</span></div>
+        <div class="mock-body">
+          <div class="mock-board">
+            <div class="mock-col"><h5>Backlog</h5>
+              <div class="mock-card"><span class="id">JT-14</span><span class="bar w85"></span><span class="bar w55"></span></div>
+              <div class="mock-card"><span class="id">JT-15</span><span class="bar w70"></span></div>
+            </div>
+            <div class="mock-col"><h5>In progress</h5>
+              <div class="mock-card hot"><span class="id">JT-12</span><span class="bar w100"></span>
+                <span class="ac">API returns paged results</span>
+                <span class="ac">Blocked-by edge rendered</span>
+              </div>
+            </div>
+            <div class="mock-col"><h5>Done</h5>
+              <div class="mock-card"><span class="id">JT-09</span><span class="bar w70"></span></div>
+              <div class="mock-card"><span class="id">JT-11</span><span class="bar w85"></span><span class="bar w40"></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ jDiff ============ -->
+<section class="fold flip" id="jdiff" data-app="jdiff">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jDiff · Diff reviewer <span class="port">:3002</span></p>
+      <h2>Review a branch before the PR even exists</h2>
+      <p class="lede">A local GitHub client that's really good at diffs: <code>gh</code> lists
+        PRs, <code>git</code> computes diffs locally. Draft your comments offline, then post
+        them all in one shot.</p>
+      <ul class="fold-points">
+        <li><b>Local-first diffs.</b> Branch-vs-main works with no PR and no network round-trips.</li>
+        <li><b>Draft, then batch.</b> Comments accumulate locally; opening the PR posts them together.</li>
+        <li><b>Real tools.</b> Runs natively on the host so it uses your actual <code>git</code>, <code>gh</code> and editor.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">Drive with the CLI</span>
+        <span class="chip">jdiff pr 123</span><span class="chip">jdiff branch my-feature</span><span class="chip">--print</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jdiff.local:7443">Open jDiff <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="/learn/jdiff.html">Learn more</a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jdiff.local:7443</span></div>
+        <div class="mock-diff">
+          <div class="file">server/utils/store.ts · +14 −3</div>
+          <div class="ln ctx">  export function loadStore() {</div>
+          <div class="ln del">-   const raw = readFileSync(PATH)</div>
+          <div class="ln add">+   const raw = readFileSync(storePath(), 'utf8')</div>
+          <div class="ln add">+   if (!raw) return emptyStore()</div>
+          <div class="ln ctx">    return JSON.parse(raw)</div>
+          <div class="ln ctx">  }</div>
+          <div class="mock-comment">
+            <div class="who">Draft comment · not posted yet</div>
+            <span class="bar w85"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ jChart ============ -->
+<section class="fold" id="jchart" data-app="jchart">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jChart · Diagram workbench <span class="port">:3003</span></p>
+      <h2>Claude drafts the diagram. You redraw it. Claude reads it back.</h2>
+      <p class="lede">A Mermaid draft becomes an editable Excalidraw canvas. Move things,
+        redraw freehand, pin notes to individual shapes — and Claude picks your edits
+        up off disk.</p>
+      <ul class="fold-points">
+        <li><b>Mermaid in, canvas out.</b> After import, the canvas — not the Mermaid — is the source of truth.</li>
+        <li><b>Notes pinned to shapes.</b> Annotate exactly the box you mean; the note travels with it.</li>
+        <li><b>A shared chart pool.</b> Scenes live in <code>.data/jchart/</code> and every suite app can embed them.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">Drive with skills</span>
+        <span class="chip">j-chart</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jchart.local:7443">Open jChart <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="/learn/jchart.html">Learn more</a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jchart.local:7443</span></div>
+        <div class="mock-canvas">
+          <div class="shape" style="left:8%; top:18%; width:110px; height:44px;">Browser</div>
+          <div class="edge-line" style="left:calc(8% + 110px); top:calc(18% + 22px); width:60px;"></div>
+          <div class="shape ellipse" style="left:calc(8% + 190px); top:14%; width:130px; height:52px;">Caddy edge</div>
+          <div class="edge-line" style="left:calc(8% + 250px); top:calc(14% + 62px); width:1.5px; height:52px; transform:rotate(90deg); transform-origin:top left;"></div>
+          <div class="shape plain" style="left:38%; top:58%; width:150px; height:44px;">Nuxt app :3003</div>
+          <div class="stickynote" style="right:6%; top:52%;">should this go through the shared layer instead?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ jExplain ============ -->
+<section class="fold flip" id="jexplain" data-app="jexplain">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jExplain · Explainers <span class="port">:3004</span></p>
+      <h2>Explanations as articles, not walls of chat text</h2>
+      <p class="lede">Blog-style articles from typed blocks — prose, code, diffs, callouts,
+        glossary — with live charts shared with jChart. Built for walkthroughs,
+        post-mortems and deep dives.</p>
+      <ul class="fold-points">
+        <li><b>Typed blocks.</b> Code gets syntax highlighting, diffs get diff rendering, terms get a glossary.</li>
+        <li><b>Live charts.</b> An embedded chart <i>is</i> a jChart chart — edit it there, the article updates.</li>
+        <li><b>A feedback loop.</b> Hover any block to pin a note; “Copy notes for Claude” sends it all back for a revision.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">Drive with skills</span>
+        <span class="chip">j-explain</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jexplain.local:7443">Open jExplain <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="/learn/jexplain.html">Learn more</a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jexplain.local:7443</span></div>
+        <div class="mock-article">
+          <div class="title"></div>
+          <div class="mock-block"><span class="bar w100"></span><span class="bar w85"></span><span class="bar w55"></span></div>
+          <div class="mock-code"><span class="kw">const</span> scene = <span class="kw">await</span> mermaidToScene(<span class="str">'flowchart LR …'</span>)</div>
+          <div class="mock-chart"><i style="height:35%"></i><i style="height:60%"></i><i style="height:45%"></i><i style="height:85%"></i><i style="height:70%"></i></div>
+          <div class="mock-note"><b>Your note:</b> can you expand on why the edge is pinned to 2.11.2?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ecosystem ============ -->
+<section class="section" id="ecosystem">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>One suite, not four tabs</h2>
+      <p>The apps share an edge, a state directory, a chart pool and a review loop —
+         so work flows between them instead of getting stuck in one.</p>
+    </div>
+    <div class="grid-3">
+      <div class="feature"><span class="glyph">🔒</span>
+        <h3>One HTTPS edge</h3>
+        <p>A pinned Caddy container terminates TLS on <code>:7443</code> and proxies each
+           <code>.local</code> name to its app. The apps run natively on the host; only Caddy
+           is in Docker.</p>
+      </div>
+      <div class="feature"><span class="glyph">🗂️</span>
+        <h3>One state directory</h3>
+        <p>Every app keeps its state in <code>.data/&lt;app&gt;/</code> at the repo root — one
+           gitignored folder to read, back up, or wipe.</p>
+      </div>
+      <div class="feature"><span class="glyph">📊</span>
+        <h3>One chart pool</h3>
+        <p>The <code>@jsuite/charting</code> layer serves the same charts everywhere: a chart
+           in a jExplain article <i>is</i> the chart jChart opens. Edits flow both ways.</p>
+      </div>
+      <div class="feature"><span class="glyph">📝</span>
+        <h3>A notes loop everywhere</h3>
+        <p>jChart and jExplain store your annotations in <code>.notes.json</code> sidecars;
+           Claude reads them and revises. Author → review → annotate → revise, on localhost.</p>
+      </div>
+      <div class="feature"><span class="glyph">⚡</span>
+        <h3>Skills as the interface</h3>
+        <p>Each app owns its Claude skills; <code>./j-setup</code> installs them globally, and
+           the <code>jsuite</code> skill carries the whole map into any session.</p>
+      </div>
+      <div class="feature"><span class="glyph">📌</span>
+        <h3>Stable names</h3>
+        <p>Always <code>https://&lt;app&gt;.local:7443</code> — full scheme and port. No chasing
+           dev-server ports, no broken bookmarks, no confused tooling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ quickstart ============ -->
+<section class="section quickstart" id="quickstart">
+  <div class="wrap">
+    <div class="section-head" style="margin-bottom:0">
+      <h2>Up in one command</h2>
+      <p>The launcher starts all four apps and the Caddy edge, checks their health over
+         HTTPS, and tails their logs. <code>./j-setup</code> installs every jskill into
+         <code>~/.claude/skills</code> so any Claude session can drive the suite.</p>
+    </div>
+    <div class="terminal" style="margin:0">
+      <div class="terminal-bar"><i></i><i></i><i></i></div>
+      <pre><span class="p">$</span> cd ~/code/anyway/jsuite
+<span class="p">$</span> pnpm install        <span class="c"># once, and after dependency changes</span>
+<span class="p">$</span> ./jsuite start      <span class="c"># all four apps + the Caddy edge</span>
+<span class="p">$</span> ./jsuite status     <span class="c"># pid + live HTTPS check per app</span>
+<span class="p">$</span> ./jsuite logs jdiff <span class="c"># tail one app (or: logs edge)</span>
+<span class="p">$</span> ./j-setup           <span class="c"># install every jskill globally</span></pre>
+    </div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <span>Served by the jSuite Caddy edge — static page, no process behind it.
+      Plain HTTP on :7443 gets a 400; always use <code>https://</code>.</span>
+    <nav class="foot-cols">
+      <span class="foot-col">
+        <b>Open</b>
+        <a href="https://jticket.local:7443">jticket.local:7443</a>
+        <a href="https://jdiff.local:7443">jdiff.local:7443</a>
+        <a href="https://jchart.local:7443">jchart.local:7443</a>
+        <a href="https://jexplain.local:7443">jexplain.local:7443</a>
+      </span>
+      <span class="foot-col">
+        <b>Learn</b>
+        <a href="/learn/jticket.html">jTicket</a>
+        <a href="/learn/jdiff.html">jDiff</a>
+        <a href="/learn/jchart.html">jChart</a>
+        <a href="/learn/jexplain.html">jExplain</a>
+      </span>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
