@@ -100,8 +100,8 @@ An existing chart can be embedded with just `{ "type": "chart", "chartKey": "...
 
 ## Notes
 
-- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The app's home page is <https://jexplain.local:7443>.
-- The app is jExplain in the jSuite (`~/code/anyway/jsuite/apps/jexplain`, port 3004). Start everything with `jsuite start`.
+- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The app's home page is <https://jexplain.local>.
+- The app is jExplain in the jSuite (`~/code/anyway/jsuite/apps/jexplain`, port 43004). Start everything with `jsuite start`.
 - Charts live in the shared chart pool — deleting an explainer never deletes its charts.
 - Publishing goes to `POST /api/documents` (explain.py handles this). For a document that should sit on the jTicket board with project/status/labels, use `/to-jdoc` instead — same format, plus a tracker record.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JEXPLAIN_BROWSER`.

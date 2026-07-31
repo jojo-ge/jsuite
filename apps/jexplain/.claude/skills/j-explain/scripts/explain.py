@@ -24,8 +24,8 @@ import urllib.request
 
 # The jSuite edge (https) is the address the user sees; the bare dev port is the
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
-EDGE_BASE = "https://jexplain.local:7443"
-DIRECT_BASE = "http://localhost:3004"
+EDGE_BASE = "https://jexplain.local"
+DIRECT_BASE = "http://localhost:43004"
 DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jexplain")
 CHART_DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
 
@@ -40,7 +40,7 @@ def api(base, path, method="GET", payload=None, timeout=10):
         url, data=data, method=method,
         headers={"Content-Type": "application/json"} if data else {},
     )
-    # The edge uses an mkcert cert that Python's bundled CA store doesn't know
+    # The edge uses OrbStack's local CA, which Python's bundled CA store doesn't know
     # about. This only ever talks to localhost, so skip verification there.
     import ssl
     ctx = ssl._create_unverified_context() if url.startswith("https") else None

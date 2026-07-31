@@ -1,32 +1,63 @@
 # jSuite
 
 A pnpm-workspace monorepo of four local dev apps behind one HTTPS edge — one
-command, one port, stable names, so you can point LLMs (and bookmarks) at fixed
-URLs instead of juggling dev servers:
+command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
+instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
+names; a single Caddy container routes them to the native dev servers:
 
 ```sh
 cd ~/code/anyway/jsuite
-pnpm install        # once (and after dependency changes)
+./jsuite setup      # once (re-runnable) — see Setup below
 ./jsuite start      # apps + edge
 ```
 
-| URL                          | App     | Host port |
-| ---------------------------- | ------- | --------- |
-| https://jsuite.local:7443    | index (static links page) | — |
-| https://jticket.local:7443   | jTicket | 3000      |
-| https://jdiff.local:7443     | jDiff   | 3002      |
-| https://jchart.local:7443    | jChart  | 3003      |
-| https://jexplain.local:7443  | jExplain | 3004     |
+| URL                     | App                       | Host port |
+| ----------------------- | ------------------------- | --------- |
+| https://jsuite.local    | index (static links page) | —         |
+| https://jticket.local   | jTicket                   | 43000     |
+| https://jdiff.local     | jDiff                     | 43002     |
+| https://jchart.local    | jChart                    | 43003     |
+| https://jexplain.local  | jExplain                  | 43004     |
+
+## Setup
+
+Prerequisites:
+
+- **[OrbStack](https://orbstack.dev)** (`brew install orbstack`) — it must be
+  the active Docker context (`docker context use orbstack`). OrbStack resolves
+  the `.local` names and terminates HTTPS, so there is nothing to configure:
+  no certs, no `/etc/hosts`, no sudo.
+- **Node + pnpm** (`corepack enable`, or `brew install pnpm`).
+
+Then, from the repo root:
+
+```sh
+./jsuite setup
+```
+
+which does, in order:
+
+1. verifies OrbStack is installed, running, and the active Docker context
+2. `pnpm install` — one lockfile at the root installs every app and package
+3. installs every repo-owned jskill into `~/.claude/skills` (manifest:
+   `SKILLS_MANIFEST` in `./jsuite`), then — when run from a real terminal —
+   the interactive `mattpocock/skills` installer
+4. removes leftovers from the old mkcert-based edge (stale `/etc/hosts`
+   pins, `./certs/`), which would otherwise shadow OrbStack's DNS
+
+It is safe to re-run at any time — after adding an app, adding a skill, or
+pulling dependency changes. Finish with `./jsuite start`; on the first HTTPS
+visit OrbStack asks once to trust its local CA, and every app gets a green
+lock from then on.
 
 ## Layout
 
 ```
 jsuite/
 ├── jsuite              # the launcher (start/stop/status/logs/open/setup)
-├── j-setup             # installs every repo-owned jskill into ~/.claude/skills
-├── Caddyfile           # HTTPS edge config (runs in Docker)
+├── Caddyfile           # edge routing config (runs in Docker; OrbStack does TLS)
 ├── docker-compose.yml
-├── www/                # static ecosystem index page (https://jsuite.local:7443)
+├── www/                # static ecosystem index page (https://jsuite.local)
 ├── CLAUDE.md           # request-routing guide for agents working in this repo
 ├── .claude/skills/     # suite-level skills (jsuite — the ecosystem map)
 ├── .data/              # every app's state, gitignored (see @jsuite/data)
@@ -118,26 +149,24 @@ Apps own their Claude skills in `<app>/.claude/skills` (the jTicket pattern:
 jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
 jchart owns `j-chart`; jexplain owns `j-explain`). Suite-level skills live in
 `.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
-app does, how they relate, and which app/skill a request routes to. Install
-them all globally with:
+app does, how they relate, and which app/skill a request routes to.
 
-```sh
-./j-setup             # jskills + mattpocock/skills
-./j-setup --skills    # just the jskills
-```
+`./jsuite setup` installs them all globally (plus the interactive
+`mattpocock/skills` installer when run from a terminal). The `SKILLS_MANIFEST`
+table in `./jsuite` says which app owns what; keep `apps/jticket/j-setup`
+(jTicket's standalone app-local installer) in sync with its row.
 
-The manifest at the top of `./j-setup` says which app owns what; keep
-`apps/jticket/j-setup` (the app-local installer) in sync with its row.
+## Why OrbStack does TLS
 
-## Why 7443
+The edge container carries a `dev.orbstack.domains` label listing every
+`.local` name. OrbStack resolves those names to the container's own IP,
+terminates HTTPS with its local CA (auto-trusted on first visit), and forwards
+plain HTTP to Caddy on `:80`. That removes the whole cert story — no mkcert,
+no `/etc/hosts`, no sudo, no published ports — and because the names resolve
+to the container's IP rather than `127.0.0.1`, there's no conflict with the
+kraken/phoenix dev runtime's Caddy on the host's `:80`/`:443`.
 
-Not `:443`. The kraken/phoenix dev runtime (`kraken/.fleet/edge`) runs its own
-Caddy on `:80`/`:443`, and whichever binds first wins — so the two edges used to
-fight. `7443` is unclaimed, needs no root, and is the **only** published port:
-everything else is reached by name through it.
-
-Always include the scheme: `https://jticket.local:7443`. Caddy answers plaintext
-on that port with a 400, not a redirect.
+Always include the scheme: `https://jticket.local`.
 
 ## Commands
 
@@ -148,7 +177,8 @@ on that port with a 400, not a redirect.
 ./jsuite status           # pid + live HTTPS status code per app
 ./jsuite logs [app|edge]  # tail -F; no arg = every app
 ./jsuite open [app]       # open in the browser (default: the index)
-./jsuite setup            # one-time: mkcert CA, cert, /etc/hosts (asks for sudo)
+./jsuite setup            # onboarding: OrbStack check, pnpm install, skill install,
+                          # cleanup of the old mkcert/hosts edge — re-runnable
 ```
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
@@ -157,13 +187,13 @@ State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
 
 The apps run **natively on the host**; only Caddy is containerised. That is
 deliberate — jDiff needs host `git`, `gh`, the `claude` CLI, the native folder
-picker and open-in-VSCode, none of which survive containerisation. Caddy just
-terminates TLS and reverse-proxies each name to `host.docker.internal:<port>`.
+picker and open-in-VSCode, none of which survive containerisation. OrbStack
+terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
 
 ```
-browser ──TLS──▶ [ Docker: Caddy :7443 ] ──http──▶ host.docker.internal:{3000,3001,3002,3003,3004}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004}
                         │
-                        └─ mkcert cert (./certs), trusted by the login keychain
+                        └─ OrbStack local CA, auto-trusted on first visit
 ```
 
 `./jsuite start` refuses to start an app whose port is held by something it
@@ -175,11 +205,12 @@ different port and break the proxy.
 1. Create it under `apps/<id>` (it joins the workspace automatically via
    `pnpm-workspace.yaml`), then `pnpm install` at the root.
 2. Add a row to `APPS` in `./jsuite` (id | dir under apps/ | port | dev command).
-3. Add a matching `https://<id>.local:7443` block to the `Caddyfile`.
-4. Add the name to `DOMAINS` in `./jsuite`, re-run `./jsuite setup` (reissues the
-   cert and appends any missing `/etc/hosts` names — it is safe to re-run), and
-   allowlist the name in the app's `nuxt.config.ts` → `vite.server.allowedHosts`.
-5. `./jsuite restart` — Caddy only reads the new cert and `Caddyfile` on restart.
+3. Add a matching `https://<id>.local` block to the `Caddyfile`.
+4. Add the name to `DOMAINS` in `./jsuite` AND to the `dev.orbstack.domains`
+   label in `docker-compose.yml`, and allowlist it in the app's
+   `nuxt.config.ts` → `vite.server.allowedHosts`.
+5. `./jsuite restart` — the label and `Caddyfile` are only read when the
+   container is recreated.
 6. Give it an identity: `public/favicon.svg` (32×32, dark rounded square + the
    app's accent from `www/site.css`), plus `app.head` in `nuxt.config.ts` with
    the title, description and icon link, and a `titleTemplate` in `app.vue` so
@@ -187,17 +218,15 @@ different port and break the proxy.
 
 ## Notes
 
-- **Caddy is pinned to `2.11.2-alpine`.** 2.11.4 sends a TLS `internal_error` on
-  the SNI-matched, tag-restricted cert-selection policy that `tls <file>` per
-  site generates; 2.11.2 serves it cleanly. Revisit when a fixed 2.11.x ships.
-  macOS's system curl/python are LibreSSL and mask this — diagnose with
-  `/opt/homebrew/opt/openssl@3/bin/openssl s_client -servername <host>`.
 - Each app allowlists its `.local` name via `vite.server.allowedHosts` — Vite's
   dev-server host check otherwise 403s through the proxy. The port in the `Host`
   header doesn't need listing; Vite compares hostnames.
-- `.local` names resolve via `/etc/hosts`; macOS's mDNSResponder honours them.
-- `./jsuite setup` is re-runnable: it reissues the cert for the full `DOMAINS`
-  list and appends only the `/etc/hosts` names that are missing.
+- `.local` names are resolved by OrbStack (custom domains via the
+  `dev.orbstack.domains` label). Nothing may pin them in `/etc/hosts` — a
+  `127.0.0.1` entry there shadows OrbStack's DNS and breaks the edge;
+  `./jsuite setup` removes any leftovers from the old mkcert-based setup.
+- Requires "Allow access to container domains & IPs" in OrbStack's
+  Settings → Network (on by default).
 - Dev-log noise: `[Icon] failed to load icon lucide:*` warnings come from
   `@nuxt/icon`'s SSR-side fetch and are harmless — the browser loads icons via
   each app's `/api/_nuxt_icon/*` endpoint, which works.

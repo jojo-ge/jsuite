@@ -9,7 +9,7 @@ disable-model-invocation: true
 A loose idea has arrived — too big for one agent session, and wrapped in fog: the way
 from here to the **destination** isn't visible yet. Wayfinding is about finding that way,
 not charging at the destination. This skill charts the way as a **shared map** in
-[jTicket](http://localhost:3000), then works its tickets one at a time until the route is
+[jTicket](http://localhost:43000), then works its tickets one at a time until the route is
 clear.
 
 The destination varies per effort, and naming it is the first act of charting — it shapes
@@ -20,7 +20,7 @@ domain-agnostic — engineering work, course content, whatever fits the shape.
 ## Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:3000}"
+JTICKET="${JTICKET_URL:-http://localhost:43000}"
 curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 ```
 
@@ -46,7 +46,7 @@ and URL don't vanish — a name wraps its link — but they ride *inside* the na
 stand in for it:
 
 ```markdown
-[Choose the Rive runtime](http://localhost:3000/projects/PROJ-2) — settled on the web runtime
+[Choose the Rive runtime](http://localhost:43000/projects/PROJ-2) — settled on the web runtime
 ```
 
 ## How a map lives in jTicket

@@ -19,10 +19,10 @@ shared document (`documentKey`: title page, blocks, glossary).
 ## Before you start
 
 1. Confirm the app is running. The base URL is always
-   `https://jticket.local:7443` — the jSuite Caddy edge serves it there. Never
+   `https://jticket.local` — the jSuite Caddy edge serves it there. Never
    guess a localhost port. Quick check:
    ```bash
-   curl -sk https://jticket.local:7443/api/docs >/dev/null && echo up \
+   curl -sk https://jticket.local/api/docs >/dev/null && echo up \
      || echo "not up — run: ~/code/anyway/jsuite/jsuite start"
    ```
 
@@ -42,7 +42,7 @@ per-block notes pin to those ids.
 ## Create a doc: `POST /api/docs`
 
 ```bash
-curl -sk https://jticket.local:7443/api/docs \
+curl -sk https://jticket.local/api/docs \
   -H 'content-type: application/json' \
   -d @- <<'JSON'
 {
@@ -79,9 +79,9 @@ Fields:
 - `labels` — optional string array; `status` — `draft` (default) or `ready`.
 
 The response returns the generated `key` (e.g. `DOC-3`) and `documentKey`. The
-doc is then visible at `https://jticket.local:7443/docs/DOC-3`, on the board,
+doc is then visible at `https://jticket.local/docs/DOC-3`, on the board,
 on its project page — and in jExplain (same document, same notes) at
-`https://jexplain.local:7443/e/<documentKey>`.
+`https://jexplain.local/e/<documentKey>`.
 
 ## Revise: `PATCH /api/docs/:id`
 
@@ -93,7 +93,7 @@ chart blocks whose mermaid didn't change keep the user's hand edits (same
 idempotency rule as j-explain `--replace`).
 
 ```bash
-curl -sk -X PATCH https://jticket.local:7443/api/docs/DOC-3 \
+curl -sk -X PATCH https://jticket.local/api/docs/DOC-3 \
   -H 'content-type: application/json' -d @revised-blocks.json
 ```
 
@@ -117,7 +117,7 @@ off disk or the API:
 ## Workflow tips
 
 - POST as `status: "draft"`, then tell the user the key and link
-  (`https://jticket.local:7443/docs/DOC-n`) so they can review it rendered.
+  (`https://jticket.local/docs/DOC-n`) so they can review it rendered.
 - Revise via PATCH based on their notes; set `status` to `ready` when they
   sign off.
 - Structure like a good article, not a wall of prose: open with why it

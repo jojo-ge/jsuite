@@ -8,9 +8,9 @@ import https from 'node:https'
 import http from 'node:http'
 
 // --- base url --------------------------------------------------------------
-// Default host: the jSuite Caddy edge (~/code/anyway/jsuite) terminates TLS for
-// jdiff.local on :7443 — not :443, which the kraken/phoenix dev runtime owns.
-const DEFAULT_BASE = 'https://jdiff.local:7443'
+// Default host: the jSuite edge (~/code/anyway/jsuite) — OrbStack resolves
+// jdiff.local and terminates TLS, Caddy proxies to the native dev server.
+const DEFAULT_BASE = 'https://jdiff.local'
 // strip trailing slash so we can concatenate paths cleanly.
 const BASE = (process.env.JDIFF_URL || DEFAULT_BASE).replace(/\/+$/, '')
 
@@ -161,7 +161,7 @@ examples:
   jdiff pr 123
   jdiff branch my-feature main
   jdiff open -C ~/code/other-repo
-  JDIFF_URL=http://localhost:3002 jdiff pr 42 --print   # bypass the edge
+  JDIFF_URL=http://localhost:43002 jdiff pr 42 --print   # bypass the edge
 `
 }
 

@@ -14,7 +14,7 @@ Built with Nuxt 4 + Nuxt UI 4. Data lives in a single human-editable JSON file a
 
 ```bash
 pnpm install
-pnpm dev          # http://localhost:3000
+pnpm dev          # http://localhost:43000
 ```
 
 `pnpm build && node .output/server/index.mjs` for a production run.
@@ -76,7 +76,7 @@ See **/api-guide** in the running app. Summary:
 everything is created. `projects` and `epics` are optional.
 
 ```bash
-curl -s http://localhost:3000/api/import -H 'content-type: application/json' -d '{
+curl -s http://localhost:43000/api/import -H 'content-type: application/json' -d '{
   "projects": [{ "title": "Checkout", "description": "Everything payments-related" }],
   "epics":   [{ "title": "Checkout revamp", "description": "New payment flow", "project": "Checkout" }],
   "tickets": [
@@ -118,7 +118,7 @@ In the UI, **every** epic — wayfinder map or standard — renders its tickets 
 ## Pointing the `to-tickets` skill here
 
 When the skill asks where to publish, tell it: **publish to the local jTicket app
-via `POST http://localhost:3000/api/import`** instead of Jira. It maps cleanly:
+via `POST http://localhost:43000/api/import`** instead of Jira. It maps cleanly:
 skill "tickets" → tickets, "blocked by" → `blockedBy` (by title), AFK/HITL → `type`,
 parent → `epic`.
 
@@ -128,5 +128,5 @@ The companion `/to-jspec` skill (bundled at `.claude/skills/to-jspec`) teaches a
 draft docs here via `POST /api/docs`, including the block-document format. It pairs
 with Matt Pocock's `/to-spec`, which decides what the document says — `to-jspec` covers how
 it is written and where it lands. Documents are drafts only — review them at
-`http://localhost:3000/docs`, then copy into Confluence by hand if and when you want them
+`http://localhost:43000/docs`, then copy into Confluence by hand if and when you want them
 there.

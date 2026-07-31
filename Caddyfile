@@ -1,50 +1,45 @@
-# jSuite edge — HTTPS termination for the local dev apps.
-# Caddy runs inside Docker; the apps stay NATIVE on the host, reached via
-# host.docker.internal. mkcert certs (mounted at /certs) are trusted by the
-# host keychain, so browsers get a green lock with no warnings.
-#
-# Everything is served from ONE port: 7443. Port 443 is deliberately avoided —
-# the kraken/phoenix dev runtime (kraken/.fleet/edge) runs its own Caddy on
-# :80/:443, and whichever binds first wins. 7443 is unclaimed and needs no root.
+# jSuite edge — Host-header router for the local dev apps.
+# Caddy runs inside Docker on OrbStack; the apps stay NATIVE on the host,
+# reached via host.docker.internal. OrbStack owns TLS: the container's
+# `dev.orbstack.domains` label (docker-compose.yml) claims the .local names,
+# OrbStack resolves them, terminates HTTPS with its auto-trusted local CA, and
+# forwards plain HTTP to this Caddy on :80. No certs, no /etc/hosts, no sudo.
 
 {
-	# Our .local names can never pass an ACME challenge — always use the
-	# mounted mkcert cert and never reach out to Let's Encrypt.
-	auto_https disable_redirects
+	# OrbStack is the TLS terminator — Caddy must stay plain HTTP.
+	auto_https off
 	admin off
 }
 
-# reverse_proxy to a host port, terminating TLS with the shared mkcert cert.
-# The original Host (e.g. jticket.local:7443) is passed through unchanged so
-# Vite's dev-server host check accepts it — each app allowlists its .local name
-# in nuxt.config. Streaming (jDiff SSE) and websockets (Nuxt HMR) pass through.
+# reverse_proxy to a host port. The original Host (e.g. jticket.local) is
+# passed through unchanged so Vite's dev-server host check accepts it — each
+# app allowlists its .local name in nuxt.config. Streaming (jDiff SSE) and
+# websockets (Nuxt HMR) pass through.
 (app) {
-	tls /certs/jsuite.pem /certs/jsuite-key.pem
 	reverse_proxy {args[0]}
 }
 
-# The :7443 below must match HTTPS_PORT in ./jsuite, and the upstream ports must
-# match the APPS table in that same script.
+# The upstream ports must match the APPS table in ./jsuite, and every name
+# here must appear in the dev.orbstack.domains label in docker-compose.yml.
 
-# Static index — just links to the three apps. No process behind it.
-https://jsuite.local:7443 {
-	tls /certs/jsuite.pem /certs/jsuite-key.pem
+# Static index — just links to the apps. No process behind it.
+http://jsuite.local:80 {
 	root * /srv/www
 	file_server
 }
 
-https://jticket.local:7443 {
-	import app host.docker.internal:3000
+http://jticket.local:80 {
+	import app host.docker.internal:43000
 }
 
-https://jdiff.local:7443 {
-	import app host.docker.internal:3002
+http://jdiff.local:80 {
+	import app host.docker.internal:43002
 }
 
-https://jchart.local:7443 {
-	import app host.docker.internal:3003
+http://jchart.local:80 {
+	import app host.docker.internal:43003
 }
 
-https://jexplain.local:7443 {
-	import app host.docker.internal:3004
+http://jexplain.local:80 {
+	import app host.docker.internal:43004
 }

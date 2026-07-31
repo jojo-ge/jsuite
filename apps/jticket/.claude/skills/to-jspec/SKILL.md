@@ -31,14 +31,14 @@ here also shows up in jExplain's article list; that is by design.
    user's review notes pin to them.
 3. **Publish** as `status: "draft"` (see [Publish](#publish)).
 4. **Report** the key, title and both links (`$JTICKET/docs/DOC-n`,
-   `https://jexplain.local:7443/e/<documentKey>`), and say plainly that it is a local
+   `https://jexplain.local/e/<documentKey>`), and say plainly that it is a local
    draft — nothing has been posted to Confluence.
 
 Connect first, as always — if jTicket is down, say so and stop rather than writing a file
 as a fallback:
 
 ```bash
-JTICKET="${JTICKET_URL:-https://jticket.local:7443}"
+JTICKET="${JTICKET_URL:-https://jticket.local}"
 curl -sk --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 ```
 

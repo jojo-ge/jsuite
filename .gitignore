@@ -6,5 +6,3 @@ node_modules/
 .DS_Store
 logs/
 run/
-# local mkcert material — regenerate with ./jsuite setup
-certs/

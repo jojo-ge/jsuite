@@ -1,6 +1,6 @@
 # jTicket HTTP API
 
-Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:3000}`. Every write is JSON:
+Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is JSON:
 `-H 'content-type: application/json'`. The running app also serves a live reference at
 `$JTICKET/api-guide`.
 

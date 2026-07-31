@@ -18,7 +18,7 @@ export default defineNuxtConfig({
   ui: {
     colorMode: true,
   },
-  // Served behind the jSuite Caddy edge at https://jchart.local:7443 — allow that
+  // Served behind the jSuite Caddy edge at https://jchart.local — allow that
   // host through Vite's dev-server host check (localhost access is unaffected).
   // (The Excalidraw-specific vite defines/optimizeDeps come from the layer.)
   vite: {

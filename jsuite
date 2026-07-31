@@ -4,14 +4,17 @@
 #   ./jsuite start | stop | restart | status | logs [app] | open [app] | setup
 #
 # The Nuxt apps run natively on fixed ports (they need host git/gh/claude and
-# the macOS GUI, so they are deliberately NOT containerised). A single pinned
-# Caddy container fronts them all, terminating TLS for the .local names on ONE
-# port: 7443. Not 443 — the kraken/phoenix dev runtime owns :80/:443.
+# the macOS GUI, so they are deliberately NOT containerised). A single Caddy
+# container fronts them all, routing by Host header; OrbStack resolves the
+# .local names and terminates HTTPS with its auto-trusted local CA — no certs,
+# no /etc/hosts, and no clash with anything on the host's :443 (the names
+# resolve to the container's own IP).
 #
-#   https://jsuite.local:7443    index
-#   https://jticket.local:7443   jTicket
-#   https://jdiff.local:7443     jDiff
-#   https://jchart.local:7443    jChart
+#   https://jsuite.local    index
+#   https://jticket.local   jTicket
+#   https://jdiff.local     jDiff
+#   https://jchart.local    jChart
+#   https://jexplain.local  jExplain
 set -euo pipefail
 
 # Resolve through symlinks so a shim on PATH (e.g. ~/.local/bin/jsuite) still
@@ -26,7 +29,6 @@ HERE="$(cd -P "$(dirname "$_src")" && pwd)"
 ROOT="$HERE/apps"
 LOGS="$HERE/logs"
 RUN="$HERE/run"
-HTTPS_PORT=7443
 
 # Every app keeps its state in .data/<app>/ via @jsuite/data, which finds this
 # directory on its own. Exporting it anyway pins the location regardless of the
@@ -35,18 +37,31 @@ export JSUITE_DATA_DIR="${JSUITE_DATA_DIR:-$HERE/.data}"
 
 # id | directory (under ./apps) | port | dev command
 # Ports are fixed on purpose — tooling hardcodes them (the to-jticket skill
-# posts to :3000) and the Caddyfile maps the .local names onto them. Keep this
+# posts to :43000) and the Caddyfile maps the .local names onto them. Keep this
 # table and the Caddyfile in sync; nothing else needs to change to add an app.
 # All apps are pnpm workspace members — deps install once via `pnpm install`
 # at the repo root.
 APPS=(
-  "jticket|jticket|3000|pnpm dev --port 3000"
-  "jdiff|jdiff|3002|pnpm dev --port 3002"
-  "jchart|jchart|3003|pnpm dev --port 3003"
-  "jexplain|jexplain|3004|pnpm dev --port 3004"
+  "jticket|jticket|43000|pnpm dev --port 43000"
+  "jdiff|jdiff|43002|pnpm dev --port 43002"
+  "jchart|jchart|43003|pnpm dev --port 43003"
+  "jexplain|jexplain|43004|pnpm dev --port 43004"
 )
 
 DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local)
+
+# app dir (relative to this repo) | space-separated skills it owns
+# "." is the repo root — suite-level skills live in ./.claude/skills. Everything
+# else under an app's .claude/skills comes from mattpocock/skills and is
+# installed by the `skills` CLI instead. Keep apps/jticket/j-setup's JSKILLS
+# list in sync with its row here.
+SKILLS_MANIFEST=(
+  ".|jsuite"
+  "apps/jticket|jimplement jwayfinder to-jticket to-jspec to-jdoc"
+  "apps/jchart|j-chart"
+  "apps/jexplain|j-explain"
+)
+POCOCK_SOURCE="mattpocock/skills"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 dim() { printf '\033[2m%s\033[0m\n' "$*"; }
@@ -73,14 +88,17 @@ pid_of() { # pid_of <id> -> live pid from the pidfile, or nothing
 # ---------------------------------------------------------------- preflight --
 
 check_ready() {
-  [[ -f "$HERE/certs/jsuite.pem" ]] || die "no cert yet — run: $0 setup"
-  [[ -d "$HERE/node_modules" ]] || die "workspace deps not installed — run: pnpm install (in $HERE)"
-  local d missing=()
+  [[ -d "$HERE/node_modules" ]] || die "workspace deps not installed — run: $0 setup"
+  docker info >/dev/null 2>&1 || die "Docker isn't running — start OrbStack first"
+  [[ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null)" == OrbStack ]] \
+    || die "Docker context isn't OrbStack — the .local domains need it. Run: docker context use orbstack"
+  # Stale /etc/hosts entries from the old mkcert setup would shadow OrbStack's
+  # DNS and point the names at 127.0.0.1, where nothing listens on 443.
+  local d stale=()
   for d in "${DOMAINS[@]}"; do
-    grep -qE "^[^#]*[[:space:]]$d(\$|[[:space:]])" /etc/hosts || missing+=("$d")
+    grep -qE "^[^#]*[[:space:]]$d(\$|[[:space:]])" /etc/hosts && stale+=("$d")
   done
-  ((${#missing[@]} == 0)) || die "/etc/hosts is missing ${missing[*]} — run: $0 setup"
-  docker info >/dev/null 2>&1 || die "Docker isn't running — start Docker Desktop first"
+  ((${#stale[@]} == 0)) || die "/etc/hosts still pins ${stale[*]} (old mkcert setup) — run: $0 setup"
 }
 
 # -------------------------------------------------------------------- start --
@@ -123,7 +141,7 @@ cmd_start() {
   bold "edge"
   docker compose --project-directory "$HERE" up -d >/dev/null 2>&1 \
     || die "docker compose up failed — try: docker compose --project-directory $HERE up"
-  ok "caddy on :$HTTPS_PORT"
+  ok "caddy up (OrbStack terminates HTTPS for the .local names)"
 
   bold "waiting for dev servers"
   for a in "${APPS[@]}"; do
@@ -176,11 +194,11 @@ cmd_stop() {
 cmd_status() {
   local edge="down"
   [[ "$(docker inspect -f '{{.State.Running}}' jsuite-edge 2>/dev/null)" == "true" ]] && edge="up"
-  bold "jsuite  (edge: $edge on :$HTTPS_PORT)"
+  bold "jsuite  (edge: $edge)"
   local a id dir port url code pid
   for a in "${APPS[@]}"; do
     id="$(field 1 "$a")"; dir="$(field 2 "$a")"; port="$(field 3 "$a")"
-    url="https://$id.local:$HTTPS_PORT"
+    url="https://$id.local"
     pid="$(pid_of "$id" || true)"
     # Generous timeout: a cold Nuxt dev server compiles on the first request.
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 "$url" 2>/dev/null || true)"
@@ -192,7 +210,7 @@ cmd_status() {
       bad "$(printf '%-8s %-28s' "$dir" "$url")  :$port  not running"
     fi
   done
-  dim "  index    https://jsuite.local:$HTTPS_PORT"
+  dim "  index    https://jsuite.local"
 }
 
 # ------------------------------------------------------------- logs / open ---
@@ -211,43 +229,75 @@ cmd_logs() {
 cmd_open() {
   local target="${1:-jsuite}"
   [[ "$target" == jsuite ]] || app_row "$target" >/dev/null || die "unknown app: $target"
-  open "https://$target.local:$HTTPS_PORT"
+  open "https://$target.local"
 }
 
 # -------------------------------------------------------------------- setup --
 
+# One-shot onboarding: verify OrbStack is in charge (it does DNS + HTTPS for
+# the .local names via the dev.orbstack.domains label in docker-compose.yml),
+# install workspace deps, install every jskill globally, and sweep up leftovers
+# from the old mkcert/hosts-file edge. Re-runnable.
 cmd_setup() {
-  local marker="# --- jsuite edge ---"
-  bold "mkcert root CA"
-  command -v mkcert >/dev/null || die "mkcert not installed — brew install mkcert"
-  mkcert -install
-  bold "cert for: ${DOMAINS[*]}"
-  mkdir -p "$HERE/certs"
-  mkcert -cert-file "$HERE/certs/jsuite.pem" -key-file "$HERE/certs/jsuite-key.pem" "${DOMAINS[@]}"
-  bold "/etc/hosts"
-  # Re-runnable: adding an app to the APPS table above and re-running setup must
-  # pick up the new name, so append whatever is missing rather than bailing out
-  # the moment the block exists.
-  local d missing=()
-  for d in "${DOMAINS[@]}"; do
-    grep -qE "^[^#]*[[:space:]]$d(\$|[[:space:]])" /etc/hosts || missing+=("$d")
-  done
-  if ((${#missing[@]} == 0)); then
-    ok "all ${#DOMAINS[@]} names already present"
-  elif grep -q "$marker" /etc/hosts; then
-    for d in "${missing[@]}"; do
-      printf '127.0.0.1 %s\n' "$d" | sudo tee -a /etc/hosts >/dev/null
+  bold "orbstack"
+  command -v orb >/dev/null || die "OrbStack not installed — https://orbstack.dev (brew install orbstack)"
+  docker info >/dev/null 2>&1 || die "Docker isn't running — start OrbStack first"
+  [[ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null)" == OrbStack ]] \
+    || die "Docker context isn't OrbStack — run: docker context use orbstack"
+  ok "OrbStack is the active docker context"
+
+  bold "workspace deps"
+  command -v pnpm >/dev/null || die "pnpm not installed — corepack enable (or brew install pnpm)"
+  (cd "$HERE" && pnpm install) || die "pnpm install failed"
+  ok "pnpm install done"
+
+  local dest="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+  bold "skills -> $dest"
+  mkdir -p "$dest"
+  local row app skills skill src
+  for row in "${SKILLS_MANIFEST[@]}"; do
+    app="${row%%|*}"; skills="${row#*|}"
+    for skill in $skills; do
+      src="$HERE/$app/.claude/skills/$skill"
+      if [[ ! -f "$src/SKILL.md" ]]; then warn "skip $skill (not found in $app)"; continue; fi
+      # An existing entry may be a real directory or a symlink into
+      # ~/.agents/skills (how the skills CLI installs). Replace it outright.
+      rm -rf "${dest:?}/$skill"
+      cp -R "$src" "$dest/$skill"
+      ok "$skill (from $app)"
     done
-    ok "added ${missing[*]} (outside the marker block — tidy by hand if it bothers you)"
+  done
+  # The mattpocock/skills CLI prompts for which skills/agents to install, so it
+  # needs a real terminal; skip quietly otherwise.
+  if [[ -t 0 ]]; then
+    npx -y skills add "$POCOCK_SOURCE" -g || warn "$POCOCK_SOURCE install failed — rerun: npx skills add $POCOCK_SOURCE -g"
   else
-    { echo ""; echo "$marker"
-      for d in "${DOMAINS[@]}"; do echo "127.0.0.1 $d"; done
-      echo "# --- end jsuite edge ---"
-    } | sudo tee -a /etc/hosts >/dev/null
-    ok "entries added"
+    warn "no terminal — skipped the interactive $POCOCK_SOURCE installer (run: npx skills add $POCOCK_SOURCE -g)"
+  fi
+
+  bold "old mkcert edge leftovers"
+  local d stale=()
+  for d in "${DOMAINS[@]}"; do
+    grep -qE "^[^#]*[[:space:]]$d(\$|[[:space:]])" /etc/hosts && stale+=("$d")
+  done
+  if ((${#stale[@]} > 0)); then
+    # These would shadow OrbStack's DNS — the names must NOT resolve to 127.0.0.1.
+    dim "  removing ${stale[*]} from /etc/hosts (needs sudo)"
+    local pattern
+    pattern="$(IFS='|'; echo "${DOMAINS[*]//./\\.}")"
+    sudo sed -i '' -E "/^[^#]*[[:space:]]($pattern)([[:space:]]|\$)/d; /--- (end )?jsuite edge ---/d" /etc/hosts
+    ok "/etc/hosts cleaned"
+  else
+    ok "/etc/hosts clean"
+  fi
+  if [[ -d "$HERE/certs" ]]; then
+    rm -rf "$HERE/certs"
+    ok "removed ./certs (OrbStack's local CA replaces mkcert)"
+  else
+    ok "no ./certs directory"
   fi
   echo
-  dim "Ports are host-independent — the cert covers the names, not :$HTTPS_PORT."
+  dim "First HTTPS visit: OrbStack asks once to trust its local CA."
   bold "Now run: $0 start"
 }
 

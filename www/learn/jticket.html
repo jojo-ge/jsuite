@@ -17,7 +17,7 @@
       <a href="/learn/jdiff.html">jDiff</a>
       <a href="/learn/jchart.html">jChart</a>
       <a href="/learn/jexplain.html">jExplain</a>
-      <a class="nav-cta" href="https://jticket.local:7443">Open jTicket</a>
+      <a class="nav-cta" href="https://jticket.local">Open jTicket</a>
     </nav>
   </div>
 </header>
@@ -31,12 +31,12 @@
       Confluence — breakdowns and specs land locally first, for you to review before
       anything goes upstream.</p>
     <div class="meta">
-      <span class="pill">https://jticket.local:7443</span>
-      <span class="pill">port :3000</span>
+      <span class="pill">https://jticket.local</span>
+      <span class="pill">port :43000</span>
       <span class="pill">state: .data/jticket/</span>
       <span class="pill">API-only</span>
     </div>
-    <a class="btn btn-app" href="https://jticket.local:7443">Open jTicket <span class="arrow">→</span></a>
+    <a class="btn btn-app" href="https://jticket.local">Open jTicket <span class="arrow">→</span></a>
   </div>
 </section>
 
@@ -72,7 +72,7 @@
 
   <section>
     <h2>Skills that drive it</h2>
-    <p>Everything goes through the HTTP API on <code>:3000</code> — the state file is never
+    <p>Everything goes through the HTTP API on <code>:43000</code> — the state file is never
       hand-edited, so every skill and every session sees the same board.</p>
     <div class="skill-cards">
       <div class="skill-card">
@@ -110,7 +110,7 @@
     <h2>State &amp; integration</h2>
     <dl class="kv">
       <dt>State</dt><dd><code>.data/jticket/jticket.json</code> + <code>attachments/</code> — but
-        <b>API-only</b>: always go through <code>:3000</code>, never edit the file.</dd>
+        <b>API-only</b>: always go through <code>:43000</code>, never edit the file.</dd>
       <dt>Upstream</dt><dd>None. jTicket is a local staging ground; copying approved work
         into Jira/Confluence is a separate, deliberate step.</dd>
       <dt>Suite role</dt><dd>The planning end of the loop — jDiff reviews what

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useHead({ title: 'API guide' })
 
-const importExample =`curl -s http://localhost:3000/api/import \\
+const importExample =`curl -s http://localhost:43000/api/import \\
   -H 'content-type: application/json' \\
   -d '{
   "projects": [
@@ -58,7 +58,7 @@ const endpoints = [
   { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
 ]
 
-const docExample = `curl -s http://localhost:3000/api/docs \\
+const docExample = `curl -s http://localhost:43000/api/docs \\
   -H 'content-type: application/json' \\
   -d '{
   "title": "Checkout revamp — design notes",
@@ -87,25 +87,25 @@ const blockTypes = [
   { s: 'takeaway', d: 'Closing key-points card' },
 ]
 const frontierExample = `# The takeable edge of a map: todo + all blockers done + unassigned, in order
-curl -s 'http://localhost:3000/api/tickets?epicId=EPIC-14&frontier=true'
+curl -s 'http://localhost:43000/api/tickets?epicId=EPIC-14&frontier=true'
 
 # Claim the first one, do the work, then resolve it
-curl -s -X PATCH http://localhost:3000/api/tickets/TICK-31 \\
+curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
   -H 'content-type: application/json' -d '{ "assignee": "Claude" }'
-curl -s -X PATCH http://localhost:3000/api/tickets/TICK-31 \\
+curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
   -H 'content-type: application/json' \\
   -d '{ "status": "done", "resolution": "Chose X because…" }'`
 
 const assignExample = `# An agent claims a ticket by name (id or key both work)
-curl -s -X PATCH http://localhost:3000/api/tickets/TICK-1 \\
+curl -s -X PATCH http://localhost:43000/api/tickets/TICK-1 \\
   -H 'content-type: application/json' \\
   -d '{ "assignee": "Claude" }'
 
 # List everything assigned to me
-curl -s 'http://localhost:3000/api/tickets?assignee=Claude'
+curl -s 'http://localhost:43000/api/tickets?assignee=Claude'
 
 # Unassign
-curl -s -X PATCH http://localhost:3000/api/tickets/TICK-1 \\
+curl -s -X PATCH http://localhost:43000/api/tickets/TICK-1 \\
   -H 'content-type: application/json' -d '{ "assignee": "" }'`
 
 const methodColor: Record<string, string> = {

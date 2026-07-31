@@ -36,9 +36,9 @@ Unlike a static image, the user can redraw the diagram — move, add, delete, re
 ## Notes
 
 - `chart.py --list` shows existing charts with their shape and note counts.
-- The full chart list is also the app's home page: <https://jchart.local:7443>.
+- The full chart list is also the app's home page: <https://jchart.local>.
 - Mermaid is only the *starting layout*. Once imported, the canvas is the source of truth — a re-import throws away hand edits, so only re-import when the user wants a fresh layout.
 - If Mermaid fails to parse, the app shows the parser error in a toast and the canvas stays empty — fix the source and re-run.
 - Node types Mermaid can't lay out (some newer diagram kinds) fall back to a best-effort conversion; if a diagram comes through badly, the user can just redraw it.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JCHART_BROWSER`; the default lives in `DEFAULT_BROWSER` at the top of `chart.py`.
-- The app is jChart in the jSuite (`~/code/anyway/jsuite/apps/jchart`, port 3003). Start everything with `jsuite start`.
+- The app is jChart in the jSuite (`~/code/anyway/jsuite/apps/jchart`, port 43003). Start everything with `jsuite start`.

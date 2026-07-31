@@ -1,30 +1,30 @@
-# jSuite edge — one container: Caddy as the HTTPS front door for the suite.
+# jSuite edge — one container: Caddy as the front door for the suite.
 #
-#   jsuite.local:7443  -> static index (./www)
-#   jticket.local:7443 -> host :3000
-#   jdiff.local:7443   -> host :3002
+#   https://jsuite.local  -> static index (./www)
+#   https://jticket.local -> host :43000
+#   https://jdiff.local   -> host :43002
+#   (see Caddyfile for the full map)
 #
-# The apps run natively on the host (started by ./jsuite), so they keep full
-# filesystem + gh/git/claude access. This container only proxies.
+# OrbStack does the heavy lifting: the dev.orbstack.domains label below makes
+# OrbStack resolve the .local names to this container's IP, terminate HTTPS
+# with its auto-trusted local CA, and forward plain HTTP to Caddy on :80.
+# No published ports, no certs, no /etc/hosts. The apps run natively on the
+# host (started by ./jsuite), so they keep full filesystem + gh/git/claude
+# access. This container only routes by Host header.
 #
 # Don't run this by hand — `./jsuite start` brings it up together with the apps.
 services:
   caddy:
-    # Pinned: caddy 2.11.4 sends a TLS internal_error on SNI-matched, tag-restricted
-    # cert-selection policies (the shape `tls <file>` per site generates). 2.11.2
-    # serves the same config cleanly. Revisit when a fixed 2.11.x ships.
-    image: caddy:2.11.2-alpine
+    image: caddy:2-alpine
     container_name: jsuite-edge
     restart: unless-stopped
-    ports:
-      # Single published port. NOT 443 — the kraken/phoenix dev runtime owns it.
-      - "7443:7443"
-      # Caddy advertises HTTP/3 on the same port; without the UDP mapping every
-      # browser session wastes a QUIC attempt before falling back to TCP.
-      - "7443:7443/udp"
+    labels:
+      # Every name here must have a matching site block in the Caddyfile.
+      dev.orbstack.domains: jsuite.local,jticket.local,jdiff.local,jchart.local,jexplain.local
+      # Skip OrbStack's port auto-detection — Caddy listens on 80.
+      dev.orbstack.http-port: "80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/certs:ro
       - ./www:/srv/www:ro
       - caddy_data:/data
       - caddy_config:/config

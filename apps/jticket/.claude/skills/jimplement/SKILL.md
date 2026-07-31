@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # jImplement
 
-`/implement`, driven by [jTicket](http://localhost:3000). The tickets are the spec: read
+`/implement`, driven by [jTicket](http://localhost:43000). The tickets are the spec: read
 the work from the board, claim it before touching code, build it, and write the outcome
 back so the next session — or another human — can see what happened without reading the
 diff.
@@ -18,7 +18,7 @@ breakdown at all yet, that's `/to-jticket` in tickets mode first.
 ## Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:3000}"
+JTICKET="${JTICKET_URL:-http://localhost:43000}"
 curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 ```
 

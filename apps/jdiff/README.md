@@ -55,7 +55,7 @@ jdiff pr 123 --print         # print the URL only (no browser) — machine-reada
 ```
 
 The repo is resolved from the current git working tree (override with
-`--repo`/`-C`). The server base URL defaults to `https://jdiff.local:7443` and is
+`--repo`/`-C`). The server base URL defaults to `https://jdiff.local` and is
 overridable with `JDIFF_URL`. After `pnpm install` the `jdiff` bin is on the
 package; `npm link` (or `pnpm link --global`) puts it on your PATH.
 

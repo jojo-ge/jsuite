@@ -57,7 +57,7 @@ async function onCanvasReady() {
   }
 }
 
-const jchartUrl = computed(() => `https://jchart.local:7443/c/${props.block.chartKey}`)
+const jchartUrl = computed(() => `https://jchart.local/c/${props.block.chartKey}`)
 const statusLabel = computed(
   () => ({ idle: '', saving: 'Saving…', saved: 'Saved', error: 'Save failed' })[status.value],
 )

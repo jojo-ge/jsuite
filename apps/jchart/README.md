@@ -5,8 +5,8 @@ freehand on an Excalidraw canvas and pin notes to individual shapes; Claude read
 your edits and notes back off disk.
 
 ```
-https://jchart.local:7443        # via the jSuite edge (jsuite start)
-http://localhost:3003            # bare dev server
+https://jchart.local        # via the jSuite edge (jsuite start)
+http://localhost:43003            # bare dev server
 ```
 
 ## How it fits together

@@ -20,7 +20,7 @@ export default defineNuxtConfig({
   ui: {
     colorMode: true,
   },
-  // Served behind the jSuite Caddy edge at https://jexplain.local:7443 — allow
+  // Served behind the jSuite Caddy edge at https://jexplain.local — allow
   // that host through Vite's dev-server host check.
   vite: {
     server: { allowedHosts: ['jexplain.local'] },

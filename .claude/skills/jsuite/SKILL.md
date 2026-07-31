@@ -16,13 +16,13 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 
 | App | URL | Port | What it is |
 | --- | --- | --- | --- |
-| index | https://jsuite.local:7443 | — | static ecosystem page (no process) |
-| jTicket | https://jticket.local:7443 | 3000 | projects / epics / tickets / docs tracker |
-| jDiff | https://jdiff.local:7443 | 3002 | local PR & branch diff reviewer |
-| jChart | https://jchart.local:7443 | 3003 | editable, annotatable Excalidraw diagrams |
-| jExplain | https://jexplain.local:7443 | 3004 | blog-style explainers with live charts |
+| index | https://jsuite.local | — | static ecosystem page (no process) |
+| jTicket | https://jticket.local | 43000 | projects / epics / tickets / docs tracker |
+| jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
+| jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
+| jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
 
-Always include the scheme and port: `https://<app>.local:7443`. Plain HTTP on
+Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
 
 ## The products
@@ -32,7 +32,7 @@ with acceptance criteria and blocked-by edges) plus draft docs. A doc is a
 tracker record wrapping a **shared block document** (the jExplain format, one
 pool for both apps); descriptions and resolutions are plain GFM markdown.
 It is deliberately NOT Jira/Confluence: skills author breakdowns and documents
-here *locally first* for human review. Drive it via its HTTP API on :3000 —
+here *locally first* for human review. Drive it via its HTTP API on :43000 —
 never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
 anything, query the board), `to-jspec` (write a spec as a doc — block format),
 `to-jdoc` (draft a doc page locally), `jwayfinder` (map work too big for one
@@ -61,9 +61,10 @@ JSON payload, publish via `explain.py`, read notes back, revise with
 
 ## How they relate
 
-- **One edge**: a pinned Caddy container terminates TLS on :7443 and proxies
-  each `.local` name to its native host port. Apps run natively (jDiff needs
-  host `git`/`gh`/`claude`); only Caddy is Dockerised.
+- **One edge**: a Caddy container routes each `.local` name to its native host
+  port; OrbStack resolves the names and terminates HTTPS (no certs, no
+  /etc/hosts). Apps run natively (jDiff needs host `git`/`gh`/`claude`); only
+  Caddy is Dockerised.
 - **One state directory**: every app stores state under
   `~/code/anyway/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
   place to read, back up, or wipe.
@@ -80,7 +81,7 @@ JSON payload, publish via `explain.py`, read notes back, revise with
   `<key>.notes.json` sidecars — the human annotates in the browser, Claude reads
   the sidecar and acts on it.
 - **Skills are app-owned**: each app keeps its skills in
-  `<app>/.claude/skills`; `./j-setup` (repo root) installs them all globally.
+  `<app>/.claude/skills`; `./jsuite setup` (repo root) installs them all globally.
 
 ## Routing a request
 

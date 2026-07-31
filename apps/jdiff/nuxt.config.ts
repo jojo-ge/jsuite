@@ -13,7 +13,7 @@ export default defineNuxtConfig({
       link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     },
   },
-  // Served behind the jSuite Caddy edge at https://jdiff.local:7443 — allow that
+  // Served behind the jSuite Caddy edge at https://jdiff.local — allow that
   // host through Vite's dev-server host check (localhost access is unaffected).
   vite: {
     server: { allowedHosts: ['jdiff.local'] },

@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # To jTicket
 
-[jTicket](http://localhost:3000) is a **local** task tracker — projects, epics, tickets
+[jTicket](http://localhost:43000) is a **local** task tracker — projects, epics, tickets
 (title, description, acceptance criteria, blocked-by edges) plus **docs**, draft
 Confluence-style pages. It is not connected to Jira or Confluence and has no relation
 to them. It exists so a breakdown or a document can be authored **locally first**, for
@@ -17,7 +17,7 @@ Everything is a plain HTTP call against `$JTICKET` (below). There is no CLI.
 ## 0. Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:3000}"
+JTICKET="${JTICKET_URL:-http://localhost:43000}"
 curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 ```
 
