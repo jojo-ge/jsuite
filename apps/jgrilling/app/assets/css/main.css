@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Generate utilities for the @jsuite/documents layer's components (the Block*
+   renderers, DocumentArticle, NotesRail live outside this app's source tree). */
+@source "../../../../../packages/documents/app";
+
+html,
+body,
+#__nuxt {
+  height: 100%;
+}

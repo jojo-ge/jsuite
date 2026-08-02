@@ -16,6 +16,7 @@
   --diff: #4ade80;
   --chart: #fbbf24;
   --explain: #38bdf8;
+  --grill: #fb923c;
 
   --radius: 14px;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
@@ -189,6 +190,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .app-strip [data-app="jdiff"] .k::before { color: var(--diff); }
 .app-strip [data-app="jchart"] .k::before { color: var(--chart); }
 .app-strip [data-app="jexplain"] .k::before { color: var(--explain); }
+.app-strip [data-app="jgrilling"] .k::before { color: var(--grill); }
 @media (max-width: 760px) { .app-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- app folds ---------- */
@@ -223,6 +225,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .fold[data-app="jdiff"] { --accent: var(--diff); --glow: rgba(74, 222, 128, 0.07); }
 .fold[data-app="jchart"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.07); }
 .fold[data-app="jexplain"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.08); }
+.fold[data-app="jgrilling"] { --accent: var(--grill); --glow: rgba(251, 146, 60, 0.08); }
 
 .fold-eyebrow {
   display: flex; align-items: center; gap: 0.6rem;
@@ -434,6 +437,7 @@ footer.site a:hover { color: var(--fg); }
 .learn-hero[data-app="jdiff"] { --accent: var(--diff); --glow: rgba(74, 222, 128, 0.1); }
 .learn-hero[data-app="jchart"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.1); }
 .learn-hero[data-app="jexplain"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.11); }
+.learn-hero[data-app="jgrilling"] { --accent: var(--grill); --glow: rgba(251, 146, 60, 0.1); }
 .crumb { font-size: 0.82rem; color: var(--faint); margin-bottom: 1.6rem; }
 .crumb a { color: var(--muted); text-decoration: none; }
 .crumb a:hover { color: var(--fg); }
@@ -462,6 +466,7 @@ article.learn[data-app="jticket"] { --accent: var(--ticket); }
 article.learn[data-app="jdiff"] { --accent: var(--diff); }
 article.learn[data-app="jchart"] { --accent: var(--chart); }
 article.learn[data-app="jexplain"] { --accent: var(--explain); }
+article.learn[data-app="jgrilling"] { --accent: var(--grill); }
 article.learn p, article.learn li { color: var(--muted); }
 article.learn p b, article.learn li b { color: var(--fg); font-weight: 600; }
 article.learn code {

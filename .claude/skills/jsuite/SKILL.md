@@ -1,11 +1,11 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart and jExplain each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling and jRig each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
 ---
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of four local Nuxt
+jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of six local Nuxt
 apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
@@ -21,6 +21,8 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
+| jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — claude interrogates a plan |
+| jRig | https://jrig.local | 43006 | avatar studio — draw, rig and keyframe 2D characters |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
@@ -59,6 +61,23 @@ in place, "Open in jChart" for the full workbench. Skill: `j-explain` (author a
 JSON payload, publish via `explain.py`, read notes back, revise with
 `--replace`; also the block-vocabulary reference for jTicket docs).
 
+**jGrilling** — get grilled about a plan before building it. The server runs
+the user's local `claude` CLI (via `@jsuite/claude`, the runner extracted from
+jDiff) to play Matt Pocock's *grilling* interview: one question at a time, each
+with a recommended answer, until shared understanding is reached. The user
+answers in the browser; with a repo attached claude looks facts up itself. The
+wrap-up is a debrief in the shared document pool (decision table + a jChart
+decision-tree chart), readable in-app, in jExplain, or in jTicket. Sessions
+live in `.data/jgrilling/`. Skill: `j-grilling` (push the current plan into a
+session and hand the user the URL).
+
+**jRig** — the avatar studio. Characters are live vector documents drawn over
+one fixed skeleton, so every animation clip plays on every character. A
+character or clip is AI-legible JSON in `.data/jrig/` (schema-validated;
+Claude edits the files, the studio hot-reloads them); the studio has Illustrate
+mode (vector tools, palette roles, mirror symmetry) and Animate mode (timeline
+keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
+
 ## How they relate
 
 - **One edge**: a Caddy container routes each `.local` name to its native host
@@ -77,6 +96,9 @@ JSON payload, publish via `explain.py`, read notes back, revise with
   `server/api/documents/**` over `.data/jexplain/`, so a jTicket doc is the
   same object jExplain renders — one document system serving both apps, notes
   included.
+- **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
+  `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
+  cancellation. jDiff's review tools and jGrilling's interviewer both run on it.
 - **Notes loop everywhere**: jChart and jExplain keep human feedback in
   `<key>.notes.json` sidecars — the human annotates in the browser, Claude reads
   the sidecar and acts on it.
@@ -95,6 +117,8 @@ JSON payload, publish via `explain.py`, read notes back, revise with
 | a diagram the human can edit and annotate | `j-chart` |
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
+| be grilled about a plan, answering in a UI | `j-grilling` |
+| draw / rig / animate an avatar character | jRig — https://jrig.local (companion skill lands with its M9 milestone) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
 `./jsuite start` (it refuses ports held by processes it didn't launch — a stale

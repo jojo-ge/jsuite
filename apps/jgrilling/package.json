@@ -1,0 +1,22 @@
+{
+  "name": "jgrilling",
+  "private": true,
+  "type": "module",
+  "description": "Browser grilling sessions — Claude (your local subscription, via @jsuite/claude) interrogates you about a plan one question at a time, then publishes the decisions as a shared block document with charts.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.0",
+    "@jsuite/claude": "workspace:*",
+    "@jsuite/data": "workspace:*",
+    "@jsuite/documents": "workspace:*",
+    "@nuxt/ui": "^4.10.0",
+    "nuxt": "^4.5.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  }
+}

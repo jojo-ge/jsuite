@@ -1,6 +1,6 @@
 # jSuite
 
-A pnpm-workspace monorepo of four local dev apps behind one HTTPS edge — one
+A pnpm-workspace monorepo of six local dev apps behind one HTTPS edge — one
 command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
 instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
@@ -11,13 +11,15 @@ cd ~/code/anyway/jsuite
 ./jsuite start      # apps + edge
 ```
 
-| URL                     | App                       | Host port |
-| ----------------------- | ------------------------- | --------- |
-| https://jsuite.local    | index (static links page) | —         |
-| https://jticket.local   | jTicket                   | 43000     |
-| https://jdiff.local     | jDiff                     | 43002     |
-| https://jchart.local    | jChart                    | 43003     |
-| https://jexplain.local  | jExplain                  | 43004     |
+| URL                      | App                       | Host port |
+| ------------------------ | ------------------------- | --------- |
+| https://jsuite.local     | index (static links page) | —         |
+| https://jticket.local    | jTicket                   | 43000     |
+| https://jdiff.local      | jDiff                     | 43002     |
+| https://jchart.local     | jChart                    | 43003     |
+| https://jexplain.local   | jExplain                  | 43004     |
+| https://jgrilling.local  | jGrilling                 | 43005     |
+| https://jrig.local       | jRig                      | 43006     |
 
 ## Setup
 
@@ -65,9 +67,12 @@ jsuite/
 │   ├── jticket/        # epics + tickets + docs (owns most jskills, has its own j-setup)
 │   ├── jdiff/          # diff / PR review workbench
 │   ├── jchart/         # diagram workbench (specialised chart app)
-│   └── jexplain/       # blog-style explainers with live charts
+│   ├── jexplain/       # blog-style explainers with live charts
+│   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
+│   └── jrig/           # avatar studio — draw, rig and keyframe 2D characters
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
+    ├── claude/         # @jsuite/claude — shared local-claude CLI runner
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
 ```
@@ -100,6 +105,8 @@ overrides the search when set.
 | jchart | `.data/jchart/<key>.json` (+ `.notes.json`) — shared: jexplain reads/writes the same pool |
 | jdiff | `.data/jdiff/` — ratings, tours, risks, asks, comments, caches |
 | jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
+| jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
+| jrig | `.data/jrig/` — character/clip JSON documents (schema-validated) |
 
 ## @jsuite/charting
 
@@ -143,11 +150,24 @@ jExplain lists and renders; review notes and chart edits flow both ways.
 jExplain stays the canonical reading shell; jTicket wraps documents in
 project/status/label metadata.
 
+## @jsuite/claude
+
+The local-claude runner born in jDiff — `runClaude()` drives the `claude` CLI
+(`-p --output-format stream-json`, the user's own subscription, no API key)
+with live progress callbacks (`log`, `onThinking`, `onText`), tool allowlists
+for headless runs (`ANALYSIS_TOOLS` = read-only file tools + git), an
+overridable timeout (`JSUITE_CLAUDE_TIMEOUT_MS` or `opts.timeoutMs`), and
+abort-signal cancellation. `extractJson()` repairs the JSON claude was asked to
+return. Like `@jsuite/data` it is plain ESM with no layer to extend — add
+`"@jsuite/claude": "workspace:*"` to `dependencies` and import. Failures throw
+`ClaudeError` with an HTTP-ish `statusCode`, so h3 handlers can rethrow them
+directly. jDiff and jGrilling both run on it.
+
 ## jSkills
 
 Apps own their Claude skills in `<app>/.claude/skills` (the jTicket pattern:
 jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
-jchart owns `j-chart`; jexplain owns `j-explain`). Suite-level skills live in
+jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`). Suite-level skills live in
 `.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
 app does, how they relate, and which app/skill a request routes to.
 
@@ -191,7 +211,7 @@ picker and open-in-VSCode, none of which survive containerisation. OrbStack
 terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
 
 ```
-browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006}
                         │
                         └─ OrbStack local CA, auto-trusted on first visit
 ```

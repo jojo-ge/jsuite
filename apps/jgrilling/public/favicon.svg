@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="8" fill="#12141d"/>
+  <g fill="#f59e0b">
+    <path d="M7 8.5A2.5 2.5 0 0 1 9.5 6h13A2.5 2.5 0 0 1 25 8.5v9a2.5 2.5 0 0 1-2.5 2.5H14l-4.5 4v-4h-.5A2.5 2.5 0 0 1 7 17.5z"/>
+  </g>
+  <text x="16" y="17.6" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="700" fill="#12141d">?</text>
+</svg>

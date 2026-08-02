@@ -17,6 +17,8 @@
       <a href="#jdiff">jDiff</a>
       <a href="#jchart">jChart</a>
       <a href="#jexplain">jExplain</a>
+      <a href="#jgrilling">jGrilling</a>
+      <a href="https://jrig.local">jRig</a>
       <a href="#ecosystem">How it works</a>
       <a class="nav-cta" href="#quickstart">Get started</a>
     </nav>
@@ -25,11 +27,11 @@
 
 <section class="hero">
   <div class="wrap">
-    <span class="eyebrow-pill"><b>Four apps · one edge</b> — stable <code>.local</code> names, HTTPS by OrbStack</span>
+    <span class="eyebrow-pill"><b>Six apps · one edge</b> — stable <code>.local</code> names, HTTPS by OrbStack</span>
     <h1>A local workbench where <span class="grad">Claude authors and you review</span></h1>
-    <p class="sub">jSuite is four local apps behind one HTTPS edge — plan work, review diffs,
-      sketch diagrams, and publish explainers, all on localhost. Every app has a stable
-      name, so skills and bookmarks never chase a dev-server port.</p>
+    <p class="sub">jSuite is six local apps behind one HTTPS edge — plan work, review diffs,
+      sketch diagrams, publish explainers, get grilled about plans, and draw rigged avatars, all on localhost.
+      Every app has a stable name, so skills and bookmarks never chase a dev-server port.</p>
     <div class="hero-ctas">
       <a class="btn btn-primary" href="#jticket">Tour the apps <span class="arrow">→</span></a>
       <a class="btn btn-ghost" href="#quickstart">Quick start</a>
@@ -42,6 +44,8 @@
 <span class="ok">✓</span> jdiff     <a href="https://jdiff.local">https://jdiff.local</a>
 <span class="ok">✓</span> jchart    <a href="https://jchart.local">https://jchart.local</a>
 <span class="ok">✓</span> jexplain  <a href="https://jexplain.local">https://jexplain.local</a>
+<span class="ok">✓</span> jgrilling <a href="https://jgrilling.local">https://jgrilling.local</a>
+<span class="ok">✓</span> jrig      <a href="https://jrig.local">https://jrig.local</a>
 <span class="ok">✓</span> edge      Caddy up <span class="c"># HTTPS by OrbStack, green lock</span></pre>
     </div>
   </div>
@@ -67,6 +71,16 @@
     <a class="k" href="https://jexplain.local">jExplain <span class="ext">↗</span></a>
     <span class="v">Explainers — articles with live charts</span>
     <span class="u"><a href="https://jexplain.local">jexplain.local</a> · <a href="#jexplain">tour ↓</a></span>
+  </div>
+  <div data-app="jgrilling">
+    <a class="k" href="https://jgrilling.local">jGrilling <span class="ext">↗</span></a>
+    <span class="v">Plan interrogation — Claude grills you, in a UI</span>
+    <span class="u"><a href="https://jgrilling.local">jgrilling.local</a> · <a href="#jgrilling">tour ↓</a></span>
+  </div>
+  <div data-app="jrig">
+    <a class="k" href="https://jrig.local">jRig <span class="ext">↗</span></a>
+    <span class="v">Avatar studio — draw, rig and keyframe 2D characters</span>
+    <span class="u"><a href="https://jrig.local">jrig.local</a></span>
   </div>
 </nav>
 
@@ -237,12 +251,48 @@
   </div>
 </section>
 
+<!-- ============ jGrilling ============ -->
+<section class="fold" id="jgrilling" data-app="jgrilling">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jGrilling · Plan interrogation <span class="port">:43005</span></p>
+      <h2>Get grilled about a plan before you build it</h2>
+      <p class="lede">Matt Pocock's grilling interview, played by your local Claude
+        subscription: one relentless question at a time, each with a recommended answer,
+        until you actually share an understanding of the plan.</p>
+      <ul class="fold-points">
+        <li><b>Decisions stay yours.</b> With a repo attached, Claude looks facts up itself — only judgement calls reach you.</li>
+        <li><b>Answers in a UI.</b> Accept the recommendation in one click or write your own; progress streams live.</li>
+        <li><b>A debrief, not a scrollback.</b> The session ends as a jExplain document — decision table, risks, and a jChart decision-tree chart.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">Drive with skills</span>
+        <span class="chip">j-grilling</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jgrilling.local">Open jGrilling <span class="arrow">→</span></a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jgrilling.local</span></div>
+        <div class="mock-article">
+          <div class="title"></div>
+          <div class="mock-block"><span class="bar w100"></span><span class="bar w70"></span></div>
+          <div class="mock-note"><b>Q3 · storage:</b> where does session state live — per app, or the shared .data pool?</div>
+          <div class="mock-block"><span class="bar w85"></span><span class="bar w55"></span></div>
+          <div class="mock-note"><b>You answered:</b> shared pool — same rule as every other app.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ ecosystem ============ -->
 <section class="section" id="ecosystem">
   <div class="wrap">
     <div class="section-head">
-      <h2>One suite, not four tabs</h2>
-      <p>The apps share an edge, a state directory, a chart pool and a review loop —
+      <h2>One suite, not five tabs</h2>
+      <p>The apps share an edge, a state directory, a chart pool, a claude runner and a review loop —
          so work flows between them instead of getting stuck in one.</p>
     </div>
     <div class="grid-3">
@@ -286,7 +336,7 @@
   <div class="wrap">
     <div class="section-head" style="margin-bottom:0">
       <h2>Up in one command</h2>
-      <p>The launcher starts all four apps and the Caddy edge, checks their health over
+      <p>The launcher starts all six apps and the Caddy edge, checks their health over
          HTTPS, and tails their logs. <code>./jsuite setup</code> handles onboarding —
          deps, jskills into <code>~/.claude/skills</code>, OrbStack checks — in one go.</p>
     </div>
@@ -294,7 +344,7 @@
       <div class="terminal-bar"><i></i><i></i><i></i></div>
       <pre><span class="p">$</span> cd ~/code/anyway/jsuite
 <span class="p">$</span> ./jsuite setup      <span class="c"># once: deps + jskills + OrbStack checks</span>
-<span class="p">$</span> ./jsuite start      <span class="c"># all four apps + the Caddy edge</span>
+<span class="p">$</span> ./jsuite start      <span class="c"># all six apps + the Caddy edge</span>
 <span class="p">$</span> ./jsuite status     <span class="c"># pid + live HTTPS check per app</span>
 <span class="p">$</span> ./jsuite logs jdiff <span class="c"># tail one app (or: logs edge)</span></pre>
     </div>
@@ -312,6 +362,8 @@
         <a href="https://jdiff.local">jdiff.local</a>
         <a href="https://jchart.local">jchart.local</a>
         <a href="https://jexplain.local">jexplain.local</a>
+        <a href="https://jgrilling.local">jgrilling.local</a>
+        <a href="https://jrig.local">jrig.local</a>
       </span>
       <span class="foot-col">
         <b>Learn</b>

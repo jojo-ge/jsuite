@@ -10,11 +10,13 @@
 # no /etc/hosts, and no clash with anything on the host's :443 (the names
 # resolve to the container's own IP).
 #
-#   https://jsuite.local    index
-#   https://jticket.local   jTicket
-#   https://jdiff.local     jDiff
-#   https://jchart.local    jChart
-#   https://jexplain.local  jExplain
+#   https://jsuite.local     index
+#   https://jticket.local    jTicket
+#   https://jdiff.local      jDiff
+#   https://jchart.local     jChart
+#   https://jexplain.local   jExplain
+#   https://jgrilling.local  jGrilling
+#   https://jrig.local       jRig
 set -euo pipefail
 
 # Resolve through symlinks so a shim on PATH (e.g. ~/.local/bin/jsuite) still
@@ -46,9 +48,11 @@ APPS=(
   "jdiff|jdiff|43002|pnpm dev --port 43002"
   "jchart|jchart|43003|pnpm dev --port 43003"
   "jexplain|jexplain|43004|pnpm dev --port 43004"
+  "jgrilling|jgrilling|43005|pnpm dev --port 43005"
+  "jrig|jrig|43006|pnpm dev --port 43006"
 )
 
-DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local)
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jrig.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
@@ -60,6 +64,7 @@ SKILLS_MANIFEST=(
   "apps/jticket|jimplement jwayfinder to-jticket to-jspec to-jdoc"
   "apps/jchart|j-chart"
   "apps/jexplain|j-explain"
+  "apps/jgrilling|j-grilling"
 )
 POCOCK_SOURCE="mattpocock/skills"
 

@@ -13,6 +13,8 @@
     "dev:jstory": "pnpm --filter jstory dev --port 3001",
     "dev:jdiff": "pnpm --filter jdiff dev --port 43002",
     "dev:jchart": "pnpm --filter jchart dev --port 43003",
-    "dev:jexplain": "pnpm --filter jexplain dev --port 43004"
+    "dev:jexplain": "pnpm --filter jexplain dev --port 43004",
+    "dev:jgrilling": "pnpm --filter jgrilling dev --port 43005",
+    "dev:jrig": "pnpm --filter jrig dev --port 43006"
   }
 }

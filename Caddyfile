@@ -43,3 +43,11 @@ http://jchart.local:80 {
 http://jexplain.local:80 {
 	import app host.docker.internal:43004
 }
+
+http://jgrilling.local:80 {
+	import app host.docker.internal:43005
+}
+
+http://jrig.local:80 {
+	import app host.docker.internal:43006
+}
