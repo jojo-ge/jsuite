@@ -30,6 +30,7 @@ export default defineEventHandler(async (event) => {
     labels: cleanLabels(body.labels),
     resolution: typeof body.resolution === 'string' ? body.resolution.trim() : '',
     blockedBy,
+    comments: [],
     createdAt: ts,
     updatedAt: ts,
   }

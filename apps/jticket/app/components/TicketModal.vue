@@ -10,7 +10,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
-const { projects, createTicket, updateTicket, deleteTicket } = useTracker()
+const { projects, createTicket, updateTicket, deleteTicket, addComment, deleteComment } = useTracker()
 
 const isEdit = computed(() => !!props.ticket)
 const saving = ref(false)
@@ -121,6 +121,31 @@ const renderedDescription = computed(() =>
 
 async function setStatus(s: TicketStatus) {
   if (live.value && s !== live.value.status) await updateTicket(live.value.id, { status: s })
+}
+
+// ── Comments ──
+// Tickets loaded before the comments field existed may lack the array.
+const comments = computed(() => live.value?.comments ?? [])
+const commentBody = ref('')
+const commentAuthor = ref('')
+onMounted(() => {
+  commentAuthor.value = localStorage.getItem('jticket-comment-author') ?? 'Joseph'
+})
+const postingComment = ref(false)
+async function postComment() {
+  if (!live.value || !commentBody.value.trim()) return
+  postingComment.value = true
+  try {
+    const author = commentAuthor.value.trim() || 'Joseph'
+    localStorage.setItem('jticket-comment-author', author)
+    await addComment(live.value.id, { author, body: commentBody.value.trim() })
+    commentBody.value = ''
+  } finally {
+    postingComment.value = false
+  }
+}
+async function removeComment(commentId: string) {
+  if (live.value) await deleteComment(live.value.id, commentId)
 }
 
 async function removeTicket() {
@@ -306,6 +331,51 @@ async function save() {
                 <span class="truncate">{{ b.title }}</span>
               </li>
             </ul>
+          </div>
+        </section>
+
+        <section>
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+            <UIcon name="i-lucide-messages-square" class="mr-1 inline size-3.5 align-[-2px]" />Comments<template v-if="comments.length"> · {{ comments.length }}</template>
+          </h3>
+          <ul v-if="comments.length" class="space-y-2.5">
+            <li v-for="c in comments" :key="c.id" class="group rounded-lg border border-default px-3 py-2.5">
+              <div class="flex items-center gap-2 text-xs text-muted">
+                <span class="font-medium text-default">{{ c.author }}</span>
+                <span>{{ c.createdAt.slice(0, 10) }} {{ c.createdAt.slice(11, 16) }}</span>
+                <UButton
+                  icon="i-lucide-x"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  class="ml-auto opacity-0 transition-opacity group-hover:opacity-100"
+                  aria-label="Delete comment"
+                  @click="removeComment(c.id)"
+                />
+              </div>
+              <div class="jx-prose jx-prose-sm mt-1.5" v-html="renderMd(c.body)" />
+            </li>
+          </ul>
+          <div class="mt-3 space-y-2">
+            <UTextarea
+              v-model="commentBody"
+              :rows="2"
+              placeholder="Leave a note for whoever picks this ticket up… (markdown)"
+              class="w-full font-mono text-sm"
+            />
+            <div class="flex items-center gap-2">
+              <UInput v-model="commentAuthor" placeholder="Name" size="sm" class="w-36" />
+              <UButton
+                size="sm"
+                variant="soft"
+                icon="i-lucide-message-square-plus"
+                :loading="postingComment"
+                :disabled="!commentBody.trim()"
+                @click="postComment"
+              >
+                Comment
+              </UButton>
+            </div>
           </div>
         </section>
 

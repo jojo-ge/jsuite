@@ -12,6 +12,7 @@
     <div class="flex gap-3">
       <UButton to="/gallery" icon="i-lucide-layout-grid">Gallery</UButton>
       <UButton to="/editor" variant="soft" icon="i-lucide-film">Keyframe editor</UButton>
+      <UButton to="/documents" variant="soft" icon="i-lucide-file-json">Documents</UButton>
     </div>
   </div>
 </template>

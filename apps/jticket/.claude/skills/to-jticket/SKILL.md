@@ -45,11 +45,16 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 
 - **Project** `PROJ-n` — `{ key, title, description, mode }`. `mode` is `standard` or `wayfinder`.
 - **Epic** `EPIC-n` — `{ key, title, description, projectId, labels[] }`. `projectId` may be null.
-- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[] }`
+- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[], comments[] }`
   - `type`: `AFK` (an agent can take it cold) or `HITL` (needs a human)
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name; `""` = unassigned. **The assignee is the claim.**
   - `blockedBy`: ticket **ids** that must be `done` first
+  - `comments`: `{ id, author, body, createdAt }[]` — a discussion thread on the ticket.
+    The human uses it to leave direction *before* handing the ticket to an LLM, so
+    **always read the comments before working a ticket**. LLMs comment too (questions,
+    progress notes) under their own name. Append-only via its own endpoint — PATCH
+    cannot touch it. The final answer still goes in `resolution`, not a comment.
   - GET responses also carry derived `blocked` / `claimed` / `frontier` booleans (never persisted)
 - **Doc** `DOC-n` — `{ key, title, documentKey, projectId, labels[], status }`. The
   content is a **block document** in the shared jSuite document system (`documentKey`
@@ -95,6 +100,10 @@ curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' -d '{
 # update
 curl -s -X PATCH "$JTICKET/api/tickets/TICK-4" -H 'content-type: application/json' \
   -d '{ "status": "done" }'
+
+# comment on a ticket (author = your own name; body is GFM markdown)
+curl -s "$JTICKET/api/tickets/TICK-4/comments" -H 'content-type: application/json' \
+  -d '{ "author": "claude", "body": "Blocked on the schema question — see TICK-3." }'
 ```
 
 Rules for direct writes:
@@ -126,5 +135,8 @@ These are the ways a write silently does the wrong thing. All of them are real.
 7. **`blocked` / `claimed` / `frontier` are read-only**, computed per GET. Writing them
    does nothing.
 8. **Attachment upload overwrites on name collision.** Prefix names to keep them unique.
-9. **There are no comments.** Anything you'd post as a comment goes in `resolution`
-   (the ticket's answer) or a doc.
+9. **Comments are append-only, via their own endpoint.** `POST
+   /api/tickets/:id/comments` adds one; PATCHing `comments` does nothing. Comments are
+   the discussion (human direction before handoff, LLM questions and progress notes);
+   `resolution` is still the one final answer. Read a ticket's comments before working
+   it — the human may have left instructions there.

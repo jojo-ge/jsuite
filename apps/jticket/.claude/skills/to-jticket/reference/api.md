@@ -12,6 +12,8 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / PATCH / DELETE | `/api/epics/:id` | One epic (id or key) |
 | GET / POST | `/api/tickets` | List / create tickets |
 | GET / PATCH / DELETE | `/api/tickets/:id` | One ticket (id or key) |
+| POST | `/api/tickets/:id/comments` | Add a comment to a ticket |
+| DELETE | `/api/tickets/:id/comments/:commentId` | Delete one comment |
 | POST | `/api/import` | Bulk-author a whole breakdown |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
@@ -89,6 +91,25 @@ POST /api/tickets
 - `assignee: ""` unassigns. `resolution: ""` clears.
 - `epicId: null` detaches. A self-blocking edge is dropped.
 - Labels are trimmed, emptied-out, and de-duplicated on the way in.
+- `comments` is **not PATCHable** — use the comments endpoint below.
+
+### Ticket comments
+
+A discussion thread on the ticket, returned inline on every ticket GET as
+`comments: [{ id, author, body, createdAt }]`. The human leaves direction here before
+handing a ticket to an LLM — **read them before working a ticket**. LLMs post their own
+comments (questions, progress notes) under their own name; the final answer still
+belongs in `resolution`.
+
+```jsonc
+POST /api/tickets/:id/comments
+{ "author": "claude",                   // free-form name; omitted → "anonymous"
+  "body": "Started on this — the schema needs a migration first." }  // required, GFM markdown
+→ 201 { "id": "cmt_…", "author": "claude", "body": "…", "createdAt": "…" }
+```
+
+`DELETE /api/tickets/:id/comments/:commentId` removes one comment (`:commentId` is the
+comment's `id`, not an index). There is no comment edit — delete and re-post.
 
 ### Doc
 

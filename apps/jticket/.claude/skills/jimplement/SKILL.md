@@ -64,12 +64,15 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/jso
 ## 3. Load the context
 
 - The ticket's `description` (what to build) and `acceptanceCriteria` (when it's done).
+- The ticket's `comments` — the human leaves direction there before handing a ticket
+  over. A comment can narrow, extend, or override the description; if a comment and the
+  description conflict, the newer comment wins (raise it if that's ambiguous).
 - The `resolution` of every ticket in its `blockedBy` — that's where the decisions this
   ticket rests on were recorded.
 - Any doc the description links (`GET /api/docs/DOC-n` → `.body`).
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-7" | jq '{title, description, acceptanceCriteria, blockedBy}'
+curl -s "$JTICKET/api/tickets/TICK-7" | jq '{title, description, acceptanceCriteria, blockedBy, comments}'
 curl -s "$JTICKET/api/tickets/TICK-3" | jq -r '.resolution'
 ```
 
@@ -94,8 +97,14 @@ touching.
 ## 5. Record the outcome
 
 Write the answer back **before** reporting to the user. The resolution is what a future
-session reads instead of the diff — jTicket has no comments, so this is the only place it
-goes.
+session reads instead of the diff. Anything that isn't the final answer — a question for
+the human, a mid-flight progress note, why you're handing the ticket back — goes in a
+**comment** under your own name:
+
+```bash
+curl -s "$JTICKET/api/tickets/TICK-7/comments" -H 'content-type: application/json' \
+  -d '{ "author": "claude", "body": "AC 2 can'\''t be met as written — the cart API has no totals endpoint. Handing back." }'
+```
 
 ```markdown
 ## What was built
@@ -145,8 +154,10 @@ invocation rather than draining the epic unasked.
 - **Refs resolve by id or key only** outside `/api/import` — a title in `blockedBy` or
   `epicId` is silently dropped, no error. GET it back and check.
 - **`blocked` / `claimed` / `frontier` are derived on read.** Writing them does nothing.
-- **No comments.** Progress notes go in `resolution`; anything longer becomes a doc
-  (`POST /api/docs`) linked from it.
+- **Comments are append-only** — `POST /api/tickets/:id/comments` with
+  `{ author, body }`; PATCHing `comments` does nothing. Discussion goes in comments, the
+  final answer in `resolution`; anything longer becomes a doc (`POST /api/docs`) linked
+  from it.
 - **Deletes are unrecoverable** — the store is one JSON file. Never delete a ticket unless
   the user asks for that ticket by key.
 - Other sessions may be working the same epic in parallel. Re-read a ticket before

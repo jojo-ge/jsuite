@@ -89,6 +89,16 @@ async function removeProject() {
           </div>
           <div class="flex shrink-0 gap-1">
             <UButton icon="i-lucide-folder-plus" size="sm" variant="soft" @click="openNewEpic(project.id)">Epic</UButton>
+            <UButton
+              icon="i-lucide-download"
+              size="sm"
+              color="neutral"
+              variant="ghost"
+              aria-label="Export project"
+              :to="`/api/projects/${project.id}/export`"
+              external
+              download
+            />
             <UButton icon="i-lucide-pencil" size="sm" color="neutral" variant="ghost" @click="openEditProject(project)" />
             <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="removeProject" />
           </div>

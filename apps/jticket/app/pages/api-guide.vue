@@ -35,6 +35,8 @@ const endpoints = [
   { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its epics' },
   { m: 'PATCH', p: '/api/projects/:id', d: 'Update a project' },
   { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (epics → unassigned)' },
+  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (epics, tickets, docs, charts, attachments)' },
+  { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
   { m: 'GET', p: '/api/epics', d: 'List all epics' },
   { m: 'POST', p: '/api/epics', d: 'Create an epic { title, description, projectId? }' },
   { m: 'GET', p: '/api/epics/:id', d: 'Get one epic (id or key) + its tickets' },
@@ -45,6 +47,8 @@ const endpoints = [
   { m: 'GET', p: '/api/tickets/:id', d: 'Get one ticket (id or key)' },
   { m: 'PATCH', p: '/api/tickets/:id', d: 'Update a ticket' },
   { m: 'DELETE', p: '/api/tickets/:id', d: 'Delete a ticket (cleans blocked-by edges)' },
+  { m: 'POST', p: '/api/tickets/:id/comments', d: 'Add a comment { author, body }' },
+  { m: 'DELETE', p: '/api/tickets/:id/comments/:cid', d: 'Delete one comment' },
   { m: 'POST', p: '/api/import', d: 'Bulk-create a whole breakdown at once' },
   { m: 'GET', p: '/api/docs', d: 'List docs (?projectId= &status= &label=)' },
   { m: 'POST', p: '/api/docs', d: 'Create a doc { title, blocks?|documentKey?, project?, labels?, status? }' },
@@ -107,6 +111,19 @@ curl -s 'http://localhost:43000/api/tickets?assignee=Claude'
 # Unassign
 curl -s -X PATCH http://localhost:43000/api/tickets/TICK-1 \\
   -H 'content-type: application/json' -d '{ "assignee": "" }'`
+
+const commentExample = `# The human leaves direction before handing the ticket to an agent…
+curl -s http://localhost:43000/api/tickets/TICK-7/comments \\
+  -H 'content-type: application/json' \\
+  -d '{ "author": "Joseph", "body": "Keep the old endpoint alive — mobile still calls it." }'
+
+# …and agents comment back (questions, progress notes) under their own name
+curl -s http://localhost:43000/api/tickets/TICK-7/comments \\
+  -H 'content-type: application/json' \\
+  -d '{ "author": "Claude", "body": "Done behind a flag; see the resolution for details." }'
+
+# Comments come back inline on every ticket GET
+curl -s http://localhost:43000/api/tickets/TICK-7 | jq '.comments'`
 
 const methodColor: Record<string, string> = {
   GET: 'info',
@@ -212,6 +229,7 @@ const methodColor: Record<string, string> = {
           <li><code>labels</code> — free-form strings; wayfinder uses <code>wayfinder:research|prototype|grilling|task</code></li>
           <li><code>resolution</code> — the answer, recorded on resolve (markdown)</li>
           <li><code>blockedBy</code> — tickets that gate this one</li>
+          <li><code>comments</code> — discussion thread; append via <code>POST /api/tickets/:id/comments</code>, not PATCH</li>
           <li class="text-dimmed">GET adds derived <code>blocked</code> · <code>claimed</code> · <code>frontier</code> flags (not stored)</li>
         </ul>
       </section>
@@ -224,6 +242,18 @@ const methodColor: Record<string, string> = {
           release the ticket.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ assignExample }}</code></pre>
+      </section>
+
+      <section>
+        <h2 class="mb-2 text-base font-semibold">Comments</h2>
+        <p class="mb-3 text-sm text-muted">
+          Every ticket carries a discussion thread: <code>comments</code> —
+          <code>{ id, author, body, createdAt }</code>, markdown bodies. Agents should read them
+          before working a ticket (the human leaves direction there) and post their own under
+          their name. Append-only via the endpoint — PATCH can't touch them; the final answer
+          still goes in <code>resolution</code>.
+        </p>
+        <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ commentExample }}</code></pre>
       </section>
 
       <section>

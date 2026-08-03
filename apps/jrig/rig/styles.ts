@@ -212,6 +212,35 @@ export interface ArtStyle {
 }
 
 /**
+ * Where the round avatar cut-out crosses the body. This is skeleton space, so
+ * it means the same thing on every character however differently they are
+ * drawn: shoulders (y=312) comfortably in, wrists (y=484) well out — which is
+ * the whole point of the crop, since the product shows these chest-up and the
+ * hands are never in shot.
+ */
+export const AVATAR_CHEST_Y = 370;
+
+/**
+ * The avatar frame, derived rather than authored: a square from the top of the
+ * character's own `bust` frame down to the chest line, centred on the mirror
+ * axis.
+ *
+ * It reads off `bust` because that is where a character already states its
+ * scale — bust's top edge is authored to sit just above them, whether that is a
+ * bare scalp or a cap. Deriving keeps this working for every document that
+ * exists and every one drawn later, with no schema version to carry a third
+ * viewBox.
+ */
+export const avatarViewBox = (bust: string): string => {
+  const top = Number(bust.trim().split(/\s+/)[1]);
+  // A frame that starts below the chest line has nothing to crop; fall back to
+  // a square around the head pivot rather than emit a negative size.
+  const size = Number.isFinite(top) && AVATAR_CHEST_Y - top > 0 ? AVATAR_CHEST_Y - top : 320;
+  const y = Number.isFinite(top) ? top : AVATAR_CHEST_Y - size;
+  return `${200 - size / 2} ${y} ${size} ${size}`;
+};
+
+/**
  * Shifts a path authored purely from x/y pairs — used for the off-register
  * plates a two-colour print needs. Arc segments carry flags that are not
  * coordinates, so nothing containing one is ever passed through here.

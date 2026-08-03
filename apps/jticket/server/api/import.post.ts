@@ -108,6 +108,7 @@ export default defineEventHandler(async (event) => {
       labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
+      comments: [],
       createdAt: ts,
       updatedAt: ts,
     }

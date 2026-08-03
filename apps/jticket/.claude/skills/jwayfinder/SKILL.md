@@ -62,7 +62,7 @@ stand in for it:
 | Claim | set **`assignee`** — an assigned ticket leaves the frontier |
 | Frontier | `GET /api/tickets?epicId=<map key>&frontier=true` — key-ordered |
 | Close | `status: "done"` |
-| Resolution comment | the ticket's **`resolution`** field (jTicket has no comments) |
+| Resolution comment | the ticket's **`resolution`** field — comments are for discussion, not the answer |
 
 A wayfinder project renders each map's tickets grouped into **Frontier · In progress ·
 Blocked · Resolved**, frontier ring-highlighted, map body collapsible above them.
@@ -319,6 +319,9 @@ appended a decision since you loaded it.
 - Every array field — `blockedBy`, `labels`, `acceptanceCriteria` — is **replaced
   wholesale** by PATCH. Read, append, write back.
 - `blocked` / `claimed` / `frontier` are derived on read; writing them does nothing.
-- jTicket has **no comments**. The answer goes in `resolution`; longer assets become docs.
+- The answer goes in `resolution`; longer assets become docs. Ticket **comments**
+  (`POST /api/tickets/:id/comments`) are for discussion only — human direction left
+  before handoff (read them before working a ticket) and your own questions or progress
+  notes, never the resolution itself.
 - Deletes are immediate and unrecoverable — the store is one JSON file. Delete a ticket
   only when the user asks for that ticket by key.

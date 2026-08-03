@@ -25,6 +25,15 @@ export interface Epic {
   updatedAt: string
 }
 
+// The human leaves direction here before handing the ticket to an LLM; LLMs
+// post progress notes and questions under their own name.
+export interface TicketComment {
+  id: string
+  author: string
+  body: string
+  createdAt: string
+}
+
 export interface Ticket {
   id: string
   key: string
@@ -38,6 +47,7 @@ export interface Ticket {
   labels: string[]
   resolution: string
   blockedBy: string[]
+  comments: TicketComment[]
   createdAt: string
   updatedAt: string
   // Derived flags the GET endpoints attach (never persisted). Optional so a
@@ -122,6 +132,14 @@ export function useTracker() {
     await $fetch(`/api/tickets/${id}`, { method: 'DELETE' })
     await refresh()
   }
+  async function addComment(ticketId: string, input: { author: string; body: string }) {
+    await $fetch(`/api/tickets/${ticketId}/comments`, { method: 'POST', body: input })
+    await refresh()
+  }
+  async function deleteComment(ticketId: string, commentId: string) {
+    await $fetch(`/api/tickets/${ticketId}/comments/${commentId}`, { method: 'DELETE' })
+    await refresh()
+  }
 
   // ── Docs ──
   async function createDoc(input: Partial<Doc>): Promise<Doc> {
@@ -153,6 +171,8 @@ export function useTracker() {
     createTicket,
     updateTicket,
     deleteTicket,
+    addComment,
+    deleteComment,
     createDoc,
     updateDoc,
     deleteDoc,

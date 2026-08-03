@@ -32,6 +32,16 @@ export interface Epic {
   updatedAt: string
 }
 
+// A comment on a ticket. The human leaves direction here before handing the
+// ticket to an LLM; LLMs post progress notes and questions under their own
+// name. The resolution stays the ticket's single final answer.
+export interface TicketComment {
+  id: string
+  author: string // free-form name, same convention as assignee
+  body: string // GFM markdown
+  createdAt: string
+}
+
 export interface Ticket {
   id: string
   key: string // TICK-1
@@ -45,6 +55,7 @@ export interface Ticket {
   labels: string[] // e.g. 'wayfinder:research' — the wayfinder sub-type
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved
   blockedBy: string[] // ticket ids that gate this one
+  comments: TicketComment[] // append via POST /api/tickets/:id/comments, never PATCH
   createdAt: string
   updatedAt: string
 }
@@ -97,12 +108,13 @@ export function loadStore(): Store {
       projects: (parsed.projects ?? []).map((p) => ({ ...p, mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard' })),
       // Epics predating the project/label layers get sensible defaults.
       epics: (parsed.epics ?? []).map((e) => ({ ...e, projectId: e.projectId ?? null, labels: e.labels ?? [] })),
-      // Tickets predating the assignee / label / resolution fields get defaults.
+      // Tickets predating the assignee / label / resolution / comment fields get defaults.
       tickets: (parsed.tickets ?? []).map((t) => ({
         ...t,
         assignee: t.assignee ?? '',
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
+        comments: t.comments ?? [],
       })),
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).

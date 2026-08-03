@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ArtStyle } from './styles';
 
 import { JOINTS_BY_ID } from './core';
-import { ART_STYLES, DEFAULT_ART_STYLE, STYLES_BY_ID } from './styles';
+import { ART_STYLES, AVATAR_CHEST_Y, avatarViewBox, DEFAULT_ART_STYLE, STYLES_BY_ID } from './styles';
 
 // Bounding box of a path whose commands all take plain x/y pairs (C, Q, L, M).
 // Arc segments carry flags that would poison this, so nothing here feeds it one.
@@ -137,5 +137,46 @@ describe('the silhouette rules', () => {
       expect(hand.maxX, style.id).toBeGreaterThan(WRIST_X);
       expect(Math.abs(hand.minY - WRIST_Y), style.id).toBeLessThan(24);
     });
+  });
+});
+
+// The round avatar cut-out. It is derived, not authored, so the guarantees have
+// to hold for every frame it could ever be handed — these styles are the seed
+// source for the documents the app actually renders, so they are the widest
+// spread of bust frames available to test against.
+describe('avatarViewBox', () => {
+  const parse = (box: string) => {
+    const [x, y, width, height] = box.trim().split(/\s+/).map(Number) as [number, number, number, number];
+    return { x, y, width, height, right: x + width, bottom: y + height };
+  };
+
+  it('is square and centred on the mirror axis, so the circle is a circle', () => {
+    each((style) => {
+      const frame = parse(avatarViewBox(style.viewBox.bust));
+      expect(frame.width, style.id).toBe(frame.height);
+      expect((frame.x + frame.right) / 2, style.id).toBe(200);
+    });
+  });
+
+  it('starts where the character says it starts and stops at the chest', () => {
+    each((style) => {
+      const bust = parse(style.viewBox.bust);
+      const frame = parse(avatarViewBox(style.viewBox.bust));
+      expect(frame.y, style.id).toBe(bust.y);
+      expect(frame.bottom, style.id).toBe(AVATAR_CHEST_Y);
+    });
+  });
+
+  it('keeps the hands out of shot — the whole reason the crop exists', () => {
+    const [, wristY] = JOINTS_BY_ID.armLHand.pivot;
+    each((style) => {
+      expect(parse(avatarViewBox(style.viewBox.bust)).bottom, style.id).toBeLessThan(wristY);
+    });
+  });
+
+  it('survives a bust frame that starts below the chest line', () => {
+    const frame = parse(avatarViewBox(`0 ${AVATAR_CHEST_Y + 40} 300 300`));
+    expect(frame.width).toBeGreaterThan(0);
+    expect(frame.width).toBe(frame.height);
   });
 });

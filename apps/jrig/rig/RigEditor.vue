@@ -1,7 +1,10 @@
 <script lang="ts" setup>
 // Keyframe editor for the avatar rig. Dev tooling, not product UI: it is
-// deliberately self-contained (own controls, own styles, no KUI primitives, no
-// i18n) so it can be dropped on an unauthenticated page and iterated on fast.
+// deliberately self-contained (own controls, own styles, no external UI kit,
+// no i18n) so it can live on an unauthenticated page and be iterated on fast.
+// Since M1 its logic lives in the studio composables (transport / keying /
+// library / rig-drag) — this file is the wiring and the markup, and it retires
+// in M7 when the studio's Animate mode reaches parity.
 //
 // The clip is the single source of truth. Scrubbing samples it, dragging a bone
 // writes back into it, and "Copy JSON" produces exactly what
@@ -10,34 +13,158 @@
 
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
-import type { ChannelId, ChannelSpec, Clip, Easing, JointId, Pose } from './core';
+import type { ChannelId, ChannelSpec, Easing, JointId, Pose } from './core';
 
-import { BUILT_IN_CLIPS, cloneClips } from './clips';
+import { useClipKeying } from '../studio/composables/useClipKeying';
+import { useClipLibrary } from '../studio/composables/useClipLibrary';
+import { useDocumentPool } from '../studio/composables/useDocumentPool';
+import { useDocumentSync } from '../studio/composables/useDocumentSync';
+import { clipDocumentFrom } from '../studio/clipDocument';
+import { usePointerDrag } from '../studio/composables/usePointerDrag';
+import { useRigDrag } from '../studio/composables/useRigDrag';
+import { roundTime, useTransport } from '../studio/composables/useTransport';
+import AvatarRig from './AvatarRig.vue';
+import { compileClipDocument } from './compiler';
 import {
   ALL_CHANNELS,
-  applyPose,
   channelLabel,
   CHANNELS_BY_ID,
-  createRestPose,
   DEPTH_CHANNELS,
   EASING_IDS,
   FACE_CHANNELS,
   JOINTS_BY_ID,
-  putKeyframe,
-  sampleClip,
   SKELETON,
   sortTrack,
 } from './core';
-import AvatarRig from './AvatarRig.vue';
+import { documentFileName, serialiseDocument } from './document';
+import { composePose } from './evaluate';
+import { validateClipDocument } from './validator';
 
-const STORAGE_KEY = 'jrig-clips-v1';
+interface Props {
+  /** Character id to draw against; falls back to the last one you picked. */
+  character?: string;
+  /** Clip document to open on mount, e.g. `wave.clip.json`. */
+  clipDocument?: string;
+}
+
+const props = defineProps<Props>();
+
 const CHANNEL_ORDER = new Map(ALL_CHANNELS.map((channel, index) => [channel.id, index]));
 
-const clips = ref<Clip[]>(cloneClips());
-const activeClipId = ref<string>('facepalm');
-const playhead = ref(0);
-const playing = ref(false);
-const rigPreview = ref(false);
+const status = ref('');
+const flagDirty = (message: string) => {
+  status.value = message;
+};
+
+// --- stores ---------------------------------------------------------------
+
+const library = useClipLibrary({ initialClipId: 'facepalm', storageKey: 'jrig-clips-v1', onStatus: flagDirty });
+const { clips, activeClipId, activeClip, addClip, duplicateClip, deleteClip } = library;
+
+// --- documents ------------------------------------------------------------
+//
+// The editor authors clips, but it draws a character, and both are documents in
+// `.data/jrig/documents/`. The pool is the read side (polled, so a file Claude
+// edits shows up here within 2s); `docSync` is the write side for the one clip
+// document currently linked, with the same mtime fence the raw browser uses.
+
+const CHARACTER_KEY = 'jrig-editor-character-v1';
+
+const pool = useDocumentPool();
+
+// Documents only — `rig/styles.ts` is the seeder's source, not something this
+// editor can draw. With an empty pool there is nothing to author against, and
+// the stage says so rather than falling back to TS art.
+const characters = computed(() => [...pool.styles.value].sort((a, b) => a.name.localeCompare(b.name)));
+const characterId = ref('');
+const art = computed(() =>
+  characters.value.find(style => style.id === characterId.value) ?? characters.value[0] ?? null);
+
+const clipDocumentNames = computed(() =>
+  pool.files.value.filter(file => file.kind === 'clip').map(file => file.name));
+
+watch(characterId, (id) => {
+  if (typeof window !== 'undefined' && id) {
+    window.localStorage.setItem(CHARACTER_KEY, id);
+  }
+});
+
+// Whatever the pool actually has, once it has compiled — a remembered id whose
+// document has since been deleted must not leave the stage blank.
+watch([characters, characterId], ([list, id]) => {
+  if (list.length > 0 && !list.some(style => style.id === id)) {
+    characterId.value = list[0]!.id;
+  }
+});
+
+// The document as it was read, so a save preserves the fields a `Clip` has no
+// slot for — see `studio/clipDocument.ts`.
+let openedRaw: unknown = null;
+let diskJson = '';
+
+const activeClipDocument = computed(() => clipDocumentFrom(activeClip.value, openedRaw));
+const activeClipName = computed(() => documentFileName(activeClipDocument.value));
+const activeClipErrors = computed(() =>
+  validateClipDocument(activeClipDocument.value).filter(issue => issue.level === 'error'));
+
+const docSync = useDocumentSync({
+  onApplied: (doc, external) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(doc.content);
+    }
+    catch (error) {
+      flagDirty(`${doc.name} is not valid JSON: ${(error as Error).message}`);
+      return;
+    }
+    const errors = validateClipDocument(parsed).filter(issue => issue.level === 'error');
+    if (errors.length > 0) {
+      flagDirty(`${doc.name} — ${errors[0]!.path}: ${errors[0]!.message}`);
+      return;
+    }
+    openedRaw = parsed;
+    diskJson = doc.content;
+    // Only an explicit open moves you; a poll-driven reload updates in place.
+    library.loadClip(compileClipDocument(parsed as never), !external);
+  },
+  onStatus: flagDirty,
+});
+
+// Dirty is what stops the poll silently reloading over your work, so it has to
+// track real divergence — not "the user touched something". Comparing the
+// serialised form means undoing an edit by hand makes the document clean again.
+watch(activeClipDocument, () => {
+  if (docSync.name.value === activeClipName.value && serialiseDocument(activeClipDocument.value) !== diskJson) {
+    docSync.markDirty();
+  }
+}, { deep: true });
+
+const openClipDocument = async (name: string) => {
+  if (name) {
+    await docSync.open(name);
+  }
+};
+
+const writeActiveClip = async (force: boolean) => {
+  const content = serialiseDocument(activeClipDocument.value);
+  // Save-as: adopt leaves the fence empty, so this creates a new document and
+  // 409s on an existing one you never loaded, rather than silently clobbering.
+  if (docSync.name.value !== activeClipName.value) {
+    docSync.adopt(activeClipName.value);
+  }
+  const result = force ? await docSync.overwrite(content) : await docSync.save(content);
+  if (docSync.conflict.value === null) {
+    diskJson = content;
+    openedRaw = JSON.parse(content);
+    void pool.refresh();
+  }
+  return result;
+};
+
+const saveActiveClip = () => void writeActiveClip(false);
+const overwriteActiveClip = () => void writeActiveClip(true);
+const discardMine = () => void docSync.discardMine();
+
 const baseState = ref<'idle' | 'talking' | null>(null);
 const autoKey = ref(true);
 // On by default so the character breathes and blinks while you author. Drags
@@ -47,211 +174,66 @@ const ambient = ref(true);
 // on the stage goes with it — pick joints from the inspector chips instead.
 const showRig = ref(true);
 const speed = ref(1);
+const rigPreview = ref(false);
 const selectedJoint = ref<JointId | null>('armRUp');
-const selectedKey = ref<{ channel: ChannelId; t: number } | null>(null);
-const scratch = ref<Partial<Pose>>({});
 const jsonDraft = ref('');
 const showJson = ref(false);
-const status = ref('');
 
 const avatarRef = ref<InstanceType<typeof AvatarRig> | null>(null);
 const timelineRef = ref<HTMLElement | null>(null);
 const timelineWidth = ref(900);
 
-const activeClip = computed(() => clips.value.find(clip => clip.id === activeClipId.value) ?? clips.value[0]!);
+const transport = useTransport({
+  duration: () => activeClip.value.duration,
+  loop: () => activeClip.value.loop,
+  speed: () => speed.value,
+  onJump: () => {
+    scratch.value = {};
+  },
+});
+const { playhead, playing, setPlaying, scrubTo } = transport;
+
+const keying = useClipKeying({
+  activeClip: () => activeClip.value,
+  playhead: () => playhead.value,
+  autoKey: () => autoKey.value,
+  editPose: () => editPose.value,
+  onStatus: flagDirty,
+});
+const {
+  scratch,
+  selectedKey,
+  channelValue,
+  writeKey,
+  commitScratch,
+  setChannel,
+  onSliderCommit,
+  keyWholePose,
+  deleteKey,
+  clearTrack,
+  isSelectedKey,
+  selectedKeyEasing,
+  setKeyEasing,
+  isKeyed,
+  isAnimated,
+  resetChannel,
+} = keying;
+
 const baseClip = computed(() => (baseState.value ? clips.value.find(clip => clip.id === baseState.value) : null));
 
 // The same layer stack the rig runs, so what you author is what you get.
-const editPose = computed<Partial<Pose>>(() => {
-  const pose = createRestPose();
-  if (baseClip.value) {
-    applyPose(pose, sampleClip(baseClip.value, playhead.value));
-  }
-  applyPose(pose, sampleClip(activeClip.value, playhead.value));
-  applyPose(pose, scratch.value);
-  return pose;
-});
-
-const channelValue = (channel: ChannelId): number =>
-  editPose.value[channel] ?? CHANNELS_BY_ID[channel]?.rest ?? 0;
-
-// --- clip mutation --------------------------------------------------------
-
-const roundTime = (t: number) => Math.round(t * 1000) / 1000;
-const roundValue = (v: number) => Math.round(v * 100) / 100;
-
-const flagDirty = (message: string) => {
-  status.value = message;
-};
-
-const writeKey = (channel: ChannelId, t: number, v: number) => {
-  const clip = activeClip.value;
-  const existing = clip.tracks[channel] ?? [];
-  const previous = existing.find(key => Math.abs(key.t - t) < 0.001);
-  clip.tracks[channel] = putKeyframe(existing, t, v, previous?.e);
-  selectedKey.value = { channel, t };
-};
-
-const commitScratch = () => {
-  const entries = Object.entries(scratch.value);
-  if (entries.length === 0) {
-    return;
-  }
-  for (const [channel, v] of entries) {
-    if (v !== undefined) {
-      writeKey(channel, roundTime(playhead.value), v);
-    }
-  }
-  scratch.value = {};
-  flagDirty(`Keyed ${entries.length} channel${entries.length === 1 ? '' : 's'} at ${playhead.value.toFixed(2)}s`);
-};
-
-const setChannel = (channel: ChannelId, v: number, commit = true) => {
-  scratch.value = { ...scratch.value, [channel]: v };
-  if (commit && autoKey.value) {
-    commitScratch();
-  }
-};
-
-/** Sliders stream through `scratch` while dragging and key once on release. */
-const onSliderCommit = () => {
-  if (autoKey.value) {
-    commitScratch();
-  }
-};
-
-/** Keys every channel that currently differs from the rest pose. */
-const keyWholePose = () => {
-  const rest = createRestPose();
-  const pose = editPose.value;
-  let count = 0;
-  for (const channel of Object.keys(pose)) {
-    const v = pose[channel];
-    if (v === undefined || Math.abs(v - (rest[channel] ?? 0)) < 0.0001) {
-      continue;
-    }
-    writeKey(channel, roundTime(playhead.value), v);
-    count += 1;
-  }
-  scratch.value = {};
-  flagDirty(`Keyed full pose (${count} channels) at ${playhead.value.toFixed(2)}s`);
-};
-
-const deleteKey = (channel: ChannelId, t: number) => {
-  const clip = activeClip.value;
-  const next = (clip.tracks[channel] ?? []).filter(key => Math.abs(key.t - t) > 0.001);
-  if (next.length === 0) {
-    delete clip.tracks[channel];
-  }
-  else {
-    clip.tracks[channel] = next;
-  }
-  selectedKey.value = null;
-  flagDirty(`Deleted key on ${channelLabel(channel)}`);
-};
-
-const clearTrack = (channel: ChannelId) => {
-  delete activeClip.value.tracks[channel];
-  selectedKey.value = null;
-  flagDirty(`Cleared ${channelLabel(channel)}`);
-};
-
-const isSelectedKey = (channel: ChannelId, t: number) =>
-  selectedKey.value?.channel === channel && Math.abs(selectedKey.value.t - t) < 0.001;
-
-const findSelectedKey = () => {
-  const selection = selectedKey.value;
-  if (!selection) {
-    return null;
-  }
-  const track = activeClip.value.tracks[selection.channel];
-  return track?.find(entry => Math.abs(entry.t - selection.t) < 0.001) ?? null;
-};
-
-const selectedKeyEasing = computed<Easing>(() => findSelectedKey()?.e ?? 'ease');
-
-const setKeyEasing = (easing: Easing) => {
-  const key = findSelectedKey();
-  if (key) {
-    key.e = easing;
-  }
-};
-
-// --- clip library ---------------------------------------------------------
-
-const addClip = () => {
-  const id = `clip${clips.value.length + 1}-${Math.random().toString(36).slice(2, 6)}`;
-  clips.value.push({ id, name: 'New emote', duration: 2, loop: false, layer: 'emote', tracks: {} });
-  activeClipId.value = id;
-  playhead.value = 0;
-};
-
-const duplicateClip = () => {
-  const source = activeClip.value;
-  const id = `${source.id}-copy-${Math.random().toString(36).slice(2, 5)}`;
-  clips.value.push({
-    ...source,
-    id,
-    name: `${source.name} copy`,
-    tracks: Object.fromEntries(
-      Object.entries(source.tracks).map(([channel, keys]) => [channel, keys.map(key => ({ ...key }))]),
-    ),
-  });
-  activeClipId.value = id;
-};
-
-const deleteClip = () => {
-  const index = clips.value.findIndex(clip => clip.id === activeClipId.value);
-  if (clips.value.length <= 1 || index < 0) {
-    return;
-  }
-  clips.value.splice(index, 1);
-  activeClipId.value = clips.value[0]!.id;
-  playhead.value = 0;
-};
+const editPose = computed<Partial<Pose>>(() => composePose({
+  base: baseClip.value ? { clip: baseClip.value, time: playhead.value } : null,
+  emote: { clip: activeClip.value, time: playhead.value, weight: 1 },
+  overlay: scratch.value,
+}));
 
 const resetLibrary = () => {
-  clips.value = cloneClips(BUILT_IN_CLIPS);
-  activeClipId.value = clips.value[0]!.id;
-  playhead.value = 0;
-  scratch.value = {};
-  flagDirty('Reset to the built-in clips');
+  library.resetLibrary();
+  scrubTo(0);
 };
 
 // --- playback -------------------------------------------------------------
-
-let rafId: number | null = null;
-let lastFrameAt = 0;
-
-const tick = (now: number) => {
-  const dt = Math.min((now - lastFrameAt) / 1000, 0.05) * speed.value;
-  lastFrameAt = now;
-  const next = playhead.value + dt;
-  const duration = activeClip.value.duration;
-  playhead.value = next > duration ? (activeClip.value.loop ? next % duration : duration) : next;
-  if (!activeClip.value.loop && playhead.value >= duration) {
-    playing.value = false;
-    return;
-  }
-  rafId = requestAnimationFrame(tick);
-};
-
-const setPlaying = (next: boolean) => {
-  playing.value = next;
-  if (next) {
-    scratch.value = {};
-    if (playhead.value >= activeClip.value.duration) {
-      playhead.value = 0;
-    }
-    lastFrameAt = performance.now();
-    rafId = requestAnimationFrame(tick);
-    return;
-  }
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
-};
 
 /** True end-to-end check: hands the clip to the rig's own layer blending. */
 const playInRig = () => {
@@ -260,125 +242,31 @@ const playInRig = () => {
   void nextTick(() => avatarRef.value?.play(activeClipId.value));
 };
 
-const scrubTo = (t: number) => {
-  scratch.value = {};
-  playhead.value = Math.min(Math.max(roundTime(t), 0), activeClip.value.duration);
-};
-
 // --- stage dragging -------------------------------------------------------
 
-const svgEl = () => (avatarRef.value?.$el ?? null) as SVGSVGElement | null;
+let scratchBeforeDrag: Partial<Pose> = {};
 
-const toViewBox = (event: PointerEvent) => {
-  const svg = svgEl();
-  const ctm = svg?.getScreenCTM();
-  if (!svg || !ctm) {
-    return null;
-  }
-  const point = svg.createSVGPoint();
-  point.x = event.clientX;
-  point.y = event.clientY;
-  return point.matrixTransform(ctm.inverse());
-};
-
-interface DragState {
-  joint: JointId;
-  mode: 'rotate' | 'translate';
-  startAngle: number;
-  startRot: number;
-  startX: number;
-  startY: number;
-  originX: number;
-  originY: number;
-  pivotX: number;
-  pivotY: number;
-  parentRot: number;
-}
-
-let drag: DragState | null = null;
-
-const shortestDelta = (delta: number) => {
-  let d = delta;
-  while (d > 180) {
-    d -= 360;
-  }
-  while (d < -180) {
-    d += 360;
-  }
-  return d;
-};
-
-const onDragMove = (event: PointerEvent) => {
-  if (!drag) {
-    return;
-  }
-  const point = toViewBox(event);
-  if (!point) {
-    return;
-  }
-  const joint = JOINTS_BY_ID[drag.joint];
-  if (drag.mode === 'rotate') {
-    if (!joint.channels.includes('rot')) {
-      return;
+const rigDrag = useRigDrag({
+  svgEl: () => (avatarRef.value?.$el ?? null) as SVGSVGElement | null,
+  frames: () => avatarRef.value?.frames(),
+  channelValue,
+  setChannel: (channel, value) => setChannel(channel, value, false),
+  onStart: (jointId) => {
+    selectedJoint.value = jointId;
+    setPlaying(false);
+    rigPreview.value = false;
+    scratchBeforeDrag = { ...scratch.value };
+  },
+  onEnd: () => {
+    if (autoKey.value) {
+      commitScratch();
     }
-    // World rotation composes additively, so an angle delta measured in view-box
-    // space is the same delta the local channel needs — whatever the parent is
-    // doing. Rotating a joint cannot move its own pivot, so the pivot cached at
-    // drag start stays valid and the ambient sway can't make the drag jitter.
-    const now = Math.atan2(point.y - drag.pivotY, point.x - drag.pivotX) * (180 / Math.PI);
-    const delta = shortestDelta(now - drag.startAngle);
-    setChannel(`${drag.joint}.rot`, roundValue(drag.startRot + delta), false);
-    return;
-  }
-  // Translation is authored in the joint's own frame, so dragging follows the
-  // pointer even when an ancestor is rotated.
-  const dx = point.x - drag.originX;
-  const dy = point.y - drag.originY;
-  const rad = (-drag.parentRot * Math.PI) / 180;
-  const localX = dx * Math.cos(rad) - dy * Math.sin(rad);
-  const localY = dx * Math.sin(rad) + dy * Math.cos(rad);
-  if (joint.channels.includes('x')) {
-    setChannel(`${drag.joint}.x`, roundValue(drag.startX + localX), false);
-  }
-  if (joint.channels.includes('y')) {
-    setChannel(`${drag.joint}.y`, roundValue(drag.startY + localY), false);
-  }
-};
-
-const onDragEnd = () => {
-  window.removeEventListener('pointermove', onDragMove);
-  if (autoKey.value) {
-    commitScratch();
-  }
-  drag = null;
-};
-
-const onJointPointerDown = (jointId: JointId, event: PointerEvent) => {
-  selectedJoint.value = jointId;
-  setPlaying(false);
-  rigPreview.value = false;
-  const frames = avatarRef.value?.frames();
-  const point = toViewBox(event);
-  if (!frames || !point) {
-    return;
-  }
-  const frame = frames[jointId];
-  drag = {
-    joint: jointId,
-    mode: event.shiftKey || event.altKey ? 'translate' : 'rotate',
-    startAngle: Math.atan2(point.y - frame.y, point.x - frame.x) * (180 / Math.PI),
-    startRot: channelValue(`${jointId}.rot`),
-    startX: channelValue(`${jointId}.x`),
-    startY: channelValue(`${jointId}.y`),
-    originX: point.x,
-    originY: point.y,
-    pivotX: frame.x,
-    pivotY: frame.y,
-    parentRot: frame.parentRot,
-  };
-  window.addEventListener('pointermove', onDragMove);
-  window.addEventListener('pointerup', onDragEnd, { once: true });
-};
+  },
+  onCancel: () => {
+    scratch.value = scratchBeforeDrag;
+  },
+});
+const onJointPointerDown = rigDrag.onJointPointerDown;
 
 // --- timeline -------------------------------------------------------------
 
@@ -408,50 +296,42 @@ const timeFromEvent = (event: PointerEvent) => {
   return ((event.clientX - rect.left) / rect.width) * activeClip.value.duration;
 };
 
+const timelineDrag = usePointerDrag();
+
 const onRulerPointerDown = (event: PointerEvent) => {
   setPlaying(false);
   rigPreview.value = false;
   scrubTo(timeFromEvent(event));
-  const move = (moveEvent: PointerEvent) => scrubTo(timeFromEvent(moveEvent));
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', () => window.removeEventListener('pointermove', move), { once: true });
+  timelineDrag.start(event, { onMove: moveEvent => scrubTo(timeFromEvent(moveEvent)) }, { threshold: 0 });
 };
-
-let keyDrag: { channel: ChannelId; from: number } | null = null;
 
 const onKeyPointerDown = (channel: ChannelId, t: number, event: PointerEvent) => {
   event.stopPropagation();
   setPlaying(false);
   selectedKey.value = { channel, t };
   scrubTo(t);
-  keyDrag = { channel, from: t };
-  const move = (moveEvent: PointerEvent) => {
-    if (!keyDrag) {
-      return;
-    }
-    const next = roundTime(Math.min(Math.max(timeFromEvent(moveEvent), 0), activeClip.value.duration));
-    const track = activeClip.value.tracks[keyDrag.channel] ?? [];
-    const key = track.find(entry => Math.abs(entry.t - keyDrag!.from) < 0.001);
-    if (!key || next === keyDrag.from) {
-      return;
-    }
-    key.t = next;
-    activeClip.value.tracks[keyDrag.channel] = sortTrack(track);
-    keyDrag.from = next;
-    selectedKey.value = { channel: keyDrag.channel, t: next };
-    playhead.value = next;
-  };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', () => {
-    window.removeEventListener('pointermove', move);
-    keyDrag = null;
-  }, { once: true });
+  let from = t;
+  timelineDrag.start(event, {
+    onMove: (moveEvent) => {
+      const next = roundTime(Math.min(Math.max(timeFromEvent(moveEvent), 0), activeClip.value.duration));
+      const track = activeClip.value.tracks[channel] ?? [];
+      const key = track.find(entry => Math.abs(entry.t - from) < 0.001);
+      if (!key || next === from) {
+        return;
+      }
+      key.t = next;
+      activeClip.value.tracks[channel] = sortTrack(track);
+      from = next;
+      selectedKey.value = { channel, t: next };
+      playhead.value = next;
+    },
+  }, { threshold: 0 });
 };
 
 // --- JSON round trip ------------------------------------------------------
 
 const exportJson = () => {
-  jsonDraft.value = JSON.stringify(clips.value, null, 2);
+  jsonDraft.value = library.toJson();
   showJson.value = true;
   void navigator.clipboard?.writeText(jsonDraft.value).then(
     () => flagDirty('Copied the clip library to the clipboard'),
@@ -460,18 +340,8 @@ const exportJson = () => {
 };
 
 const importJson = () => {
-  try {
-    const parsed = JSON.parse(jsonDraft.value) as Clip[];
-    if (!Array.isArray(parsed) || parsed.some(clip => !clip.id || !clip.tracks)) {
-      throw new Error('Not a clip array');
-    }
-    clips.value = parsed;
-    activeClipId.value = parsed[0]?.id ?? '';
-    playhead.value = 0;
-    flagDirty(`Imported ${parsed.length} clips`);
-  }
-  catch (error) {
-    flagDirty(`Import failed: ${(error as Error).message}`);
+  if (library.fromJson(jsonDraft.value)) {
+    scrubTo(0);
   }
 };
 
@@ -494,16 +364,7 @@ const jointChannels = computed<ChannelSpec[]>(() => {
     .filter((spec): spec is ChannelSpec => Boolean(spec));
 });
 
-const isKeyed = (channel: ChannelId) =>
-  (activeClip.value.tracks[channel] ?? []).some(key => Math.abs(key.t - playhead.value) < 0.02);
-
-const isAnimated = (channel: ChannelId) => (activeClip.value.tracks[channel] ?? []).length > 0;
-
-const resetChannel = (channel: ChannelId) => {
-  setChannel(channel, CHANNELS_BY_ID[channel]?.rest ?? 0);
-};
-
-// --- shortcuts + persistence ---------------------------------------------
+// --- shortcuts + lifecycle ------------------------------------------------
 
 const onKeyDown = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement | null;
@@ -534,18 +395,12 @@ const onKeyDown = (event: KeyboardEvent) => {
 let resizeObserver: ResizeObserver | null = null;
 
 onMounted(() => {
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    try {
-      clips.value = JSON.parse(saved) as Clip[];
-      flagDirty('Restored your last session from local storage');
-    }
-    catch {
-      flagDirty('Saved clips were unreadable — starting from the built-ins');
-    }
-  }
-  if (!clips.value.some(clip => clip.id === activeClipId.value)) {
-    activeClipId.value = clips.value[0]?.id ?? '';
+  library.restore();
+  // Client only — the pool's interval would leak into the node process on SSR.
+  pool.start();
+  characterId.value = props.character ?? window.localStorage.getItem(CHARACTER_KEY) ?? '';
+  if (props.clipDocument) {
+    void openClipDocument(props.clipDocument);
   }
   window.addEventListener('keydown', onKeyDown);
   if (timelineRef.value) {
@@ -559,14 +414,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown);
   resizeObserver?.disconnect();
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-  }
 });
-
-watch(clips, () => {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(clips.value));
-}, { deep: true });
 
 watch(activeClipId, () => {
   playhead.value = 0;
@@ -632,6 +480,67 @@ watch(activeClipId, () => {
       </div>
     </header>
 
+    <!-- Documents: which character the rig draws, and which clip document the
+         timeline is linked to. Both read `.data/jrig/documents/` live. -->
+    <header class="bar bar--docs">
+      <div class="bar-group">
+        <label class="field">Character
+          <select v-model="characterId" class="input input--wide">
+            <option
+              v-for="character in characters"
+              :key="character.id"
+              :value="character.id"
+            >
+              {{ character.name }}
+            </option>
+          </select>
+        </label>
+      </div>
+      <div class="bar-group">
+        <label class="field">Open clip
+          <select class="input input--wide" :value="docSync.name.value ?? ''" @change="openClipDocument(($event.target as HTMLSelectElement).value)">
+            <option value="">
+              — pick a document —
+            </option>
+            <option v-for="name in clipDocumentNames" :key="name" :value="name">
+              {{ name }}
+            </option>
+          </select>
+        </label>
+        <button class="btn" @click="saveActiveClip">
+          Save → {{ activeClipName }}
+        </button>
+        <span v-if="docSync.dirty.value" class="chip chip--dirty">unsaved</span>
+        <span v-if="activeClipErrors.length" class="chip chip--error">
+          {{ activeClipErrors.length }} error{{ activeClipErrors.length > 1 ? 's' : '' }}:
+          {{ activeClipErrors[0]!.path }} {{ activeClipErrors[0]!.message }}
+        </span>
+        <span v-if="pool.errorCount.value" class="chip chip--error">
+          {{ pool.errorCount.value }} document error{{ pool.errorCount.value > 1 ? 's' : '' }} in the pool
+        </span>
+      </div>
+    </header>
+
+    <!-- The M3 concurrency story, in the editor's own chrome: you and Claude
+         both write these files, and mtime is the only fence. -->
+    <div v-if="docSync.conflict.value" class="banner">
+      <span v-if="docSync.conflict.value === 'external'">
+        <strong>{{ docSync.name.value }}</strong> changed on disk while you had unsaved edits.
+      </span>
+      <span v-else>
+        <strong>{{ docSync.name.value }}</strong> changed underneath your save — nothing was written.
+      </span>
+      <button class="btn btn--sm" @click="discardMine">
+        Reload — discard mine
+      </button>
+      <button v-if="docSync.conflict.value === 'external'" class="btn btn--sm" @click="docSync.keepMine">
+        Keep mine
+      </button>
+      <button v-else class="btn btn--sm btn--danger" @click="overwriteActiveClip">
+        Overwrite anyway
+      </button>
+    </div>
+
     <div class="body">
       <aside class="panel panel--clips">
         <h2 class="panel-title">
@@ -691,11 +600,14 @@ watch(activeClipId, () => {
       </aside>
 
       <section class="stage">
-        <!-- No `art`: the editor authors against whatever the rig ships as its
-             default, so a pose is never tuned to a drawing nobody sees. -->
+        <!-- `art` is whichever character is picked above. It only changes what
+             you are looking at: one skeleton, so a pose authored here plays on
+             every other character too. -->
         <AvatarRig
+          v-if="art"
           ref="avatarRef"
           class="stage-avatar"
+          :art="art"
           frame="rig"
           :pose="rigPreview ? null : editPose"
           :pose-mode="rigPreview ? 'auto' : 'manual'"
@@ -709,6 +621,10 @@ watch(activeClipId, () => {
           @joint-pointer-down="onJointPointerDown"
           @emote-end="rigPreview = false"
         />
+        <p v-if="!art" class="empty">
+          No character documents in <code>.data/jrig/documents/</code> — the editor draws
+          documents only. The server seeds house + hoodie on first boot.
+        </p>
         <p class="hint">
           Drag a pivot to rotate · <kbd>Shift</kbd>-drag to translate · <kbd>Space</kbd> play ·
           <kbd>←</kbd>/<kbd>→</kbd> step a frame
@@ -991,6 +907,26 @@ watch(activeClipId, () => {
   border-radius: 10px;
 }
 .bar-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bar--docs { justify-content: flex-start; gap: 10px 28px; }
+.empty { max-width: 46ch; margin: 48px auto; color: var(--muted); text-align: center; }
+
+/* Read-only status, unlike the joint chips this borrows its look from. */
+.chip--dirty,
+.chip--error { cursor: default; }
+.chip--dirty { border-color: var(--warn); color: var(--warn); }
+.chip--error { max-width: 46ch; overflow: hidden; border-color: #ef4444; color: #fca5a5; text-overflow: ellipsis; white-space: nowrap; }
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  color: #fde68a;
+  background: #2a2113;
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+}
 
 .btn {
   padding: 6px 11px;
@@ -1020,6 +956,7 @@ watch(activeClipId, () => {
   font: inherit;
 }
 .input--num { width: 74px; font-variant-numeric: tabular-nums; }
+.input--wide { min-width: 180px; }
 
 .body {
   display: grid;

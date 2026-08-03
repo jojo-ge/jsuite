@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing — jSuite</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+<style>
+  /* ---------- pricing page ---------- */
+
+  .pricing-hero { padding: 5.5rem 0 3.5rem; text-align: center; position: relative; overflow: hidden; }
+  .pricing-hero::before {
+    content: ""; position: absolute; inset: -40% -20% auto; height: 140%;
+    background:
+      radial-gradient(600px 340px at 35% 20%, rgba(139, 155, 255, 0.14), transparent 70%),
+      radial-gradient(600px 340px at 65% 15%, rgba(251, 146, 60, 0.1), transparent 70%);
+    pointer-events: none;
+  }
+  .pricing-hero > .wrap { position: relative; }
+  .pricing-hero h1 {
+    margin: 0 auto 1rem; max-width: 16em;
+    font-size: clamp(2.2rem, 5vw, 3.6rem);
+    line-height: 1.08; letter-spacing: -0.035em; font-weight: 800;
+  }
+  .pricing-hero .sub { margin: 0 auto; max-width: 38em; color: var(--muted); font-size: 1.08rem; }
+  .pricing-hero .sub .fine { color: var(--faint); font-size: 0.82rem; display: block; margin-top: 0.8rem; }
+
+  .plans { padding: 1rem 0 5rem; }
+  .plans .wrap {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
+    max-width: 900px; align-items: stretch;
+  }
+  @media (max-width: 760px) { .plans .wrap { grid-template-columns: 1fr; } }
+
+  .plan {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 2rem 1.8rem; display: flex; flex-direction: column; gap: 0;
+  }
+  .plan.pro {
+    border-color: rgba(139, 155, 255, 0.55);
+    box-shadow: 0 0 0 4px rgba(139, 155, 255, 0.08), 0 30px 80px rgba(0, 0, 0, 0.45);
+    position: relative;
+  }
+  .plan .flag {
+    position: absolute; top: -0.85rem; left: 50%; transform: translateX(-50%);
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+    color: #0a0b10; background: linear-gradient(135deg, #c7d2fe, #8b9bff);
+    border-radius: 999px; padding: 0.28rem 0.9rem; white-space: nowrap;
+  }
+  .plan h2 { margin: 0 0 0.2rem; font-size: 1.2rem; letter-spacing: -0.01em; }
+  .plan .for { color: var(--faint); font-size: 0.85rem; margin: 0 0 1.4rem; }
+  .plan .price { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .plan .price .per { font-size: 0.85rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .plan .price-note { color: var(--faint); font-size: 0.78rem; margin: 0.5rem 0 1.6rem; }
+  .plan .price-note s { opacity: 0.7; }
+
+  .plan ul { list-style: none; margin: 0 0 2rem; padding: 1.4rem 0 0; border-top: 1px solid var(--line); display: grid; gap: 0.65rem; flex: 1; }
+  .plan li { position: relative; padding-left: 1.5rem; color: var(--muted); font-size: 0.9rem; }
+  .plan li b { color: var(--fg); font-weight: 600; }
+  .plan.free li::before { content: "•"; position: absolute; left: 0.2rem; color: var(--faint); }
+  .plan.free li.no { color: var(--faint); }
+  .plan.free li.no::before { content: "✕"; color: #f87171; font-size: 0.78rem; left: 0.1rem; top: 0.15rem; }
+  .plan.pro li::before { content: "✓"; position: absolute; left: 0; color: var(--ticket); font-weight: 700; }
+  .plan .btn { justify-content: center; }
+
+  /* ---------- seat calculator ---------- */
+
+  .calc { padding: 5rem 0 6rem; border-top: 1px solid var(--line); }
+  .calc .wrap { max-width: 760px; }
+  .calc-card {
+    background: var(--card); border: 1px solid var(--line-2); border-radius: var(--radius);
+    padding: 2.2rem 2rem; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.4);
+  }
+  .calc-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: 0.6rem; }
+  .calc-row .lbl { font-size: 0.82rem; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+  .calc-row .seats { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .calc-row .seats span { font-size: 0.85rem; font-weight: 500; color: var(--muted); }
+
+  input[type="range"].seat-slider {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--diff), var(--chart) 40%, var(--grill) 70%, #f87171);
+    outline: none; margin: 0.8rem 0 0.4rem; cursor: pointer;
+  }
+  input[type="range"].seat-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--fg); border: 3px solid var(--bg);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line-2); cursor: grab;
+  }
+  input[type="range"].seat-slider::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--fg); border: 3px solid var(--bg);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--line-2); cursor: grab;
+  }
+  .slider-ends { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--faint); font-family: var(--mono); margin-bottom: 1.8rem; }
+
+  .calc-out { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 1.4rem; }
+  @media (max-width: 640px) { .calc-out { grid-template-columns: 1fr; } }
+  .calc-out > div { background: var(--bg-2); padding: 1rem 1.1rem; }
+  .calc-out .k { font-size: 0.7rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); margin-bottom: 0.35rem; }
+  .calc-out .v { font-size: 1.35rem; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .calc-out .v.bad { color: #f87171; }
+  .calc-out .surcharge .v { color: var(--grill); }
+
+  .calc-verdict {
+    border: 1px solid rgba(251, 146, 60, 0.35); background: rgba(251, 146, 60, 0.06);
+    border-radius: 10px; padding: 0.8rem 1rem; font-size: 0.9rem; color: var(--muted); min-height: 2.6rem;
+  }
+  .calc-verdict b { color: var(--grill); font-weight: 650; }
+  .calc-fine { margin-top: 1.2rem; color: var(--faint); font-size: 0.74rem; line-height: 1.7; }
+
+  /* ---------- faq ---------- */
+
+  .faq .wrap { max-width: 760px; }
+  .faq-item { border-bottom: 1px solid var(--line); padding: 1.3rem 0; }
+  .faq-item h3 { margin: 0 0 0.45rem; font-size: 1rem; letter-spacing: -0.01em; }
+  .faq-item p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="/#jticket">jTicket</a>
+      <a href="/#jdiff">jDiff</a>
+      <a href="/#jchart">jChart</a>
+      <a href="/#jexplain">jExplain</a>
+      <a href="/#jgrilling">jGrilling</a>
+      <a href="https://jrig.local">jRig</a>
+      <a href="/pricing.html" style="color: var(--fg)">Pricing</a>
+      <a class="nav-cta" href="/#quickstart">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<section class="pricing-hero">
+  <div class="wrap">
+    <span class="eyebrow-pill"><b>Pricing</b> — simple, transparent, unhinged</span>
+    <h1>Pay for software that <span class="grad">already runs on your machine</span></h1>
+    <p class="sub">Two plans. One is free and nearly unusable. The other costs more than your laptop.
+      <span class="fine">All prices in USD. Billed annually, upfront, non-refundable, and — since there is no payment
+      processor — entirely theoretical.</span>
+    </p>
+  </div>
+</section>
+
+<section class="plans">
+  <div class="wrap">
+
+    <div class="plan free">
+      <h2>Hobbyist</h2>
+      <p class="for">For people who want to try jSuite without experiencing it.</p>
+      <div class="price">$0 <span class="per">/ seat / month</span></div>
+      <p class="price-note">Free forever, or until we restart Caddy — whichever comes first.</p>
+      <ul>
+        <li><b>1 of the 6 apps</b> — selected at random every 24 hours</li>
+        <li><b>3 jTicket tickets per month</b> (read-only after creation)</li>
+        <li>jDiff reviews diffs of <b>up to 5 changed lines</b></li>
+        <li>jChart diagrams limited to <b>2 shapes and 1 arrow</b></li>
+        <li>jGrilling asks <b>only softball questions</b> ("great plan — anything else?")</li>
+        <li>jRig avatars come with <b>one (1) limb</b></li>
+        <li class="no">HTTPS — the green lock is a Pro feature; enjoy the warning page</li>
+        <li class="no">Support — there is a mirror in your bathroom</li>
+        <li class="no">Removing the "MADE WITH JSUITE FREE" watermark from your own screen</li>
+      </ul>
+      <a class="btn btn-ghost" href="/#quickstart">Stay free (correct choice)</a>
+    </div>
+
+    <div class="plan pro">
+      <span class="flag">Most profitable (for us)</span>
+      <h2>Pro</h2>
+      <p class="for">For teams with more budget than judgment.</p>
+      <div class="price">$1,249 <span class="per">/ seat / month*</span></div>
+      <p class="price-note">*First seat. Each additional seat costs more — see the calculator below. <s>$1,299</s> limited-time offer since 2024.</p>
+      <ul>
+        <li><b>All 6 apps</b>, at the same time, on the ports they already used</li>
+        <li><b>Unlimited tickets</b> you will never finish</li>
+        <li><b>HTTPS</b> — the exact green lock OrbStack was giving you for free</li>
+        <li>jGrilling at <b>full hostility</b></li>
+        <li>jRig avatars with <b>up to 4 limbs</b> (additional limbs $89/limb/mo)</li>
+        <li><b>Priority support</b> — we read your email aloud in an empty room</li>
+        <li><b>SLA:</b> 99.9% uptime of <code>localhost</code>, which was going to happen anyway</li>
+        <li><b>Dedicated account manager</b> (it's the jGrilling prompt)</li>
+      </ul>
+      <a class="btn btn-primary" id="upgrade-btn" href="#calc">Upgrade to Pro <span class="arrow">→</span></a>
+    </div>
+
+  </div>
+</section>
+
+<section class="calc section" id="calc">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>How many seats do you need?</h2>
+      <p>Most companies charge less per seat as you add seats. We believe collaboration is a
+        premium feature, so each seat costs more than the last. Economies of scale, in reverse.</p>
+    </div>
+
+    <div class="calc-card">
+      <div class="calc-row">
+        <span class="lbl">Team size</span>
+        <span class="seats"><span id="seat-count">1</span> <span id="seat-word">seat</span></span>
+      </div>
+      <input type="range" class="seat-slider" id="seat-slider" min="1" max="25" step="1" value="1"
+        aria-label="Number of seats">
+      <div class="slider-ends"><span>1 seat</span><span>25 seats (why)</span></div>
+
+      <div class="calc-out">
+        <div>
+          <div class="k">Price of seat #<span id="nth-seat">1</span></div>
+          <div class="v" id="marginal">$1,249<span style="font-size:0.7em">/mo</span></div>
+        </div>
+        <div class="surcharge">
+          <div class="k">Collaboration surcharge</div>
+          <div class="v" id="surcharge">+0%</div>
+        </div>
+        <div>
+          <div class="k">Total per year</div>
+          <div class="v bad" id="total">$14,988</div>
+        </div>
+      </div>
+
+      <div class="calc-verdict" id="verdict" aria-live="polite"></div>
+
+      <p class="calc-fine">Seat <i>n</i> is priced at $1,249 × 1.4<sup>n−1</sup>/mo, a formula our
+        pricing team describes as "brave". Prices exclude tax, gratuity, and per-pixel rendering fees.
+        A seat is defined as any chair within line of sight of a screen displaying jSuite.
+        Standing users are billed as 0.8 seats, rounded up to 1.</p>
+    </div>
+  </div>
+</section>
+
+<section class="faq section">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Frequently asked questions</h2>
+      <p>Asked frequently, answered reluctantly.</p>
+    </div>
+    <div class="faq-item">
+      <h3>Why does this cost money? It all runs on my own machine.</h3>
+      <p>Yes. You are paying for the numbers on this page. The numbers are premium numbers.</p>
+    </div>
+    <div class="faq-item">
+      <h3>What payment methods do you accept?</h3>
+      <p>None. There is no payment processor, no backend, and no company. The upgrade button scrolls
+        you to a slider. This has not stopped anyone from asking about purchase orders.</p>
+    </div>
+    <div class="faq-item">
+      <h3>Why does each additional seat cost <i>more</i>?</h3>
+      <p>Every seat you add proves jSuite is more valuable to your organization. We simply price in
+        that enthusiasm. Our competitors call this "backwards"; we call it "value-based pricing".</p>
+    </div>
+    <div class="faq-item">
+      <h3>Can I cancel?</h3>
+      <p>Cancel what?</p>
+    </div>
+    <div class="faq-item">
+      <h3>Is there an Enterprise tier?</h3>
+      <p>Move the slider to 25 seats and read what it says.</p>
+    </div>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <span>Served by the jSuite Caddy edge — static page, no process behind it.
+      No payment is possible, which is the only reason these prices are legal.</span>
+    <nav class="foot-cols">
+      <span class="foot-col">
+        <b>Open</b>
+        <a href="https://jticket.local">jticket.local</a>
+        <a href="https://jdiff.local">jdiff.local</a>
+        <a href="https://jchart.local">jchart.local</a>
+        <a href="https://jexplain.local">jexplain.local</a>
+        <a href="https://jgrilling.local">jgrilling.local</a>
+        <a href="https://jrig.local">jrig.local</a>
+      </span>
+      <span class="foot-col">
+        <b>Learn</b>
+        <a href="/learn/jticket.html">jTicket</a>
+        <a href="/learn/jdiff.html">jDiff</a>
+        <a href="/learn/jchart.html">jChart</a>
+        <a href="/learn/jexplain.html">jExplain</a>
+      </span>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  const BASE = 1249;          // monthly price of seat #1
+  const GROWTH = 1.4;         // each seat costs 40% more than the previous one
+
+  const slider = document.getElementById('seat-slider');
+  const seatCount = document.getElementById('seat-count');
+  const seatWord = document.getElementById('seat-word');
+  const nthSeat = document.getElementById('nth-seat');
+  const marginalEl = document.getElementById('marginal');
+  const surchargeEl = document.getElementById('surcharge');
+  const totalEl = document.getElementById('total');
+  const verdictEl = document.getElementById('verdict');
+
+  const money = n => {
+    if (n >= 1e12) return '$' + (n / 1e12).toFixed(2) + 'T';
+    if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M';
+    return '$' + Math.round(n).toLocaleString('en-US');
+  };
+
+  const verdicts = [
+    [1,  'A reasonable choice. Suspiciously reasonable. Sure you don’t have a coworker?'],
+    [2,  '<b>Collaboration detected.</b> A 40% surcharge has been applied to seat #2.'],
+    [4,  'Four seats. At this price, consider whether some of these people could simply <b>watch</b>.'],
+    [6,  'Have you considered <b>fewer colleagues</b>? Our pricing team has.'],
+    [9,  'Seat #9 now costs more than a car. The car cannot run jChart, but still.'],
+    [12, 'You are now spending more per year than the <b>GDP of some islands</b>. Islands with beaches.'],
+    [16, 'At this spend it would be cheaper to <b>acquire us</b>. We do not have a company, which complicates this.'],
+    [20, 'Our sales team has been notified and is <b>openly weeping with joy</b>. There is no sales team.'],
+    [25, '<b>Enterprise tier unlocked:</b> the price is the same, but a person named Chad will now email you weekly.'],
+  ];
+
+  function render() {
+    const n = +slider.value;
+    const marginal = BASE * Math.pow(GROWTH, n - 1);
+    // total monthly = geometric series: BASE * (G^n - 1) / (G - 1)
+    const monthlyTotal = BASE * (Math.pow(GROWTH, n) - 1) / (GROWTH - 1);
+    const surchargePct = (Math.pow(GROWTH, n - 1) - 1) * 100;
+
+    seatCount.textContent = n;
+    seatWord.textContent = n === 1 ? 'seat' : 'seats';
+    nthSeat.textContent = n;
+    marginalEl.innerHTML = money(marginal) + '<span style="font-size:0.7em">/mo</span>';
+    surchargeEl.textContent = '+' + Math.round(surchargePct).toLocaleString('en-US') + '%';
+    totalEl.textContent = money(monthlyTotal * 12);
+
+    let msg = verdicts[0][1];
+    for (const [min, text] of verdicts) if (n >= min) msg = text;
+    verdictEl.innerHTML = msg;
+  }
+
+  slider.addEventListener('input', render);
+  render();
+
+  // The upgrade button, like the product's billing infrastructure, does not exist.
+  const upgrade = document.getElementById('upgrade-btn');
+  const excuses = [
+    'Contacting billing… <span class="arrow">→</span>',
+    'Payment failed (there is no backend) <span class="arrow">→</span>',
+    'Try again? <span class="arrow">→</span>',
+  ];
+  let attempt = 0;
+  upgrade.addEventListener('click', () => {
+    upgrade.innerHTML = excuses[attempt % excuses.length];
+    attempt++;
+  });
+</script>
+
+</body>
+</html>

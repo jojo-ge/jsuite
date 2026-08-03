@@ -68,8 +68,9 @@ apps/jrig/
     utils/rigStore.ts             # appDataDir('jrig') path helpers (@jsuite/data)
 ```
 
-State root: `.data/jrig/documents/{characters,clips}/` — `<id>.character.json`,
-`<id>.clip.json`. Nothing app-owned is written anywhere else.
+State root: `.data/jrig/documents/` — FLAT: `<id>.character.json`,
+`<id>.clip.json` (the suffix carries the kind; no subfolders). Nothing
+app-owned is written anywhere else.
 
 ## The document format (M2) — unchanged in substance
 
@@ -89,8 +90,12 @@ Full field-by-field spec + validator rule list: original plan §"The document fo
 ### What the `.data` decision changes (vs the original plan)
 
 - **Loading**: no `import.meta.glob`. `rig/registry.ts` fetches `/api/rig/documents` and
-  compiles client-side into `DOCUMENT_STYLES`/`DOCUMENT_CLIPS`; `ART_STYLES` merge stays
-  "doc wins by id, net-new appends". Gallery and studio consume the merged registry.
+  compiles client-side; every page consumes that and nothing else.
+  (**Superseded 2026-08-03 — M3.6.** The plan originally kept an `ART_STYLES` merge,
+  "doc wins by id, net-new appends". There is no merge any more: documents are the only
+  render source, `mergeStyles`/`mergeClips` are deleted, and `AvatarRig.art`/`.clips` are
+  required props so nothing can draw TS art by accident. `rig/styles.ts` and `clips.ts`
+  are now purely the seeder's input.)
 - **Seeding**: a Nitro plugin seeds `.data/jrig/documents/` on boot when empty, writing
   `migrate(HOUSE)`, `migrate(HOODIE)` and the 10 clip docs (2-space + trailing newline).
   `rig/migrate.ts` is a committed module, not a throwaway — the seeder and touch-migration
@@ -164,9 +169,11 @@ Still toggle, play-any-clip with locked input); parametric FaceGeometry + ArmRig
 | # | Milestone | Size | Verification |
 |---|---|---|---|
 | **M0 ✓** | Port + app bootstrap (2026-08-02) | M | DONE: 12 files ported (explicit vue imports added — kraken relied on auto-imports), 54 specs green under vitest 4, gallery/editor/index pages render, suite registration complete. Outstanding: user runs `./jsuite setup` (adds jrig.local + recuts cert) then `./jsuite restart` |
-| **M1** | Shared evaluator + composable extraction (`rig/evaluate.ts`, `usePointerDrag`, `useRigDrag`/`useTransport`/`useClipKeying`/`useClipLibrary` lifted; renderer+editor refactored onto them in place) | M | editor behaves identically; `composePose` specs for layer order/emote weight/stepped snap; ported specs stay green |
-| **M2** | Document pipeline (`document/geometry/compiler/validator/migrate/registry` + seeder + `docs/document-format.md`) | L | round-trip identity + seeder specs green; gallery shows doc-compiled house/hoodie pixel-identical beside TS versions; hand-edit a `.data` JSON → poll updates the page; validator spec green |
-| **M3** | Save endpoint + sync (`/api/rig/documents` GET/PUT mtime fence, `useDocumentSync`, `StudioSyncBar` skeleton) | S | save → file diff visible in `.data`; Claude edit → banner/auto-reload; 409 + force exercised |
+| **M1 ✓** | Shared evaluator + composable extraction (2026-08-02) | M | DONE: `rig/evaluate.ts` (`composePose`/`createEmoteFader`/`createAmbient`, injectable random for specs); `studio/composables/` gained `usePointerDrag` (capture, threshold, Esc-cancel) + `useRigDrag`/`useTransport`/`useClipKeying`/`useClipLibrary`; renderer + editor refactored in place (editor is now wiring + markup only; also made `useId` import explicit). 64 specs green (10 new: layer order / emote weight / stepped snap / fader lifecycle / ambient blink); `nuxt typecheck` clean (vue-tsc added; TS pinned ~5.9 — TS 7 breaks vue-tsc). Behavioral deltas (accepted): drags gained Esc-cancel (joint drag restores pre-drag scratch); import/reset now also rewind the playhead. Outstanding: manual smoke of editor drag/key/play feel |
+| **M2 ✓** | Document pipeline (2026-08-02) | L | DONE: `rig/{document,geometry,compiler,validator,migrate,registry}.ts` + `server/{utils/rigStore,plugins/seed,api/rig/documents/*}` + `docs/document-format.md`. 98 specs green: round-trip identity over every migratable flat style (house+hoodie pinned; riso's refusal pinned — raw spot colours are outside schema v1), all 10 clips, seed pool validates clean + compiles back to exact TS sources (JSON canonicalises `-0`→`0`). Seeder verified live (12 docs), external-edit→mtime→endpoint loop verified, gallery grew a poll-driven Documents section. Typecheck clean. Note: docs live FLAT (no characters/clips subdirs); clip ids are camelCase so names allow it. Outstanding: eyeball doc-vs-TS pixel identity in the browser gallery |
+| **M3 ✓** | Save endpoint + sync (2026-08-02) | S | DONE: `[name].put.ts` (mtime fence → 409 + current disk content; `force` escalation; validates JSON + schema + id-filename agreement; server re-serialises so every writer lands 2-space + newline), `useDocumentSync` (2s poll; clean→silent reload, dirty→external banner, keep-mine→409→overwrite — all pinned by specs against an in-memory server), `StudioSyncBar` (name/dirty dot/validation chip popovers/save/two-stage banner), plus `/documents` — a raw-JSON browser page wiring it all (and a permanent escape hatch). 102 specs green; PUT paths exercised live over HTTP (409/200/force/3×400). Outstanding: eyeball the banner flows in the browser |
+| **M3.5** ✓ | Documents in the ported editor (2026-08-03) | S | DONE, out of band: the editor no longer draws `DEFAULT_ART_STYLE` and no longer ignores the pool. `studio/composables/useDocumentPool.ts` is the shared read loop (gallery + still + editor were three copies of it); `RigEditor.vue` gained a Document bar — character picker over `mergeStyles(ART_STYLES, pool)`, clip-document open, `Save → <id>.clip.json` through the M3 fence, and the conflict banner in the editor's own chrome. `useDocumentSync.adopt` is save-as (empty fence ⇒ creates, or 409s rather than clobbering); `studio/clipDocument.ts` keeps open→save lossless over `compileClipDocument`'s deliberate lossiness. Deep-linkable: `/editor?character=hoodieGuy&clip=wave.clip.json`, routed by the page so `rig/` stays framework-free. 134 specs; typecheck clean. Note this is scaffolding on a component M7 deletes — the composables are the part that survives |
+| **M3.6** ✓ | Documents-only rendering + gallery modal (2026-08-03) | S | DONE, out of band. Clicking a gallery card opens `app/components/CharacterModal.vue` — one character, `rig`-framed (half the clips raise an arm out of `bust`), every emote on a button, deep-linkable `?character=<id>`. Then the scope narrowed on request: **the app renders documents and nothing else.** Gone: the Styles and Skins gallery sections, `/still`'s skin picker, and `registry.ts`'s now-dead `mergeStyles`/`mergeClips` — there is no TS layer left to merge over. The avatar preview went with them in the same pass and was **restored immediately after** — "remove all the avatar previews" meant the previews of the TS styles, not the feature. It now runs on documents only: `frame="avatar"` + `avatarViewBox`/`AVATAR_CHEST_Y`, `studio/avatarBackgrounds.ts`, the gallery switch + backgrounds row, the modal toggle, `/still?frame=avatar&bg=&ring=`. `AvatarRig.art` and `.clips` became **required props**, which is the structural enforcement: no default means no page can draw TS data by accident. `rig/styles.ts` + `clips.ts` survive only as what the seeder migrates from. 143 specs; typecheck clean |
 | **M4** | Studio shell + canvas (stacked SVGs, renderer `viewBox` prop, zoom/pan, mode tabs) | M | hoodie doc under overlay; debug crosshair on head pivot (200,230) at every zoom/pan; mode switch flips event routing |
 | **M5a** | Select + primitives + undo + snapping (`pathModel.ts`, `useHistory`, `useSnapping`, mirror ghost) | M | capsule snapped to elbow pivot; undo/redo across 10 gestures; unit specs |
 | **M5b** | Pen + node editing | M | trace the hoodie cap over the breathing character; save → one shape changed in JSON; node-maths specs |

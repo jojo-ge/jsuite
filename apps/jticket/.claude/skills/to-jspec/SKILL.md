@@ -67,7 +67,8 @@ beyond that belongs in the doc's blocks, not in a description.
 - **Descriptions are the *what*, not the *how*** — prose from the user's perspective, short
   enough to read on a card, not a layer-by-layer implementation list.
 - **Resolutions are the answer** — what was decided and why, plus links to any asset
-  produced. jTicket has no comments, so this field stands in for the resolution comment.
+  produced. Ticket comments are the discussion around the work; the resolution is the
+  one field a future session reads for the outcome.
 - **Restraint.** Prose blocks carry a spec. Callouts mark the two or three things a
   reader must not miss; don't build a wall of panels.
 

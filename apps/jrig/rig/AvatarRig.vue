@@ -9,16 +9,14 @@
 // An emote only overrides the channels it actually keyframes, so an arms-only
 // emote keeps the face on the talk loop. That sparseness *is* the layer mask.
 
-import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 
 import type { ArmGeometry } from './arm';
 import type { ChannelId, Clip, JointFrame, JointId, Pose, Skin } from './core';
 import type { ArtStyle, StyleGradient, StyleLayer, StylePattern } from './styles';
 
 import { armGeometry } from './arm';
-import { BUILT_IN_CLIPS } from './clips';
 import {
-  applyPose,
   computeJointFrames,
   createRestPose,
   DEFAULT_SKIN,
@@ -27,23 +25,28 @@ import {
   JOINTS_BY_ID,
   jointTransform,
   mouthPath,
-  sampleClip,
   SKELETON,
   withArmsAt,
 } from './core';
-import { DEFAULT_ART_STYLE } from './styles';
+import { composePose, createAmbient, createEmoteFader } from './evaluate';
+import { avatarViewBox } from './styles';
+
 
 interface Props {
   /**
-   * The drawing. Every style binds to the same channels, so all emotes work.
+   * The drawing, compiled from a character document. Required, and deliberately
+   * so: documents are the only thing this app renders, and a default would let
+   * a caller draw TS art without meaning to. Every style binds to the same
+   * channels, so all clips work on all of them.
+   *
    * Named `art` rather than `style` because Vue reserves `style` for the inline
    * style attribute and would never deliver it as a prop.
    */
-  art?: ArtStyle;
+  art: ArtStyle;
   /** Colour set. Orthogonal to the style: any skin recolours any art. */
   skin?: Skin;
-  /** Clip library. Defaults to the built-ins; the editor passes its own. */
-  clips?: Clip[];
+  /** Clip library, compiled from clip documents. Required for the same reason. */
+  clips: Clip[];
   /** Steady-state loop underneath any emote. */
   base?: 'idle' | 'talking' | null;
   /** Manual pose override — the editor drives the rig through this. */
@@ -51,8 +54,22 @@ interface Props {
   poseMode?: 'auto' | 'manual';
   /** Breathing, sway and autonomous blinking, on top of whatever is playing. */
   ambient?: boolean;
-  /** `bust` crops to the portrait; `rig` pulls back so the arms stay in frame. */
-  frame?: 'bust' | 'rig';
+  /**
+   * `bust` crops to the portrait; `rig` pulls back so the arms stay in frame;
+   * `avatar` is the round chest-up cut-out the product shows in lists — square,
+   * clipped to a circle, hands out of shot. See `avatarViewBox`.
+   */
+  frame?: 'bust' | 'rig' | 'avatar';
+  /**
+   * Colour behind the character. Only `avatar` framing paints it — everywhere
+   * else the drawing sits on whatever the page is.
+   */
+  background?: string | null;
+  /**
+   * Ring around the avatar circle. Phoenix's cast list colours this rather than
+   * the fill, so it is the tone that identifies a character there.
+   */
+  ring?: string | null;
   /** Draws bones, pivots and drag targets over the art. */
   showRig?: boolean;
   /** Highlighted joint in the rig overlay. */
@@ -62,14 +79,14 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  art: () => DEFAULT_ART_STYLE,
   skin: () => DEFAULT_SKIN,
-  clips: () => BUILT_IN_CLIPS,
   base: 'idle',
   pose: null,
   poseMode: 'auto',
   ambient: true,
   frame: 'bust',
+  background: null,
+  ring: null,
   showRig: false,
   selectedJoint: null,
   speed: 1,
@@ -82,11 +99,6 @@ const emit = defineEmits<{
   jointPointerDown: [jointId: JointId, event: PointerEvent];
 }>();
 
-const FADE_IN_S = 0.12;
-const FADE_OUT_S = 0.22;
-const BLINK_S = 0.16;
-const BLINK_CLOSE_FRACTION = 0.35;
-
 const clipsById = computed(() => new Map(props.clips.map(clip => [clip.id, clip])));
 
 const livePose = shallowRef<Pose>(createRestPose());
@@ -94,119 +106,54 @@ const livePose = shallowRef<Pose>(createRestPose());
 const fxClock = shallowRef(0);
 
 // --- playback state -------------------------------------------------------
+// The layer stack itself lives in ./evaluate — this file only owns the clocks
+// and the rAF loop that drive it.
+const emote = createEmoteFader();
+const ambient = createAmbient();
 let baseTime = 0;
-let emoteClip: Clip | null = null;
-let emoteTime = 0;
-let emoteWeight = 0;
-let emoteReleasing = false;
-let ambientTime = 0;
-let nextBlinkAt = 3;
-let blinkStartedAt = -1;
 let rafId: number | null = null;
 let lastFrameAt = 0;
 let reducedMotion = false;
-
-const scheduleBlink = (from: number) => {
-  nextBlinkAt = from + 2.2 + Math.random() * 3.4;
-};
 
 const play = (clipId: string) => {
   const clip = clipsById.value.get(clipId);
   if (!clip) {
     return;
   }
-  emoteClip = clip;
-  emoteTime = 0;
-  emoteReleasing = false;
   // Retriggering mid-emote keeps the current weight so the blend never pops.
+  emote.play(clip);
   emit('emoteStart', clip.id);
 };
 
 const stop = () => {
-  if (emoteClip) {
-    emoteReleasing = true;
-  }
-};
-
-// --- ambient layer --------------------------------------------------------
-// Applied last so the character is never completely still, whatever is playing.
-// Additive rather than absolute, so it survives any pose the editor produces.
-const applyAmbient = (pose: Pose, t: number) => {
-  const breath = Math.sin((t / 4.4) * Math.PI * 2);
-  pose['chest.sy'] = (pose['chest.sy'] ?? 1) + breath * 0.012;
-  pose['chest.y'] = (pose['chest.y'] ?? 0) + breath * 1.2;
-  pose['root.x'] = (pose['root.x'] ?? 0) + Math.sin(t * 0.37) * 1.2 + Math.sin(t * 0.23) * 0.8;
-  pose['root.rot'] = (pose['root.rot'] ?? 0) + Math.sin(t * 0.29) * 0.35;
-
-  if (t >= nextBlinkAt && blinkStartedAt < 0) {
-    blinkStartedAt = t;
-  }
-  if (blinkStartedAt >= 0) {
-    const progress = (t - blinkStartedAt) / BLINK_S;
-    if (progress >= 1) {
-      blinkStartedAt = -1;
-      scheduleBlink(t);
-    }
-    else {
-      // Lids snap shut and drift back open — a symmetric curve reads mechanical.
-      const shape = progress < BLINK_CLOSE_FRACTION
-        ? progress / BLINK_CLOSE_FRACTION
-        : 1 - (progress - BLINK_CLOSE_FRACTION) / (1 - BLINK_CLOSE_FRACTION);
-      // Multiplicative, so a blink reads over a squint or a wide-eyed pose
-      // without ever fighting the clip that authored it.
-      const lid = 1 - Math.sin(shape * (Math.PI / 2)) * 0.96;
-      const openL = pose['face.eyeOpenL'] ?? 1;
-      const openR = pose['face.eyeOpenR'] ?? 1;
-      if (openL > 0.25) {
-        pose['face.eyeOpenL'] = openL * lid;
-      }
-      if (openR > 0.25) {
-        pose['face.eyeOpenR'] = openR * lid;
-      }
-    }
-  }
+  emote.release();
 };
 
 const evaluate = (dt: number) => {
-  const pose = createRestPose();
+  let pose: Pose;
 
   if (props.poseMode === 'manual') {
-    if (props.pose) {
-      applyPose(pose, props.pose);
-    }
+    pose = composePose({ overlay: props.pose });
   }
   else {
     baseTime += dt;
     const baseClip = props.base ? clipsById.value.get(props.base) : null;
-    if (baseClip) {
-      applyPose(pose, sampleClip(baseClip, reducedMotion ? 0 : baseTime));
-    }
-
-    if (emoteClip) {
-      emoteTime += dt;
-      const remaining = emoteClip.duration - emoteTime;
-      if (emoteReleasing || (!emoteClip.loop && remaining <= FADE_OUT_S)) {
-        emoteWeight = Math.max(0, emoteWeight - dt / FADE_OUT_S);
-      }
-      else {
-        emoteWeight = Math.min(1, emoteWeight + dt / FADE_IN_S);
-      }
-      applyPose(pose, sampleClip(emoteClip, emoteTime), emoteWeight);
-      if (emoteWeight <= 0 && (emoteReleasing || emoteTime >= emoteClip.duration)) {
-        const finished = emoteClip.id;
-        emoteClip = null;
-        emoteReleasing = false;
-        emit('emoteEnd', finished);
-      }
+    const finished = emote.advance(dt);
+    pose = composePose({
+      base: baseClip ? { clip: baseClip, time: reducedMotion ? 0 : baseTime } : null,
+      emote: emote.active,
+    });
+    if (finished) {
+      emit('emoteEnd', finished);
     }
   }
 
-  ambientTime += dt;
+  ambient.advance(dt);
   if (props.ambient && !reducedMotion) {
-    applyAmbient(pose, ambientTime);
+    ambient.apply(pose);
   }
 
-  fxClock.value = ambientTime;
+  fxClock.value = ambient.time;
   livePose.value = pose;
 };
 
@@ -234,7 +181,6 @@ watch(
 onMounted(() => {
   reducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  scheduleBlink(0);
   evaluate(0);
   if (!isStatic.value) {
     lastFrameAt = performance.now();
@@ -276,6 +222,11 @@ const armRId = `rig-arm-r-${uid}`;
 
 const art = computed(() => props.art);
 const face = computed(() => art.value.face);
+
+// `avatar` is the only frame a character does not author — it is cut from `bust`.
+const viewBox = computed(() => (props.frame === 'avatar'
+  ? avatarViewBox(art.value.viewBox.bust)
+  : art.value.viewBox[props.frame]));
 
 const mouthD = computed(() => mouthPath(pose.value, face.value));
 const eyeLD = computed(() => eyePath(pose.value, 'l', face.value));
@@ -361,6 +312,11 @@ const svgFilter = computed(() => [
 const skinStyle = computed(() => ({
   ...props.skin.colours,
   ...art.value.palette,
+  // Painted by the element, not by a shape in the drawing: the circle is a
+  // crop, and a <circle> inside the viewBox would have to know the crop's
+  // radius to line up with the edge the CSS clip actually cuts.
+  ...(props.frame === 'avatar' && props.background ? { background: props.background } : {}),
+  ...(props.frame === 'avatar' && props.ring ? { borderColor: props.ring } : {}),
   '--ink-silhouette': `${art.value.ink.silhouette}px`,
   '--ink-feature': `${art.value.ink.feature}px`,
   '--ink-detail': `${art.value.ink.detail}px`,
@@ -427,9 +383,9 @@ const mirroredLayers = (layers?: StyleLayer[]) => (layers ?? []).filter(layer =>
 <template>
   <svg
     class="rig"
-    :class="{ 'rig--overlay': showRig }"
+    :class="{ 'rig--overlay': showRig, 'rig--avatar': frame === 'avatar', 'rig--ringed': frame === 'avatar' && !!ring }"
     :style="skinStyle"
-    :viewBox="art.viewBox[frame]"
+    :viewBox="viewBox"
     xmlns="http://www.w3.org/2000/svg"
     role="img"
     :aria-label="name"
@@ -1122,6 +1078,27 @@ const mirroredLayers = (layers?: StyleLayer[]) => (layers ?? []).filter(layer =>
   height: auto;
   overflow: visible;
 }
+
+/* The round cut-out. `overflow: hidden` is what makes the radius bite — the
+   default above is deliberately visible so a raised arm or a glow filter is
+   never clipped in the other two frames, and here clipping IS the point. The
+   viewBox is square (see `avatarViewBox`), so 50% is a true circle.
+
+   The ring is a border rather than an outline so the clip lands on the padding
+   edge and the drawing sits inside it, the way `rounded-full border-2` does in
+   KUI. `box-sizing` keeps the circle the size the caller asked for.
+
+   Its width is a length, not a percentage — `border-width` does not accept one,
+   and silently computing to zero is exactly what it does if you try. KUI picks
+   a width per size (border-2 at 64px, border-4 at 128px), so this is a custom
+   property for the caller to scale with whatever size it is rendering at. */
+.rig--avatar {
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 0 solid transparent;
+  border-radius: 50%;
+}
+.rig--ringed { border-width: var(--rig-ring-width, 4px); }
 
 /* Line weights are the style's, not this file's: a graded set (heavier on the
    silhouette than on interior detail) reads as drawn, a uniform set reads as

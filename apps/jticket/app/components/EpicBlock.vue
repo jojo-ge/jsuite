@@ -25,6 +25,10 @@ const collapsible = computed(() => !!body.value && (isMap.value || props.epic.de
 const bodyLabel = computed(() => (isMap.value ? 'Map — destination, decisions & fog' : 'Description'))
 const showBody = ref(!isMap.value)
 
+// Map mode: the same tickets as a dependency graph with fog and destination.
+// A mode you switch into — the grouped list stays the default view.
+const view = ref<'list' | 'map'>('list')
+
 // Key-order within a bucket (TICK-2 before TICK-10 — plain string sort won't do).
 function byKey(a: Ticket, b: Ticket) {
   const n = (k: string) => Number(k.split('-').pop()) || 0
@@ -70,6 +74,16 @@ const groups = computed(() => {
         <div v-if="body && !collapsible" class="jx-prose jx-prose-sm mt-1 max-w-2xl" v-html="body" />
       </div>
       <div class="flex shrink-0 gap-1">
+        <UButton
+          v-if="isMap && tickets.length"
+          :icon="view === 'list' ? 'i-lucide-map' : 'i-lucide-list'"
+          size="sm"
+          color="primary"
+          :variant="view === 'map' ? 'solid' : 'soft'"
+          @click="view = view === 'list' ? 'map' : 'list'"
+        >
+          {{ view === 'list' ? 'Map' : 'List' }}
+        </UButton>
         <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="emit('new-ticket', epic.id)">Ticket</UButton>
         <UButton icon="i-lucide-pencil" size="sm" color="neutral" variant="ghost" @click="emit('edit-epic', epic)" />
         <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="emit('delete-epic', epic)" />
@@ -90,8 +104,17 @@ const groups = computed(() => {
       <div v-if="showBody" class="jx-prose jx-prose-sm max-h-[32rem] overflow-y-auto px-4 py-3" v-html="body" />
     </div>
 
+    <!-- Map mode: dependency graph with fog and destination -->
+    <WayfinderMap
+      v-if="isMap && view === 'map' && tickets.length"
+      :epic="epic"
+      :tickets="tickets"
+      :all-tickets="allTickets"
+      @edit-ticket="emit('edit-ticket', $event)"
+    />
+
     <!-- Tickets grouped by flow state: Frontier · In progress · Blocked · Resolved -->
-    <div v-if="groups.length" class="space-y-5">
+    <div v-else-if="groups.length" class="space-y-5">
       <div v-for="g in groups" :key="g.key">
         <div class="mb-2 flex items-center gap-2">
           <UIcon :name="g.icon" class="size-4" :class="g.key === 'frontier' ? 'text-primary' : 'text-muted'" />
