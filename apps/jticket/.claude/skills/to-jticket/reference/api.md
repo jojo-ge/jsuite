@@ -197,5 +197,20 @@ curl -s "$JTICKET/api/tickets?epicId=EPIC-2" | jq '.[] | {key, title, blockedBy,
 
 ## Storage
 
-One human-editable JSON file at `<jSuite root>/.data/jticket/jticket.json`. Deletes are
-immediate and unrecoverable — there is no trash and no undo.
+One human-editable JSON file per entity under `<jSuite root>/.data/jticket/`:
+
+```
+projects/PROJ-2.json   epics/EPIC-2.json   tickets/TICK-5.json
+docs/DOC-2.json        counters.json
+```
+
+Files are named for the display key so the tree is browsable, but the `id`
+inside each file is its real identity — keys come from titles and counters and
+are only unique on this machine, so anything reconciling two installs (export,
+import, publish) matches on `id`. Doc records carry both `documentKey` (slug
+address into the shared document pool) and `documentId` (that document's
+identity).
+
+Reading state straight off disk is fine. Write through the API anyway — it
+allocates keys, maintains `counters.json`, and resolves cross-entity refs.
+Deletes are immediate and unrecoverable — there is no trash and no undo.

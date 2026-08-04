@@ -36,6 +36,7 @@ RUN="$HERE/run"
 # directory on its own. Exporting it anyway pins the location regardless of the
 # cwd an app is launched from, and lets a one-off run redirect somewhere else.
 export JSUITE_DATA_DIR="${JSUITE_DATA_DIR:-$HERE/.data}"
+DATA="$JSUITE_DATA_DIR"
 
 # id | directory (under ./apps) | port | dev command
 # Ports are fixed on purpose — tooling hardcodes them (the to-jticket skill
@@ -231,6 +232,27 @@ cmd_logs() {
   fi
 }
 
+# `.data` is its own git repo (see packages/data/history.mjs) — every write the
+# apps make lands as a commit, so local state has a past to diff and roll back
+# to. It is deliberately separate from the workspace repo, which gitignores
+# `.data` entirely.
+cmd_history() {
+  [[ -d "$DATA/.git" ]] || die "no history yet — it starts at the first write to .data"
+  case "${1:-log}" in
+    log) shift; git -C "$DATA" log --format='%C(dim)%h%Creset %C(yellow)%ar%Creset  %s' -n "${1:-20}" ;;
+    diff) shift; git -C "$DATA" diff "${@:-HEAD~1}" ;;
+    show) shift; [[ $# -gt 0 ]] || die "usage: $0 history show <commit>[:<path>]"; git -C "$DATA" show "$@" ;;
+    restore)
+      shift
+      [[ $# -eq 2 ]] || die "usage: $0 history restore <commit> <path-under-.data>"
+      git -C "$DATA" checkout "$1" -- "$2" && ok "restored $2 from $1"
+      dim "The app reads from disk on the next request — no restart needed."
+      ;;
+    path) echo "$DATA" ;;
+    *) die "usage: $0 history {log [n]|diff [rev]|show <rev>|restore <rev> <path>|path}" ;;
+  esac
+}
+
 cmd_open() {
   local target="${1:-jsuite}"
   [[ "$target" == jsuite ]] || app_row "$target" >/dev/null || die "unknown app: $target"
@@ -313,6 +335,7 @@ case "${1:-start}" in
   status) cmd_status ;;
   logs) shift; cmd_logs "$@" ;;
   open) shift; cmd_open "$@" ;;
+  history) shift; cmd_history "$@" ;;
   setup) cmd_setup ;;
-  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup}" ;;
+  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|history [log|diff|show|restore]|setup}" ;;
 esac

@@ -64,7 +64,10 @@ export interface Doc {
   id: string
   key: string
   title: string
+  /** Slug address into the shared pool — follows the title, can be re-pointed. */
   documentKey: string
+  /** Stable identity of that document; survives renames and re-slugging. */
+  documentId: string
   projectId: string | null
   labels: string[]
   status: DocStatus

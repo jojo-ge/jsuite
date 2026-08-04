@@ -11,6 +11,10 @@
       "types": "./index.d.ts",
       "default": "./index.mjs"
     },
+    "./history": {
+      "types": "./history.d.ts",
+      "default": "./history.mjs"
+    },
     "./package.json": "./package.json"
   }
 }

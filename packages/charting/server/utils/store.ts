@@ -1,7 +1,9 @@
-import { readFile, writeFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
+import { readFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { appDataDir } from '@jsuite/data'
+import { appDataDir, writeJsonAtomic } from '@jsuite/data'
+import { snapshotData } from '@jsuite/data/history'
 
 // One chart per pretty-printed file in .data/jchart/<key>.json, with review notes
 // in a sidecar .data/jchart/<key>.notes.json. Both are plain JSON so an LLM can
@@ -22,6 +24,14 @@ export interface ChartScene {
 export interface Chart {
   format: 'j-chart'
   version: 1
+  /**
+   * Stable identity — minted once, never derived from anything mutable. `key`
+   * is a *slug*: it comes from the title and is unique only against this
+   * machine's pool, so two people diagramming "Deploy topology" both land on
+   * `deploy-topology`. Anything reconciling two pools (publish, sync, import)
+   * matches on `id`; `key` is only an address.
+   */
+  id: string
   key: string
   title: string
   createdAt: string
@@ -44,6 +54,7 @@ export interface ChartNotes {
 }
 
 export interface ChartMeta {
+  id: string
   key: string
   title: string
   createdAt: string
@@ -89,11 +100,33 @@ export async function uniqueKey(base: string): Promise<string> {
   return `${root}-${Date.now()}`
 }
 
+/**
+ * Mint a chart identity. Random, never derived from the key or title —
+ * deriving it would give two independently-drawn "Deploy topology" charts the
+ * same id and silently merge them the first time two pools meet.
+ */
+export function newChartId(): string {
+  return `cht_${randomUUID().replace(/-/g, '')}`
+}
+
+/**
+ * Charts written before ids existed get one stamped in on first read. The
+ * write-back is what makes the id *stable* — re-minting per read would be no
+ * better than the key it replaces.
+ */
+async function backfillChartId(key: string, chart: Chart): Promise<Chart> {
+  if (typeof chart.id === 'string' && chart.id) return chart
+  const stamped = { ...chart, id: newChartId() }
+  await writeChart(key, stamped)
+  return stamped
+}
+
 export function blankChart(opts: { key: string; title: string; source?: ChartSource }): Chart {
   const now = new Date().toISOString()
   return {
     format: 'j-chart',
     version: 1,
+    id: newChartId(),
     key: opts.key,
     title: opts.title,
     createdAt: now,
@@ -107,7 +140,7 @@ export async function readChart(key: string): Promise<Chart | null> {
   const p = chartPath(key)
   if (!existsSync(p)) return null
   try {
-    return JSON.parse(await readFile(p, 'utf8')) as Chart
+    return await backfillChartId(key, JSON.parse(await readFile(p, 'utf8')) as Chart)
   } catch {
     return null
   }
@@ -115,13 +148,16 @@ export async function readChart(key: string): Promise<Chart | null> {
 
 export async function writeChart(key: string, chart: Chart): Promise<void> {
   await ensureDir()
-  await writeFile(chartPath(key), JSON.stringify(chart, null, 2) + '\n', 'utf8')
+  const withId: Chart = chart.id ? chart : { ...chart, id: newChartId() }
+  await writeJsonAtomic(chartPath(key), withId)
+  snapshotData(`chart: ${key}`)
 }
 
 export async function deleteChart(key: string): Promise<void> {
   for (const p of [chartPath(key), notesPath(key)]) {
     if (existsSync(p)) await rm(p)
   }
+  snapshotData(`chart: delete ${key}`)
 }
 
 export async function readNotes(key: string): Promise<ChartNotes> {
@@ -140,7 +176,8 @@ export async function readNotes(key: string): Promise<ChartNotes> {
 
 export async function writeNotes(key: string, notes: ChartNotes): Promise<void> {
   await ensureDir()
-  await writeFile(notesPath(key), JSON.stringify(notes, null, 2) + '\n', 'utf8')
+  await writeJsonAtomic(notesPath(key), notes)
+  snapshotData(`chart notes: ${key}`)
 }
 
 export async function listCharts(): Promise<ChartMeta[]> {
@@ -150,11 +187,13 @@ export async function listCharts(): Promise<ChartMeta[]> {
   for (const f of files) {
     const key = f.replace(/\.json$/, '')
     try {
-      const doc = JSON.parse(await readFile(join(DATA_DIR, f), 'utf8')) as Chart
-      if (doc.format !== 'j-chart') continue
+      const parsed = JSON.parse(await readFile(join(DATA_DIR, f), 'utf8')) as Chart
+      if (parsed.format !== 'j-chart') continue
+      const doc = await backfillChartId(key, parsed)
       const { notes } = await readNotes(key)
       const elements = Array.isArray(doc.scene?.elements) ? doc.scene.elements : []
       out.push({
+        id: doc.id,
         key,
         title: doc.title || key,
         createdAt: doc.createdAt,

@@ -27,8 +27,33 @@ that app's own skill rather than improvising one app's job in another.
 ## Rules of the suite
 
 - **State lives in `.data/<app>/` at this root, never inside an app.** Use
-  `@jsuite/data` (`appDataDir`/`appDataFile`) to resolve paths. jTicket's state
-  is API-only — go through :43000, don't hand-edit `.data/jticket/jticket.json`.
+  `@jsuite/data` (`appDataDir`/`appDataFile`) to resolve paths. Every app stores
+  one JSON file per entity, so reading state straight off disk is fine and cheap
+  — jTicket is `.data/jticket/{projects,epics,tickets,docs}/<KEY>.json` plus
+  `counters.json`. **Write through the API** (:43000) anyway: it allocates keys,
+  maintains counters, and resolves cross-entity refs.
+- **File names are addresses; `id` is identity.** A file is named for its
+  display key (`tickets/TICK-5.json`, `.data/jexplain/<slug>.json`) because that
+  makes the tree browsable, but keys are derived from titles and unique only
+  within one machine's pool. Anything that has to survive a rename or reconcile
+  two pools — publish, sync, import — must match on the `id` inside the file.
+  Documents carry `doc_…`, charts `cht_…`, and jTicket doc records carry
+  `documentId` alongside `documentKey`. Ids are minted randomly and **never
+  derived from the key or title** — deriving them would give two independently
+  authored "Q3 Planning" documents the same id and silently merge them.
+- **Never write into `.data` with a plain `writeFile`.** Use
+  `writeJsonAtomic`/`writeTextAtomic` from `@jsuite/data` (or jTicket's own
+  `writeFileAtomic`), which write to a sibling `.tmp` and rename over the
+  target. Two charts here were found holding a complete document followed by
+  344 bytes of tail from a longer previous version — that is what an in-place
+  write does when it loses a race.
+- **`.data` is its own git repo**, committed on every write by
+  `@jsuite/data/history` (`snapshotData`). That's what gives local state undo, a
+  publish diff, and the *base version* a three-way merge needs. It's separate
+  from the workspace repo, which gitignores `.data`. Use `./jsuite history`
+  (`log`, `diff`, `show`, `restore <rev> <path>`); apps re-read from disk each
+  request, so a restore needs no restart. Best-effort by design — a failed
+  commit never fails the write. `JSUITE_HISTORY=0` disables it.
 - **URLs always carry the scheme**: `https://<app>.local`. Bare host ports
   (43000–43006) work too but the `.local` names are what tooling hardcodes.
 - **Ports are fixed.** The `APPS` table in `./jsuite`, the `Caddyfile`, and

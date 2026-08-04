@@ -90,7 +90,7 @@ back up, wipe, or point an LLM at — and it survives an app being reinstalled.
 ```ts
 import { appDataDir, appDataFile } from '@jsuite/data'
 const DATA_DIR = appDataDir('jchart')                 // <root>/.data/jchart
-const FILE = appDataFile('jticket', 'jticket.json')   // parents created
+const FILE = appDataFile('jticket', 'counters.json')  // parents created
 ```
 
 Add `"@jsuite/data": "workspace:*"` to the app's `dependencies`; that's all —
@@ -101,12 +101,52 @@ overrides the search when set.
 
 | app | state |
 | --- | --- |
-| jticket | `.data/jticket/jticket.json` + `attachments/` |
+| jticket | `.data/jticket/{projects,epics,tickets,docs}/<KEY>.json` + `counters.json` + `attachments/` |
 | jchart | `.data/jchart/<key>.json` (+ `.notes.json`) — shared: jexplain reads/writes the same pool |
 | jdiff | `.data/jdiff/` — ratings, tours, risks, asks, comments, caches |
 | jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
 | jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
 | jrig | `.data/jrig/` — character/clip JSON documents (schema-validated) |
+
+### Names address, ids identify
+
+A state file is named for its display key — `tickets/TICK-5.json`,
+`.data/jexplain/<slug>.json` — because that makes the tree browsable without an
+index, which is most of the point of keeping state as plain files. But keys are
+derived from titles and counters, so they are unique only on one machine: two
+people writing "Q3 Planning" both land on `q3-planning`, and two people creating
+tickets offline both mint `TICK-72`.
+
+So every record also carries an `id` (`doc_…`, `cht_…`, `tick_…`), minted
+randomly and never derived from anything mutable. The key is an address; the id
+is identity. Anything that has to survive a rename or reconcile two pools —
+export/import today, publish and sync later — matches on the id.
+
+### Writes are atomic, and `.data` has a history
+
+Write through `writeJsonAtomic`/`writeTextAtomic` from `@jsuite/data`, never a
+plain `writeFile`: content goes to a sibling `.tmp` and is renamed over the
+target, so a reader never sees a half-written file. This is not theoretical —
+two charts here were found holding a complete document followed by 344 bytes of
+tail left over from a longer previous version.
+
+`.data` is also its own git repo, committed on every write by
+`@jsuite/data/history`. Files are overwritten in place, so without it there is
+no record of what a file looked like before the last write — no undo when an
+agent mangles a document, no "what changed since I last published?", and no
+*base version*, which is what a three-way merge needs to do anything better than
+ask a human to pick a side.
+
+```sh
+./jsuite history log                                  # recent writes
+./jsuite history diff HEAD~5                          # what changed since
+./jsuite history restore <rev> jexplain/my-doc.json   # undo
+```
+
+Apps re-read from disk on each request, so a restore needs no restart. It is
+best-effort: a failed commit never fails the write that triggered it, bursts
+coalesce into one commit, and `JSUITE_HISTORY=0` turns it off. The repo is
+separate from the workspace repo, which gitignores `.data` entirely.
 
 ## @jsuite/charting
 
@@ -197,6 +237,8 @@ Always include the scheme: `https://jticket.local`.
 ./jsuite status           # pid + live HTTPS status code per app
 ./jsuite logs [app|edge]  # tail -F; no arg = every app
 ./jsuite open [app]       # open in the browser (default: the index)
+./jsuite history [log|diff|show|restore <rev> <path>]
+                          # the .data git history — see "Writes are atomic" above
 ./jsuite setup            # onboarding: OrbStack check, pnpm install, skill install,
                           # cleanup of the old mkcert/hosts edge — re-runnable
 ```

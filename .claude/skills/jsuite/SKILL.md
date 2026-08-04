@@ -12,7 +12,13 @@ stable URL, so skills and bookmarks point at fixed addresses:
 ```sh
 cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 ./jsuite status | stop | restart | logs [app] | open [app]
+./jsuite history log                                  # every write to .data
+./jsuite history restore <rev> jexplain/my-doc.json   # undo one file
 ```
+
+`.data` is its own git repo, committed on every write, so local state has undo
+and a diffable past. Apps re-read from disk each request — a restore needs no
+restart.
 
 | App | URL | Port | What it is |
 | --- | --- | --- | --- |

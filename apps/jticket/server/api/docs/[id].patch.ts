@@ -31,10 +31,12 @@ export default defineEventHandler(async (event) => {
 
   if (body.documentKey !== undefined) {
     const key = sanitizeDocKey(body.documentKey)
-    if (!key || !(await readDoc(key))) {
+    const relinked = key ? await readDoc(key) : null
+    if (!relinked) {
       throw createError({ statusCode: 400, statusMessage: `unknown document: ${body.documentKey}` })
     }
     doc.documentKey = key
+    doc.documentId = relinked.id
   }
 
   // Content updates rewrite the backing shared document.
@@ -43,9 +45,14 @@ export default defineEventHandler(async (event) => {
   if (touchesContent) {
     const existing = await readDoc(doc.documentKey)
     const ts = now()
+    // An edit must never re-mint identity — this is the same document. Only a
+    // body that didn't exist yet (a dangling documentKey) gets a fresh one, and
+    // the record is re-pointed at it below.
+    const documentId = existing?.id || doc.documentId || newDocId()
     await writeDoc(doc.documentKey, {
       format: 'j-explain',
       version: 1,
+      id: documentId,
       key: doc.documentKey,
       title: doc.title,
       subtitle:
@@ -64,6 +71,7 @@ export default defineEventHandler(async (event) => {
           : (existing?.blocks ?? []),
       glossary: body.glossary !== undefined ? cleanGlossary(body.glossary) : (existing?.glossary ?? {}),
     })
+    doc.documentId = documentId
   }
 
   doc.updatedAt = now()
