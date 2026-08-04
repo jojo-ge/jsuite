@@ -6,6 +6,8 @@ The block format here is **the jSuite document system** (`@jsuite/documents`): o
 
 Use this when the user asks you to *explain* something and deserves better than terminal markdown: a PR walkthrough, an architecture tour, a "how does X actually work", a post-mortem, a comparison of options.
 
+**You can make diagrams from right here.** A `chart` block takes inline Mermaid and the server turns it into a real, live Excalidraw canvas embedded in the article — no separate jChart round-trip, no image files. Reach for one whenever the explanation has a *shape*: a request path, a state machine, a before/after architecture, who-calls-what. See the **chart** block below.
+
 ## Workflow
 
 1. **Author the payload.** Write a single JSON file (scratchpad dir if one exists) with the shape below. Think like a good tech-blog writer: open with why it matters, alternate prose with evidence (code, diffs, charts), close with takeaways.
@@ -75,12 +77,16 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
   "commentary": "Everything else in the PR is plumbing for this line." }
 ```
 
-**chart** — a live Excalidraw canvas, embedded. Author mermaid; the server materialises it into the **shared jChart store** and keeps only the `chartKey` reference. Optional: `chartKey` (to reuse/name one), `height` (px, default 420), `caption`.
+**chart** — a live Excalidraw canvas, embedded. **This is how you make a diagram in an explainer.** Write Mermaid inline (any kind Mermaid supports: flowchart, sequence, state, class, ER…) and the server materialises it into the **shared jChart store**, keeping only a `chartKey` reference in the block. Optional: `chartKey` (to reuse/name one), `height` (px, default 420), `caption`.
 ```json
 { "type": "chart", "title": "Request path", "caption": "Where the stale read happens.",
   "mermaid": "flowchart LR\n  A[Req] --> B{Hit?}\n  B -->|yes| C[Return]\n  B -->|no| D[Fetch]" }
 ```
-An existing chart can be embedded with just `{ "type": "chart", "chartKey": "..." }`.
+- Use as many chart blocks in one document as the story needs — each becomes its own chart in the pool.
+- The chart is **fully editable in place**: the reader drags shapes, retypes labels, draws new ones, and pins notes to individual shapes — all on the page, no jChart detour. "Open in jChart" is there for the full workbench.
+- On `--replace`, a chart whose mermaid is **byte-identical** to last time is left completely untouched, so hand edits and shape notes survive. Changing the mermaid rebuilds the layout (notes survive, hand edits don't) — so don't retouch mermaid you didn't mean to change.
+- Charts you author here **are** jChart charts. Embed an existing one with just `{ "type": "chart", "chartKey": "..." }`, and set `chartKey` yourself when you want a stable, nameable chart rather than a slug derived from the doc key + title.
+- After the user has edited, read the live scene from `.data/jchart/<chartKey>.json` — not your original mermaid — and its shape notes from `<chartKey>.notes.json`.
 
 **steps** — numbered walkthrough: `{ "type": "steps", "title": "…", "items": [{ "title": "…", "md": "…" }] }`
 
