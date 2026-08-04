@@ -11,6 +11,14 @@ export default defineNuxtConfig({
     },
   },
   ui: { colorMode: true },
+  // jRig extends no shared layer, so it doesn't inherit @jsuite/charting's icon
+  // config. Its pages use lucide icons via dynamic <UIcon> bindings, which @nuxt/icon
+  // can't statically bundle — at SSR they render as empty placeholders, then load +
+  // fill on the client (hydration mismatch + `[Icon] failed to load` warns). Scanning
+  // the source bundles them so they resolve synchronously on both sides.
+  icon: {
+    clientBundle: { scan: true },
+  },
   // Served behind the jSuite Caddy edge at https://jrig.local — allow
   // that host through Vite's dev-server host check.
   vite: {

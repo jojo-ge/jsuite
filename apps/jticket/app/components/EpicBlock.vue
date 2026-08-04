@@ -1,4 +1,12 @@
 <script setup lang="ts">
+// An epic and its tickets, in one of three switchable views:
+//   Board  — frontier-first: Frontier + In progress as cards, Blocked + Resolved
+//            folded into condensed rows. The default.
+//   Digest — every ticket as one dense table row; frontier pinned + tinted.
+//   Graph  — the wayfinder dependency graph (maps only; see WayfinderMap).
+// A recap banner (flow-state counts) sits above all three and carries a badge
+// that opens the epic's body — the map (destination / decisions / fog) or a plain
+// description — in a modal, so it never buries the tickets.
 import type { Epic, Ticket } from '~/composables/useTracker'
 
 const props = defineProps<{ epic: Epic; tickets: Ticket[]; allTickets: Ticket[]; wayfinder?: boolean }>()
@@ -10,53 +18,82 @@ const emit = defineEmits<{
   'delete-ticket': [ticket: Ticket]
 }>()
 
-// A map is a wayfinder-mode epic carrying the wayfinder:map label. Its
-// description *is* the map body (destination / decisions / fog); a standard
-// epic's is a brief. Both are markdown, so both get rendered.
 const isMap = computed(() => props.wayfinder && isMapEpic(props.epic))
 const { render: renderMd } = useMarkdown()
 const body = computed(() => (props.epic.description.trim() ? renderMd(props.epic.description) : ''))
-
-// Anything long enough to push the tickets off-screen goes behind a disclosure.
-// Map bodies always qualify (and start closed — they run to thousands of words);
-// a long epic brief starts open, since you asked for it by opening the epic.
-const LONG = 600
-const collapsible = computed(() => !!body.value && (isMap.value || props.epic.description.length > LONG))
 const bodyLabel = computed(() => (isMap.value ? 'Map — destination, decisions & fog' : 'Description'))
-const showBody = ref(!isMap.value)
+const bodyModalOpen = ref(false)
 
-// Map mode: the same tickets as a dependency graph with fog and destination.
-// A mode you switch into — the grouped list stays the default view.
-const view = ref<'list' | 'map'>('list')
+type ViewMode = 'board' | 'digest' | 'map'
+const view = ref<ViewMode>('board')
+const viewOptions = computed(() => [
+  { key: 'board' as const, label: 'Board', icon: 'i-lucide-layout-list' },
+  { key: 'digest' as const, label: 'Digest', icon: 'i-lucide-table-2' },
+  // The graph rendering of the map's tickets. Labelled "Graph" (not "Map") so the
+  // only thing called "Map" is the identity badge in the header.
+  ...(isMap.value ? [{ key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' }] : []),
+])
 
-// Key-order within a bucket (TICK-2 before TICK-10 — plain string sort won't do).
 function byKey(a: Ticket, b: Ticket) {
   const n = (k: string) => Number(k.split('-').pop()) || 0
   return n(a.key) - n(b.key)
 }
 
-// Ordered buckets: the takeable edge first, then work in flight, then what's
-// waiting on it, then what's settled. Applies to every epic — a wayfinder map
-// just adds the map body above it.
-const groups = computed(() => {
-  const done: Ticket[] = []
-  const blocked: Ticket[] = []
-  const frontier: Ticket[] = []
-  const claimed: Ticket[] = []
+type BucketKey = 'frontier' | 'claimed' | 'blocked' | 'done'
+const BUCKET_META: Record<BucketKey, { label: string; icon: string; dot: string; text: string; hint: string }> = {
+  frontier: { label: 'Frontier', icon: 'i-lucide-flag', dot: 'bg-primary', text: 'text-primary', hint: 'takeable now' },
+  claimed: { label: 'In progress', icon: 'i-lucide-loader', dot: 'bg-info', text: 'text-info', hint: 'claimed' },
+  blocked: { label: 'Blocked', icon: 'i-lucide-lock', dot: 'bg-error', text: 'text-error', hint: 'waiting on a blocker' },
+  done: { label: 'Resolved', icon: 'i-lucide-check', dot: 'bg-success', text: 'text-success', hint: 'decided' },
+}
+
+const bucketed = computed(() => {
+  const done: Ticket[] = [], blocked: Ticket[] = [], frontier: Ticket[] = [], claimed: Ticket[] = []
   for (const t of props.tickets) {
     if (t.status === 'done') done.push(t)
     else if (isBlocked(t, props.allTickets)) blocked.push(t)
     else if (isFrontier(t, props.allTickets)) frontier.push(t)
-    else claimed.push(t) // in_progress, or todo+assigned — work in flight
+    else claimed.push(t)
   }
   for (const g of [done, blocked, frontier, claimed]) g.sort(byKey)
-  return [
-    { key: 'frontier', label: 'Frontier', icon: 'i-lucide-flag', hint: 'takeable now', tickets: frontier },
-    { key: 'claimed', label: 'In progress', icon: 'i-lucide-loader', hint: 'claimed', tickets: claimed },
-    { key: 'blocked', label: 'Blocked', icon: 'i-lucide-lock', hint: 'waiting on a blocker', tickets: blocked },
-    { key: 'done', label: 'Resolved', icon: 'i-lucide-check', hint: 'decided', tickets: done },
-  ].filter((g) => g.tickets.length)
+  return { frontier, claimed, blocked, done }
 })
+const counts = computed(() => ({
+  frontier: bucketed.value.frontier.length,
+  claimed: bucketed.value.claimed.length,
+  blocked: bucketed.value.blocked.length,
+  done: bucketed.value.done.length,
+}))
+const boardGroups = computed(() =>
+  (['frontier', 'claimed', 'blocked', 'done'] as BucketKey[])
+    .map((key) => ({ key, ...BUCKET_META[key], tickets: bucketed.value[key] }))
+    .filter((g) => g.tickets.length),
+)
+const digestRows = computed(() => [
+  ...bucketed.value.frontier,
+  ...bucketed.value.claimed,
+  ...bucketed.value.blocked,
+  ...bucketed.value.done,
+])
+
+const folded = reactive(new Set<BucketKey>(['blocked', 'done']))
+function toggleFold(key: BucketKey) {
+  if (folded.has(key)) folded.delete(key)
+  else folded.add(key)
+}
+
+function blockersOf(t: Ticket) {
+  return t.blockedBy.map((id) => props.allTickets.find((x) => x.id === id)).filter((x): x is Ticket => !!x)
+}
+function wfOf(t: Ticket) {
+  return props.wayfinder ? wayfinderType(t) : null
+}
+function stateOf(t: Ticket): BucketKey {
+  if (t.status === 'done') return 'done'
+  if (isBlocked(t, props.allTickets)) return 'blocked'
+  if (isFrontier(t, props.allTickets)) return 'frontier'
+  return 'claimed'
+}
 </script>
 
 <template>
@@ -70,72 +107,172 @@ const groups = computed(() => {
           <span class="text-xs text-muted">{{ tickets.length }} tickets</span>
         </div>
         <h3 class="mt-0.5 text-xl font-semibold">{{ epic.title }}</h3>
-        <!-- Short brief renders inline; anything longer moves into the disclosure below. -->
-        <div v-if="body && !collapsible" class="jx-prose jx-prose-sm mt-1 max-w-2xl" v-html="body" />
       </div>
-      <div class="flex shrink-0 gap-1">
-        <UButton
-          v-if="isMap && tickets.length"
-          :icon="view === 'list' ? 'i-lucide-map' : 'i-lucide-list'"
-          size="sm"
-          color="primary"
-          :variant="view === 'map' ? 'solid' : 'soft'"
-          @click="view = view === 'list' ? 'map' : 'list'"
-        >
-          {{ view === 'list' ? 'Map' : 'List' }}
-        </UButton>
-        <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="emit('new-ticket', epic.id)">Ticket</UButton>
-        <UButton icon="i-lucide-pencil" size="sm" color="neutral" variant="ghost" @click="emit('edit-epic', epic)" />
-        <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="emit('delete-epic', epic)" />
+      <div class="flex shrink-0 items-center gap-2">
+        <UFieldGroup v-if="tickets.length" size="sm">
+          <UButton
+            v-for="o in viewOptions"
+            :key="o.key"
+            :icon="o.icon"
+            :color="view === o.key ? 'primary' : 'neutral'"
+            :variant="view === o.key ? 'solid' : 'outline'"
+            @click="view = o.key"
+          >
+            {{ o.label }}
+          </UButton>
+        </UFieldGroup>
+        <div class="flex gap-1">
+          <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="emit('new-ticket', epic.id)">Ticket</UButton>
+          <UButton icon="i-lucide-pencil" size="sm" color="neutral" variant="ghost" @click="emit('edit-epic', epic)" />
+          <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="emit('delete-epic', epic)" />
+        </div>
       </div>
     </div>
 
-    <!-- Long body (map, or a long epic brief) — collapsible so it can't bury the tickets -->
-    <div v-if="collapsible" class="mb-4 overflow-hidden rounded-lg border border-default">
-      <button
-        type="button"
-        class="flex w-full items-center gap-2 bg-elevated/40 px-3 py-2 text-left text-sm font-medium hover:bg-elevated/70"
-        @click="showBody = !showBody"
+    <!-- Recap banner — shown above every view; badge opens the map/description modal -->
+    <div
+      v-if="tickets.length || body"
+      class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-default bg-elevated/30 px-4 py-2.5 text-sm"
+    >
+      <template v-if="tickets.length">
+        <span class="text-base font-bold text-primary">{{ counts.frontier }} takeable</span>
+        <span class="text-muted">now</span>
+        <span class="text-muted">·</span>
+        <span :class="counts.claimed ? 'text-info' : 'text-muted'">{{ counts.claimed }} in progress</span>
+        <span class="text-muted">·</span>
+        <span :class="counts.blocked ? 'text-error/80' : 'text-muted'">{{ counts.blocked }} blocked</span>
+        <span class="text-muted">·</span>
+        <span class="text-muted">{{ counts.done }} decided</span>
+      </template>
+      <span v-else class="text-muted">No tickets yet</span>
+
+      <UButton
+        v-if="body"
+        :icon="isMap ? 'i-lucide-book-open' : 'i-lucide-align-left'"
+        trailing-icon="i-lucide-maximize-2"
+        size="xs"
+        color="primary"
+        variant="soft"
+        class="ml-auto"
+        @click="bodyModalOpen = true"
       >
-        <UIcon :name="showBody ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4" />
-        <UIcon :name="isMap ? 'i-lucide-compass' : 'i-lucide-align-left'" class="size-4" :class="isMap ? 'text-primary' : 'text-muted'" />
-        {{ bodyLabel }}
-      </button>
-      <div v-if="showBody" class="jx-prose jx-prose-sm max-h-[32rem] overflow-y-auto px-4 py-3" v-html="body" />
+        {{ isMap ? 'Brief' : 'Description' }}
+      </UButton>
     </div>
 
-    <!-- Map mode: dependency graph with fog and destination -->
+    <p v-if="!tickets.length" class="rounded-md border border-dashed border-default px-4 py-6 text-center text-sm text-muted">
+      No tickets in this epic yet.
+    </p>
+
     <WayfinderMap
-      v-if="isMap && view === 'map' && tickets.length"
+      v-else-if="view === 'map'"
       :epic="epic"
       :tickets="tickets"
       :all-tickets="allTickets"
       @edit-ticket="emit('edit-ticket', $event)"
     />
 
-    <!-- Tickets grouped by flow state: Frontier · In progress · Blocked · Resolved -->
-    <div v-else-if="groups.length" class="space-y-5">
-      <div v-for="g in groups" :key="g.key">
-        <div class="mb-2 flex items-center gap-2">
-          <UIcon :name="g.icon" class="size-4" :class="g.key === 'frontier' ? 'text-primary' : 'text-muted'" />
-          <h4 class="text-sm font-semibold" :class="g.key === 'frontier' ? 'text-primary' : ''">{{ g.label }}</h4>
-          <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
-        </div>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <TicketCard
-            v-for="t in g.tickets"
-            :key="t.id"
-            :ticket="t"
-            :tickets="allTickets"
-            :wayfinder="wayfinder"
-            @edit="emit('edit-ticket', $event)"
-            @delete="emit('delete-ticket', $event)"
-          />
-        </div>
+    <!-- Digest — one dense row per ticket, frontier pinned + tinted -->
+    <div v-else-if="view === 'digest'" class="overflow-hidden rounded-lg border border-default">
+      <button
+        v-for="t in digestRows"
+        :key="t.id"
+        type="button"
+        class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-1.5 text-left text-sm last:border-0 hover:bg-elevated/40"
+        :class="[stateOf(t) === 'frontier' ? 'bg-primary/5' : '', stateOf(t) === 'done' ? 'opacity-60' : '']"
+        @click="emit('edit-ticket', t)"
+      >
+        <span class="size-2 shrink-0 rounded-full" :class="BUCKET_META[stateOf(t)].dot" />
+        <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
+        <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
+        <span class="truncate" :class="stateOf(t) === 'frontier' ? 'font-medium' : ''">{{ t.title }}</span>
+        <UBadge v-if="t.type === 'HITL'" color="warning" variant="subtle" size="sm" class="shrink-0">HITL</UBadge>
+        <span v-if="t.assignee" class="shrink-0 text-xs text-info">{{ t.assignee }}</span>
+        <template v-if="stateOf(t) === 'blocked' && blockersOf(t).length">
+          <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
+          <UBadge
+            v-for="b in blockersOf(t)"
+            :key="b.id"
+            :color="b.status === 'done' ? 'success' : 'error'"
+            variant="outline"
+            size="sm"
+            class="shrink-0 font-mono"
+          >
+            {{ b.key }}
+          </UBadge>
+        </template>
+      </button>
+    </div>
+
+    <!-- Board — frontier-first: cards for the live work, folded rows for the rest -->
+    <div v-else class="space-y-5">
+      <div v-for="g in boardGroups" :key="g.key">
+        <template v-if="g.key === 'frontier' || g.key === 'claimed'">
+          <div class="mb-2 flex items-center gap-2">
+            <UIcon :name="g.icon" class="size-4" :class="g.key === 'frontier' ? 'text-primary' : 'text-muted'" />
+            <h4 class="text-sm font-semibold" :class="g.key === 'frontier' ? 'text-primary' : ''">{{ g.label }}</h4>
+            <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
+          </div>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <TicketCard
+              v-for="t in g.tickets"
+              :key="t.id"
+              :ticket="t"
+              :tickets="allTickets"
+              :wayfinder="wayfinder"
+              @edit="emit('edit-ticket', $event)"
+              @delete="emit('delete-ticket', $event)"
+            />
+          </div>
+        </template>
+
+        <template v-else>
+          <button
+            type="button"
+            class="-mx-1 flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-elevated/40"
+            :aria-expanded="!folded.has(g.key)"
+            @click="toggleFold(g.key)"
+          >
+            <UIcon :name="folded.has(g.key) ? 'i-lucide-chevron-right' : 'i-lucide-chevron-down'" class="size-4 text-muted" />
+            <UIcon :name="g.icon" class="size-4 text-muted" />
+            <h4 class="text-sm font-semibold">{{ g.label }}</h4>
+            <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
+          </button>
+          <div v-if="!folded.has(g.key)" class="mt-1 space-y-0.5">
+            <button
+              v-for="t in g.tickets"
+              :key="t.id"
+              type="button"
+              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-elevated/40"
+              @click="emit('edit-ticket', t)"
+            >
+              <span class="size-1.5 shrink-0 rounded-full" :class="g.dot" />
+              <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
+              <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
+              <span class="truncate text-sm">{{ t.title }}</span>
+              <template v-if="g.key === 'blocked' && blockersOf(t).length">
+                <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
+                <UBadge
+                  v-for="b in blockersOf(t)"
+                  :key="b.id"
+                  :color="b.status === 'done' ? 'success' : 'error'"
+                  variant="outline"
+                  size="sm"
+                  class="shrink-0 font-mono"
+                >
+                  {{ b.key }}
+                </UBadge>
+              </template>
+            </button>
+          </div>
+        </template>
       </div>
     </div>
-    <p v-else class="rounded-md border border-dashed border-default px-4 py-6 text-center text-sm text-muted">
-      No tickets in this epic yet.
-    </p>
+
+    <UModal v-model:open="bodyModalOpen" :title="bodyLabel" :ui="{ content: 'sm:max-w-3xl' }">
+      <template #body>
+        <div class="jx-prose jx-prose-sm max-h-[70vh] overflow-y-auto" v-html="body" />
+      </template>
+    </UModal>
   </section>
 </template>
