@@ -25,15 +25,19 @@ export default defineEventHandler(async (event) => {
 
   // Resolve the backing document: link an existing one, or create it.
   let documentKey = typeof body.documentKey === 'string' ? sanitizeDocKey(body.documentKey) : ''
+  let documentId = ''
   if (documentKey) {
-    if (!(await readDoc(documentKey))) {
+    const linked = await readDoc(documentKey)
+    if (!linked) {
       throw createError({ statusCode: 400, statusMessage: `unknown document: ${documentKey}` })
     }
+    documentId = linked.id
   } else {
     documentKey = await uniqueDocKey(docKeyFromTitle(title))
     const document: Explainer = {
       format: 'j-explain',
       version: 1,
+      id: newDocId(),
       key: documentKey,
       title,
       subtitle: typeof body.subtitle === 'string' && body.subtitle.trim() ? body.subtitle.trim() : undefined,
@@ -44,6 +48,7 @@ export default defineEventHandler(async (event) => {
       glossary: cleanGlossary(body.glossary),
     }
     await writeDoc(documentKey, document)
+    documentId = document.id
   }
 
   const doc: Doc = {
@@ -51,6 +56,7 @@ export default defineEventHandler(async (event) => {
     key: nextKey(store, 'doc'),
     title,
     documentKey,
+    documentId,
     projectId,
     labels: cleanLabels(body.labels),
     status: isDocStatus(body.status) ? body.status : 'draft',

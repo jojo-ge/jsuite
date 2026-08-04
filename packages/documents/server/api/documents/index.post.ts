@@ -1,4 +1,4 @@
-import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, type Explainer } from '../../utils/store'
+import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, newDocId, type Explainer } from '../../utils/store'
 import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
 
 /**
@@ -23,6 +23,9 @@ export default defineEventHandler(async (event) => {
   const doc: Explainer = {
     format: 'j-explain',
     version: 1,
+    // `replace: true` republishes a revision of the same document, so it keeps
+    // the identity (and createdAt); anything else is a new document.
+    id: existing?.id ?? newDocId(),
     key,
     title,
     subtitle: typeof body.subtitle === 'string' && body.subtitle.trim() ? body.subtitle.trim() : undefined,
@@ -34,5 +37,5 @@ export default defineEventHandler(async (event) => {
   }
   await writeDoc(key, doc)
 
-  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length }
+  return { id: doc.id, key, title, path: `/e/${key}`, blocks: doc.blocks.length }
 })

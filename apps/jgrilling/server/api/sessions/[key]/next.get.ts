@@ -91,6 +91,7 @@ export default defineEventHandler(async (event) => {
         await writeDoc(docKey, {
           format: 'j-explain',
           version: 1,
+          id: newDocId(),
           key: docKey,
           title,
           subtitle: typeof parsed.subtitle === 'string' && parsed.subtitle.trim() ? parsed.subtitle.trim() : undefined,

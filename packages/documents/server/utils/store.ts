@@ -1,7 +1,9 @@
-import { readFile, writeFile, readdir, rm } from 'node:fs/promises'
+import { readFile, readdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { appDataDir } from '@jsuite/data'
+import { appDataDir, writeJsonAtomic } from '@jsuite/data'
+import { snapshotData } from '@jsuite/data/history'
 import type { Block, Explainer, DocNote, DocNotes, ExplainerMeta } from '../../types'
 
 // The shared document pool: one document per pretty-printed file in
@@ -20,6 +22,27 @@ const DATA_DIR = appDataDir('jexplain')
 export type * from '../../types'
 
 // ── Persistence ───────────────────────────────────────────────────────────────
+
+/**
+ * Mint a document identity. Random, never derived from the key or title —
+ * deriving it would give two independently-authored "Q3 Planning" documents
+ * the same id and silently merge them the first time two pools meet.
+ */
+export function newDocId(): string {
+  return `doc_${randomUUID().replace(/-/g, '')}`
+}
+
+/**
+ * Documents written before ids existed get one stamped in on first read. The
+ * write-back is what makes the id *stable* — an id that were re-minted per
+ * read would be no better than the key it replaces.
+ */
+async function backfillDocId(key: string, doc: Explainer): Promise<Explainer> {
+  if (typeof doc.id === 'string' && doc.id) return doc
+  const stamped = { ...doc, id: newDocId() }
+  await writeDoc(key, stamped)
+  return stamped
+}
 
 export function sanitizeDocKey(key: unknown): string {
   return String(key ?? '')
@@ -50,20 +73,23 @@ export async function readDoc(key: string): Promise<Explainer | null> {
   const p = docPath(key)
   if (!existsSync(p)) return null
   try {
-    return JSON.parse(await readFile(p, 'utf8')) as Explainer
+    return await backfillDocId(key, JSON.parse(await readFile(p, 'utf8')) as Explainer)
   } catch {
     return null
   }
 }
 
 export async function writeDoc(key: string, doc: Explainer): Promise<void> {
-  await writeFile(docPath(key), JSON.stringify(doc, null, 2) + '\n', 'utf8')
+  const withId: Explainer = doc.id ? doc : { ...doc, id: newDocId() }
+  await writeJsonAtomic(docPath(key), withId)
+  snapshotData(`document: ${key}`)
 }
 
 export async function deleteDoc(key: string): Promise<void> {
   for (const p of [docPath(key), docNotesPath(key)]) {
     if (existsSync(p)) await rm(p)
   }
+  snapshotData(`document: delete ${key}`)
 }
 
 export async function readDocNotes(key: string): Promise<DocNotes> {
@@ -81,7 +107,8 @@ export async function readDocNotes(key: string): Promise<DocNotes> {
 }
 
 export async function writeDocNotes(key: string, notes: DocNotes): Promise<void> {
-  await writeFile(docNotesPath(key), JSON.stringify(notes, null, 2) + '\n', 'utf8')
+  await writeJsonAtomic(docNotesPath(key), notes)
+  snapshotData(`document notes: ${key}`)
 }
 
 export async function listDocs(): Promise<ExplainerMeta[]> {
@@ -90,11 +117,13 @@ export async function listDocs(): Promise<ExplainerMeta[]> {
   for (const f of files) {
     const key = f.replace(/\.json$/, '')
     try {
-      const doc = JSON.parse(await readFile(join(DATA_DIR, f), 'utf8')) as Explainer
-      if (doc.format !== 'j-explain') continue
+      const parsed = JSON.parse(await readFile(join(DATA_DIR, f), 'utf8')) as Explainer
+      if (parsed.format !== 'j-explain') continue
+      const doc = await backfillDocId(key, parsed)
       const { notes } = await readDocNotes(key)
       const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
       out.push({
+        id: doc.id,
         key,
         title: doc.title || key,
         subtitle: doc.subtitle,

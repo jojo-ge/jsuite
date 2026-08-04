@@ -13,6 +13,7 @@
 // transpile step, unlike a TypeScript source package.
 
 import { mkdirSync, existsSync } from 'node:fs'
+import { writeFile, rename, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -66,4 +67,33 @@ export function appDataFile(app, ...parts) {
   const parent = dirname(full)
   if (!existsSync(parent)) mkdirSync(parent, { recursive: true })
   return full
+}
+
+/**
+ * Write a file so a reader never sees it half-written: content goes to a
+ * sibling `.tmp`, which is then renamed over the target — atomic within a
+ * filesystem.
+ *
+ * This is not hypothetical caution. Two charts in this workspace were found
+ * holding a complete document followed by 344 bytes of tail left over from a
+ * longer previous version, which is what a plain in-place `writeFile` does when
+ * it loses a race or dies mid-write. A rename either happens or doesn't.
+ */
+export async function writeTextAtomic(path, text) {
+  const parent = dirname(path)
+  if (!existsSync(parent)) mkdirSync(parent, { recursive: true })
+  const tmp = `${path}.tmp`
+  try {
+    await writeFile(tmp, text, 'utf8')
+    await rename(tmp, path)
+  } catch (err) {
+    // Don't leave a stray .tmp behind if the write or rename failed.
+    await rm(tmp, { force: true }).catch(() => {})
+    throw err
+  }
+}
+
+/** `writeTextAtomic` for a value that should land as pretty-printed JSON. */
+export async function writeJsonAtomic(path, value) {
+  await writeTextAtomic(path, JSON.stringify(value, null, 2) + '\n')
 }

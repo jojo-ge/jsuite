@@ -126,6 +126,15 @@ export type Block =
 export interface Explainer {
   format: 'j-explain'
   version: 1
+  /**
+   * Stable identity — minted once, never derived from anything mutable, and
+   * never reused. `key` is a *slug*: it comes from the title, is unique only
+   * against the local pool, and two machines authoring "Q3 Planning" both
+   * land on `q3-planning`. That makes `key` an address, not an identity, so
+   * anything that has to survive a rename or reconcile two pools (publish,
+   * sync, cross-app references) must match on `id`.
+   */
+  id: string
   key: string
   title: string
   subtitle?: string
@@ -152,6 +161,7 @@ export interface DocNotes {
 }
 
 export interface ExplainerMeta {
+  id: string
   key: string
   title: string
   subtitle?: string

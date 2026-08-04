@@ -45,10 +45,18 @@ export default defineEventHandler(async (event) => {
     const key = sanitizeKey(entry?.key)
     if (!key || entry?.chart?.format !== 'j-chart') continue
     const existing = await readChart(key)
-    if (existing && JSON.stringify(existing) === JSON.stringify(entry.chart)) continue
+    // Identity is compared separately from content: a re-import of the same
+    // chart can differ from the pool copy by id alone, and that shouldn't fork
+    // a duplicate.
+    const sameBody = JSON.stringify({ ...existing, id: '' }) === JSON.stringify({ ...entry.chart, id: '' })
+    if (existing && sameBody) continue
     const target = existing ? await uniqueKey(key) : key
     if (target !== key) chartRenames.set(key, target)
-    await writeChart(target, { ...entry.chart, key: target })
+    // Landing beside a *different* chart of the same name makes this a distinct
+    // copy in this pool, so it gets a distinct identity; importing into a free
+    // slot keeps the bundle's id, so the same chart stays recognisable across
+    // installs.
+    await writeChart(target, { ...entry.chart, key: target, id: existing ? newChartId() : entry.chart.id })
     if (entry.notes) await writeNotes(target, entry.notes)
   }
 
@@ -133,6 +141,7 @@ export default defineEventHandler(async (event) => {
     const record = d?.record
     if (!record?.title?.trim()) continue
     let documentKey = ''
+    let documentId = ''
     if (d.document) {
       const document = JSON.parse(fixAttachments(JSON.stringify(d.document))) as Explainer
       for (const b of document.blocks ?? []) {
@@ -140,21 +149,38 @@ export default defineEventHandler(async (event) => {
       }
       const desired = sanitizeDocKey(d.document.key || record.documentKey) || docKeyFromTitle(record.title)
       const existing = await readDoc(desired)
-      if (existing && JSON.stringify(existing) === JSON.stringify({ ...document, key: desired })) {
+      // Identity is compared separately from content: a re-import of the same
+      // document differs from the pool copy only by id if the pools disagree,
+      // and that alone shouldn't fork a duplicate.
+      const sameBody = (a: Explainer, b: Explainer) =>
+        JSON.stringify({ ...a, id: '' }) === JSON.stringify({ ...b, id: '' })
+      if (existing && sameBody(existing, { ...document, key: desired })) {
         documentKey = desired
+        documentId = existing.id
       } else {
         documentKey = existing ? await uniqueDocKey(desired) : desired
-        await writeDoc(documentKey, { ...document, key: documentKey })
+        // Landing beside a *different* document of the same name makes this a
+        // distinct copy in this pool, so it gets a distinct identity; importing
+        // into a free slot keeps the bundle's id, which is what lets the same
+        // document round-trip between installs and still be recognised as one.
+        documentId = existing ? newDocId() : document.id || newDocId()
+        await writeDoc(documentKey, { ...document, key: documentKey, id: documentId })
         if (d.documentNotes) await writeDocNotes(documentKey, d.documentNotes)
       }
-    } else if (record.documentKey && (await readDoc(record.documentKey))) {
-      documentKey = record.documentKey // body wasn't bundled but this pool already has it
+    } else if (record.documentKey) {
+      // Body wasn't bundled — link it only if this pool already has it.
+      const pooled = await readDoc(record.documentKey)
+      if (pooled) {
+        documentKey = record.documentKey
+        documentId = pooled.id
+      }
     }
     const doc: Doc = {
       id: newId('doc'),
       key: nextKey(store, 'doc'),
       title: record.title.trim(),
       documentKey,
+      documentId,
       projectId: project.id,
       labels: cleanLabels(record.labels),
       status: isDocStatus(record.status) ? record.status : 'draft',
