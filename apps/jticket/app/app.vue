@@ -3,7 +3,12 @@
 useHead({ titleTemplate: (t) => (t && t !== 'jTicket' ? `${t} · jTicket` : 'jTicket') })
 
 const { epics, tickets, refresh } = useTracker()
-await useAsyncData('bootstrap', () => refresh())
+// refresh() populates epics/tickets but resolves to undefined; return null so
+// useAsyncData has a payload to serialize and doesn't re-run the fetch client-side.
+await useAsyncData('bootstrap', async () => {
+  await refresh()
+  return null
+})
 
 // Shared modals, rendered once for the whole app (see useTrackerModals).
 const {

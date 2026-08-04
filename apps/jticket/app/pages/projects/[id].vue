@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { Doc } from '~/composables/useTracker'
+import type { Explainer } from '@jsuite/documents/types'
+
 const route = useRoute()
 const { projects, epics, tickets, docs } = useTracker()
 const { render: renderMd } = useMarkdown()
@@ -36,6 +39,30 @@ const stats = computed(() => {
   const t = tickets.value.filter((x) => x.epicId && epicIds.has(x.epicId))
   return { epics: projectEpics.value.length, tickets: t.length, done: t.filter((x) => x.status === 'done').length }
 })
+
+// Documents render compact — a one-line list or a pill strip — instead of full
+// cards that read like tickets. The choice is per-visitor and in-memory.
+const docsView = ref<'rows' | 'chips'>('rows')
+
+// Clicking a doc previews its shared document (the same object /docs/[key]
+// renders) in a modal; a footer link opens the full page.
+const previewDoc = ref<Doc | null>(null)
+const previewContent = ref<Explainer | null>(null)
+const previewLoading = ref(false)
+const previewOpen = ref(false)
+async function openDocPreview(d: Doc) {
+  previewDoc.value = d
+  previewContent.value = null
+  previewOpen.value = true
+  previewLoading.value = true
+  try {
+    previewContent.value = d.documentKey ? await $fetch<Explainer>(`/api/documents/${d.documentKey}`) : null
+  } catch {
+    previewContent.value = null
+  } finally {
+    previewLoading.value = false
+  }
+}
 
 async function removeProject() {
   if (!project.value) return
@@ -104,25 +131,75 @@ async function removeProject() {
           </div>
         </div>
 
-        <!-- Documents — pinned above the epics -->
+        <!-- Documents — compact, with a Rows / Chips toggle; a click previews the doc -->
         <section v-if="projectDocs.length" class="mb-8">
-          <div class="mb-3 flex items-center gap-2">
+          <div class="mb-2 flex items-center gap-2">
             <UIcon name="i-lucide-file-text" class="size-4 text-muted" />
-            <h2 class="text-xl font-semibold">Documents</h2>
-            <span class="text-xs text-muted">{{ projectDocs.length }} docs</span>
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Documents</h2>
+            <span class="text-xs text-muted">{{ projectDocs.length }}</span>
+            <UFieldGroup size="xs" class="ml-auto">
+              <UButton
+                icon="i-lucide-list"
+                :color="docsView === 'rows' ? 'primary' : 'neutral'"
+                :variant="docsView === 'rows' ? 'solid' : 'outline'"
+                @click="docsView = 'rows'"
+              >
+                Rows
+              </UButton>
+              <UButton
+                icon="i-lucide-tags"
+                :color="docsView === 'chips' ? 'primary' : 'neutral'"
+                :variant="docsView === 'chips' ? 'solid' : 'outline'"
+                @click="docsView = 'chips'"
+              >
+                Chips
+              </UButton>
+            </UFieldGroup>
             <UButton
               icon="i-lucide-file-plus"
               size="xs"
               color="neutral"
               variant="ghost"
               :to="`/docs/new?project=${project.id}`"
-              class="ml-auto"
             >
               New doc
             </UButton>
           </div>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <DocCard v-for="d in projectDocs" :key="d.id" :doc="d" />
+
+          <!-- Rows: a tight one-line list -->
+          <div v-if="docsView === 'rows'" class="overflow-hidden rounded-lg border border-default">
+            <button
+              v-for="d in projectDocs"
+              :key="d.id"
+              type="button"
+              class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-1.5 text-left text-sm last:border-0 hover:bg-elevated/40"
+              @click="openDocPreview(d)"
+            >
+              <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0 text-muted" />
+              <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ d.key }}</span>
+              <span class="truncate">{{ d.title }}</span>
+              <UBadge :color="DOC_STATUS_META[d.status].color" variant="subtle" size="sm" class="ml-auto shrink-0">
+                {{ DOC_STATUS_META[d.status].label }}
+              </UBadge>
+            </button>
+          </div>
+
+          <!-- Chips: a wrapping row of pills; hover shows the full title -->
+          <div v-else class="flex flex-wrap gap-2">
+            <UTooltip v-for="d in projectDocs" :key="d.id" :text="d.title">
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-full border border-default bg-elevated/40 px-3 py-1 text-xs hover:bg-elevated/70"
+                @click="openDocPreview(d)"
+              >
+                <span
+                  class="size-1.5 rounded-full"
+                  :class="DOC_STATUS_META[d.status].color === 'success' ? 'bg-success' : 'bg-neutral-400'"
+                />
+                <span class="font-mono text-muted">{{ d.key }}</span>
+                <span class="max-w-44 truncate">{{ d.title }}</span>
+              </button>
+            </UTooltip>
           </div>
         </section>
 
@@ -149,5 +226,28 @@ async function removeProject() {
         </div>
       </template>
     </UContainer>
+
+    <!-- Document preview -->
+    <UModal
+      v-model:open="previewOpen"
+      :title="previewDoc ? `${previewDoc.key} — ${previewDoc.title}` : 'Document'"
+      :ui="{ content: 'sm:max-w-4xl' }"
+    >
+      <template #body>
+        <div class="max-h-[70vh] overflow-y-auto">
+          <div v-if="previewLoading" class="py-16 text-center text-sm text-muted">Loading…</div>
+          <DocumentArticle v-else-if="previewContent" :doc="previewContent" />
+          <p v-else class="py-16 text-center text-sm text-muted">No content yet for this document.</p>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="previewOpen = false">Close</UButton>
+          <UButton v-if="previewDoc" icon="i-lucide-external-link" @click="navigateTo(`/docs/${previewDoc.key}`)">
+            Open full document
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
