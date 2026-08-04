@@ -19,6 +19,8 @@ export function labelForBlock(b: Block, index: number): string {
       return trim(b.file || `Diff #${index + 1}`)
     case 'chart':
       return trim(b.title || b.chartKey)
+    case 'image':
+      return trim(b.title || b.alt || `Image #${index + 1}`)
     case 'steps':
       return trim(b.title || `Steps #${index + 1}`)
     case 'compare':

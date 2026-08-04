@@ -1,3 +1,4 @@
+import { basename } from 'node:path'
 import type { Chart } from '@jsuite/charting/store'
 import type { Block, ChartBlockInput } from './store'
 
@@ -18,11 +19,50 @@ import type { Block, ChartBlockInput } from './store'
 export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): Promise<Block[]> {
   const out: Block[] = []
   let chartN = 0
+  let imageN = 0
+  const mediaKept: string[] = []
 
   for (let i = 0; i < rawBlocks.length; i++) {
     const raw = { ...(rawBlocks[i] as Record<string, unknown>) } as ChartBlockInput & Record<string, unknown>
     // Stable ids for notes to pin to; keep any the author supplied.
     raw.id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `b${i + 1}`
+
+    // Image blocks carry a local `file` path; copy the bytes into the doc's
+    // media dir and store only the served URL, so the document survives the
+    // source file being moved or deleted.
+    if (raw.type === 'image') {
+      const file = typeof raw.file === 'string' ? raw.file.trim() : ''
+      let src = typeof raw.src === 'string' ? raw.src.trim() : ''
+      if (file) {
+        imageN++
+        const name = sanitizeMediaName(String(raw.name || `${String(i + 1).padStart(2, '0')}-${basename(file)}`))
+        try {
+          src = await storeMedia(docKey, file, name)
+          mediaKept.push(name)
+        } catch (err) {
+          // A missing screenshot shouldn't nuke the whole publish — drop the
+          // block and keep going, the rest of the document is still useful.
+          console.warn(`[documents] image block ${raw.id}: ${(err as Error).message}`)
+          continue
+        }
+      } else if (src) {
+        // Already-served URL (e.g. re-publishing an unchanged doc): keep the file.
+        const existing = src.split('/').pop()
+        if (existing) mediaKept.push(existing)
+      }
+      if (!src) continue
+      out.push({
+        id: raw.id,
+        type: 'image',
+        src,
+        title: raw.title as string | undefined,
+        caption: raw.caption as string | undefined,
+        alt: raw.alt as string | undefined,
+        width: raw.width as number | undefined,
+        framed: raw.framed as boolean | undefined,
+      } as Block)
+      continue
+    }
 
     if (raw.type !== 'chart') {
       out.push(raw as unknown as Block)
@@ -61,6 +101,9 @@ export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): P
       height: raw.height,
     })
   }
+
+  // Drop media from earlier revisions that this one no longer references.
+  if (imageN > 0 || mediaKept.length) await pruneMedia(docKey, mediaKept)
 
   return out
 }

@@ -33,6 +33,7 @@ const componentFor = (b: Block) =>
     code: resolveComponent('BlockCode'),
     diff: resolveComponent('BlockDiff'),
     chart: resolveComponent('BlockChart'),
+    image: resolveComponent('BlockImage'),
     steps: resolveComponent('BlockSteps'),
     compare: resolveComponent('BlockCompare'),
     timeline: resolveComponent('BlockTimeline'),

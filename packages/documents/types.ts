@@ -77,6 +77,30 @@ export interface ChartBlockInput extends Omit<ChartBlock, 'chartKey'> {
   mermaid?: string
 }
 
+export interface ImageBlock {
+  id: string
+  type: 'image'
+  /** Served URL of the stored copy, e.g. /api/media/<docKey>/<file>.png */
+  src: string
+  title?: string
+  /** Markdown rendered under the image. */
+  caption?: string
+  alt?: string
+  /** Max rendered width in px; defaults to the column width. */
+  width?: number
+  /** Frame the image like a screenshot (dark inset border). Default true. */
+  framed?: boolean
+}
+
+/** What skills POST: a local file path we copy into the doc's media dir. */
+export interface ImageBlockInput extends Omit<ImageBlock, 'src'> {
+  src?: string
+  /** Absolute path to a local image file; copied into .data/jexplain/media/<key>/. */
+  file?: string
+  /** Override the stored filename; defaults to the source file's name. */
+  name?: string
+}
+
 export interface StepsBlock {
   id: string
   type: 'steps'
@@ -114,6 +138,7 @@ export type Block =
   | CodeBlock
   | DiffBlock
   | ChartBlock
+  | ImageBlock
   | StepsBlock
   | CompareBlock
   | TimelineBlock
