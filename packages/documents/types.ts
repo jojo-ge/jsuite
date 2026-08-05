@@ -163,17 +163,35 @@ export interface Explainer {
   glossary: Record<string, string>
 }
 
+/**
+ * A picture pinned to a note: a pasted/uploaded screenshot, or a sketch drawn in
+ * the rail (optionally on top of a screenshot). Some feedback is much faster to
+ * draw an arrow at than to describe.
+ */
+export interface NoteAttachment {
+  id: string
+  /** Served URL under /api/media/<docKey>/notes/… */
+  src: string
+  /** 'shot' = pasted or uploaded, 'sketch' = drawn in the rail. */
+  kind: 'shot' | 'sketch'
+  /** Optional one-line description typed under the picture. */
+  caption?: string
+}
+
 export interface DocNote {
   id: string
   blockId: string
   /** Captured when created, so orphaned notes still read sensibly. */
   label: string
   text: string
+  attachments?: NoteAttachment[]
 }
 
 export interface DocNotes {
   general: string
   notes: DocNote[]
+  /** Pictures attached to the general (whole-document) note. */
+  generalAttachments?: NoteAttachment[]
 }
 
 export interface ExplainerMeta {

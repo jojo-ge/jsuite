@@ -1,19 +1,30 @@
 <script setup lang="ts">
-import type { DocNote } from '../../types'
+import type { DocNote, NoteAttachment } from '../../types'
 
 const props = defineProps<{
   general: string
   notes: DocNote[]
   /** blockId -> live label, for orphan detection + fresh labels. */
   blockLabels: Map<string, string>
+  /** Needed to upload note pictures into this document's media store. */
+  docKey: string
+  generalAttachments?: NoteAttachment[]
 }>()
 
 const emit = defineEmits<{
   (e: 'update:general', v: string): void
   (e: 'update:notes', v: DocNote[]): void
+  (e: 'update:generalAttachments', v: NoteAttachment[]): void
   (e: 'focus', blockId: string): void
   (e: 'copy'): void
 }>()
+
+function setAttachments(noteId: string, attachments: NoteAttachment[]) {
+  emit(
+    'update:notes',
+    props.notes.map((n) => (n.id === noteId ? { ...n, attachments } : n)),
+  )
+}
 
 function liveLabel(n: DocNote): string {
   return props.blockLabels.get(n.blockId) ?? n.label
@@ -37,7 +48,15 @@ function remove(noteId: string) {
   )
 }
 
-const written = computed(() => props.notes.filter((n) => n.text.trim()).length)
+/** Paste/drop are forwarded to each note's attachment strip, so a screenshot can
+    be pasted anywhere in the note rather than onto a specific button. */
+type AttachmentsApi = { onPaste: (e: ClipboardEvent) => void; onDrop: (e: DragEvent) => void } | null
+const noteAtt = reactive<Record<string, AttachmentsApi>>({})
+const generalAtt = ref<AttachmentsApi>(null)
+
+const written = computed(() =>
+  props.notes.filter((n) => n.text.trim() || (n.attachments?.length ?? 0)).length,
+)
 
 function focusTextarea(noteId: string) {
   const ta = document.querySelector<HTMLTextAreaElement>(`[data-note="${noteId}"] textarea`)
@@ -51,7 +70,7 @@ defineExpose({ focusTextarea })
 <template>
   <div class="flex h-full flex-col">
     <div class="scroll-thin flex-1 space-y-5 overflow-y-auto p-4">
-      <div>
+      <div ref="generalWrap" @paste="generalAtt?.onPaste($event)" @dragover.prevent @drop="generalAtt?.onDrop($event)">
         <h2 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">General notes</h2>
         <UTextarea
           :model-value="general"
@@ -60,6 +79,13 @@ defineExpose({ focusTextarea })
           placeholder="Overall feedback on this explainer…"
           class="w-full"
           @update:model-value="emit('update:general', String($event))"
+        />
+        <NoteAttachments
+          ref="generalAtt"
+          :doc-key="docKey"
+          :attachments="generalAttachments ?? []"
+          hint="or paste a screenshot"
+          @update="emit('update:generalAttachments', $event)"
         />
       </div>
 
@@ -79,6 +105,9 @@ defineExpose({ focusTextarea })
             :key="n.id"
             :data-note="n.id"
             class="rounded-lg border border-default bg-elevated/40 p-2.5"
+            @paste="noteAtt[n.id]?.onPaste($event)"
+            @dragover.prevent
+            @drop="noteAtt[n.id]?.onDrop($event)"
           >
             <div class="mb-1.5 flex items-center gap-2">
               <span class="size-2 shrink-0 rounded-full" :class="isOrphan(n) ? 'bg-error' : 'bg-primary'" />
@@ -106,6 +135,12 @@ defineExpose({ focusTextarea })
               :placeholder="`Note on &quot;${liveLabel(n)}&quot;…`"
               class="w-full"
               @update:model-value="setText(n.id, String($event))"
+            />
+            <NoteAttachments
+              :ref="(el) => (noteAtt[n.id] = el as AttachmentsApi)"
+              :doc-key="docKey"
+              :attachments="n.attachments ?? []"
+              @update="setAttachments(n.id, $event)"
             />
           </div>
         </div>

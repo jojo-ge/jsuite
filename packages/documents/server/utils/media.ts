@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rm } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
@@ -61,12 +61,43 @@ export async function storeMedia(docKey: string, sourcePath: string, preferredNa
   return `/api/media/${key}/${name}`
 }
 
-/** Remove media files no longer referenced by the document's blocks. */
+/**
+ * Note attachments live in a `notes/` subdirectory of the document's media dir.
+ * Keeping them out of the top level means republishing the document (which
+ * prunes block media) can never delete the reviewer's pictures.
+ */
+export function notesMediaDir(docKey: string): string {
+  return join(mediaDir(docKey), 'notes')
+}
+
+export function notesMediaPath(docKey: string, name: string): string {
+  return join(notesMediaDir(docKey), sanitizeMediaName(name))
+}
+
+/** Store a data: URL (a paste, an upload, or a canvas export) as a note attachment. */
+export async function storeNoteMedia(docKey: string, dataUrl: string, preferredName?: string): Promise<string> {
+  const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(dataUrl.trim())
+  if (!m) throw new Error('expected a base64 image data URL')
+  const ext = Object.entries(EXT_TYPES).find(([, type]) => type === m[1].toLowerCase())?.[0] ?? '.png'
+  const key = sanitizeDocKey(docKey)
+  const name = sanitizeMediaName((preferredName || 'note') + ext)
+  const bytes = Buffer.from(m[2], 'base64')
+  if (bytes.length > 12 * 1024 * 1024) throw new Error('image too large (max 12MB)')
+  await mkdir(notesMediaDir(key), { recursive: true })
+  await writeFile(join(notesMediaDir(key), name), bytes)
+  return `/api/media/${key}/notes/${name}`
+}
+
+/**
+ * Remove media files no longer referenced by the document's blocks. Only touches
+ * files in the top level — subdirectories (i.e. note attachments) are left alone.
+ */
 export async function pruneMedia(docKey: string, keepNames: string[]): Promise<void> {
   const dir = mediaDir(docKey)
   if (!existsSync(dir)) return
   const keep = new Set(keepNames.map(sanitizeMediaName))
-  for (const f of await readdir(dir)) {
-    if (!keep.has(f)) await rm(join(dir, f), { force: true })
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) continue
+    if (!keep.has(entry.name)) await rm(join(dir, entry.name), { force: true })
   }
 }
