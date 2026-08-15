@@ -110,6 +110,9 @@ export default defineEventHandler(async (event) => {
           body: fixAttachments(String(c.body)),
           createdAt: c.createdAt || ts,
         })),
+      // The bundle carries the original completion stamp; bundles exported
+      // before completedAt existed fall back to updatedAt, as loadStore does.
+      completedAt: t.status === 'done' ? (t.completedAt ?? t.updatedAt ?? ts) : null,
       createdAt: t.createdAt || ts,
       updatedAt: t.updatedAt || ts,
     }

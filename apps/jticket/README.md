@@ -25,6 +25,7 @@ pnpm dev          # http://localhost:43000
 | --- | --- |
 | `/` | Board — every project, its epics and their tickets, plus docs and the backlog |
 | `/running` | **Running now** — every in-progress ticket grouped by its epic (and project), with a link through to the epic |
+| `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/epics/EPIC-1` | One epic and all of its tickets (id or key) |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
 | `/docs` · `/docs/DOC-1` | Docs list and a doc's block document |
@@ -35,13 +36,14 @@ pnpm dev          # http://localhost:43000
 - **Project** — `{ key: "PROJ-1", title, description, mode }`. Top-level grouping; contains epics.
   - `mode`: `standard` (plain tracker) or `wayfinder` (see **Wayfinder mode** below).
 - **Epic** — `{ key: "EPIC-1", title, description, projectId, labels[] }`. Groups tickets. `projectId` may be null (unassigned). In a wayfinder project, an epic labelled `wayfinder:map` *is* a map — its description is the map body.
-- **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[] }`
+- **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[], completedAt }`
   - `type`: `AFK` (agent-runnable) or `HITL` (needs a human)
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name of who is working on it — agents self-assign by name; `""` = unassigned. Filter with `GET /api/tickets?assignee=<name>`. In wayfinder terms, the assignee **is** the claim.
   - `labels`: free-form strings. Wayfinder uses `wayfinder:map` (on the map epic) and `wayfinder:research|prototype|grilling|task` (the ticket sub-type). Filter with `GET /api/tickets?label=<label>`.
   - `resolution`: the answer recorded when the ticket resolves (GFM markdown); `""` until then.
   - `blockedBy`: ids of tickets that must finish first
+  - `completedAt`: ISO timestamp of when the ticket last became `done`; `null` while unfinished. **Set by the server on the status change, never by the caller** — PATCHing it is ignored. Re-saving an already-done ticket keeps the original stamp, so fixing a resolution doesn't move it up `/finished`; moving a ticket out of `done` clears it, and moving it back stamps afresh. Tickets finished before the field existed were backfilled from `updatedAt`.
   - GET responses also attach derived booleans **`blocked`**, **`claimed`**, **`frontier`** (never persisted).
 Every `description` / `resolution` field is **plain GFM markdown** and is
 rendered as such in the UI (via the shared `@jsuite/documents` renderer). Card
@@ -72,7 +74,7 @@ See **/api-guide** in the running app. Summary:
 | GET/PATCH/DELETE | `/api/projects/:id` | Read / update / delete a project (id or key) |
 | GET/POST | `/api/epics` | List / create epics |
 | GET/PATCH/DELETE | `/api/epics/:id` | Read / update / delete an epic (id or key) |
-| GET/POST | `/api/tickets` | List (`?epicId=`, `?status=`) / create tickets |
+| GET/POST | `/api/tickets` | List (`?epicId=`, `?status=`, `?finished=true`, `?since=`) / create tickets |
 | GET/PATCH/DELETE | `/api/tickets/:id` | Read / update / delete a ticket (id or key) |
 | POST | `/api/import` | Bulk-create a whole breakdown at once |
 | GET/POST | `/api/docs` | List (`?projectId=`, `?status=`, `?label=`) / create docs |

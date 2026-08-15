@@ -56,6 +56,11 @@ export interface Ticket {
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved
   blockedBy: string[] // ticket ids that gate this one
   comments: TicketComment[] // append via POST /api/tickets/:id/comments, never PATCH
+  // When the ticket last became done. Stamped on the todo/in_progress → done
+  // transition and cleared when it moves back out; null while unfinished. Kept
+  // separate from updatedAt, which any edit bumps — this is what /finished
+  // orders by. Never set directly by callers; see stampCompletion.
+  completedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -109,12 +114,15 @@ export function loadStore(): Store {
       // Epics predating the project/label layers get sensible defaults.
       epics: (parsed.epics ?? []).map((e) => ({ ...e, projectId: e.projectId ?? null, labels: e.labels ?? [] })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
+      // Tickets already done before completedAt existed fall back to updatedAt —
+      // the closest thing on record to when they finished.
       tickets: (parsed.tickets ?? []).map((t) => ({
         ...t,
         assignee: t.assignee ?? '',
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
         comments: t.comments ?? [],
+        completedAt: t.completedAt ?? (t.status === 'done' ? t.updatedAt : null),
       })),
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).
@@ -163,6 +171,15 @@ export function isStatus(v: unknown): v is TicketStatus {
 
 export function isDocStatus(v: unknown): v is DocStatus {
   return v === 'draft' || v === 'ready'
+}
+
+// The single place a completion timestamp is decided. Moving into 'done'
+// stamps the moment; moving out clears it; re-saving an already-done ticket
+// keeps the original stamp, so editing a resolution doesn't shuffle it to the
+// top of "Recently finished".
+export function stampCompletion(ticket: Ticket, nextStatus: TicketStatus, ts: string): string | null {
+  if (nextStatus !== 'done') return null
+  return ticket.completedAt ?? ts
 }
 
 // Accepts a project id, key, or exact title and returns the project (docs and
@@ -217,6 +234,12 @@ export function withDerived(ticket: Ticket, all: Ticket[]): Ticket & TicketDeriv
     claimed: !!ticket.assignee,
     frontier: ticketIsFrontier(ticket, all),
   }
+}
+
+// Newest completion first — the order "Recently finished" reads in. Tickets
+// with no stamp (never finished) sort last.
+export function byCompletedAtDesc(a: Ticket, b: Ticket): number {
+  return (b.completedAt ?? '').localeCompare(a.completedAt ?? '')
 }
 
 // Order by the numeric suffix of the key (TICK-9 before TICK-10) — the order

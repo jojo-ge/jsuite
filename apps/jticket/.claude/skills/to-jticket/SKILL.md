@@ -45,7 +45,7 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 
 - **Project** `PROJ-n` — `{ key, title, description, mode }`. `mode` is `standard` or `wayfinder`.
 - **Epic** `EPIC-n` — `{ key, title, description, projectId, labels[] }`. `projectId` may be null.
-- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[], comments[] }`
+- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`
   - `type`: `AFK` (an agent can take it cold) or `HITL` (needs a human)
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name; `""` = unassigned. **The assignee is the claim.**
@@ -55,6 +55,10 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
     **always read the comments before working a ticket**. LLMs comment too (questions,
     progress notes) under their own name. Append-only via its own endpoint — PATCH
     cannot touch it. The final answer still goes in `resolution`, not a comment.
+  - `completedAt`: ISO stamp of when it last became `done`, `null` otherwise. **Server-set on the
+    status change** — sending it does nothing. Editing a done ticket keeps the original stamp;
+    moving out of `done` clears it. `GET /api/tickets?finished=true` lists done tickets
+    newest-first, `&since=<ISO>` narrows the window.
   - GET responses also carry derived `blocked` / `claimed` / `frontier` booleans (never persisted)
 - **Doc** `DOC-n` — `{ key, title, documentKey, projectId, labels[], status }`. The
   content is a **block document** in the shared jSuite document system (`documentKey`

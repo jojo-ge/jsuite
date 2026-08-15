@@ -30,6 +30,8 @@ GET /api/tickets?epicId=EPIC-2      # epic id or key
                 &assignee=<exact name>
                 &label=<exact label>
                 &frontier=true      # todo + unblocked + unassigned, key-ordered
+                &finished=true      # done tickets, newest completedAt first
+                &since=<ISO>        # completedAt >= this (pairs with finished=true)
 GET /api/docs?projectId=PROJ-1&status=draft|ready&label=<label>
 ```
 
@@ -41,6 +43,11 @@ Every ticket in a GET response is augmented with three **read-only derived** boo
 - `blocked` — some ticket in `blockedBy` is not `done`
 - `claimed` — `assignee` is non-empty
 - `frontier` — `status === "todo"` && !claimed && !blocked
+
+`completedAt` is also read-only, but it **is** persisted: the server stamps it when a
+ticket moves into `done` and clears it when it moves out. Sending it in a POST/PATCH body
+is ignored. Editing an already-done ticket keeps the original stamp, so a resolution fix
+doesn't reorder `?finished=true`.
 
 ## Payloads
 

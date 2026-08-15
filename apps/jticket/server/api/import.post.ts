@@ -95,6 +95,7 @@ export default defineEventHandler(async (event) => {
   const importPairs: Array<{ ticket: Ticket; src: ImportTicket }> = []
   for (const t of body.tickets ?? []) {
     if (!t?.title?.trim()) continue
+    const status = isStatus(t.status) ? t.status : 'todo'
     const ticket: Ticket = {
       id: newId('tick'),
       key: nextKey(store, 'ticket'),
@@ -102,13 +103,15 @@ export default defineEventHandler(async (event) => {
       description: t.description?.trim() ?? '',
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
       type: t.type === 'HITL' ? 'HITL' : 'AFK',
-      status: isStatus(t.status) ? t.status : 'todo',
+      status,
       epicId: findEpic(t.epic)?.id ?? null,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
       labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
       comments: [],
+      // A breakdown imported with work already done finishes as of the import.
+      completedAt: status === 'done' ? ts : null,
       createdAt: ts,
       updatedAt: ts,
     }

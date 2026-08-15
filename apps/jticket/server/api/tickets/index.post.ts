@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const blockedBy = resolveTicketRefs(store, body.blockedBy ?? [])
 
   const ts = now()
+  const status = isStatus(body.status) ? body.status : 'todo'
   const ticket: Ticket = {
     id: newId('tick'),
     key: nextKey(store, 'ticket'),
@@ -24,13 +25,16 @@ export default defineEventHandler(async (event) => {
     description: body.description?.trim() ?? '',
     acceptanceCriteria: (body.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
     type: body.type === 'HITL' ? 'HITL' : 'AFK',
-    status: isStatus(body.status) ? body.status : 'todo',
+    status,
     epicId,
     assignee: typeof body.assignee === 'string' ? body.assignee.trim() : '',
     labels: cleanLabels(body.labels),
     resolution: typeof body.resolution === 'string' ? body.resolution.trim() : '',
     blockedBy,
     comments: [],
+    // Created straight into 'done' (an already-finished ticket being recorded)
+    // counts as finishing now.
+    completedAt: status === 'done' ? ts : null,
     createdAt: ts,
     updatedAt: ts,
   }

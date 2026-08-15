@@ -48,6 +48,9 @@ export interface Ticket {
   resolution: string
   blockedBy: string[]
   comments: TicketComment[]
+  // When the ticket last became done; null while unfinished. Stamped by the
+  // server on the status change, not by callers — see /finished.
+  completedAt: string | null
   createdAt: string
   updatedAt: string
   // Derived flags the GET endpoints attach (never persisted). Optional so a
@@ -226,4 +229,47 @@ export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | n
 
 export function isMapEpic(epic: Pick<Epic, 'labels'>): boolean {
   return (epic.labels ?? []).includes(WAYFINDER_MAP_LABEL)
+}
+
+// ── Completion times ──
+// Newest completion first; unstamped tickets sort last.
+export function byCompletedAtDesc(a: Ticket, b: Ticket): number {
+  return (b.completedAt ?? '').localeCompare(a.completedAt ?? '')
+}
+
+const DAY_FMT = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+const TIME_FMT = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' })
+
+// 'Today' / 'Yesterday' / 'Monday 4 August 2026' — the heading a day's finished
+// tickets sit under. `today` is passed in so callers control the clock (and so
+// nothing renders a server-time heading that the client then disagrees with).
+export function dayLabel(iso: string, today: Date): string {
+  const d = new Date(iso)
+  const days = Math.round((startOfDay(today).getTime() - startOfDay(d).getTime()) / 86_400_000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  return DAY_FMT.format(d)
+}
+
+export function timeLabel(iso: string): string {
+  return TIME_FMT.format(new Date(iso))
+}
+
+// "just now" / "20 minutes ago" / "3 days ago" — the at-a-glance recency on a row.
+export function agoLabel(iso: string, now: Date): string {
+  const mins = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60_000))
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.round(hours / 24)
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`
+  const weeks = Math.round(days / 7)
+  if (weeks < 5) return `${weeks} week${weeks === 1 ? '' : 's'} ago`
+  const months = Math.round(days / 30)
+  return `${months} month${months === 1 ? '' : 's'} ago`
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
 }
