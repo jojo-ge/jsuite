@@ -11,6 +11,7 @@ const stats = computed(() => ({
   epics: epics.value.length,
   tickets: tickets.value.length,
   done: tickets.value.filter((t) => t.status === 'done').length,
+  running: tickets.value.filter((t) => t.status === 'in_progress').length,
   docs: docs.value.length,
 }))
 
@@ -24,11 +25,14 @@ function toggleTheme() {
   colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
 }
 
-const links = [
+const links = computed(() => [
   { label: 'Board', icon: 'i-lucide-layout-dashboard', to: '/' },
+  // Badged with the live in-progress count — the nav is where you notice you
+  // left three things running.
+  { label: 'Running now', icon: 'i-lucide-loader', to: '/running', badge: stats.value.running || null },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
   { label: 'Docs', icon: 'i-lucide-file-text', to: '/docs' },
-]
+])
 </script>
 
 <template>
@@ -55,6 +59,7 @@ const links = [
             :variant="$route.path === l.to ? 'soft' : 'ghost'"
           >
             {{ l.label }}
+            <UBadge v-if="l.badge" color="info" variant="subtle" size="sm">{{ l.badge }}</UBadge>
           </UButton>
         </nav>
       </div>

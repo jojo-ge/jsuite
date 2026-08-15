@@ -19,6 +19,17 @@ pnpm dev          # http://localhost:43000
 
 `pnpm build && node .output/server/index.mjs` for a production run.
 
+## Pages
+
+| Route | What it shows |
+| --- | --- |
+| `/` | Board — every project, its epics and their tickets, plus docs and the backlog |
+| `/running` | **Running now** — every in-progress ticket grouped by its epic (and project), with a link through to the epic |
+| `/epics/EPIC-1` | One epic and all of its tickets (id or key) |
+| `/projects` · `/projects/PROJ-1` | Project hub and project detail |
+| `/docs` · `/docs/DOC-1` | Docs list and a doc's block document |
+| `/api-guide` | Full HTTP API reference, live in the app |
+
 ## Data model
 
 - **Project** — `{ key: "PROJ-1", title, description, mode }`. Top-level grouping; contains epics.
