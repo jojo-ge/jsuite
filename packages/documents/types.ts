@@ -77,6 +77,30 @@ export interface ChartBlockInput extends Omit<ChartBlock, 'chartKey'> {
   mermaid?: string
 }
 
+export interface ImageBlock {
+  id: string
+  type: 'image'
+  /** Served URL of the stored copy, e.g. /api/media/<docKey>/<file>.png */
+  src: string
+  title?: string
+  /** Markdown rendered under the image. */
+  caption?: string
+  alt?: string
+  /** Max rendered width in px; defaults to the column width. */
+  width?: number
+  /** Frame the image like a screenshot (dark inset border). Default true. */
+  framed?: boolean
+}
+
+/** What skills POST: a local file path we copy into the doc's media dir. */
+export interface ImageBlockInput extends Omit<ImageBlock, 'src'> {
+  src?: string
+  /** Absolute path to a local image file; copied into .data/jexplain/media/<key>/. */
+  file?: string
+  /** Override the stored filename; defaults to the source file's name. */
+  name?: string
+}
+
 export interface StepsBlock {
   id: string
   type: 'steps'
@@ -114,6 +138,7 @@ export type Block =
   | CodeBlock
   | DiffBlock
   | ChartBlock
+  | ImageBlock
   | StepsBlock
   | CompareBlock
   | TimelineBlock
@@ -138,17 +163,35 @@ export interface Explainer {
   glossary: Record<string, string>
 }
 
+/**
+ * A picture pinned to a note: a pasted/uploaded screenshot, or a sketch drawn in
+ * the rail (optionally on top of a screenshot). Some feedback is much faster to
+ * draw an arrow at than to describe.
+ */
+export interface NoteAttachment {
+  id: string
+  /** Served URL under /api/media/<docKey>/notes/… */
+  src: string
+  /** 'shot' = pasted or uploaded, 'sketch' = drawn in the rail. */
+  kind: 'shot' | 'sketch'
+  /** Optional one-line description typed under the picture. */
+  caption?: string
+}
+
 export interface DocNote {
   id: string
   blockId: string
   /** Captured when created, so orphaned notes still read sensibly. */
   label: string
   text: string
+  attachments?: NoteAttachment[]
 }
 
 export interface DocNotes {
   general: string
   notes: DocNote[]
+  /** Pictures attached to the general (whole-document) note. */
+  generalAttachments?: NoteAttachment[]
 }
 
 export interface ExplainerMeta {

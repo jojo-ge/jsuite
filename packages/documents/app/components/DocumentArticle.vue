@@ -4,7 +4,7 @@
 // lifecycle (fetch, debounced save, copy-for-Claude). The host page supplies
 // the doc and the surrounding chrome; this component fills its parent, which
 // should be a `flex min-h-0` region (the article column scrolls internally).
-import type { Block, DocNote, Explainer } from '../../types'
+import type { Block, DocNote, Explainer, NoteAttachment } from '../../types'
 
 const props = defineProps<{ doc: Explainer }>()
 const emit = defineEmits<{ progress: [pct: number] }>()
@@ -33,6 +33,7 @@ const componentFor = (b: Block) =>
     code: resolveComponent('BlockCode'),
     diff: resolveComponent('BlockDiff'),
     chart: resolveComponent('BlockChart'),
+    image: resolveComponent('BlockImage'),
     steps: resolveComponent('BlockSteps'),
     compare: resolveComponent('BlockCompare'),
     timeline: resolveComponent('BlockTimeline'),
@@ -43,6 +44,7 @@ const componentFor = (b: Block) =>
 
 const general = ref('')
 const notes = ref<DocNote[]>([])
+const generalAttachments = ref<NoteAttachment[]>([])
 const rail = ref<{ focusTextarea: (id: string) => void } | null>(null)
 
 // watch, NOT watchEffect: this handler also *reads* notes/general (the rail-open
@@ -54,6 +56,7 @@ watch(
     if (!nd) return
     general.value = nd.general ?? ''
     notes.value = (nd.notes ?? []) as DocNote[]
+    generalAttachments.value = (nd.generalAttachments ?? []) as NoteAttachment[]
     if (notes.value.length || general.value.trim()) railOpen.value = true
   },
   { immediate: true },
@@ -65,11 +68,11 @@ function queueNotesSave() {
   notesTimer = setTimeout(async () => {
     await $fetch(`/api/documents/${key.value}/notes`, {
       method: 'PUT',
-      body: { general: general.value, notes: notes.value },
+      body: { general: general.value, notes: notes.value, generalAttachments: generalAttachments.value },
     })
   }, 500)
 }
-watch([general, notes], queueNotesSave, { deep: true })
+watch([general, notes, generalAttachments], queueNotesSave, { deep: true })
 
 function addNote(block: Block, index: number) {
   const existing = notes.value.find((n) => n.blockId === block.id)
@@ -94,7 +97,9 @@ const noteCountByBlock = computed(() => {
   return m
 })
 
-const writtenCount = computed(() => notes.value.filter((n) => n.text.trim()).length)
+const writtenCount = computed(
+  () => notes.value.filter((n) => n.text.trim() || (n.attachments?.length ?? 0)).length,
+)
 
 function focusBlock(blockId: string) {
   const el = document.getElementById(`block-${blockId}`)
@@ -112,19 +117,36 @@ function buildMarkdown(): string {
   out += `Document file: \`~/code/anyway/jsuite/.data/jexplain/${key.value}.json\`\n`
   out += `Notes file: \`~/code/anyway/jsuite/.data/jexplain/${key.value}.notes.json\`\n\n`
 
-  const g = general.value.trim()
-  if (g) out += `### General notes\n${g}\n\n`
+  // Attachments are listed as on-disk paths, not URLs: the point of pasting a
+  // screenshot or drawing an arrow is that Claude can then *read the picture*.
+  const mediaFile = (src: string) =>
+    `~/code/anyway/jsuite/.data/jexplain/media/${key.value}/notes/${src.split('/').pop()}`
+  const attachLines = (as: NoteAttachment[] | undefined, indent: string) =>
+    (as ?? [])
+      .map((a) => `${indent}- [${a.kind === 'sketch' ? 'drawing' : 'screenshot'}] \`${mediaFile(a.src)}\`${a.caption?.trim() ? ` — ${a.caption.trim()}` : ''}\n`)
+      .join('')
 
-  const written = notes.value.filter((n) => n.text.trim())
+  const g = general.value.trim()
+  if (g || generalAttachments.value.length) {
+    out += `### General notes\n${g ? g + '\n' : ''}`
+    out += attachLines(generalAttachments.value, '')
+    out += '\n'
+  }
+
+  const written = notes.value.filter((n) => n.text.trim() || (n.attachments?.length ?? 0))
   if (written.length) {
     out += '### Block notes\n'
     for (const n of written) {
       const label = blockLabels.value.get(n.blockId) ?? n.label
       const gone = blockLabels.value.has(n.blockId) ? '' : ' _(block removed)_'
       out += `- **${label}**${gone}: ${n.text.trim()}\n`
+      out += attachLines(n.attachments, '  ')
     }
     out += '\n'
   }
+
+  const pics = notes.value.reduce((t, n) => t + (n.attachments?.length ?? 0), 0) + generalAttachments.value.length
+  if (pics) out += `_${pics} picture${pics === 1 ? '' : 's'} attached — read the paths above to see them._\n\n`
 
   const charts = blocks.value.filter((b) => b.type === 'chart')
   if (charts.length) {
@@ -228,7 +250,9 @@ defineExpose({ writtenCount, copyNotes })
         ref="rail"
         v-model:general="general"
         v-model:notes="notes"
+        v-model:general-attachments="generalAttachments"
         :block-labels="blockLabels"
+        :doc-key="key"
         @focus="focusBlock"
         @copy="copyNotes"
       />
