@@ -42,7 +42,7 @@ const endpoints = [
   { m: 'GET', p: '/api/epics/:id', d: 'Get one epic (id or key) + its tickets' },
   { m: 'PATCH', p: '/api/epics/:id', d: 'Update an epic' },
   { m: 'DELETE', p: '/api/epics/:id', d: 'Delete an epic (tickets → backlog)' },
-  { m: 'GET', p: '/api/tickets', d: 'List tickets (?epicId= &status= &assignee= &label= &frontier=true)' },
+  { m: 'GET', p: '/api/tickets', d: 'List tickets (?epicId= &status= &assignee= &label= &frontier=true &finished=true &since=<ISO>)' },
   { m: 'POST', p: '/api/tickets', d: 'Create a ticket' },
   { m: 'GET', p: '/api/tickets/:id', d: 'Get one ticket (id or key)' },
   { m: 'PATCH', p: '/api/tickets/:id', d: 'Update a ticket' },
@@ -99,6 +99,16 @@ curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
 curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
   -H 'content-type: application/json' \\
   -d '{ "status": "done", "resolution": "Chose X because…" }'`
+
+const finishedExample = `# What just landed, newest completion first
+curl -s 'http://localhost:43000/api/tickets?finished=true'
+
+# Only the last day's work — since takes any ISO timestamp
+curl -s 'http://localhost:43000/api/tickets?finished=true&since=2026-08-14T00:00:00Z'
+
+# completedAt is stamped by the status change itself; you never send it
+curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
+  -H 'content-type: application/json' -d '{ "status": "done" }'`
 
 const assignExample = `# An agent claims a ticket by name (id or key both work)
 curl -s -X PATCH http://localhost:43000/api/tickets/TICK-1 \\
@@ -229,6 +239,11 @@ const methodColor: Record<string, string> = {
           <li><code>labels</code> — free-form strings; wayfinder uses <code>wayfinder:research|prototype|grilling|task</code></li>
           <li><code>resolution</code> — the answer, recorded on resolve (markdown)</li>
           <li><code>blockedBy</code> — tickets that gate this one</li>
+          <li>
+            <code>completedAt</code> — when the ticket last became done (ISO), <code>null</code> while
+            unfinished. Server-set on the status change; PATCHing it does nothing. Editing a done
+            ticket keeps the original stamp; leaving <code>done</code> clears it
+          </li>
           <li><code>comments</code> — discussion thread; append via <code>POST /api/tickets/:id/comments</code>, not PATCH</li>
           <li class="text-dimmed">GET adds derived <code>blocked</code> · <code>claimed</code> · <code>frontier</code> flags (not stored)</li>
         </ul>
@@ -242,6 +257,18 @@ const methodColor: Record<string, string> = {
           release the ticket.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ assignExample }}</code></pre>
+      </section>
+
+      <section>
+        <h2 class="mb-2 text-base font-semibold">Recently finished</h2>
+        <p class="mb-3 text-sm text-muted">
+          Moving a ticket to <code>done</code> stamps <code>completedAt</code>; moving it back out clears
+          it. <code>?finished=true</code> returns done tickets newest-completion-first, and
+          <code>?since=</code> narrows that to a window — the API behind the
+          <NuxtLink to="/finished" class="text-primary hover:underline">Recently finished</NuxtLink>
+          page, and the quickest way for an agent to write up what it landed today.
+        </p>
+        <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ finishedExample }}</code></pre>
       </section>
 
       <section>

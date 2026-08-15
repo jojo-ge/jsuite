@@ -11,6 +11,7 @@ const stats = computed(() => ({
   epics: epics.value.length,
   tickets: tickets.value.length,
   done: tickets.value.filter((t) => t.status === 'done').length,
+  running: tickets.value.filter((t) => t.status === 'in_progress').length,
   docs: docs.value.length,
 }))
 
@@ -24,11 +25,17 @@ function toggleTheme() {
   colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
 }
 
-const links = [
+const links = computed(() => [
   { label: 'Board', icon: 'i-lucide-layout-dashboard', to: '/' },
+  // Badged with the live in-progress count — the nav is where you notice you
+  // left three things running.
+  { label: 'Running now', icon: 'i-lucide-loader', to: '/running', badge: stats.value.running || null },
+  // No badge — a count of everything ever finished isn't news; the page's own
+  // day headings carry the recency.
+  { label: 'Finished', icon: 'i-lucide-circle-check', to: '/finished' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
   { label: 'Docs', icon: 'i-lucide-file-text', to: '/docs' },
-]
+])
 </script>
 
 <template>
@@ -39,27 +46,32 @@ const links = [
           <div class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-inverted font-bold">
             j
           </div>
-          <div class="hidden sm:block">
+          <!-- The brand block and the stats line are the two things that give way
+               as the nav grows — both stay on one line or disappear, so the header
+               never becomes two rows tall. -->
+          <div class="hidden shrink-0 whitespace-nowrap lg:block">
             <h1 class="text-lg font-semibold leading-none">jTicket</h1>
             <p class="text-xs text-muted">local task tracking · not connected to Jira</p>
           </div>
         </NuxtLink>
-        <nav class="flex items-center gap-1">
+        <nav class="flex shrink-0 items-center gap-1">
           <UButton
             v-for="l in links"
             :key="l.to"
             :icon="l.icon"
             :to="l.to"
             size="sm"
+            class="whitespace-nowrap"
             :color="$route.path === l.to ? 'primary' : 'neutral'"
             :variant="$route.path === l.to ? 'soft' : 'ghost'"
           >
             {{ l.label }}
+            <UBadge v-if="l.badge" color="info" variant="subtle" size="sm">{{ l.badge }}</UBadge>
           </UButton>
         </nav>
       </div>
       <div class="flex items-center gap-2">
-        <span class="hidden text-xs text-muted lg:inline">
+        <span class="hidden whitespace-nowrap text-xs text-muted 2xl:inline">
           {{ stats.projects }} projects · {{ stats.epics }} epics · {{ stats.done }}/{{ stats.tickets }} done · {{ stats.docs }} docs
         </span>
         <UButton icon="i-lucide-book-open" color="neutral" variant="ghost" to="/api-guide" aria-label="API guide" />

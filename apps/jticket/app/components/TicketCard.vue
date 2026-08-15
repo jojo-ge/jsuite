@@ -64,6 +64,9 @@ const doneCount = computed(() => props.ticket.acceptanceCriteria.length)
 
     <div class="mt-3 flex flex-wrap items-center gap-2">
       <UBadge :color="status.color" variant="soft" size="sm">{{ status.label }}</UBadge>
+      <!-- When it landed — only meaningful on a resolved card, where "Done" on
+           its own says nothing about how long ago. -->
+      <span v-if="ticket.completedAt" class="text-xs text-muted">{{ ticket.completedAt.slice(0, 10) }}</span>
       <UBadge v-if="ticket.assignee" color="primary" variant="soft" size="sm" icon="i-lucide-user-round">
         {{ ticket.assignee }}
       </UBadge>

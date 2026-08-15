@@ -381,6 +381,9 @@ async function save() {
 
         <p class="border-t border-default pt-3 text-xs text-muted">
           Created {{ live.createdAt.slice(0, 10) }} · updated {{ live.updatedAt.slice(0, 10) }}
+          <template v-if="live.completedAt">
+            · finished {{ live.completedAt.slice(0, 10) }} {{ live.completedAt.slice(11, 16) }}
+          </template>
         </p>
       </div>
 

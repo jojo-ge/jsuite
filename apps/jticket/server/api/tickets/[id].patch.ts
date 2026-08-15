@@ -11,7 +11,11 @@ export default defineEventHandler(async (event) => {
     ticket.acceptanceCriteria = body.acceptanceCriteria.map((s) => String(s).trim()).filter(Boolean)
   }
   if (body.type !== undefined) ticket.type = body.type === 'HITL' ? 'HITL' : 'AFK'
-  if (body.status !== undefined && isStatus(body.status)) ticket.status = body.status
+  if (body.status !== undefined && isStatus(body.status)) {
+    // Stamp/clear the completion time alongside the status — never from the body.
+    ticket.completedAt = stampCompletion(ticket, body.status, now())
+    ticket.status = body.status
+  }
   // Free-form assignee; pass '' (or null) to unassign. LLMs self-assign by name.
   if (body.assignee !== undefined) ticket.assignee = typeof body.assignee === 'string' ? body.assignee.trim() : ''
   if (body.labels !== undefined) ticket.labels = cleanLabels(body.labels)

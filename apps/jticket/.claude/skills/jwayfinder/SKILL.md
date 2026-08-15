@@ -319,6 +319,9 @@ appended a decision since you loaded it.
 - Every array field — `blockedBy`, `labels`, `acceptanceCriteria` — is **replaced
   wholesale** by PATCH. Read, append, write back.
 - `blocked` / `claimed` / `frontier` are derived on read; writing them does nothing.
+- `completedAt` is stamped by the server when a ticket moves to `done` (and cleared when it
+  moves out) — writing it does nothing. `?finished=true` lists resolved tickets
+  newest-first, which is how you recap what a map has landed.
 - The answer goes in `resolution`; longer assets become docs. Ticket **comments**
   (`POST /api/tickets/:id/comments`) are for discussion only — human direction left
   before handoff (read them before working a ticket) and your own questions or progress
