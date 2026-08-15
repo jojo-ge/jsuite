@@ -51,3 +51,7 @@ http://jgrilling.local:80 {
 http://jrig.local:80 {
 	import app host.docker.internal:43006
 }
+
+http://jagent.local:80 {
+	import app host.docker.internal:43007
+}

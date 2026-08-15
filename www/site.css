@@ -17,6 +17,7 @@
   --chart: #fbbf24;
   --explain: #38bdf8;
   --grill: #fb923c;
+  --agent: #c084fc;
 
   --radius: 14px;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
@@ -191,6 +192,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .app-strip [data-app="jchart"] .k::before { color: var(--chart); }
 .app-strip [data-app="jexplain"] .k::before { color: var(--explain); }
 .app-strip [data-app="jgrilling"] .k::before { color: var(--grill); }
+.app-strip [data-app="jagent"] .k::before { color: var(--agent); }
 @media (max-width: 760px) { .app-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- app folds ---------- */
@@ -226,6 +228,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .fold[data-app="jchart"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.07); }
 .fold[data-app="jexplain"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.08); }
 .fold[data-app="jgrilling"] { --accent: var(--grill); --glow: rgba(251, 146, 60, 0.08); }
+.fold[data-app="jagent"] { --accent: var(--agent); --glow: rgba(192, 132, 252, 0.08); }
 
 .fold-eyebrow {
   display: flex; align-items: center; gap: 0.6rem;
@@ -376,6 +379,26 @@ code { font-family: var(--mono); font-size: 0.92em; }
   border-radius: 8px; padding: 0.5rem 0.7rem; font-size: 0.68rem; color: var(--muted);
 }
 .mock-note b { color: var(--explain); font-weight: 600; }
+
+/* jAgent fleet mock */
+.mock-fleet { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 0.75rem; padding: 1rem; }
+.mock-rail { display: grid; gap: 0.55rem; align-content: start; }
+.mock-run {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.55rem 0.6rem; display: grid; gap: 0.4rem;
+}
+.mock-run .id { font-family: var(--mono); font-size: 0.62rem; color: var(--faint); }
+.mock-run .state { font-family: var(--mono); font-size: 0.66rem; color: var(--muted); }
+.mock-run .state::before { content: "\25CF  "; font-size: 0.55rem; vertical-align: 1px; }
+.mock-run.live { border-color: rgba(192, 132, 252, 0.5); box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.09); }
+.mock-run.live .state::before { color: var(--agent); }
+.mock-run.review .state::before { color: var(--chart); }
+.mock-run .plus { color: var(--diff); font-weight: 600; }
+.mock-run .minus { color: #fca5a5; font-weight: 600; }
+.mock-fleet .mock-diff {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2);
+  overflow: hidden; align-self: start;
+}
 
 /* ---------- ecosystem ---------- */
 
