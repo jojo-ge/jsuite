@@ -58,6 +58,7 @@ const endpoints = [
   { m: 'GET', p: '/api/documents', d: 'List the shared document pool (from @jsuite/documents)' },
   { m: 'POST', p: '/api/documents', d: 'Create/replace a shared document { title, blocks, key?, replace? }' },
   { m: 'GET', p: '/api/documents/:key', d: 'Get a shared document / :key/notes for its notes' },
+  { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
   { m: 'GET', p: '/api/attachments', d: 'List uploaded attachments' },
   { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
 ]
@@ -99,6 +100,15 @@ curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
 curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
   -H 'content-type: application/json' \\
   -d '{ "status": "done", "resolution": "Chose X because…" }'`
+
+const streamExample = `# Follow the tracker: one message whenever the store changes
+curl -N http://localhost:43000/api/stream
+# data: {"kind":"hello","revision":7}
+# data: {"kind":"change","revision":8}   <- something moved; refetch what you care about
+# data: {"kind":"ping"}                  <- heartbeat every 25s, ignore it
+
+# The revision is a change signal, not a cursor — it resets when the server
+# restarts, so treat a fresh 'hello' as "refetch, you may have missed something".`
 
 const finishedExample = `# What just landed, newest completion first
 curl -s 'http://localhost:43000/api/tickets?finished=true'
@@ -281,6 +291,19 @@ const methodColor: Record<string, string> = {
           still goes in <code>resolution</code>.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ commentExample }}</code></pre>
+      </section>
+
+      <section>
+        <h2 class="mb-2 flex items-center gap-2 text-base font-semibold">
+          <UIcon name="i-lucide-radio" class="size-4 text-primary" />Live updates
+        </h2>
+        <p class="mb-3 text-sm text-muted">
+          Every write lands in one JSON file, and <code>/api/stream</code> tails it — so a
+          <code>PATCH</code> from an agent and a hand edit of the file both show up the same way. The
+          browser follows this stream, which is why an open board keeps up without a refresh; the
+          message carries no payload, because the client refetches the lists it already knows.
+        </p>
+        <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ streamExample }}</code></pre>
       </section>
 
       <section>

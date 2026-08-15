@@ -1,40 +1,13 @@
 <script setup lang="ts">
-import type { Project, ProjectMode } from '~/composables/useTracker'
+import type { Project } from '~/composables/useTracker'
 
 const props = defineProps<{ open: boolean; project?: Project | null }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
-const { createProject, updateProject } = useTracker()
 const isEdit = computed(() => !!props.project)
-const saving = ref(false)
-const form = reactive({ title: '', description: '', mode: 'standard' as ProjectMode })
-
-const modeOptions = [
-  { label: 'Standard — plain tracker', value: 'standard' },
-  { label: 'Wayfinder — epics are maps, tickets have a frontier', value: 'wayfinder' },
-]
-
-watch(
-  () => props.open,
-  (isOpen) => {
-    if (!isOpen) return
-    form.title = props.project?.title ?? ''
-    form.description = props.project?.description ?? ''
-    form.mode = props.project?.mode ?? 'standard'
-  },
-)
-
-async function save() {
-  if (!form.title.trim()) return
-  saving.value = true
-  try {
-    if (props.project) await updateProject(props.project.id, { ...form })
-    else await createProject({ ...form })
-    emit('update:open', false)
-  } finally {
-    saving.value = false
-  }
-}
+// The fields live in ProjectForm (shared with the create modal); the footer
+// stays here because a modal footer is the sticky one.
+const form = useTemplateRef('form')
 </script>
 
 <template>
@@ -45,23 +18,13 @@ async function save() {
     @update:open="emit('update:open', $event)"
   >
     <template #body>
-      <div class="space-y-4">
-        <UFormField label="Title" required>
-          <UInput v-model="form.title" placeholder="Project name" class="w-full" autofocus />
-        </UFormField>
-        <UFormField label="Description">
-          <UTextarea v-model="form.description" :rows="4" placeholder="What this project covers…" class="w-full" />
-        </UFormField>
-        <UFormField label="Mode" help="Wayfinder projects treat each epic as a map and surface a takeable frontier of tickets.">
-          <USelect v-model="form.mode" :items="modeOptions" class="w-full" />
-        </UFormField>
-      </div>
+      <ProjectForm ref="form" :project="project" @saved="emit('update:open', false)" />
     </template>
 
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton color="neutral" variant="ghost" @click="emit('update:open', false)">Cancel</UButton>
-        <UButton :loading="saving" :disabled="!form.title.trim()" @click="save">
+        <UButton :loading="form?.saving" :disabled="!form?.canSave" @click="form?.save()">
           {{ isEdit ? 'Save changes' : 'Create project' }}
         </UButton>
       </div>

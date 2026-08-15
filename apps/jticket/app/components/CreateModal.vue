@@ -1,0 +1,104 @@
+<script setup lang="ts">
+// One create surface for the whole tracker. The header used to carry four
+// separate create buttons, which cost more width than the nav itself — on a
+// tall narrow screen that pushed the nav off the edge. Now it's one button and
+// the choice of what to create is a tab inside the modal.
+const props = defineProps<{
+  open: boolean
+  // Set on a project page so a new epic lands in the project you're looking at.
+  defaultProjectId?: string | null
+  defaultEpicId?: string | null
+}>()
+const emit = defineEmits<{ 'update:open': [boolean] }>()
+
+const { epics, tickets, projects } = useTracker()
+
+const tabs = [
+  { value: 'ticket', label: 'Ticket', icon: 'i-lucide-plus' },
+  { value: 'epic', label: 'Epic', icon: 'i-lucide-folder-plus' },
+  { value: 'project', label: 'Project', icon: 'i-lucide-folder-tree' },
+  { value: 'doc', label: 'Doc', icon: 'i-lucide-file-plus' },
+]
+const tab = ref('ticket')
+
+// Every panel stays mounted (v-show, not v-if) so switching tabs doesn't throw
+// away what you already typed in another one.
+const ticketForm = useTemplateRef('ticketForm')
+const epicForm = useTemplateRef('epicForm')
+const projectForm = useTemplateRef('projectForm')
+const active = computed(() =>
+  tab.value === 'epic' ? epicForm.value : tab.value === 'project' ? projectForm.value : ticketForm.value,
+)
+
+// A new ticket only offers the wayfinder fields when its epic sits in a
+// wayfinder project — same rule the ticket modal uses.
+const wayfinder = computed(() => {
+  const epic = epics.value.find((e) => e.id === props.defaultEpicId)
+  return projects.value.find((p) => p.id === (epic?.projectId ?? props.defaultProjectId))?.mode === 'wayfinder'
+})
+
+// Docs are long-form and get their own page rather than a modal.
+const newDocTo = computed(() =>
+  props.defaultProjectId ? `/docs/new?project=${props.defaultProjectId}` : '/docs/new',
+)
+
+const saveLabel = { ticket: 'Create ticket', epic: 'Create epic', project: 'Create project' } as const
+</script>
+
+<template>
+  <UModal
+    :open="open"
+    title="Create"
+    description="Add a ticket, epic, project or doc to the tracker."
+    :ui="{ content: 'max-w-2xl', description: 'sr-only' }"
+    @update:open="emit('update:open', $event)"
+  >
+    <template #body>
+      <div class="space-y-4">
+        <UTabs v-model="tab" :items="tabs" :content="false" size="sm" class="w-full" />
+
+        <TicketForm
+          v-show="tab === 'ticket'"
+          ref="ticketForm"
+          :epics="epics"
+          :tickets="tickets"
+          :default-epic-id="defaultEpicId"
+          :wayfinder="wayfinder"
+          :autofocus="tab === 'ticket'"
+          @saved="emit('update:open', false)"
+        />
+        <EpicForm
+          v-show="tab === 'epic'"
+          ref="epicForm"
+          :default-project-id="defaultProjectId"
+          :autofocus="false"
+          @saved="emit('update:open', false)"
+        />
+        <ProjectForm
+          v-show="tab === 'project'"
+          ref="projectForm"
+          :autofocus="false"
+          @saved="emit('update:open', false)"
+        />
+
+        <div v-if="tab === 'doc'" class="space-y-3 py-2">
+          <p class="text-sm text-muted">
+            Docs are written on their own page — a full-width block editor rather than a modal.
+          </p>
+          <UButton icon="i-lucide-file-plus" :to="newDocTo" @click="emit('update:open', false)">
+            New doc
+          </UButton>
+        </div>
+      </div>
+    </template>
+
+    <template v-if="tab !== 'doc'" #footer>
+      <div class="flex w-full justify-end gap-2">
+        <UButton color="neutral" variant="ghost" @click="emit('update:open', false)">Cancel</UButton>
+        <UButton :loading="active?.saving" :disabled="!active?.canSave" @click="active?.save()">
+          {{ saveLabel[tab as keyof typeof saveLabel] }}
+        </UButton>
+      </div>
+    </template>
+  </UModal>
+</template>

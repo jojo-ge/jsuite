@@ -60,6 +60,24 @@ const groups = computed<RunGroup[]>(() => {
   return out
 })
 
+// Collapsed epics stick between visits — /running is a page you keep open, and
+// an epic you have already checked on should stay folded away until you unfold
+// it. Stored under its own key so /next and /running don't share folds.
+const { isCollapsed, toggle: toggleGroup, collapseAll, expandAll, prune } = useCollapsedGroups(
+  'jticket-running-collapsed',
+)
+const groupKey = (g: RunGroup) => g.epic?.id ?? 'no-epic'
+// An empty list means the tracker has not loaded yet, not that every epic
+// vanished — pruning against it would forget every fold.
+watch(epics, (list) => {
+  if (list.length) prune([...list.map((e) => e.id), 'no-epic'])
+})
+const allCollapsed = computed(() => groups.value.length > 0 && groups.value.every((g) => isCollapsed(groupKey(g))))
+function toggleAll() {
+  if (allCollapsed.value) expandAll()
+  else collapseAll(groups.value.map(groupKey))
+}
+
 const hitl = computed(() => running.value.filter((t) => t.type === 'HITL').length)
 const unassigned = computed(() => running.value.filter((t) => !t.assignee).length)
 </script>
@@ -69,13 +87,24 @@ const unassigned = computed(() => running.value.filter((t) => !t.assignee).lengt
     <AppHeader />
 
     <UContainer class="py-8">
-      <div class="mb-6">
-        <h1 class="text-2xl font-bold">Running now</h1>
-        <p class="text-sm text-muted">
-          {{ running.length }} tickets in progress across {{ groups.length }}
-          {{ groups.length === 1 ? 'epic' : 'epics' }}
-          <template v-if="running.length"> · {{ hitl }} HITL · {{ unassigned }} unassigned</template>
-        </p>
+      <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 class="text-2xl font-bold">Running now</h1>
+          <p class="text-sm text-muted">
+            {{ running.length }} tickets in progress across {{ groups.length }}
+            {{ groups.length === 1 ? 'epic' : 'epics' }}
+            <template v-if="running.length"> · {{ hitl }} HITL · {{ unassigned }} unassigned</template>
+          </p>
+        </div>
+        <UButton
+          v-if="running.length"
+          :icon="allCollapsed ? 'i-lucide-chevrons-up-down' : 'i-lucide-chevrons-down-up'"
+          variant="soft"
+          color="neutral"
+          @click="toggleAll"
+        >
+          {{ allCollapsed ? 'Expand all' : 'Collapse all' }}
+        </UButton>
       </div>
 
       <!-- Empty state -->
@@ -94,43 +123,55 @@ const unassigned = computed(() => running.value.filter((t) => !t.assignee).lengt
       <div v-else class="space-y-8">
         <section
           v-for="g in groups"
-          :key="g.epic?.id ?? 'no-epic'"
+          :key="groupKey(g)"
           class="rounded-lg border border-default bg-elevated/20 p-4"
         >
-          <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <NuxtLink
-                  v-if="g.project"
-                  :to="`/projects/${g.project.key}`"
-                  class="inline-flex items-center gap-1.5 text-xs text-muted hover:text-primary"
-                >
-                  <UIcon name="i-lucide-folder-tree" class="size-3.5" />
-                  <span class="font-mono">{{ g.project.key }}</span>
-                  <span class="max-w-48 truncate">{{ g.project.title }}</span>
+          <div class="flex flex-wrap items-start justify-between gap-3" :class="isCollapsed(groupKey(g)) ? '' : 'mb-3'">
+            <div class="flex min-w-0 items-start gap-2">
+              <UButton
+                :icon="isCollapsed(groupKey(g)) ? 'i-lucide-chevron-right' : 'i-lucide-chevron-down'"
+                variant="ghost"
+                color="neutral"
+                size="xs"
+                class="mt-0.5 shrink-0"
+                :aria-expanded="!isCollapsed(groupKey(g))"
+                :aria-label="`${isCollapsed(groupKey(g)) ? 'Expand' : 'Collapse'} ${g.epic?.title ?? 'tickets with no epic'}`"
+                @click="toggleGroup(groupKey(g))"
+              />
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <NuxtLink
+                    v-if="g.project"
+                    :to="`/projects/${g.project.key}`"
+                    class="inline-flex items-center gap-1.5 text-xs text-muted hover:text-primary"
+                  >
+                    <UIcon name="i-lucide-folder-tree" class="size-3.5" />
+                    <span class="font-mono">{{ g.project.key }}</span>
+                    <span class="max-w-48 truncate">{{ g.project.title }}</span>
+                  </NuxtLink>
+                  <span v-else-if="g.epic" class="inline-flex items-center gap-1.5 text-xs text-muted">
+                    <UIcon name="i-lucide-folder-x" class="size-3.5" />No project
+                  </span>
+                  <span v-if="g.epic" class="text-xs text-muted">/</span>
+                  <span class="font-mono text-xs text-muted">{{ g.epic?.key ?? 'Backlog' }}</span>
+                  <UBadge color="info" variant="subtle" size="sm">{{ g.running.length }} running</UBadge>
+                </div>
+
+                <NuxtLink v-if="g.epic" :to="`/epics/${g.epic.key}`" class="group inline-flex items-center gap-1.5">
+                  <h2 class="mt-0.5 text-xl font-semibold group-hover:text-primary">{{ g.epic.title }}</h2>
+                  <UIcon
+                    name="i-lucide-arrow-up-right"
+                    class="size-4 text-muted opacity-0 transition group-hover:opacity-100"
+                  />
                 </NuxtLink>
-                <span v-else-if="g.epic" class="inline-flex items-center gap-1.5 text-xs text-muted">
-                  <UIcon name="i-lucide-folder-x" class="size-3.5" />No project
-                </span>
-                <span v-if="g.epic" class="text-xs text-muted">/</span>
-                <span class="font-mono text-xs text-muted">{{ g.epic?.key ?? 'Backlog' }}</span>
-                <UBadge color="info" variant="subtle" size="sm">
-                  {{ g.running.length }} running
-                </UBadge>
+                <h2 v-else class="mt-0.5 cursor-pointer text-xl font-semibold" @click="toggleGroup(groupKey(g))">
+                  Tickets with no epic
+                </h2>
+
+                <p v-if="g.epic" class="mt-0.5 text-xs text-muted">
+                  {{ g.done }}/{{ g.total }} tickets done in this epic
+                </p>
               </div>
-
-              <NuxtLink v-if="g.epic" :to="`/epics/${g.epic.key}`" class="group inline-flex items-center gap-1.5">
-                <h2 class="mt-0.5 text-xl font-semibold group-hover:text-primary">{{ g.epic.title }}</h2>
-                <UIcon
-                  name="i-lucide-arrow-up-right"
-                  class="size-4 text-muted opacity-0 transition group-hover:opacity-100"
-                />
-              </NuxtLink>
-              <h2 v-else class="mt-0.5 text-xl font-semibold">Tickets with no epic</h2>
-
-              <p v-if="g.epic" class="mt-0.5 text-xs text-muted">
-                {{ g.done }}/{{ g.total }} tickets done in this epic
-              </p>
             </div>
 
             <UButton
@@ -145,7 +186,7 @@ const unassigned = computed(() => running.value.filter((t) => !t.assignee).lengt
             </UButton>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div v-show="!isCollapsed(groupKey(g))" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             <TicketCard
               v-for="t in g.running"
               :key="t.id"

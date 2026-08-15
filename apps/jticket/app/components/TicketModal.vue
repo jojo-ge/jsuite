@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Epic, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
+import type { Epic, Ticket, TicketStatus } from '~/composables/useTracker'
 
 const props = defineProps<{
   open: boolean
@@ -10,10 +10,9 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
-const { projects, createTicket, updateTicket, deleteTicket, addComment, deleteComment } = useTracker()
+const { projects, updateTicket, deleteTicket, addComment, deleteComment } = useTracker()
 
 const isEdit = computed(() => !!props.ticket)
-const saving = ref(false)
 
 // Existing tickets open read-first; the form is behind the Edit toggle.
 const mode = ref<'view' | 'edit'>('view')
@@ -22,68 +21,27 @@ const mode = ref<'view' | 'edit'>('view')
 // live record from state so inline status changes and saves show immediately.
 const live = computed(() => props.tickets.find((t) => t.id === props.ticket?.id) ?? props.ticket ?? null)
 
-interface FormState {
-  title: string
-  description: string
-  acceptanceCriteria: string[]
-  type: TicketType
-  status: TicketStatus
-  epicId: string | null
-  assignee: string
-  wfType: WayfinderType | null
-  resolution: string
-  blockedBy: string[]
-}
-
-function blank(): FormState {
-  return {
-    title: '',
-    description: '',
-    acceptanceCriteria: [''],
-    type: 'AFK',
-    status: 'todo',
-    epicId: props.defaultEpicId ?? null,
-    assignee: '',
-    wfType: null,
-    resolution: '',
-    blockedBy: [],
-  }
-}
-
-const form = reactive<FormState>(blank())
-
-function fillForm() {
-  const t = live.value
-  if (t) {
-    Object.assign(form, {
-      title: t.title,
-      description: t.description,
-      acceptanceCriteria: t.acceptanceCriteria.length ? [...t.acceptanceCriteria] : [''],
-      type: t.type,
-      status: t.status,
-      epicId: t.epicId,
-      assignee: t.assignee ?? '',
-      wfType: wayfinderType(t),
-      resolution: t.resolution ?? '',
-      blockedBy: [...t.blockedBy],
-    })
-  } else {
-    Object.assign(form, blank())
-  }
-}
+// The fields themselves live in TicketForm, shared with the tabbed create
+// modal; this modal keeps the read view, the footer and the delete.
+const form = useTemplateRef('form')
 
 watch(
   () => props.open,
   (isOpen) => {
     if (!isOpen) return
     mode.value = props.ticket ? 'view' : 'edit'
-    fillForm()
   },
 )
 
 function startEdit() {
-  fillForm()
   mode.value = 'edit'
+}
+
+// After a save: an edit drops back to the read view with fresh data, a create
+// closes the modal.
+function onSaved() {
+  if (isEdit.value) mode.value = 'view'
+  else emit('update:open', false)
 }
 
 // ── View-mode derived state ──
@@ -155,67 +113,11 @@ async function removeTicket() {
   emit('update:open', false)
 }
 
-const typeOptions = [
-  { label: 'AFK — agent-runnable', value: 'AFK' },
-  { label: 'HITL — needs a human', value: 'HITL' },
-]
-const wfTypeOptions = [
-  { label: 'None', value: null as WayfinderType | null },
-  ...WAYFINDER_TYPES.map((t) => ({ label: WAYFINDER_TYPE_META[t].label, value: t as WayfinderType | null })),
-]
 const statusOptions = [
   { label: 'To Do', value: 'todo' },
   { label: 'In Progress', value: 'in_progress' },
   { label: 'Done', value: 'done' },
 ]
-const epicOptions = computed(() => [
-  { label: 'No epic (backlog)', value: null as string | null },
-  ...props.epics.map((e) => ({ label: `${e.key} — ${e.title}`, value: e.id })),
-])
-const blockerOptions = computed(() =>
-  props.tickets
-    .filter((t) => t.id !== props.ticket?.id)
-    .map((t) => ({ label: `${t.key} — ${t.title}`, value: t.id })),
-)
-
-function addCriterion() {
-  form.acceptanceCriteria.push('')
-}
-function removeCriterion(i: number) {
-  form.acceptanceCriteria.splice(i, 1)
-  if (form.acceptanceCriteria.length === 0) form.acceptanceCriteria.push('')
-}
-
-async function save() {
-  if (!form.title.trim()) return
-  saving.value = true
-  try {
-    // Preserve any non-wayfinder labels; set the sub-type from the picker.
-    const otherLabels = (live.value?.labels ?? []).filter((l) => !/^wayfinder:(research|prototype|grilling|task)$/.test(l))
-    const labels = form.wfType ? [...otherLabels, `wayfinder:${form.wfType}`] : otherLabels
-    const payload = {
-      title: form.title,
-      description: form.description,
-      acceptanceCriteria: form.acceptanceCriteria.map((s) => s.trim()).filter(Boolean),
-      type: form.type,
-      status: form.status,
-      epicId: form.epicId,
-      assignee: form.assignee.trim(),
-      labels,
-      resolution: form.resolution.trim(),
-      blockedBy: form.blockedBy,
-    }
-    if (props.ticket) {
-      await updateTicket(props.ticket.id, payload)
-      mode.value = 'view' // back to the pretty view with fresh data
-    } else {
-      await createTicket(payload)
-      emit('update:open', false)
-    }
-  } finally {
-    saving.value = false
-  }
-}
 </script>
 
 <template>
@@ -388,85 +290,16 @@ async function save() {
       </div>
 
       <!-- ── Edit form ── -->
-      <div v-else class="space-y-4">
-        <UFormField label="Title" required>
-          <UInput v-model="form.title" placeholder="Short descriptive name" class="w-full" autofocus />
-        </UFormField>
-
-        <UFormField
-          label="Description"
-          help="The end-to-end behaviour this ticket makes work. Renders as markdown: ```fenced code blocks```, inline `code`, tables, lists…"
-        >
-          <UTextarea v-model="form.description" :rows="4" placeholder="What to build…" class="w-full font-mono text-sm" />
-        </UFormField>
-
-        <UFormField label="Acceptance criteria">
-          <div class="space-y-2">
-            <div v-for="(_, i) in form.acceptanceCriteria" :key="i" class="flex items-center gap-2">
-              <UInput v-model="form.acceptanceCriteria[i]" placeholder="Criterion…" class="flex-1" />
-              <UButton
-                icon="i-lucide-x"
-                color="neutral"
-                variant="ghost"
-                size="sm"
-                aria-label="Remove criterion"
-                @click="removeCriterion(i)"
-              />
-            </div>
-            <UButton icon="i-lucide-plus" color="neutral" variant="soft" size="sm" @click="addCriterion">
-              Add criterion
-            </UButton>
-          </div>
-        </UFormField>
-
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <UFormField label="Type">
-            <USelect v-model="form.type" :items="typeOptions" class="w-full" />
-          </UFormField>
-          <UFormField label="Status">
-            <USelect v-model="form.status" :items="statusOptions" class="w-full" />
-          </UFormField>
-          <UFormField label="Epic">
-            <USelect v-model="form.epicId" :items="epicOptions" class="w-full" />
-          </UFormField>
-        </div>
-
-        <UFormField
-          v-if="isWayfinder"
-          label="Wayfinder type"
-          help="The kind of decision this ticket resolves: research · prototype · grilling · task."
-        >
-          <USelect v-model="form.wfType" :items="wfTypeOptions" class="w-full" />
-        </UFormField>
-
-        <UFormField label="Assignee" help="Who is working on it — the claim. Free-form name; blank to unassign.">
-          <UInput v-model="form.assignee" placeholder="e.g. an agent or person's name" class="w-full" />
-        </UFormField>
-
-        <UFormField
-          v-if="isWayfinder"
-          label="Resolution"
-          help="The answer, recorded when the ticket resolves. Renders as markdown."
-        >
-          <UTextarea
-            v-model="form.resolution"
-            :rows="3"
-            placeholder="The decision / finding this ticket landed on…"
-            class="w-full font-mono text-sm"
-          />
-        </UFormField>
-
-        <UFormField label="Blocked by" help="Tickets that must finish before this one can start.">
-          <USelectMenu
-            v-model="form.blockedBy"
-            :items="blockerOptions"
-            value-key="value"
-            multiple
-            placeholder="Select blocking tickets…"
-            class="w-full"
-          />
-        </UFormField>
-      </div>
+      <TicketForm
+        v-else
+        ref="form"
+        :ticket="ticket"
+        :epics="epics"
+        :tickets="tickets"
+        :default-epic-id="defaultEpicId"
+        :wayfinder="isWayfinder"
+        @saved="onSaved"
+      />
     </template>
 
     <template #footer>
@@ -487,7 +320,7 @@ async function save() {
         >
           Cancel
         </UButton>
-        <UButton :loading="saving" :disabled="!form.title.trim()" @click="save">
+        <UButton :loading="form?.saving" :disabled="!form?.canSave" @click="form?.save()">
           {{ isEdit ? 'Save changes' : 'Create ticket' }}
         </UButton>
       </div>

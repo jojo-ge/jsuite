@@ -91,8 +91,35 @@ touching.
 - Scope the change to the ticket. Work you discover that belongs to a *different* ticket
   goes on the board (§6), not into this diff.
 - Once done, use `/code-review` to review the work.
-- Commit to the current branch, with the ticket key in the subject:
-  `feat(cart): persist across refresh (TICK-7)`.
+
+### Commits and the PR
+
+Every commit subject **starts** with the key that owns the branch, so the board key is
+readable from `git log`, from the PR list, and from a squashed merge subject:
+
+- **A ticket branch** — one ticket's work — takes the **ticket** key:
+  `TICK-7 feat(cart): persist across refresh`.
+- **An integration branch** — the shared branch several tickets in an epic land on before
+  a final integrate-and-verify — takes the **epic** key, or the **project** key when the
+  branch spans epics: `EPIC-2 feat(cart): migrate the checkout call sites`.
+
+The same prefix goes in the PR title, and it is the branch's prefix, not the prefix of
+whichever ticket you happen to be on: opening a PR from an integration branch titled
+`TICK-9 …` hides the fact that it carries the whole epic. Name the branch to match
+(`tick-7-persist-cart`, `epic-2-cart-migration`).
+
+Only open a PR when the user asks for one. When you do, list every ticket the branch
+closes in the body, by key and title with its jTicket URL, and check that each of those
+tickets is recorded (§5) before you push:
+
+```bash
+git commit -m "TICK-7 feat(cart): persist across refresh"
+gh pr create --title "TICK-7 Persist the cart across refresh" --body "$(cat <<'EOF'
+Closes TICK-7 — Persist the cart across refresh
+http://localhost:43000/tickets/TICK-7
+EOF
+)"
+```
 
 ## 5. Record the outcome
 
