@@ -5,6 +5,25 @@
    renderers, DocumentArticle, NotesRail live outside this app's source tree). */
 @source "../../../../../packages/documents/app";
 
+/* The brand periwinkle, anchored at 400 — the exact bar colour in the jTicket
+   mark (favicon.svg / <AppLogo>) — so the app's primary and its icon are the
+   same blue. */
+@theme static {
+  --color-periwinkle-50: #f0f2ff;
+  --color-periwinkle-100: #e0e4ff;
+  --color-periwinkle-200: #c2caff;
+  --color-periwinkle-300: #a8b4ff;
+  --color-periwinkle-400: #8b9bff;
+  --color-periwinkle-500: #677bf9;
+  --color-periwinkle-600: #495fe9;
+  --color-periwinkle-700: #3046d5;
+  --color-periwinkle-800: #2d3ea9;
+  --color-periwinkle-900: #2b3788;
+  --color-periwinkle-950: #1f2651;
+  /* The mark's plate — the dark square the bars sit on. */
+  --color-jticket-ink: #12141d;
+}
+
 :root {
   --ui-radius: 0.5rem;
 }
@@ -13,4 +32,27 @@ html,
 body,
 #__nuxt {
   height: 100%;
+}
+
+/* Live updates: a card whose ticket just moved under you (see useLiveTracker)
+   flashes once and then holds an info ring until the highlight expires — the
+   flash catches the eye, the ring answers "which one was it?" a few seconds
+   later, when you look back. */
+@keyframes jt-moved-flash {
+  0% {
+    background-color: color-mix(in oklab, var(--ui-color-info-500) 24%, transparent);
+  }
+  100% {
+    background-color: color-mix(in oklab, var(--ui-color-info-500) 0%, transparent);
+  }
+}
+
+.jt-moved {
+  animation: jt-moved-flash 1.6s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jt-moved {
+    animation: none;
+  }
 }

@@ -10,6 +10,13 @@ await useAsyncData('bootstrap', async () => {
   return null
 })
 
+// One EventSource for the whole app: the store pushes a revision whenever it
+// changes and the client refetches, so a board left open follows along with
+// whatever agents (or another tab) are doing to it.
+const { start: startLive, stop: stopLive } = useLiveTracker()
+onMounted(startLive)
+onBeforeUnmount(stopLive)
+
 // Shared modals, rendered once for the whole app (see useTrackerModals).
 const {
   ticketModalOpen,
@@ -20,6 +27,8 @@ const {
   newEpicProjectId,
   projectModalOpen,
   editingProject,
+  createModalOpen,
+  createProjectId,
 } = useTrackerModals()
 </script>
 
@@ -36,5 +45,6 @@ const {
     />
     <EpicModal v-model:open="epicModalOpen" :epic="editingEpic" :default-project-id="newEpicProjectId" />
     <ProjectModal v-model:open="projectModalOpen" :project="editingProject" />
+    <CreateModal v-model:open="createModalOpen" :default-project-id="createProjectId" />
   </UApp>
 </template>

@@ -75,11 +75,41 @@ export interface Doc {
   updatedAt: string
 }
 
+// How long a ticket stays ringed after it moves under you.
+export const CHANGE_HIGHLIGHT_MS = 10_000
+
 export function useTracker() {
   const projects = useState<Project[]>('jticket-projects', () => [])
   const epics = useState<Epic[]>('jticket-epics', () => [])
   const tickets = useState<Ticket[]>('jticket-tickets', () => [])
   const docs = useState<Doc[]>('jticket-docs', () => [])
+  // Ids of tickets that moved in the last live update (see useLiveTracker).
+  // Cards ring themselves while an id is in here, so a change somebody *else*
+  // made — an agent, another tab — is visible without re-reading the board.
+  // Entries expire on their own; nothing has to clear them.
+  const changed = useState<Record<string, number>>('jticket-changed', () => ({}))
+
+  // Replaced wholesale rather than mutated: useState is backed by Nuxt's
+  // *shallow*-reactive payload state, so writing a key into the object it holds
+  // changes nothing on screen — only setting .value does.
+  function markChanged(ids: string[]) {
+    if (!ids.length) return
+    const at = Date.now()
+    const next = { ...changed.value }
+    for (const id of ids) next[id] = at
+    changed.value = next
+
+    for (const id of ids) {
+      // Keyed on `at` so a ticket that moves again mid-fade keeps the newer
+      // highlight instead of having it cut short by the older timer.
+      setTimeout(() => {
+        if (changed.value[id] !== at) return
+        const after = { ...changed.value }
+        delete after[id]
+        changed.value = after
+      }, CHANGE_HIGHLIGHT_MS)
+    }
+  }
 
   async function refresh() {
     const [p, e, t, d] = await Promise.all([
@@ -164,6 +194,8 @@ export function useTracker() {
     epics,
     tickets,
     docs,
+    changed,
+    markChanged,
     refresh,
     createProject,
     updateProject,

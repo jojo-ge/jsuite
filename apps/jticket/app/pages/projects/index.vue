@@ -31,32 +31,33 @@ async function importBundle(e: Event) {
   }
 }
 
+function epicsFor(projectId: string | null) {
+  return epics.value.filter((e) => e.projectId === projectId)
+}
+
 // Every ticket under a project, via its epics. TicketProgress turns these into
 // the done / in progress / blocked / not started bar on each card.
 function ticketsFor(projectId: string | null) {
-  const epicIds = new Set(epics.value.filter((e) => e.projectId === projectId).map((e) => e.id))
+  const epicIds = new Set(epicsFor(projectId).map((e) => e.id))
   return tickets.value.filter((t) => t.epicId && epicIds.has(t.epicId))
 }
 
-// Per-project rollup: epic count and ticket count.
-function statsFor(projectId: string | null) {
-  return {
-    epics: epics.value.filter((e) => e.projectId === projectId).length,
-    tickets: ticketsFor(projectId).length,
-  }
+// A project is finished once it has tickets and none of them are outstanding.
+// An empty project (or one whose epics carry no tickets) counts as in progress —
+// there's nothing done about it, it just hasn't been broken down yet.
+function isDone(projectId: string) {
+  const ts = ticketsFor(projectId)
+  return ts.length > 0 && ts.every((t) => t.status === 'done')
 }
 
-const unassigned = computed(() => statsFor(null))
+// The grid shows what's still moving; finished projects sink into a collapsed
+// section at the bottom.
+const activeProjects = computed(() => projects.value.filter((p) => !isDone(p.id)))
+const doneProjects = computed(() => projects.value.filter((p) => isDone(p.id)))
+const showDone = ref(false)
+
+const unassignedEpics = computed(() => epicsFor(null).length)
 const backlogCount = computed(() => tickets.value.filter((t) => !t.epicId).length)
-
-function edit(p: Project, e: Event) {
-  e.preventDefault()
-  openEditProject(p)
-}
-function remove(p: Project, e: Event) {
-  e.preventDefault()
-  onDeleteProject(p)
-}
 </script>
 
 <template>
@@ -67,7 +68,9 @@ function remove(p: Project, e: Event) {
       <div class="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold">Projects</h1>
-          <p class="text-sm text-muted">{{ projects.length }} projects · pick one to dive in</p>
+          <p class="text-sm text-muted">
+            {{ activeProjects.length }} in progress<span v-if="doneProjects.length"> · {{ doneProjects.length }} done</span> · pick one to dive in
+          </p>
         </div>
         <div class="flex gap-2">
           <input ref="bundleInput" type="file" accept="application/json,.json" class="hidden" @change="importBundle">
@@ -99,49 +102,63 @@ function remove(p: Project, e: Event) {
         </div>
       </div>
 
-      <div v-else class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <NuxtLink
-          v-for="project in projects"
-          :key="project.id"
-          :to="`/projects/${project.key}`"
-          class="group flex flex-col gap-3 rounded-lg border border-default bg-elevated/30 p-4 transition hover:border-primary hover:bg-elevated/60"
-        >
-          <div class="flex items-start justify-between gap-2">
-            <div class="flex items-center gap-2">
-              <span class="font-mono text-xs text-muted">{{ project.key }}</span>
-              <UBadge color="secondary" variant="subtle" size="sm">Project</UBadge>
-            </div>
-            <div class="flex shrink-0 gap-0.5 opacity-0 transition group-hover:opacity-100">
-              <UButton icon="i-lucide-pencil" size="xs" color="neutral" variant="ghost" aria-label="Edit project" @click="edit(project, $event)" />
-              <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost" aria-label="Delete project" @click="remove(project, $event)" />
-            </div>
-          </div>
+      <template v-else>
+        <div v-if="activeProjects.length" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <ProjectCard
+            v-for="project in activeProjects"
+            :key="project.id"
+            :project="project"
+            :epics="epicsFor(project.id)"
+            :tickets="ticketsFor(project.id)"
+            :all-tickets="tickets"
+            @edit="openEditProject"
+            @delete="onDeleteProject"
+          />
+        </div>
 
-          <div>
-            <h2 class="text-lg font-semibold group-hover:text-primary">{{ project.title }}</h2>
-            <!-- The whole card is a link, so no nested markup here — plain-text preview only. -->
-            <p v-if="project.description" class="mt-1 line-clamp-2 text-sm text-muted">{{ markdownPreview(project.description) }}</p>
-          </div>
+        <!-- Everything shipped: nothing in progress to show above the fold. -->
+        <div v-else class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-default py-16 text-center">
+          <UIcon name="i-lucide-party-popper" class="size-8 text-muted" />
+          <p class="font-medium">Nothing in progress</p>
+          <p class="text-sm text-muted">Every project has all its tickets done.</p>
+        </div>
 
-          <div class="mt-auto space-y-2 pt-2">
-            <div class="flex items-center gap-3 text-xs text-muted">
-              <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-folder" class="size-3.5" />{{ statsFor(project.id).epics }} epics</span>
-              <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-ticket" class="size-3.5" />{{ statsFor(project.id).tickets }} tickets</span>
-            </div>
-            <TicketProgress :tickets="ticketsFor(project.id)" :all-tickets="tickets" legend />
+        <!-- Done projects, out of the way at the bottom -->
+        <div v-if="doneProjects.length" class="mt-8">
+          <UButton
+            :icon="showDone ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+            variant="ghost"
+            color="neutral"
+            size="sm"
+            @click="showDone = !showDone"
+          >
+            {{ doneProjects.length }} done {{ doneProjects.length === 1 ? 'project' : 'projects' }}
+          </UButton>
+          <div v-if="showDone" class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <ProjectCard
+              v-for="project in doneProjects"
+              :key="project.id"
+              :project="project"
+              :epics="epicsFor(project.id)"
+              :tickets="ticketsFor(project.id)"
+              :all-tickets="tickets"
+              done
+              @edit="openEditProject"
+              @delete="onDeleteProject"
+            />
           </div>
-        </NuxtLink>
-      </div>
+        </div>
+      </template>
 
       <!-- Loose items -->
-      <div v-if="unassigned.epics || backlogCount" class="mt-8 flex flex-wrap gap-3">
+      <div v-if="unassignedEpics || backlogCount" class="mt-8 flex flex-wrap gap-3">
         <NuxtLink
-          v-if="unassigned.epics"
+          v-if="unassignedEpics"
           to="/"
           class="inline-flex items-center gap-2 rounded-md border border-dashed border-default px-3 py-2 text-sm text-muted hover:border-primary hover:text-default"
         >
           <UIcon name="i-lucide-folder-x" class="size-4" />
-          {{ unassigned.epics }} epics with no project
+          {{ unassignedEpics }} epics with no project
         </NuxtLink>
         <NuxtLink
           v-if="backlogCount"

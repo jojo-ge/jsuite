@@ -92,7 +92,9 @@ export interface Store {
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 // A single human-editable JSON file at <monorepo root>/.data/jticket/jticket.json.
-const DATA_FILE = appDataFile('jticket', 'jticket.json')
+// Exported because the change watcher (changes.ts) tails this exact file — every
+// write, from the API or from a text editor, is a change worth broadcasting.
+export const DATA_FILE = appDataFile('jticket', 'jticket.json')
 
 function emptyStore(): Store {
   return {

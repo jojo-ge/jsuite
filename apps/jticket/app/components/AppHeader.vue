@@ -1,40 +1,60 @@
 <script setup lang="ts">
-// Optional default project for the "Epic" button (set on a project detail page
+// Optional default project for the create modal (set on a project detail page
 // so a new epic lands in the project you're looking at).
 const props = defineProps<{ defaultProjectId?: string | null }>()
 
-const { projects, epics, tickets, docs } = useTracker()
-const { openNewProject, openNewEpic, openNewTicket } = useTrackerModals()
+const { tickets } = useTracker()
+const { openCreate } = useTrackerModals()
 
-const stats = computed(() => ({
-  projects: projects.value.length,
-  epics: epics.value.length,
-  tickets: tickets.value.length,
-  done: tickets.value.filter((t) => t.status === 'done').length,
+// Only the two counts the nav actually badges — the header is deliberately
+// narrow (jTicket lives on a vertical monitor), so anything that doesn't help
+// you choose a destination stays off it.
+const counts = computed(() => ({
   running: tickets.value.filter((t) => t.status === 'in_progress').length,
-  docs: docs.value.length,
+  // The takeable edge across every project — what /next lists.
+  next: tickets.value.filter((t) => isFrontier(t, tickets.value)).length,
 }))
 
-// New docs are created on their own page (long-form content beats a modal).
-const newDocTo = computed(() =>
-  props.defaultProjectId ? `/docs/new?project=${props.defaultProjectId}` : '/docs/new',
-)
+// Whether the live stream is actually delivering. Shown rather than hidden: a
+// board that has quietly stopped updating looks exactly like a quiet board, and
+// this is the only thing that tells the two apart.
+const { status: liveStatus } = useLiveStatus()
+const LIVE_META = {
+  live: { dot: 'bg-success', label: 'Live', hint: 'Updates arrive as the tracker changes.' },
+  connecting: { dot: 'bg-warning', label: 'Connecting', hint: 'Reconnecting to the live stream…' },
+  offline: { dot: 'bg-error', label: 'Offline', hint: 'Not receiving updates — reload to catch up.' },
+} as const
+const live = computed(() => LIVE_META[liveStatus.value])
 
 const colorMode = useColorMode()
 function toggleTheme() {
   colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
 }
 
+// The three flow pages sit in flow order — what is takeable, what is moving,
+// what landed — so the nav itself reads as the loop. The board is the logo:
+// it's the home page, and a link named after the app already means "the board".
 const links = computed(() => [
-  { label: 'Board', icon: 'i-lucide-layout-dashboard', to: '/' },
+  {
+    label: 'Up next',
+    icon: 'i-lucide-flag',
+    to: '/next',
+    badge: counts.value.next || null,
+    badgeColor: 'primary' as const,
+  },
   // Badged with the live in-progress count — the nav is where you notice you
   // left three things running.
-  { label: 'Running now', icon: 'i-lucide-loader', to: '/running', badge: stats.value.running || null },
+  {
+    label: 'Running now',
+    icon: 'i-lucide-loader',
+    to: '/running',
+    badge: counts.value.running || null,
+    badgeColor: 'info' as const,
+  },
   // No badge — a count of everything ever finished isn't news; the page's own
   // day headings carry the recency.
   { label: 'Finished', icon: 'i-lucide-circle-check', to: '/finished' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
-  { label: 'Docs', icon: 'i-lucide-file-text', to: '/docs' },
 ])
 </script>
 
@@ -42,17 +62,9 @@ const links = computed(() => [
   <header class="sticky top-0 z-10 border-b border-default bg-default/80 backdrop-blur">
     <UContainer class="flex items-center justify-between gap-4 py-3">
       <div class="flex items-center gap-4">
-        <NuxtLink to="/" class="flex items-center gap-3">
-          <div class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-inverted font-bold">
-            j
-          </div>
-          <!-- The brand block and the stats line are the two things that give way
-               as the nav grows — both stay on one line or disappear, so the header
-               never becomes two rows tall. -->
-          <div class="hidden shrink-0 whitespace-nowrap lg:block">
-            <h1 class="text-lg font-semibold leading-none">jTicket</h1>
-            <p class="text-xs text-muted">local task tracking · not connected to Jira</p>
-          </div>
+        <NuxtLink to="/" class="flex items-center gap-3" aria-label="jTicket — board">
+          <AppLogo :size="32" />
+          <h1 class="hidden shrink-0 whitespace-nowrap text-lg font-semibold leading-none lg:block">jTicket</h1>
         </NuxtLink>
         <nav class="flex shrink-0 items-center gap-1">
           <UButton
@@ -66,14 +78,21 @@ const links = computed(() => [
             :variant="$route.path === l.to ? 'soft' : 'ghost'"
           >
             {{ l.label }}
-            <UBadge v-if="l.badge" color="info" variant="subtle" size="sm">{{ l.badge }}</UBadge>
+            <UBadge v-if="l.badge" :color="l.badgeColor ?? 'info'" variant="subtle" size="sm">{{ l.badge }}</UBadge>
           </UButton>
         </nav>
       </div>
       <div class="flex items-center gap-2">
-        <span class="hidden whitespace-nowrap text-xs text-muted 2xl:inline">
-          {{ stats.projects }} projects · {{ stats.epics }} epics · {{ stats.done }}/{{ stats.tickets }} done · {{ stats.docs }} docs
-        </span>
+        <!-- Client-only: the stream only exists in the browser, so the server
+             has no honest value to render here. -->
+        <ClientOnly>
+          <UTooltip :text="live.hint">
+            <span class="flex shrink-0 items-center gap-1.5 text-xs text-muted">
+              <span class="size-2 rounded-full" :class="live.dot" />
+              <span class="hidden xl:inline">{{ live.label }}</span>
+            </span>
+          </UTooltip>
+        </ClientOnly>
         <UButton icon="i-lucide-book-open" color="neutral" variant="ghost" to="/api-guide" aria-label="API guide" />
         <!-- The icon depends on the resolved color mode, which only exists on the
              client (localStorage/system pref) — rendering it during SSR guarantees a
@@ -92,10 +111,8 @@ const links = computed(() => [
             <UButton icon="i-lucide-sun" color="neutral" variant="ghost" aria-label="Toggle theme" disabled />
           </template>
         </ClientOnly>
-        <UButton icon="i-lucide-folder-tree" color="neutral" variant="soft" @click="openNewProject">Project</UButton>
-        <UButton icon="i-lucide-folder-plus" color="neutral" variant="soft" @click="openNewEpic(props.defaultProjectId ?? null)">Epic</UButton>
-        <UButton icon="i-lucide-file-plus" color="neutral" variant="soft" :to="newDocTo">Doc</UButton>
-        <UButton icon="i-lucide-plus" @click="openNewTicket(null)">Ticket</UButton>
+        <!-- One create button for all four things — see CreateModal. -->
+        <UButton icon="i-lucide-plus" @click="openCreate(props.defaultProjectId ?? null)">Create</UButton>
       </div>
     </UContainer>
   </header>

@@ -4,6 +4,12 @@ import type { Ticket } from '~/composables/useTracker'
 const props = defineProps<{ ticket: Ticket; tickets: Ticket[]; wayfinder?: boolean }>()
 const emit = defineEmits<{ edit: [Ticket]; delete: [Ticket] }>()
 
+// Did this ticket just move under us? `changed` is filled by the live stream,
+// and entries expire on their own — so the ring is only ever about the last few
+// seconds, never a state the card has to have cleared.
+const { changed } = useTracker()
+const moved = computed(() => !!changed.value[props.ticket.id])
+
 const blocked = computed(() => isBlocked(props.ticket, props.tickets))
 // Frontier highlighting is independent of wayfinder mode — every board groups by
 // flow state, so the takeable edge is worth ringing everywhere. The wayfinder
@@ -20,13 +26,21 @@ const blockers = computed(() =>
 )
 
 const doneCount = computed(() => props.ticket.acceptanceCriteria.length)
+
+// A live move outranks the frontier ring: the frontier is a standing property
+// of the card, "it just moved" is news, and news wins for the ten seconds it
+// stays news.
+const ring = computed(() => {
+  if (moved.value) return 'ring-2 ring-info jt-moved'
+  return frontier.value ? 'ring-2 ring-primary/60' : ''
+})
 </script>
 
 <template>
   <UCard
     :ui="{ body: 'p-4 sm:p-4' }"
     class="cursor-pointer transition hover:ring-2 hover:ring-primary/40"
-    :class="frontier ? 'ring-2 ring-primary/60' : ''"
+    :class="ring"
     @click="emit('edit', ticket)"
   >
     <div class="flex items-start justify-between gap-3">
@@ -38,6 +52,9 @@ const doneCount = computed(() => props.ticket.acceptanceCriteria.length)
           </UBadge>
           <UBadge :color="ticket.type === 'HITL' ? 'warning' : 'neutral'" variant="subtle" size="sm">
             {{ ticket.type }}
+          </UBadge>
+          <UBadge v-if="moved" color="info" variant="subtle" size="sm" icon="i-lucide-radio">
+            Just moved
           </UBadge>
           <UBadge v-if="frontier" color="primary" variant="solid" size="sm" icon="i-lucide-flag">
             Frontier

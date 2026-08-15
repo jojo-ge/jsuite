@@ -24,6 +24,7 @@ pnpm dev          # http://localhost:43000
 | Route | What it shows |
 | --- | --- |
 | `/` | Board — every project, its epics and their tickets, plus docs and the backlog |
+| `/next` | **Up next** — the frontier across every project: open, unblocked, unclaimed tickets, each with its `/jimplement` hand-off command |
 | `/running` | **Running now** — every in-progress ticket grouped by its epic (and project), with a link through to the epic |
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/epics/EPIC-1` | One epic and all of its tickets (id or key) |
@@ -80,6 +81,7 @@ See **/api-guide** in the running app. Summary:
 | GET/POST | `/api/docs` | List (`?projectId=`, `?status=`, `?label=`) / create docs |
 | GET/PATCH/DELETE | `/api/docs/:id` | Read / update / delete a doc (id or key) |
 | GET/POST | `/api/attachments` | List / upload attachments for docs |
+| GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)
 
@@ -100,6 +102,26 @@ curl -s http://localhost:43000/api/import -H 'content-type: application/json' -d
   ]
 }'
 ```
+
+## Live updates
+
+The store is a single JSON file, so `GET /api/stream` just tails it and pushes a
+message whenever it changes — a `PATCH` from an agent and a hand edit of
+`.data/jticket/jticket.json` are the same event:
+
+```
+curl -N http://localhost:43000/api/stream
+data: {"kind":"hello","revision":7}
+data: {"kind":"change","revision":8}
+data: {"kind":"ping"}
+```
+
+The message carries no payload — the revision is a change *signal*, not a
+cursor, and it resets when the server restarts (so a second `hello` means
+"refetch, you may have missed something"). The browser follows this stream and
+refetches, which is why an open board keeps up with an agent working through an
+epic without a refresh. Tickets that moved ring themselves for a few seconds and
+raise a toast; the header dot says whether the stream is actually connected.
 
 ## Wayfinder mode
 
