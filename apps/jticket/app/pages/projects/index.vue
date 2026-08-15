@@ -31,17 +31,18 @@ async function importBundle(e: Event) {
   }
 }
 
-// Per-project rollup: epic count, ticket count, and done progress.
+// Every ticket under a project, via its epics. TicketProgress turns these into
+// the done / in progress / blocked / not started bar on each card.
+function ticketsFor(projectId: string | null) {
+  const epicIds = new Set(epics.value.filter((e) => e.projectId === projectId).map((e) => e.id))
+  return tickets.value.filter((t) => t.epicId && epicIds.has(t.epicId))
+}
+
+// Per-project rollup: epic count and ticket count.
 function statsFor(projectId: string | null) {
-  const projEpics = epics.value.filter((e) => e.projectId === projectId)
-  const epicIds = new Set(projEpics.map((e) => e.id))
-  const projTickets = tickets.value.filter((t) => t.epicId && epicIds.has(t.epicId))
-  const done = projTickets.filter((t) => t.status === 'done').length
   return {
-    epics: projEpics.length,
-    tickets: projTickets.length,
-    done,
-    pct: projTickets.length ? Math.round((done / projTickets.length) * 100) : 0,
+    epics: epics.value.filter((e) => e.projectId === projectId).length,
+    tickets: ticketsFor(projectId).length,
   }
 }
 
@@ -126,11 +127,8 @@ function remove(p: Project, e: Event) {
             <div class="flex items-center gap-3 text-xs text-muted">
               <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-folder" class="size-3.5" />{{ statsFor(project.id).epics }} epics</span>
               <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-ticket" class="size-3.5" />{{ statsFor(project.id).tickets }} tickets</span>
-              <span class="ml-auto">{{ statsFor(project.id).done }}/{{ statsFor(project.id).tickets }} done</span>
             </div>
-            <div class="h-1.5 w-full overflow-hidden rounded-full bg-accented">
-              <div class="h-full rounded-full bg-primary transition-all" :style="{ width: statsFor(project.id).pct + '%' }" />
-            </div>
+            <TicketProgress :tickets="ticketsFor(project.id)" :all-tickets="tickets" legend />
           </div>
         </NuxtLink>
       </div>

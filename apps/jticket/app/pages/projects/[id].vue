@@ -34,11 +34,17 @@ const projectDocs = computed(() =>
 function ticketsForEpic(epicId: string) {
   return tickets.value.filter((t) => t.epicId === epicId)
 }
-const stats = computed(() => {
+// Every ticket under this project, via its epics — the header's rollup line and
+// its done / in progress / blocked / not started bar.
+const projectTickets = computed(() => {
   const epicIds = new Set(projectEpics.value.map((e) => e.id))
-  const t = tickets.value.filter((x) => x.epicId && epicIds.has(x.epicId))
-  return { epics: projectEpics.value.length, tickets: t.length, done: t.filter((x) => x.status === 'done').length }
+  return tickets.value.filter((x) => x.epicId && epicIds.has(x.epicId))
 })
+const stats = computed(() => ({
+  epics: projectEpics.value.length,
+  tickets: projectTickets.value.length,
+  done: projectTickets.value.filter((x) => x.status === 'done').length,
+}))
 
 // Documents render compact — a one-line list or a pill strip — instead of full
 // cards that read like tickets. The choice is per-visitor and in-memory.
@@ -112,6 +118,13 @@ async function removeProject() {
               </span>
             </div>
             <h1 class="mt-1 text-3xl font-bold">{{ project.title }}</h1>
+            <TicketProgress
+              v-if="projectTickets.length"
+              :tickets="projectTickets"
+              :all-tickets="tickets"
+              legend
+              class="mt-3 max-w-md"
+            />
             <div v-if="project.description" class="jx-prose jx-prose-sm mt-2 max-w-3xl" v-html="renderMd(project.description)" />
           </div>
           <div class="flex shrink-0 gap-1">
