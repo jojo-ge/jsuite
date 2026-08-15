@@ -1,0 +1,22 @@
+{
+  "name": "jagent",
+  "private": true,
+  "type": "module",
+  "description": "Dispatch jTicket tickets to a fleet of claude agents — each in its own git worktree and tmux session — and watch every agent's live diff; accept turns a run into a PR reviewed in jDiff.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.0",
+    "@jsuite/data": "workspace:*",
+    "@jsuite/diff": "workspace:*",
+    "@nuxt/ui": "^4.10.0",
+    "ansi_up": "^6.0.2",
+    "nuxt": "^4.5.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  }
+}
