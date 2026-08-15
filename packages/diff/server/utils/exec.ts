@@ -4,11 +4,19 @@ import { statSync } from 'node:fs'
 
 const pExecFile = promisify(execFile)
 
-export async function run(cmd: string, args: string[], cwd: string): Promise<string> {
+export async function run(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  opts?: { okCodes?: number[] },
+): Promise<string> {
   try {
     const { stdout } = await pExecFile(cmd, args, { cwd, maxBuffer: 64 * 1024 * 1024 })
     return stdout
   } catch (err: any) {
+    // Some git verbs signal a normal outcome through a non-zero exit —
+    // `diff --no-index` exits 1 whenever the files differ. Callers opt in.
+    if (opts?.okCodes?.includes(err.code)) return err.stdout ?? ''
     throw createError({
       statusCode: 500,
       message: (err.stderr || err.message || 'command failed').trim(),

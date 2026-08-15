@@ -148,3 +148,81 @@ export async function targetMeta(
   const body = (await run('git', ['log', '-1', '--format=%b', t.headRef], repo)).trim()
   return { title: subject || t.branch!, body }
 }
+
+// --- worktree targets --------------------------------------------------------
+//
+// The third target kind: a live git worktree, observed while an agent is still
+// working in it. A worktree target diffs the merge-base against the WORKING
+// TREE — one command that covers committed, staged and unstaged changes alike:
+//
+//   git diff $(git merge-base <base> HEAD)
+//
+// Untracked files are invisible to that (git has never heard of them), so they
+// are enumerated separately and their diffs synthesised:
+//
+//   git status --porcelain -uall   -> the untracked paths
+//   git diff --no-index /dev/null <path>
+//
+// NOT `git add -N`: intent-to-add would mutate the agent's index behind its
+// back, and could silently change what a later `git commit -a` picks up. The
+// rule that keeps consumers honest: the diff pipeline is a read-only observer
+// of the worktree's git state.
+//
+// Unlike pr/branch targets there is no headOid to cache on — the tree mutates
+// under the agent — so worktree diffs never touch the disk cache; callers
+// rate-limit by hashing the raw text instead (see jAgent's diff endpoint).
+
+export interface WorktreeTarget {
+  kind: 'worktree'
+  // The worktree checkout to observe.
+  dir: string
+  // The ref the worktree was cut from (short branch name or remote ref).
+  base: string
+}
+
+export async function rawWorktreeDiff(t: WorktreeTarget): Promise<string> {
+  if (!isSafeRef(t.base)) throw createError({ statusCode: 400, message: 'bad worktree base' })
+  const mergeBase = (await run('git', ['merge-base', t.base, 'HEAD'], t.dir)).trim()
+  let raw = await run('git', ['diff', '--no-color', '-M', mergeBase], t.dir)
+  for (const path of await untrackedPaths(t.dir)) {
+    raw += await run('git', ['diff', '--no-color', '--no-index', '/dev/null', path], t.dir, { okCodes: [1] })
+  }
+  return raw
+}
+
+// Rail-grade stats without parsing or highlighting: numstat over the same
+// range, plus one synthesised numstat per untracked file.
+export async function worktreeDiffStat(
+  t: WorktreeTarget,
+): Promise<{ files: number; additions: number; deletions: number }> {
+  if (!isSafeRef(t.base)) throw createError({ statusCode: 400, message: 'bad worktree base' })
+  const mergeBase = (await run('git', ['merge-base', t.base, 'HEAD'], t.dir)).trim()
+  let out = await run('git', ['diff', '--numstat', mergeBase], t.dir)
+  for (const path of await untrackedPaths(t.dir)) {
+    out += await run('git', ['diff', '--numstat', '--no-index', '/dev/null', path], t.dir, { okCodes: [1] })
+  }
+  let files = 0
+  let additions = 0
+  let deletions = 0
+  for (const line of out.split('\n')) {
+    const m = line.match(/^(\d+|-)\t(\d+|-)\t/)
+    if (!m) continue
+    files += 1
+    if (m[1] !== '-') additions += Number(m[1])
+    if (m[2] !== '-') deletions += Number(m[2])
+  }
+  return { files, additions, deletions }
+}
+
+async function untrackedPaths(dir: string): Promise<string[]> {
+  const out = await run('git', ['status', '--porcelain', '-uall', '--no-renames'], dir)
+  return out
+    .split('\n')
+    .filter((l) => l.startsWith('?? '))
+    .map((l) => l.slice(3))
+    // Paths with special characters come back C-quoted; JSON covers the same
+    // escape set for the characters git actually quotes.
+    .map((p) => (p.startsWith('"') && p.endsWith('"') ? (JSON.parse(p) as string) : p))
+    // A leading "-" would read as a flag in the --no-index call; ./ defuses it.
+    .map((p) => (p.startsWith('-') ? `./${p}` : p))
+}
