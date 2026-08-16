@@ -44,10 +44,14 @@ Plus `/api/documents/**` and `/api/charts/**` from the `@jsuite/documents` /
 `@jsuite/charting` layers this app extends.
 
 Those layers also put the whole shared pool on screen here, at `/documents`.
-jGrilling mounts that library itself so it can withhold delete, and points it at
-its own `/e/<key>` reader (which `/documents/<key>` redirects to): a debrief is
-deleted from jExplain, not from here. Deleting a *session* is jGrilling's to
-offer — the debrief it wrote outlives it.
+jGrilling mounts that library itself to give it this app's framing and point it
+at its own `/e/<key>` reader (which `/documents/<key>` redirects to), so there
+is one reader here rather than two. Deleting out of the pool it does not offer
+anywhere: a debrief is deleted from jExplain, not from here. Since TICK-178 the
+layer withholds delete by default, so that line now holds even on a surface
+nobody here configured; the explicit `:deletable="false"` stays as a statement
+of it. Deleting a *session* is jGrilling's to offer — the debrief it wrote
+outlives it.
 
 The `j-grilling` skill (in `.claude/skills/`) lets a Claude Code session push
 the plan it's discussing into a session and hand you the URL.
