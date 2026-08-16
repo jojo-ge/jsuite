@@ -6,7 +6,8 @@
 const props = withDefaults(
   defineProps<{
     labels: string[]
-    active?: string[]
+    /** Readonly: the chips render the selection, they never edit it — `select` does. */
+    active?: readonly string[]
     interactive?: boolean
     size?: 'xs' | 'sm'
   }>(),

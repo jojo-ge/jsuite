@@ -223,7 +223,9 @@ code, diff, chart, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
 experience with margin notes), `useMarkdown()`/`useShiki()`, the whole-pool
 library and reader (`<DocumentLibrary>`, `<DocumentReader>`, mounted at
-`/documents` and `/documents/<key>`), and the `server/api/documents/**` routes
+`/documents` and `/documents/<key>`) along with the state behind their label
+chip bar (`labelPool()` + `useLabelFilter()`, which jTicket's own grouped
+`/documents` page drives too), and the `server/api/documents/**` routes
 over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It
 `extends` `@jsuite/charting` itself, so chart blocks, `/api/charts/**` **and the
 `/charts` chart UI** ride in transitively. A consumer needs:
