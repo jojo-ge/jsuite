@@ -1,13 +1,7 @@
-import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-
-export default defineEventHandler(() => {
-  if (!existsSync(ATTACHMENTS_DIR)) return []
-  return readdirSync(ATTACHMENTS_DIR)
-    .filter((f) => !f.startsWith('.'))
-    .map((name) => ({
-      name,
-      url: `/attachments/${name}`,
-      size: statSync(join(ATTACHMENTS_DIR, name)).size,
-    }))
-})
+// Legacy alias for GET /api/uploads.
+//
+// `/api/attachments` used to mean "uploaded files", while
+// `/api/{tickets,projects}/:id/attachments` means "refs into the artifact
+// pools" — one word, two unrelated things. The upload namespace moved to
+// /api/uploads; this stays so older callers and skills keep working.
+export default defineEventHandler((event) => sendRedirect(event, '/api/uploads', 308))

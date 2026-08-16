@@ -61,8 +61,9 @@ const endpoints = [
   { m: 'GET', p: '/api/documents/:key', d: 'Get a shared document / :key/notes for its notes' },
   { m: 'DELETE', p: '/api/documents/:key', d: 'Delete a shared document (refs to it then read as missing)' },
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
-  { m: 'GET', p: '/api/attachments', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
-  { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
+  { m: 'GET', p: '/api/uploads', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
+  { m: 'POST', p: '/api/uploads', d: 'Upload { name, base64 } → served at /uploads/:name' },
+  { m: 'GET', p: '/api/attachments', d: 'Legacy alias — redirects to /api/uploads (as does /attachments/:name)' },
 ]
 
 const docExample = `# 1. write the document into the shared pool

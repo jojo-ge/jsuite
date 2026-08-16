@@ -1,12 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-// Serves uploaded doc attachments from .data/attachments/.
+// Legacy alias for /uploads/:name.
+//
+// Markdown stored across .data/ — ticket descriptions, resolutions, comments,
+// doc bodies — references /attachments/<name>, and rewriting it was never on
+// the table. This redirect is what keeps every one of those images resolving.
+// The name is sanitised first, so the Location header can only ever point back
+// into this app's own upload namespace.
 export default defineEventHandler((event) => {
-  const name = safeAttachmentName(getRouterParam(event, 'name') ?? '')
-  const file = join(ATTACHMENTS_DIR, name)
-  if (!existsSync(file)) throw createError({ statusCode: 404, statusMessage: 'attachment not found' })
-  setHeader(event, 'content-type', attachmentMime(name))
-  setHeader(event, 'cache-control', 'no-cache')
-  return readFileSync(file)
+  const name = safeUploadName(getRouterParam(event, 'name') ?? '')
+  return sendRedirect(event, `/uploads/${name}`, 308)
 })

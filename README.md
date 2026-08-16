@@ -73,6 +73,7 @@ jsuite/
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module + UI (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
+    ├── diff/           # @jsuite/diff — shared diff-review engine (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
 ```
@@ -138,6 +139,35 @@ components the layer serves at `/charts`. An app that wants the layer's paths
 but its own chrome mounts `<ChartLibrary>` under it: jTicket's `/charts` is the
 library under the board's header, while `/charts/<key>` is left to the layer,
 the workbench being a full-screen canvas that a nav bar only steals height from.
+
+## @jsuite/diff
+
+The diff-review engine born in jDiff — target resolution, the diff/graph/file/PR
+routes, the claude analysis runs, and every review artifact store — lives in
+`packages/diff` as a Nuxt layer. A consumer needs two things:
+
+1. `"@jsuite/diff": "workspace:*"` in `dependencies`
+2. `extends: ['@jsuite/diff']` in `nuxt.config.ts`
+
+That serves the whole review API off the consumer's own port: `/api/diff`,
+`/api/file`, `/api/graph`, `/api/prs`, `/api/pr`, `/api/branches`, `/api/repo`,
+the artifact routes (`/api/comment(s)`, `/api/branch-comment(s)`, `/api/rating`,
+`/api/risk`, `/api/tour`, `/api/ask(s)`, `/api/ask-yourself*`,
+`/api/notifications`), and the claude runs (`/api/analyze-generate`,
+`/api/ai-jobs`, `/api/ai-job-cancel`). The server utils come as Nitro
+auto-imports (`resolveTarget`/`prepareTarget`, `run`/`resolveRepoPath`,
+`buildDiff`, `highlight`, the stores), and the review vocabulary the UI shares
+with the server — the rating shape, risk levels, tour shape, ask questions,
+file categories — is auto-imported as app utils and also importable explicitly
+from `'@jsuite/diff/rating'`, `'/risk'`, `'/tour'`, `'/askQuestions'`,
+`'/askYourself'`, `'/fileCategories'`.
+
+**One review pool serves every consumer**: all state stays in `.data/jdiff/`
+via `@jsuite/data`, so a rating, tour or draft comment created through one
+consumer reads back identically in another. A target is always addressed by
+query params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local
+branch) — so the layer holds no per-app repo config. jDiff stays the
+specialised review UI on top.
 
 ## @jsuite/documents
 

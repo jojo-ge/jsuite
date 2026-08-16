@@ -72,9 +72,11 @@ line clamp stays honest.
   - A ref is allowed to **dangle**. `GET /api/{projects,tickets}/:id/attachments`
     resolves each one to its title and url, flagging any whose artifact is gone as
     `missing` rather than erroring — so deleting an artifact never breaks a page.
-  - Images inside prose are a different thing: `POST /api/attachments` with
-    `{ name, base64 }` → serve from `/attachments/<name>`, reference as
-    `![alt](/attachments/<name>)`.
+  - Images inside prose are a different thing: `POST /api/uploads` with
+    `{ name, base64 }` → serve from `/uploads/<name>`, reference as
+    `![alt](/uploads/<name>)`. The old `/api/attachments` and
+    `/attachments/<name>` paths redirect here, so prose written before the
+    rename still resolves.
 
 ## HTTP API
 
@@ -91,7 +93,8 @@ See **/api-guide** in the running app. Summary:
 | GET/POST/DELETE | `/api/projects/:id/attachments` | Same, for a project |
 | GET/POST | `/api/documents` | The shared document pool (also served by jExplain) |
 | GET/DELETE | `/api/documents/:key` | Read / delete one shared document |
-| GET/POST | `/api/attachments` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/uploads` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)
