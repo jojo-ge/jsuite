@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Push a Mermaid diagram into the jChart app and open it for editing/annotation.
+"""Push a Mermaid diagram into the shared jSuite chart pool and open it for editing.
 
 Usage:
     chart.py <diagram.mmd> [--title "My Diagram"] [--replace] [--key slug] [--no-open]
@@ -21,10 +21,12 @@ import sys
 import urllib.error
 import urllib.request
 
-# The jSuite edge (https) is the address the user sees; the bare dev port is the
-# fallback for when Caddy/Docker is down but the Nuxt app itself is up.
-EDGE_BASE = "https://jchart.local"
-DIRECT_BASE = "http://localhost:43003"
+# Every domain API in the suite is served on jTicket's port, so an agent has one
+# surface to talk to and one place a published chart opens (TICK-143). The jSuite
+# edge (https) is the address the user sees; the bare dev port is the fallback
+# for when Caddy/Docker is down but the Nuxt app itself is up.
+EDGE_BASE = "https://jticket.local"
+DIRECT_BASE = "http://localhost:43000"
 DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
 
 # Preferred browser (macOS app name). Override with --browser or $JCHART_BROWSER.
@@ -59,7 +61,7 @@ def pick_base():
 
 def not_running():
     print(
-        "error: jChart isn't reachable.\n"
+        "error: the shared chart API isn't reachable (jTicket serves it).\n"
         "  Start the suite with:  jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
@@ -133,10 +135,10 @@ def main():
     except urllib.error.URLError:
         return not_running()
 
-    # This skill always targets jChart, so use jChart's own short route rather
-    # than the `path` the shared store returns (the layer's /charts/<key>,
-    # which is what every *other* consumer serves it at).
-    url = f"{base}/c/{res['key']}"
+    # The layer's own namespaced workbench route, which is what jTicket — and
+    # every consumer but jChart, whose short `/c/<key>` alias this used to
+    # target — serves the chart at.
+    url = f"{base}/charts/{res['key']}"
     if not args.no_open:
         open_in_browser(url, args.browser)
 

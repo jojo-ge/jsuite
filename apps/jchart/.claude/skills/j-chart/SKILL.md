@@ -12,9 +12,9 @@ Unlike a static image, the user can redraw the diagram — move, add, delete, re
    ```
    python3 ~/.claude/skills/j-chart/scripts/chart.py <file.mmd> --title "Short Title"
    ```
-   This creates the chart, opens it in the browser, and prints the URL plus the two data file paths. Add `--replace` to overwrite an existing chart of the same key and keep its notes.
+   This creates the chart, opens it in the browser at `https://jticket.local/charts/<key>`, and prints the URL plus the two data file paths. Add `--replace` to overwrite an existing chart of the same key and keep its notes.
 
-   If jChart isn't reachable the script says so — the user needs `jsuite start`.
+   If the suite isn't reachable the script says so — the user needs `jsuite start`.
 
 3. **Tell the user how to use it.** In the browser they can:
    - **Edit the diagram directly** — full Excalidraw toolbar: drag shapes, draw new ones, change arrows, retype labels, freehand. Everything autosaves.
@@ -36,9 +36,9 @@ Unlike a static image, the user can redraw the diagram — move, add, delete, re
 ## Notes
 
 - `chart.py --list` shows existing charts with their shape and note counts.
-- The full chart list is also the app's home page: <https://jchart.local>.
+- The full chart list is the library at <https://jticket.local/charts> — one pool, so it is also jChart's home page at <https://jchart.local>.
 - Mermaid is only the *starting layout*. Once imported, the canvas is the source of truth — a re-import throws away hand edits, so only re-import when the user wants a fresh layout.
 - If Mermaid fails to parse, the app shows the parser error in a toast and the canvas stays empty — fix the source and re-run.
 - Node types Mermaid can't lay out (some newer diagram kinds) fall back to a best-effort conversion; if a diagram comes through badly, the user can just redraw it.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JCHART_BROWSER`; the default lives in `DEFAULT_BROWSER` at the top of `chart.py`.
-- The app is jChart in the jSuite (`~/code/anyway/jsuite/apps/jchart`, port 43003). Start everything with `jsuite start`.
+- Charts are published through jTicket, the suite's single agent-facing API on :43000 (`POST /api/charts`; `chart.py` handles it). The same pool is jChart's own — the branded workbench on :43003, where a chart also opens at `/c/<key>`. Start everything with `jsuite start`.

@@ -27,6 +27,14 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
 
+**Agents talk to one address.** jTicket extends the document, chart and
+diff-review layers, so `:43000` serves every domain API and every artifact opens
+there: `/api/documents` and `/api/charts` alongside `/api/tickets`, the whole
+review API, the Docs library at `/documents`, Charts at `/charts` and the review
+screens at `/diffs`. jDiff, jChart and jExplain are branded shells over those
+same pools — open one when the user wants *that* app, not to reach its data.
+jGrilling is the one exception: its sessions API is its own, on `:43005`.
+
 ## The products
 
 **jTicket** — the planning hub. A lean local tracker (projects, tickets
@@ -46,7 +54,9 @@ PRs; `git` fetches and diffs locally. Reviews local branches before any PR
 exists, stores draft comments in `.data/jdiff/`, and can open the PR and post
 them in one shot. Drive it with the `jdiff` CLI: `jdiff pr 123`,
 `jdiff branch my-feature`, `--print` for a machine-readable URL. No skill — the
-CLI is the interface.
+CLI is the interface. It opens **jTicket's** copy of the review
+(`https://jticket.local/diffs/pr/123`), so the board is around it; point
+`JDIFF_URL` at `https://jdiff.local` for the standalone shell.
 
 **jChart** — diagram workbench. Claude POSTs mermaid to `/api/charts`; the app
 lays it out as an Excalidraw scene; the human redraws freehand and pins notes to
@@ -57,9 +67,12 @@ import the canvas is the source of truth, not the mermaid. Skill: `j-chart`.
 charts, callouts) with a glossary and per-block notes. Its block format IS the
 suite's document system (`@jsuite/documents`) — jTicket docs live in the same
 pool and render here too. Its charts ARE jChart objects — same pool, editable
-in place, "Open in jChart" for the full workbench. Skill: `j-explain` (author a
-JSON payload, publish via `explain.py`, read notes back, revise with
-`--replace`; also the block-vocabulary reference for jTicket docs).
+in place, "Open in workbench" for the full canvas on whichever app you're in.
+Skill: `j-explain` (author a JSON payload, publish via `explain.py`, read notes
+back, revise with `--replace`; also the block-vocabulary reference for jTicket
+docs). Both publish scripts — `explain.py` here and `chart.py` in `j-chart` —
+POST to `:43000` and print jTicket's URL; jExplain and jChart read the same
+pools back.
 
 **jGrilling** — get grilled about a plan before building it. The server runs
 the user's local `claude` CLI (via `@jsuite/claude`, the runner extracted from
@@ -84,6 +97,10 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   port; OrbStack resolves the names and terminates HTTPS (no certs, no
   /etc/hosts). Apps run natively (jDiff needs host `git`/`gh`/`claude`); only
   Caddy is Dockerised.
+- **One agent surface**: jTicket extends every domain layer, so `:43000` is the
+  port an agent needs — tracker, documents, charts and the review engine all
+  answer there, and every skill and publish script points at it. Only
+  `j-grilling` reaches elsewhere, for jGrilling's own sessions API.
 - **One state directory**: every app stores state under
   `~/code/anyway/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
   place to read, back up, or wipe.
@@ -127,7 +144,7 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
 | execute already-ticketed work | `jimplement` |
 | a diagram the human can edit and annotate | `j-chart` |
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
-| review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
+| review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) — opens `jticket.local/diffs/…` |
 | be grilled about a plan, answering in a UI | `j-grilling` |
 | draw / rig / animate an avatar character | jRig — https://jrig.local (companion skill lands with its M9 milestone) |
 

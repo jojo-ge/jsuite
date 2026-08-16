@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// jdiff — tiny CLI to open jDiff pages in the browser.
+// jdiff — tiny CLI to open diff review pages in the browser.
 // dependency-free (node built-ins only). meant to be driven by LLM agents.
 
 import { execFileSync, execFile } from 'node:child_process'
@@ -8,11 +8,19 @@ import https from 'node:https'
 import http from 'node:http'
 
 // --- base url --------------------------------------------------------------
-// Default host: the jSuite edge (~/code/anyway/jsuite) — OrbStack resolves
-// jdiff.local and terminates TLS, Caddy proxies to the native dev server.
-const DEFAULT_BASE = 'https://jdiff.local'
+// Default host: jTicket, the suite's single agent-facing surface (TICK-143).
+// It extends @jsuite/diff, so a review opened here is the same screen over the
+// same .data/jdiff pool as jDiff's own — with the board around it. OrbStack
+// resolves the .local name and terminates TLS; Caddy proxies to the dev server.
+const DEFAULT_BASE = 'https://jticket.local'
 // strip trailing slash so we can concatenate paths cleanly.
 const BASE = (process.env.JDIFF_URL || DEFAULT_BASE).replace(/\/+$/, '')
+
+// The layer mounts the review UI under /diffs in every consumer — jTicket and
+// jDiff alike (jDiff *also* aliases it onto short root routes, which is what
+// this CLI used to emit). Hardcoded rather than imported from
+// '@jsuite/diff/routes': that table is TypeScript and this file runs as-is.
+const REVIEW = '/diffs'
 
 // --- helpers ---------------------------------------------------------------
 
@@ -122,7 +130,7 @@ function healthCheck(base) {
 
 function warnUnreachable(base) {
   process.stderr.write(
-    `warning: jDiff server not reachable at ${base} — start the suite: ~/code/anyway/jsuite/jsuite start\n`
+    `warning: review server not reachable at ${base} — start the suite: jsuite start\n`
   )
 }
 
@@ -142,7 +150,7 @@ const enc = encodeURIComponent
 // --- usage -----------------------------------------------------------------
 
 function usage() {
-  return `jdiff — open jDiff pages in your browser
+  return `jdiff — open diff review pages in your browser
 
 usage:
   jdiff pr <number> [options]          open the PR diff page
@@ -155,13 +163,14 @@ options:
   --print, -p         only print the resolved URL (no browser); machine-readable
 
 environment:
-  JDIFF_URL   base URL of the jDiff server (default: ${DEFAULT_BASE})
+  JDIFF_URL   base URL of the app serving the review UI (default: ${DEFAULT_BASE};
+              https://jdiff.local and http://localhost:43002 serve it too)
 
 examples:
   jdiff pr 123
   jdiff branch my-feature main
   jdiff open -C ~/code/other-repo
-  JDIFF_URL=http://localhost:43002 jdiff pr 42 --print   # bypass the edge
+  JDIFF_URL=http://localhost:43000 jdiff pr 42 --print   # bypass the edge
 `
 }
 
@@ -209,7 +218,7 @@ async function main() {
     }
     if (!/^\d+$/.test(number)) fail(`pr <number> must be all digits: ${number}`)
     const abs = resolveRepo(repo, process.cwd())
-    const url = `${BASE}/pr/${number}?repo=${enc(abs)}`
+    const url = `${BASE}${REVIEW}/pr/${number}?repo=${enc(abs)}`
     await emit(url, printOnly)
     return
   }
@@ -222,7 +231,7 @@ async function main() {
       fail('branch requires a <name>')
     }
     const abs = resolveRepo(repo, process.cwd())
-    let url = `${BASE}/branch?repo=${enc(abs)}&branch=${enc(name)}`
+    let url = `${BASE}${REVIEW}/branch?repo=${enc(abs)}&branch=${enc(name)}`
     if (base != null) url += `&base=${enc(base)}`
     await emit(url, printOnly)
     return
@@ -231,7 +240,7 @@ async function main() {
   // `open` or bare invocation → repo PR list.
   if (cmd === 'open' || cmd == null) {
     const abs = resolveRepo(repo, process.cwd())
-    const url = `${BASE}/prs?repo=${enc(abs)}`
+    const url = `${BASE}${REVIEW}/prs?repo=${enc(abs)}`
     await emit(url, printOnly)
     return
   }

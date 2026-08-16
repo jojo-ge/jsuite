@@ -21,6 +21,16 @@ cd ~/code/anyway/jsuite
 | https://jgrilling.local  | jGrilling                 | 43005     |
 | https://jrig.local       | jRig                      | 43006     |
 
+**Agents point at one of these.** jTicket extends the document, chart and
+diff-review layers, so `:43000` serves every domain API and renders every
+artifact: `/api/documents`, `/api/charts` and the whole review API alongside
+`/api/tickets`, with the Docs library at `/documents`, Charts at `/charts` and
+the review screens at `/diffs`. Every jskill, both publish scripts (`explain.py`,
+`chart.py`) and the `jdiff` CLI target it and hand back its URLs. jDiff, jChart
+and jExplain are branded shells over those same pools — open one when you want
+*that* app, not to reach its data. jGrilling keeps its own sessions API on
+`:43005`, the one domain jTicket does not mount.
+
 ## Setup
 
 Prerequisites:
@@ -209,7 +219,9 @@ params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local branch) 
 so the layer holds no per-app repo config. jDiff stays a thin shell over it: its
 short routes, the scratch prototypes, and the `jdiff` CLI. jTicket is the other
 consumer: it serves the same screens at `/diffs`, opens its projects' PRs there
-rather than at jdiff.local, and attaches reviews to tickets.
+rather than at jdiff.local, and attaches reviews to tickets. The CLI defaults to
+jTicket too (TICK-143) and emits the layer's `/diffs/…` paths, which resolve on
+either app's port — `JDIFF_URL` chooses the host.
 
 One thing to watch when extending the layer alongside server code of your own:
 `run` and `resolveRepoDir` are Nitro auto-imports here, and a consumer that

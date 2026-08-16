@@ -2,7 +2,8 @@
 /**
  * A live chart from the shared jChart store, embedded in the article. This is
  * the real chart object — edits made here autosave to .data/jchart/<key>.json,
- * and "Open in jChart" opens the same doc in the full workbench.
+ * and "Open in workbench" opens it full-screen on *this* app's chart route
+ * (`useChartRoutes()`), not out at jChart.
  */
 import type { ChartBlock } from '../../types'
 import type { Chart } from '@jsuite/charting/store'

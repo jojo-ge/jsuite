@@ -38,9 +38,12 @@ RUN="$HERE/run"
 export JSUITE_DATA_DIR="${JSUITE_DATA_DIR:-$HERE/.data}"
 
 # id | directory (under ./apps) | port | dev command
-# Ports are fixed on purpose — tooling hardcodes them (the to-jticket skill
-# posts to :43000) and the Caddyfile maps the .local names onto them. Keep this
-# table and the Caddyfile in sync; nothing else needs to change to add an app.
+# Ports are fixed on purpose — tooling hardcodes them and the Caddyfile maps the
+# .local names onto them. :43000 is the one every agent-facing tool points at:
+# jticket extends the document, chart and diff layers, so the skills, explain.py,
+# chart.py and the jdiff CLI all talk to it and open its URLs. (j-grilling is the
+# exception — its sessions API is jgrilling's own.) Keep this table
+# and the Caddyfile in sync; nothing else needs to change to add an app.
 # All apps are pnpm workspace members — deps install once via `pnpm install`
 # at the repo root.
 APPS=(
@@ -55,6 +58,9 @@ APPS=(
 DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jrig.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
+# Ownership follows the app a skill's product belongs to, not the port it calls:
+# j-chart and j-explain publish through jticket's :43000 like everything else,
+# but they stay with jchart and jexplain, whose pools and UIs they document.
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
 # else under an app's .claude/skills comes from mattpocock/skills and is
 # installed by the `skills` CLI instead. Keep apps/jticket/j-setup's JSKILLS
