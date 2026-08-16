@@ -84,10 +84,10 @@ async function onSketchSave(dataUrl: string) {
 }
 
 function remove(id: string) {
-  emit('update', list.value.filter((a: NoteAttachment) => a.id !== id))
+  emit('update', list.value.filter((a) => a.id !== id))
 }
 function setCaption(id: string, caption: string) {
-  emit('update', list.value.map((a: NoteAttachment) => (a.id === id ? { ...a, caption } : a)))
+  emit('update', list.value.map((a) => (a.id === id ? { ...a, caption } : a)))
 }
 
 defineExpose({ onPaste, onDrop })
