@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Project } from '~/composables/useTracker'
+import type { Project } from '#shared/types/tracker'
 
 const props = defineProps<{ open: boolean; project?: Project | null }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()

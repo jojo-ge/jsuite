@@ -1,5 +1,6 @@
 import { DIFF_BASE_PATH, diffRouteUrl, diffRoutes } from '@jsuite/diff/routes'
-import type { Attachment, Project, Store, Ticket } from './store'
+import type { Attachment, Project, ResolvedAttachment, Ticket } from '#shared/types/tracker'
+import type { Store } from './store'
 
 // The review routes as jTicket mounts them. jTicket sets no `diff.basePath` of
 // its own, so it gets the layer's namespaced default — and this is the constant
@@ -20,40 +21,8 @@ const review = diffRoutes(DIFF_BASE_PATH)
 // re-export. Tickets and projects differ in exactly one thing — which repo a
 // diff ref is read against — and that difference belongs in one place.
 
-export interface ResolvedAttachment extends Attachment {
-  /** The artifact's own title, or a readable stand-in when there's nothing to read. */
-  title: string
-  /**
-   * Where to open it, in-app: jTicket serves all three pools' UI itself,
-   * through @jsuite/documents, @jsuite/charting and @jsuite/diff. '' if
-   * missing.
-   */
-  url: string
-  /** The artifact's last write, when the pool records one. '' for a diff, which has no file. */
-  updatedAt: string
-  /**
-   * True when there is nothing to open. Two different situations land here, and
-   * `reason` is what tells them apart:
-   *   - the artifact is gone — deleted out from under the ref, or never created
-   *   - a diff ref has no repo to be read against (its project has none, or the
-   *     ticket is in the backlog and so has no project at all)
-   * Note a diff's target is *not* verified: the review engine resolves a PR
-   * number or branch lazily against git and gh, which is far too expensive to
-   * do per ref on a page load. `missing: false` on a diff therefore means "we
-   * know where to send you", not "the branch still exists" — whatever renders
-   * one has to cope with a target that turns out not to be there.
-   */
-  missing: boolean
-  /** Why it's missing, for a UI that wants to say more than "missing". */
-  reason?: string
-  /**
-   * The repo a `diff` was resolved against, as the project stores it — what the
-   * review engine takes as `?repo=`. Only diffs have one, and only a renderer
-   * that mounts the review itself (rather than following `url`) needs it.
-   */
-  repo?: string
-}
-
+// ResolvedAttachment — the shape this file builds — is declared with the rest
+// of jTicket's vocabulary in shared/types/tracker.ts.
 async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttachment> {
   const gone = (reason: string): ResolvedAttachment => ({
     ...att,

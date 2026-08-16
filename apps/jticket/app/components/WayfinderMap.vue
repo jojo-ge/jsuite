@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { Ticket, WayfinderType } from '~/composables/useTracker'
+import type { Ticket } from '#shared/types/tracker'
+import type { WayfinderType } from '~/composables/useTracker'
 
 // Map mode for a wayfinder project: tickets as nodes in dependency layers
 // flowing left → right toward the destination, blocking edges drawn between
@@ -90,11 +91,8 @@ const layout = computed(() => {
     return d
   }
 
-  const byKeyNum = (a: Ticket, b: Ticket) =>
-    (Number(a.key.split('-').pop()) || 0) - (Number(b.key.split('-').pop()) || 0)
-
   const layers: Ticket[][] = []
-  for (const t of [...props.tickets].sort(byKeyNum)) {
+  for (const t of [...props.tickets].sort(byKeyNumber)) {
     const d = layerOf(t)
     ;(layers[d] ??= []).push(t)
   }
@@ -109,7 +107,7 @@ const layout = computed(() => {
           const rows = mapDeps(t).map((d) => row.get(d.id)).filter((r): r is number => r !== undefined)
           return rows.length ? rows.reduce((s, r) => s + r, 0) / rows.length : Number.MAX_SAFE_INTEGER
         }
-        return mean(a) - mean(b) || byKeyNum(a, b)
+        return mean(a) - mean(b) || byKeyNumber(a, b)
       })
     }
     layer.forEach((t, r) => row.set(t.id, r))

@@ -9,7 +9,7 @@
 // that opens the project's body — the map (destination / decisions / fog) or a
 // plain description — in a modal, so it never buries the tickets. The page
 // around this component owns the project header; this is just the tickets.
-import type { Ticket } from '~/composables/useTracker'
+import type { Ticket } from '#shared/types/tracker'
 
 const props = defineProps<{
   tickets: Ticket[]
@@ -39,11 +39,6 @@ const viewOptions = computed(() => [
   ...(props.wayfinder ? [{ key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' }] : []),
 ])
 
-function byKey(a: Ticket, b: Ticket) {
-  const n = (k: string) => Number(k.split('-').pop()) || 0
-  return n(a.key) - n(b.key)
-}
-
 type BucketKey = 'frontier' | 'claimed' | 'blocked' | 'done'
 const BUCKET_META: Record<BucketKey, { label: string; icon: string; dot: string; text: string; hint: string }> = {
   frontier: { label: 'Frontier', icon: 'i-lucide-flag', dot: 'bg-primary', text: 'text-primary', hint: 'takeable now' },
@@ -60,7 +55,7 @@ const bucketed = computed(() => {
     else if (isFrontier(t, props.allTickets)) frontier.push(t)
     else claimed.push(t)
   }
-  for (const g of [done, blocked, frontier, claimed]) g.sort(byKey)
+  for (const g of [done, blocked, frontier, claimed]) g.sort(byKeyNumber)
   return { frontier, claimed, blocked, done }
 })
 const counts = computed(() => ({

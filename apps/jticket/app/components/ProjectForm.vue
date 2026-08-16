@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Project create/edit fields, shared by ProjectModal and the tabbed create
 // modal. The parent owns the save button (save()/saving/canSave).
-import type { Project, ProjectMode } from '~/composables/useTracker'
+import type { Project, ProjectMode } from '#shared/types/tracker'
 
 const props = withDefaults(
   // autofocus is off for the create modal's hidden tabs — see TicketForm.
@@ -21,7 +21,6 @@ const canSave = computed(() => !!form.title.trim())
 // the native folder dialog, or type the path. Whatever lands in the field is
 // probed (read-only) so you find out it's the wrong folder here, not later on
 // the project page.
-interface KnownRepo { path: string; slug: string; defaultBranch: string; exists: boolean; projects: string[] }
 type Probe =
   | { ok: true; path: string; slug: string | null; defaultBranch: string }
   | { ok: false; path: string; error: string }
@@ -31,7 +30,10 @@ const probing = ref(false)
 const browsing = ref(false)
 let probeTimer: ReturnType<typeof setTimeout> | undefined
 
-const { data: repoList, refresh: refreshRepos } = useFetch<{ repos: KnownRepo[] }>('/api/repos', { lazy: true, server: false })
+// No <T>: /api/repos serves the remembered record plus what it works out per
+// request (whether the path is still there, which projects point at it), and
+// Nuxt types that off the handler — so the row shape is never written twice.
+const { data: repoList, refresh: refreshRepos } = useFetch('/api/repos', { lazy: true, server: false })
 // The repo already in the field shouldn't take up a suggestion slot.
 const recentRepos = computed(() => (repoList.value?.repos ?? []).filter((r) => r.path !== probe.value?.path).slice(0, 8))
 

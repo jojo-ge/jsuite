@@ -13,7 +13,7 @@
 // review screens are screens, and what belongs on a ticket is the verdict plus
 // the way through to them (`url`, which now points at jTicket's own /diffs).
 import type { Explainer } from '@jsuite/documents/types'
-import type { Attachment, ResolvedAttachment } from '~/composables/useTracker'
+import type { Attachment, ResolvedAttachment } from '#shared/types/tracker'
 
 const props = withDefaults(
   defineProps<{
@@ -25,10 +25,14 @@ const props = withDefaults(
   { compact: false },
 )
 
+// No <ResolvedAttachment[]>: `owner` is a union of the two literals, so the
+// URL's type still matches /api/{tickets,projects}/:id/attachments and Nuxt
+// types this off those handlers. The rows are checked against what the server
+// resolves, not asserted to match it.
 const {
   data: attachments,
   refresh,
-} = await useFetch<ResolvedAttachment[]>(() => `/api/${props.owner}/${props.ownerId}/attachments`, {
+} = await useFetch(() => `/api/${props.owner}/${props.ownerId}/attachments`, {
   default: () => [],
 })
 

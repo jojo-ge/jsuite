@@ -14,7 +14,7 @@ export default defineEventHandler((event) => {
   if (q.label) tickets = tickets.filter((t) => t.labels.includes(String(q.label)))
   // ?frontier=true → the takeable edge: open, unblocked, unclaimed; key-ordered.
   if (q.frontier === 'true' || q.frontier === '1') {
-    tickets = tickets.filter((t) => ticketIsFrontier(t, all)).sort(byKeyNumber)
+    tickets = tickets.filter((t) => isFrontier(t, all)).sort(byKeyNumber)
   }
   // ?finished=true → what just landed: done tickets, newest completion first.
   if (q.finished === 'true' || q.finished === '1') {

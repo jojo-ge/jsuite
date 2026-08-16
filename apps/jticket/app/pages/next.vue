@@ -7,7 +7,8 @@
 // up right now — which until now meant reading every project and doing the
 // blocked/claimed arithmetic by eye. Each row carries the hand-off command, so
 // the page ends in dispatch rather than in another click.
-import type { Project, Ticket, WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket } from '#shared/types/tracker'
+import type { WayfinderType } from '~/composables/useTracker'
 
 useHead({ title: 'Up next' })
 
@@ -30,14 +31,9 @@ const projectOptions = computed(() => [
 ])
 const projectFilter = ref<string>('all')
 
-function byKey(a: Ticket, b: Ticket) {
-  const n = (k: string) => Number(k.split('-').pop()) || 0
-  return n(a.key) - n(b.key)
-}
-
 // The frontier is computed the same way everywhere — the same helper the cards
 // ring with and the same rule `?frontier=true` serves to agents.
-const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, tickets.value)).sort(byKey))
+const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, tickets.value)).sort(byKeyNumber))
 
 const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))
 

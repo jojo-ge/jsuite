@@ -3,7 +3,8 @@
 // modal and the ticket detail modal fill in the same fields the same way.
 // The parent owns the save button (modal footers are sticky) and drives it
 // through the exposed save()/saving/canSave.
-import type { Project, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, TicketStatus, TicketType } from '#shared/types/tracker'
+import type { WayfinderType } from '~/composables/useTracker'
 
 const props = withDefaults(
   defineProps<{

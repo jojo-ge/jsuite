@@ -5,7 +5,7 @@
 // Rows are grouped by the day they were finished on (Today / Yesterday / date)
 // and carry the resolution preview, so the page reads as a log rather than a
 // second backlog.
-import type { Project, Ticket } from '~/composables/useTracker'
+import type { Project, Ticket } from '#shared/types/tracker'
 
 useHead({ title: 'Recently finished' })
 
