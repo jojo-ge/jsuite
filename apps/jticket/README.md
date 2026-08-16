@@ -28,7 +28,8 @@ pnpm dev          # http://localhost:43000
 | `/running` | **Running now** — every in-progress ticket grouped by its project, with a link through to the project |
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
-| `/docs` · `/docs/<key>` | The shared document pool, grouped by which project attaches each, and one document |
+| `/documents` · `/documents/<key>` | **Docs** — the shared document pool, grouped by which project attaches each, and one document. (`/docs` redirects here.) |
+| `/charts` · `/charts/<key>` | **Charts** — the shared chart pool and the workbench, served by `@jsuite/charting` |
 | `/api-guide` | Full HTTP API reference, live in the app |
 
 ## Data model
@@ -64,7 +65,7 @@ line clamp stays honest.
     files in the root `.data/jexplain/` pool, which jExplain lists and renders too).
     Content is authored as **blocks** (prose, callout, code, diff, chart, steps,
     compare, timeline, takeaway + glossary). `POST /api/documents` writes one;
-    `replace: true` rewrites it in place (notes survive). Rendered at `/docs/<key>`.
+    `replace: true` rewrites it in place (notes survive). Rendered at `/documents/<key>`.
   - `chart` — a key in the shared jChart pool (root `.data/jchart/`).
   - `diff` — a jDiff review target: `"123"` for a PR, `"branch/<name>"` for a branch,
     read against the owning project's `repo`.
@@ -228,5 +229,5 @@ draft docs here via `POST /api/documents`, including the block-document format a
 attach the result to a project. It pairs
 with Matt Pocock's `/to-spec`, which decides what the document says — `to-jspec` covers how
 it is written and where it lands. Documents are drafts only — review them at
-`http://localhost:43000/docs`, then copy into Confluence by hand if and when you want them
+`http://localhost:43000/documents`, then copy into Confluence by hand if and when you want them
 there.

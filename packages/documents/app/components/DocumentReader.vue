@@ -62,7 +62,11 @@ useHead(() => ({ title: doc.value?.title ?? key.value }))
         size="sm"
         :aria-label="props.backLabel"
       />
-      <span class="min-w-0 flex-1 truncate text-sm font-medium text-muted">{{ doc?.title }}</span>
+      <span class="min-w-0 truncate text-sm font-medium text-muted">{{ doc?.title }}</span>
+      <!-- Whatever the host app knows about this document that the pool
+           doesn't — jTicket puts the projects it's attached to here. -->
+      <slot name="chrome" :doc="doc" />
+      <span class="flex-1" />
       <UButton
         :icon="railOpen ? 'i-lucide-panel-right-close' : 'i-lucide-message-square'"
         color="neutral"

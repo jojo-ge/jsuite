@@ -11,7 +11,7 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 
 | Request smells like… | App | How to drive it |
 | --- | --- | --- |
-| tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement` |
+| tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement`. Also the **shell**: it serves the whole-pool Docs (`/documents`) and Charts (`/charts`) libraries, and renders a ticket's or project's attached documents and charts in place |
 | PR review, branch diff, review comments | `apps/jdiff` | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`) |
 | diagrams the human edits/annotates | `apps/jchart` | skill `j-chart`; API on :43003; state in `.data/jchart/` |
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |

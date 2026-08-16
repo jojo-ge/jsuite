@@ -68,7 +68,7 @@ const saveLabel = { ticket: 'Create ticket', project: 'Create project' } as cons
             Documents live in the shared pool, not in the tracker — create one from the documents
             page, then attach it to a project or ticket.
           </p>
-          <UButton icon="i-lucide-file-plus" to="/docs" @click="emit('update:open', false)">
+          <UButton icon="i-lucide-file-plus" to="/documents" @click="emit('update:open', false)">
             All documents
           </UButton>
         </div>

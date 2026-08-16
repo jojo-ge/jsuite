@@ -73,7 +73,11 @@ function ago(iso: string): string {
 </script>
 
 <template>
-  <div class="mx-auto min-h-screen w-full max-w-3xl px-6 py-10">
+  <!-- `min-h-full`, not `min-h-screen`: a host page may put its own chrome
+       above this (jTicket mounts it under the board's header), and a hard
+       viewport height there forces a scrollbar on an otherwise short list.
+       Matches <DocumentLibrary> in the sibling layer. -->
+  <div class="mx-auto min-h-full w-full max-w-3xl px-6 py-10">
     <div class="mb-8 flex items-end gap-4">
       <div class="flex-1">
         <h1 class="text-2xl font-semibold tracking-tight">{{ heading }}</h1>

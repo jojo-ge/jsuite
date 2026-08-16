@@ -29,7 +29,10 @@ export interface ResolvedAttachment extends Attachment {
 
 export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: string }> = {
   document: { label: 'Document', icon: 'i-lucide-file-text' },
-  chart: { label: 'Chart', icon: 'i-lucide-git-branch' },
+  // The same mark <BlockChart> puts on an embedded chart, so a chart looks like
+  // a chart wherever it turns up. (It was the git-branch icon, which reads as a
+  // diff — the one thing a chart is not.)
+  chart: { label: 'Chart', icon: 'i-lucide-shapes' },
   diff: { label: 'Diff', icon: 'i-lucide-git-pull-request' },
 }
 
@@ -171,11 +174,9 @@ export function useTracker() {
     await refresh()
   }
 
-  // ── Attachments ──
-  /** The artifacts behind a record's refs, dangling ones flagged `missing`. */
-  function resolvedAttachments(owner: 'tickets' | 'projects', id: string) {
-    return $fetch<ResolvedAttachment[]>(`/api/${owner}/${id}/attachments`)
-  }
+  // Attachments are not mirrored into this state: <AttachmentsPanel> fetches
+  // and refreshes a record's own list, because resolving a ref reads the pools
+  // on every call and the board has no use for the result.
 
   return {
     projects,
@@ -192,7 +193,6 @@ export function useTracker() {
     deleteTicket,
     addComment,
     deleteComment,
-    resolvedAttachments,
   }
 }
 

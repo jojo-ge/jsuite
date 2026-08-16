@@ -9,7 +9,7 @@ jTicket (a lean local Nuxt app) has a **docs** section: draft pages stored as
 **block documents** in the shared jSuite document system — the same format and
 pool as jExplain articles (`@jsuite/documents`, files in `.data/jexplain/`).
 Nothing is ever posted to Confluence — a doc exists so you can author it
-locally, the user reviews it rendered (at `/docs/<key>` in jTicket, and it
+locally, the user reviews it rendered (at `/documents/<key>` in jTicket, and it
 also appears in jExplain's list), and *they* copy it elsewhere by hand if they
 want it there.
 
@@ -78,7 +78,7 @@ Fields:
   one. See "Revise" below.
 
 The response returns `{ key, title, path, blocks }`. The document is readable
-at `https://jticket.local/docs/<key>` and, same document and same notes, at
+at `https://jticket.local/documents/<key>` and, same document and same notes, at
 `https://jexplain.local/e/<key>`.
 
 ## 2. Attach it where it belongs
@@ -143,7 +143,7 @@ off disk or the API, under the jSuite root's `.data/`:
 ## Workflow tips
 
 - POST the document, attach it, then tell the user the key and link
-  (`https://jticket.local/docs/<key>`) so they can review it rendered.
+  (`https://jticket.local/documents/<key>`) so they can review it rendered.
 - Revise with `replace: true` based on their notes.
 - Structure like a good article, not a wall of prose: open with why it
   matters, alternate prose with evidence blocks, close with `takeaway`. The

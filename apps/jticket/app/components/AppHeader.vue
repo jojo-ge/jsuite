@@ -56,6 +56,16 @@ const links = computed(() => [
   { label: 'Finished', icon: 'i-lucide-circle-check', to: '/finished' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
 ])
+
+// The shared pools, served here by @jsuite/documents and @jsuite/charting —
+// every document and every chart in the suite, not jTicket's own subset. They
+// sit behind a divider because they are a different kind of destination: the
+// links above are the flow, these are the libraries the flow points into.
+// Deliberately unbadged — a pool's size doesn't change what you'd do next.
+const libraries = [
+  { label: 'Docs', icon: 'i-lucide-file-text', to: '/documents' },
+  { label: 'Charts', icon: 'i-lucide-shapes', to: '/charts' },
+]
 </script>
 
 <template>
@@ -80,6 +90,25 @@ const links = computed(() => [
             {{ l.label }}
             <UBadge v-if="l.badge" :color="l.badgeColor ?? 'info'" variant="subtle" size="sm">{{ l.badge }}</UBadge>
           </UButton>
+
+          <span class="mx-1 h-5 w-px shrink-0 bg-accented" />
+
+          <!-- Libraries stay lit while you're inside one (a reader, a
+               workbench), so the nav keeps telling you where you are — hence
+               the prefix match rather than the exact one above. The label is
+               dropped before the icon on a narrow header. -->
+          <UTooltip v-for="l in libraries" :key="l.to" :text="l.label">
+            <UButton
+              :icon="l.icon"
+              :to="l.to"
+              size="sm"
+              class="whitespace-nowrap"
+              :color="$route.path.startsWith(l.to) ? 'primary' : 'neutral'"
+              :variant="$route.path.startsWith(l.to) ? 'soft' : 'ghost'"
+            >
+              <span class="hidden xl:inline">{{ l.label }}</span>
+            </UButton>
+          </UTooltip>
         </nav>
       </div>
       <div class="flex items-center gap-2">

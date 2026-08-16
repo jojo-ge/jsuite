@@ -1,10 +1,16 @@
 <script setup lang="ts">
+// The whole shared document pool — the same 'everything on disk in
+// .data/jexplain' that @jsuite/documents mounts here by default. jTicket
+// overrides the layer's plain list because it is the one consumer that knows
+// something extra about these documents: which project each belongs to, read
+// off the projects' attachments. So the pool is grouped rather than flat, and a
+// document nothing links still shows, under "Not attached".
+//
+// This replaces the old /docs pages. Those listed the five DOC-n wrapper
+// records; there are no wrappers any more (TICK-138), and the thing they stood
+// for — this document belongs to that project — is an attachment now.
 useHead({ title: 'Documents' })
 
-// The whole shared document pool — the same documents jExplain lists. There is
-// no per-document tracker record any more: a document belongs to a project by
-// being attached to it, so the grouping is read from the projects' attachments
-// and a document nothing links still shows, under "Not attached".
 const { documents, projects, refresh } = useTracker()
 
 const grouped = computed(() => {
@@ -34,7 +40,7 @@ async function create() {
     creating.value = false
     newTitle.value = ''
     await refresh()
-    navigateTo(`/docs/${doc.key}`)
+    navigateTo(`/documents/${doc.key}`)
   } catch (err) {
     // Stay open with what they typed — retyping a title because the pool was
     // briefly unreachable is a worse outcome than an inline error.
@@ -52,8 +58,8 @@ async function create() {
         <div>
           <h1 class="text-2xl font-bold">Documents</h1>
           <p class="text-sm text-muted">
-            The shared document pool — local only, never posted anywhere. Attach one to a project or
-            ticket to give it a home.
+            Every document in the shared pool — explainers, specs and debriefs alike, grouped by the
+            project that attached them. Local only, never posted anywhere.
           </p>
         </div>
         <UButton icon="i-lucide-file-plus" @click="creating = !creating">New doc</UButton>

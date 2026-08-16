@@ -138,7 +138,7 @@ id contains a slash, so it travels as a query param. The artifact itself is neve
 ```jsonc
 [ { "type": "document", "id": "checkout-revamp-spec",
     "title": "Checkout revamp — spec",          // the artifact's own title
-    "url": "/docs/checkout-revamp-spec",
+    "url": "/documents/checkout-revamp-spec",
     "updatedAt": "2026-08-16T…",
     "missing": false },
   { "type": "chart", "id": "deleted-chart",
@@ -157,7 +157,7 @@ against.
 to add or drop one ref without a read-modify-write.
 
 Writing the document itself is `POST /api/documents` (see **to-jdoc**); the document then
-renders at `$JTICKET/docs/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
+renders at `$JTICKET/documents/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
 
 ### Uploaded files
 
