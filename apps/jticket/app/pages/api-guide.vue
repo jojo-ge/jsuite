@@ -217,7 +217,7 @@ const methodColor: Record<string, string> = {
           into the pool with <code>title</code> and <code>blocks</code>; there is no tracker record
           in front of it. It belongs to a project or ticket by being <em>attached</em> to one — the
           second call below. Nothing is ever posted anywhere external — docs render at
-          <code>/docs/&lt;key&gt;</code> (and in jExplain, which reads the same pool). Re-POST with
+          <code>/documents/&lt;key&gt;</code> (and in jExplain, which reads the same pool). Re-POST with
           <code>replace: true</code> to revise; notes and unchanged charts survive, and attachments
           point at the key so nothing needs re-attaching.
         </p>

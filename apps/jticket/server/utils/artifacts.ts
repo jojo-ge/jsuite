@@ -12,14 +12,14 @@ import type { Attachment, Project, Store, Ticket } from './store'
 // re-export. Tickets and projects differ in exactly one thing — which repo a
 // diff ref is read against — and that difference belongs in one place.
 
-// jChart's own reader, for charts jTicket has no page of its own for yet.
-// Matches the JDIFF_URL convention in utils/github.ts.
-const CHART_BASE = (process.env.JCHART_URL ?? 'https://jchart.local').replace(/\/+$/, '')
-
 export interface ResolvedAttachment extends Attachment {
   /** The artifact's own title, or a readable stand-in when there's nothing to read. */
   title: string
-  /** Where to open it — in-app for documents, the owning app otherwise. '' if missing. */
+  /**
+   * Where to open it. In-app for documents and charts — jTicket serves both
+   * pools' UI through @jsuite/documents and @jsuite/charting — and out to jDiff
+   * for a diff, which is the one artifact no layer renders. '' if missing.
+   */
   url: string
   /** The artifact's last write, when the pool records one. '' for a diff, which has no file. */
   updatedAt: string
@@ -56,7 +56,7 @@ async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttach
       return {
         ...att,
         title: doc.title || att.id,
-        url: `/docs/${att.id}`,
+        url: `/documents/${att.id}`,
         updatedAt: doc.updatedAt ?? '',
         missing: false,
       }
@@ -67,7 +67,9 @@ async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttach
       return {
         ...att,
         title: chart.title || att.id,
-        url: `${CHART_BASE}/c/${att.id}`,
+        // In-app: jTicket serves the charting layer's own workbench, so a chart
+        // opens here rather than bouncing the reader over to jChart.
+        url: `/charts/${att.id}`,
         updatedAt: chart.updatedAt ?? '',
         missing: false,
       }

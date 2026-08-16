@@ -135,7 +135,10 @@ both ways.
 An app that wants that UI on different paths overrides `charting.indexPath` and
 `charting.chartPath` in its `app.config.ts` and mounts the components itself —
 which is all jChart is now: `/` and `/c/<key>` are aliases over the same
-components the layer serves at `/charts`.
+components the layer serves at `/charts`. An app that wants the layer's paths
+but its own chrome mounts `<ChartLibrary>` under it: jTicket's `/charts` is the
+library under the board's header, while `/charts/<key>` is left to the layer,
+the workbench being a full-screen canvas that a nav bar only steals height from.
 
 ## @jsuite/diff
 
@@ -174,9 +177,9 @@ renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
 experience with margin notes), `useMarkdown()`/`useShiki()`, the whole-pool
 library and reader (`<DocumentLibrary>`, `<DocumentReader>`, mounted at
 `/documents` and `/documents/<key>`), and the `server/api/documents/**` routes
-over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself,
-so chart blocks, `/api/charts/**` **and the `/charts` chart UI** ride in
-transitively. A consumer needs:
+over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It
+`extends` `@jsuite/charting` itself, so chart blocks, `/api/charts/**` **and the
+`/charts` chart UI** ride in transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/documents']` in `nuxt.config.ts`
@@ -198,9 +201,13 @@ Every consumer therefore gets a documents library at `/documents` for free —
 the whole pool, explainers and specs and grilling debriefs alike. An app that
 wants it under its own routes mounts the components instead of copying them:
 jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
-jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket's
-own `/docs` stays a *subset* view — the documents its tracker knows about,
-wrapped in project/status/label metadata.
+jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket
+mounts `<DocumentReader>` at `/documents/<key>` with delete withheld and the
+projects a document is attached to in its `#chrome` slot — and it is the one
+consumer that *replaces* the library page rather than mounting it, because it
+knows something about these documents the pool does not: which project attaches
+each. Same pool, grouped. (Its old `/docs` paths redirect there; the DOC-n
+wrapper records they listed are gone.)
 
 ## @jsuite/claude
 

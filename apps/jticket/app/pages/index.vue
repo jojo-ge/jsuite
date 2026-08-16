@@ -43,7 +43,7 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
             <UIcon name="i-lucide-file-text" class="size-4 text-muted" />
             <h2 class="text-xl font-semibold">Documents</h2>
             <span class="text-xs text-muted">{{ documents.length }} in the shared pool</span>
-            <UButton icon="i-lucide-file-text" size="xs" color="neutral" variant="ghost" to="/docs" class="ml-auto">
+            <UButton icon="i-lucide-file-text" size="xs" color="neutral" variant="ghost" to="/documents" class="ml-auto">
               All documents
             </UButton>
           </div>

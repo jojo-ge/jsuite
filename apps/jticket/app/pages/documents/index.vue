@@ -1,20 +1,36 @@
 <script setup lang="ts">
+// The whole shared document pool — the same 'everything on disk in
+// .data/jexplain' that @jsuite/documents mounts here by default. jTicket
+// overrides the layer's plain list because it is the one consumer that knows
+// something extra about these documents: which project each belongs to, read
+// off the projects' attachments. So the pool is grouped rather than flat, and a
+// document nothing links still shows, under "Not attached".
+//
+// This replaces the old /docs pages. Those listed the five DOC-n wrapper
+// records; there are no wrappers any more (TICK-138), and the thing they stood
+// for — this document belongs to that project — is an attachment now.
 useHead({ title: 'Documents' })
 
-// The whole shared document pool — the same documents jExplain lists. There is
-// no per-document tracker record any more: a document belongs to a project by
-// being attached to it, so the grouping is read from the projects' attachments
-// and a document nothing links still shows, under "Not attached".
-const { documents, projects, refresh } = useTracker()
+const { documents, projects, tickets, refresh } = useTracker()
 
 const grouped = computed(() => {
   const claimed = new Set<string>()
   const sections = projects.value
     .map((project) => {
-      const keys = project.attachments.filter((a) => a.type === 'document').map((a) => a.id)
-      const docs = keys
-        .map((key) => documents.value.find((d) => d.key === key))
-        .filter((d): d is NonNullable<typeof d> => !!d)
+      // A document belongs to a project by being attached to it *or* to one of
+      // its tickets — a spec attached to the ticket that implements it is still
+      // that project's document, and filing it under "Not attached" would be
+      // the wrong answer to "what has this project written down?".
+      const keys = new Set(
+        project.attachments.filter((a) => a.type === 'document').map((a) => a.id),
+      )
+      for (const t of tickets.value) {
+        if (t.projectId !== project.id) continue
+        for (const a of t.attachments ?? []) if (a.type === 'document') keys.add(a.id)
+      }
+      // Ordered by the pool, not by attachment order, so a document appears in
+      // the same place in every section it lands in.
+      const docs = documents.value.filter((d) => keys.has(d.key))
       for (const d of docs) claimed.add(d.key)
       return { project, docs }
     })
@@ -34,7 +50,7 @@ async function create() {
     creating.value = false
     newTitle.value = ''
     await refresh()
-    navigateTo(`/docs/${doc.key}`)
+    navigateTo(`/documents/${doc.key}`)
   } catch (err) {
     // Stay open with what they typed — retyping a title because the pool was
     // briefly unreachable is a worse outcome than an inline error.
@@ -52,8 +68,8 @@ async function create() {
         <div>
           <h1 class="text-2xl font-bold">Documents</h1>
           <p class="text-sm text-muted">
-            The shared document pool — local only, never posted anywhere. Attach one to a project or
-            ticket to give it a home.
+            Every document in the shared pool — explainers, specs and debriefs alike, grouped by the
+            project that attached them. Local only, never posted anywhere.
           </p>
         </div>
         <UButton icon="i-lucide-file-plus" @click="creating = !creating">New doc</UButton>

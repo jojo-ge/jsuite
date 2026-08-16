@@ -30,7 +30,7 @@ here also shows up in jExplain's article list; that is by design.
    the system; `takeaway` for the decisions summary. Give blocks stable `id`s — the
    user's review notes pin to them.
 3. **Publish** the document, then **attach** it to its project (see [Publish](#publish)).
-4. **Report** the key, title and both links (`$JTICKET/docs/<key>`,
+4. **Report** the key, title and both links (`$JTICKET/documents/<key>`,
    `https://jexplain.local/e/<key>`), and say plainly that it is a local
    draft — nothing has been posted to Confluence.
 
