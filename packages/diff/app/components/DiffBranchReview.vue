@@ -468,7 +468,7 @@ async function createPr() {
       <span class="spinner" />
       <span class="loading-note">computing diff locally…</span>
     </div>
-    <div v-else-if="error" class="error-box">{{ error.data?.message ?? error.message }}</div>
+    <div v-else-if="error" class="error-box">{{ fetchErrorMessage(error) }}</div>
 
     <div v-else-if="diff" class="layout">
       <aside class="sidebar">
