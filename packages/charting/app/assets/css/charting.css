@@ -1,0 +1,23 @@
+/* @jsuite/charting — styles the canvas and workbench rely on. Plain CSS over
+   Nuxt UI design tokens (no Tailwind directives here; the consuming app's
+   Tailwind build generates utilities via its @source line). */
+
+/* Excalidraw ships its own layer stack; keep it below Nuxt UI's popovers and
+   modals so the notes panel and dialogs are never painted under the toolbar. */
+.excalidraw {
+  --zIndex-layerUI: 4;
+  --zIndex-popup: 5;
+}
+
+.excalidraw-host {
+  position: absolute;
+  inset: 0;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--ui-border-accented);
+  border-radius: 8px;
+}

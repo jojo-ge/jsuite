@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { categorize, type FileCategory } from '~/utils/fileCategories'
-import type { FileRisk } from '~/utils/risk'
+import { categorize, type FileCategory } from '@jsuite/diff/fileCategories'
+import type { FileRisk } from '@jsuite/diff/risk'
 
 interface DiffFileMeta {
   path: string

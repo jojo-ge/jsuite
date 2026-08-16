@@ -9,10 +9,11 @@ native blocking relationship.
 ## 1. Gather context
 
 Work from whatever is already in the conversation. If the user passes a reference — a
-spec path, a `DOC-n` key, an issue number or URL — fetch it and read the full body.
+spec path, a document key, an issue number or URL — fetch it and read the full body.
 
 ```bash
-curl -s "$JTICKET/api/docs/DOC-3" | jq -r .body     # a spec already in jTicket
+curl -s "$JTICKET/api/documents/checkout-revamp-spec" | jq  # a spec already in jTicket
+curl -s "$JTICKET/api/projects/PROJ-1/attachments" | jq     # what a project already links
 ```
 
 ## 2. Explore the codebase
@@ -114,7 +115,7 @@ Ticket bodies follow this shape — see the `to-jspec` skill
 **`title`** — short descriptive name.
 
 **`description`** — the end-to-end behaviour this ticket makes work, from the user's
-perspective; not layer-by-layer implementation. Reference the source spec (`DOC-n`) or
+perspective; not layer-by-layer implementation. Reference the source spec (its document key) or
 parent ticket if there is one.
 
 **`acceptanceCriteria`** — one line each, checkable, inline markdown only.

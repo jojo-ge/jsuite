@@ -5,7 +5,24 @@ import { appDataFile } from '@jsuite/data'
 // ── Types ─────────────────────────────────────────────────────────────────
 export type TicketType = 'AFK' | 'HITL'
 export type TicketStatus = 'todo' | 'in_progress' | 'done'
-export type DocStatus = 'draft' | 'ready'
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+// jTicket owns the ticket↔artifact link. An attachment is a *reference* into
+// one of the shared pools — never a copy — so the pools (and the apps that
+// own them) stay completely ignorant of tickets. The artifact is the source of
+// truth for its own title and content; all we keep is which one, and of what
+// kind.
+export type AttachmentType = 'document' | 'chart' | 'diff'
+
+export interface Attachment {
+  type: AttachmentType
+  // What `id` means, per type:
+  //   document → key in the shared document pool (.data/jexplain/<id>.json)
+  //   chart    → key in the shared chart pool (.data/jchart/<id>.json)
+  //   diff     → a jDiff review target: a PR number ('123') or 'branch/<name>',
+  //              read against the repo of the project the attachment hangs off
+  id: string
+}
 // A project is either a plain tracker or a wayfinder effort. In 'wayfinder'
 // mode the project description is the wayfinder *map* body and its tickets are
 // grouped into frontier / blocked / done.
@@ -25,6 +42,7 @@ export interface Project {
   // branch that the project's PRs target, and which lands as one PR when the
   // project is done. See server/utils/github.ts.
   integrationBranch: string
+  attachments: Attachment[] // artifacts linked to this project — see Attachment
   createdAt: string
   updatedAt: string
 }
@@ -53,28 +71,12 @@ export interface Ticket {
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved
   blockedBy: string[] // ticket ids that gate this one
   comments: TicketComment[] // append via POST /api/tickets/:id/comments, never PATCH
+  attachments: Attachment[] // artifacts linked to this ticket — see Attachment
   // When the ticket last became done. Stamped on the todo/in_progress → done
   // transition and cleared when it moves back out; null while unfinished. Kept
   // separate from updatedAt, which any edit bumps — this is what /finished
   // orders by. Never set directly by callers; see stampCompletion.
   completedAt: string | null
-  createdAt: string
-  updatedAt: string
-}
-
-// A tracker record wrapping a document in the shared @jsuite/documents pool
-// (the jExplain block format, stored in .data/jexplain/<documentKey>.json).
-// The record carries the tracker-side metadata (project, labels, status);
-// the content — title page, blocks, glossary — lives in the shared document,
-// which jExplain lists and renders too. Never posted anywhere external.
-export interface Doc {
-  id: string
-  key: string // DOC-1
-  title: string
-  documentKey: string // key into the shared document pool
-  projectId: string | null // optional parent project
-  labels: string[]
-  status: DocStatus
   createdAt: string
   updatedAt: string
 }
@@ -93,9 +95,8 @@ export interface KnownRepo {
 export interface Store {
   projects: Project[]
   tickets: Ticket[]
-  docs: Doc[]
   repos: KnownRepo[] // repos used before — see rememberRepo
-  counters: { project: number; ticket: number; doc: number }
+  counters: { project: number; ticket: number }
 }
 
 // ── Persistence ─────────────────────────────────────────────────────────────
@@ -108,23 +109,37 @@ function emptyStore(): Store {
   return {
     projects: [],
     tickets: [],
-    docs: [],
     repos: [],
-    counters: { project: 0, ticket: 0, doc: 0 },
+    counters: { project: 0, ticket: 0 },
   }
 }
 
-// The shape older files (and bundles) may still carry: an epic layer between
-// projects and tickets, folded away by loadStore — see migrateEpics.
+// The shapes older files (and bundles) may still carry, both folded away by
+// loadStore: an epic layer between projects and tickets (migrateEpics), and a
+// Doc wrapper record per shared document (migrateDocs).
 interface LegacyEpic {
   id: string
   description?: string
   projectId?: string | null
 }
+// The dissolved Doc wrapper: a tracker row (key, title, labels, status,
+// project) standing in front of a document in the shared pool.
+export interface LegacyDoc {
+  id?: string
+  key?: string
+  title?: string
+  documentKey?: string
+  projectId?: string | null
+  labels?: string[]
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+}
 type LegacyStore = Partial<Store> & {
   epics?: LegacyEpic[]
+  docs?: LegacyDoc[]
   tickets?: Array<Ticket & { epicId?: string | null }>
-  counters?: Partial<Store['counters']> & { epic?: number }
+  counters?: Partial<Store['counters']> & { epic?: number; doc?: number }
 }
 
 // Stores written before the epic layer was removed: tickets adopt their epic's
@@ -149,11 +164,36 @@ function migrateEpics(parsed: LegacyStore): void {
   delete parsed.epics
 }
 
+// Stores written before attachments carried a Doc wrapper record in front of
+// every shared document: a tracker row with its own DOC-n key, title, labels
+// and status, whose only real content was the documentKey it pointed at. The
+// wrapper is gone. What it actually carried — "this document belongs to that
+// project" — becomes a `document` attachment on the project; the document
+// itself was always in the shared pool and stays there, listed by the document
+// library whether or not anything links it, so a wrapper with no project had
+// no link to lose. Runs only while `docs` is present — the first save drops
+// the array, so the fold-in never applies twice.
+function migrateDocs(parsed: LegacyStore): void {
+  if (!parsed.docs) return
+  const byId = new Map((parsed.projects ?? []).map((p) => [p.id, p]))
+  for (const d of parsed.docs) {
+    const project = d.projectId ? byId.get(d.projectId) : undefined
+    if (!project || !d.documentKey) continue
+    project.attachments = addAttachment(project.attachments ?? [], {
+      type: 'document',
+      id: d.documentKey,
+    })
+  }
+  delete parsed.docs
+  delete parsed.counters?.doc
+}
+
 export function loadStore(): Store {
   if (!existsSync(DATA_FILE)) return emptyStore()
   try {
     const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8')) as LegacyStore
     migrateEpics(parsed)
+    migrateDocs(parsed)
     return {
       // Projects predating wayfinder mode default to 'standard'; those
       // predating the GitHub link have no repo and no integration branch.
@@ -162,6 +202,7 @@ export function loadStore(): Store {
         mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard',
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
+        attachments: cleanAttachments(p.attachments),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -173,11 +214,9 @@ export function loadStore(): Store {
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
         comments: t.comments ?? [],
+        attachments: cleanAttachments(t.attachments),
         completedAt: t.completedAt ?? (t.status === 'done' ? t.updatedAt : null),
       })),
-      // Docs predating the shared-document system carried an inline jdoc body;
-      // those were migrated into the shared pool (documentKey references).
-      docs: (parsed.docs ?? []).map((d) => ({ ...d, documentKey: d.documentKey ?? '' })),
       // The remembered-repo list postdates everything else; absent = none yet.
       repos: (parsed.repos ?? []).map((r) => ({
         path: String(r.path ?? ''),
@@ -188,7 +227,6 @@ export function loadStore(): Store {
       counters: {
         project: parsed.counters?.project ?? 0,
         ticket: parsed.counters?.ticket ?? 0,
-        doc: parsed.counters?.doc ?? 0,
       },
     }
   } catch {
@@ -210,23 +248,18 @@ export function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
 
-const KEY_PREFIX: Record<'project' | 'ticket' | 'doc', string> = {
+const KEY_PREFIX: Record<'project' | 'ticket', string> = {
   project: 'PROJ',
   ticket: 'TICK',
-  doc: 'DOC',
 }
 
-export function nextKey(store: Store, kind: 'project' | 'ticket' | 'doc'): string {
+export function nextKey(store: Store, kind: 'project' | 'ticket'): string {
   store.counters[kind] += 1
   return `${KEY_PREFIX[kind]}-${store.counters[kind]}`
 }
 
 export function isStatus(v: unknown): v is TicketStatus {
   return v === 'todo' || v === 'in_progress' || v === 'done'
-}
-
-export function isDocStatus(v: unknown): v is DocStatus {
-  return v === 'draft' || v === 'ready'
 }
 
 // The single place a completion timestamp is decided. Moving into 'done'
@@ -236,13 +269,6 @@ export function isDocStatus(v: unknown): v is DocStatus {
 export function stampCompletion(ticket: Ticket, nextStatus: TicketStatus, ts: string): string | null {
   if (nextStatus !== 'done') return null
   return ticket.completedAt ?? ts
-}
-
-// Accepts a project id, key, or exact title and returns the project (docs and
-// import both let callers reference projects loosely).
-export function findProjectRef(store: Store, ref: unknown): Project | undefined {
-  if (typeof ref !== 'string' || !ref) return undefined
-  return store.projects.find((p) => p.id === ref || p.key === ref || p.title === ref)
 }
 
 // ── Known repos ─────────────────────────────────────────────────────────────
@@ -293,6 +319,71 @@ export function forgetRepo(store: Store, path: string): boolean {
 export function cleanLabels(v: unknown): string[] {
   if (!Array.isArray(v)) return []
   return [...new Set(v.map((s) => String(s).trim()).filter(Boolean))]
+}
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+export function isAttachmentType(v: unknown): v is AttachmentType {
+  return v === 'document' || v === 'chart' || v === 'diff'
+}
+
+// Pool keys are already sanitised on the way in by the pools themselves
+// (sanitizeDocKey / sanitizeKey, same character class); we apply the same rule
+// here so a ref written by hand lands on the file the pool would have written.
+// A diff id is not a pool key at all — it is a jDiff review target, so it
+// keeps its shape: a bare PR number, or 'branch/<ref>'.
+// Same shape jDiff's own isSafeRef enforces on a branch it will hand to git:
+// no '..', no '//', no leading '-', nothing outside git-legal-ish characters.
+const DIFF_TARGET = /^(\d+|branch\/(?!-)[\w./+-]{1,200})$/
+
+/**
+ * The id a ref should be stored under. A pool key goes through *that pool's own*
+ * sanitiser — not a copy of its rules — so a ref written by hand always lands on
+ * the file the pool would have written, and can never drift out of step with it.
+ * A diff id is not a pool key at all but a jDiff review target, so it keeps its
+ * shape. '' means "not a usable id", and the caller drops the ref.
+ */
+export function normaliseAttachmentId(type: AttachmentType, raw: unknown): string {
+  const id = String(raw ?? '').trim()
+  if (type === 'diff') {
+    if (id.includes('..') || id.includes('//') || id.endsWith('/')) return ''
+    return DIFF_TARGET.test(id) ? id : ''
+  }
+  return type === 'document' ? sanitizeDocKey(id) : sanitizeKey(id)
+}
+
+/**
+ * Normalise an arbitrary value into an attachment list: anything that isn't a
+ * usable {type, id} pair is dropped, and duplicates collapse. Nothing here
+ * checks that the artifact exists — a ref is allowed to dangle (the artifact
+ * may be created later, or deleted out from under us) and only ever renders as
+ * missing at read time. See resolveAttachments in utils/artifacts.ts.
+ */
+export function cleanAttachments(v: unknown): Attachment[] {
+  if (!Array.isArray(v)) return []
+  const out: Attachment[] = []
+  const seen = new Set<string>()
+  for (const raw of v) {
+    const type = (raw as Attachment)?.type
+    if (!isAttachmentType(type)) continue
+    const id = normaliseAttachmentId(type, (raw as Attachment)?.id)
+    if (!id) continue
+    const dedupe = `${type}:${id}`
+    if (seen.has(dedupe)) continue
+    seen.add(dedupe)
+    out.push({ type, id })
+  }
+  return out
+}
+
+/** Append one attachment, idempotently. Returns a new list. */
+export function addAttachment(list: Attachment[], att: Attachment): Attachment[] {
+  return cleanAttachments([...list, att])
+}
+
+/** Drop one attachment. Returns a new list. */
+export function removeAttachment(list: Attachment[], att: Attachment): Attachment[] {
+  const id = normaliseAttachmentId(att.type, att.id)
+  return list.filter((a) => !(a.type === att.type && a.id === id))
 }
 
 // Accepts an array of ticket ids or keys and returns the matching ticket ids,

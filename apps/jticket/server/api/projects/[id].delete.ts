@@ -5,17 +5,13 @@ export default defineEventHandler((event) => {
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   store.projects = store.projects.filter((p) => p.id !== project.id)
-  // Orphan the project's tickets and docs rather than deleting them.
+  // Orphan the project's tickets rather than deleting them. Artifacts the
+  // project had attached stay in their pools untouched — only the link,
+  // which lived on the project record, goes with it.
   for (const t of store.tickets) {
     if (t.projectId === project.id) {
       t.projectId = null
       t.updatedAt = now()
-    }
-  }
-  for (const d of store.docs) {
-    if (d.projectId === project.id) {
-      d.projectId = null
-      d.updatedAt = now()
     }
   }
   saveStore(store)

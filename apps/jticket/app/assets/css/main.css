@@ -5,6 +5,10 @@
    renderers, DocumentArticle, NotesRail live outside this app's source tree). */
 @source "../../../../../packages/documents/app";
 
+/* And for @jsuite/charting's — the chart library and workbench it serves at
+   /charts are the layer's components too. */
+@source "../../../../../packages/charting/app";
+
 /* The brand periwinkle, anchored at 400 — the exact bar colour in the jTicket
    mark (favicon.svg / <AppLogo>) — so the app's primary and its icon are the
    same blue. */

@@ -32,6 +32,11 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Artifact refs. Replaced wholesale like every other array on a PATCH — to
+  // add or drop one without a read-modify-write, use POST/DELETE
+  // /api/tickets/:id/attachments instead.
+  if (body.attachments !== undefined) ticket.attachments = cleanAttachments(body.attachments)
+
   if (body.blockedBy !== undefined) {
     // Resolve refs and forbid a ticket blocking itself.
     ticket.blockedBy = resolveTicketRefs(store, body.blockedBy).filter((tid) => tid !== ticket.id)
