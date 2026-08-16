@@ -3,11 +3,11 @@ export default defineEventHandler((event) => {
   const store = loadStore()
   const all = store.tickets
   let tickets = all
-  if (q.epicId) {
-    // Accept an epic id or key.
-    const epic = store.epics.find((e) => e.id === q.epicId || e.key === q.epicId)
-    const epicId = epic?.id ?? q.epicId
-    tickets = tickets.filter((t) => t.epicId === epicId)
+  if (q.projectId) {
+    // Accept a project id or key.
+    const project = store.projects.find((p) => p.id === q.projectId || p.key === q.projectId)
+    const projectId = project?.id ?? q.projectId
+    tickets = tickets.filter((t) => t.projectId === projectId)
   }
   if (q.status) tickets = tickets.filter((t) => t.status === q.status)
   if (q.assignee) tickets = tickets.filter((t) => t.assignee === q.assignee)

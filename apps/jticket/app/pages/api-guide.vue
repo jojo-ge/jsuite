@@ -7,23 +7,20 @@ const importExample =`curl -s http://localhost:43000/api/import \\
   "projects": [
     { "title": "Checkout", "description": "Everything payments-related" }
   ],
-  "epics": [
-    { "title": "Checkout revamp", "description": "New payment flow", "project": "Checkout" }
-  ],
   "tickets": [
     {
       "title": "Add cart schema",
       "description": "Persist a cart end-to-end.",
       "acceptanceCriteria": ["Cart survives refresh", "API returns totals"],
       "type": "AFK",
-      "epic": "Checkout revamp",
+      "project": "Checkout",
       "blockedBy": []
     },
     {
       "title": "Cart UI",
       "description": "Render the cart and let users edit quantities.",
       "type": "AFK",
-      "epic": "Checkout revamp",
+      "project": "Checkout",
       "blockedBy": ["Add cart schema"]
     }
   ]
@@ -31,18 +28,21 @@ const importExample =`curl -s http://localhost:43000/api/import \\
 
 const endpoints = [
   { m: 'GET', p: '/api/projects', d: 'List all projects' },
-  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description }' },
-  { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its epics' },
+  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch? }' },
+  { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its tickets' },
   { m: 'PATCH', p: '/api/projects/:id', d: 'Update a project' },
-  { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (epics → unassigned)' },
-  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (epics, tickets, docs, charts, attachments)' },
+  { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (tickets → backlog)' },
+  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, attachments)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
-  { m: 'GET', p: '/api/epics', d: 'List all epics' },
-  { m: 'POST', p: '/api/epics', d: 'Create an epic { title, description, projectId? }' },
-  { m: 'GET', p: '/api/epics/:id', d: 'Get one epic (id or key) + its tickets' },
-  { m: 'PATCH', p: '/api/epics/:id', d: 'Update an epic' },
-  { m: 'DELETE', p: '/api/epics/:id', d: 'Delete an epic (tickets → backlog)' },
-  { m: 'GET', p: '/api/tickets', d: 'List tickets (?epicId= &status= &assignee= &label= &frontier=true &finished=true &since=<ISO>)' },
+  { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch and matching open PRs (?force=1 skips the 30s cache)" },
+  { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
+  { m: 'GET', p: '/api/projects/:id/branches', d: 'Branches in the project\'s repo, local + origin (?q= search, ?fetch=1 pulls origin first)' },
+  { m: 'GET', p: '/api/repos', d: 'Repos used before — path, slug, default branch, which projects use each' },
+  { m: 'POST', p: '/api/repos', d: 'Remember a repo { path } (validates it is a clone, resolves its slug)' },
+  { m: 'DELETE', p: '/api/repos?path=', d: 'Forget a repo (the list only; projects and disk are untouched)' },
+  { m: 'GET', p: '/api/repos/probe', d: 'What is this path? (?path=) — read-only check, no store write' },
+  { m: 'GET', p: '/api/repos/pick', d: 'Native folder picker (macOS) → { path }' },
+  { m: 'GET', p: '/api/tickets', d: 'List tickets (?projectId= &status= &assignee= &label= &frontier=true &finished=true &since=<ISO>)' },
   { m: 'POST', p: '/api/tickets', d: 'Create a ticket' },
   { m: 'GET', p: '/api/tickets/:id', d: 'Get one ticket (id or key)' },
   { m: 'PATCH', p: '/api/tickets/:id', d: 'Update a ticket' },
@@ -92,7 +92,7 @@ const blockTypes = [
   { s: 'takeaway', d: 'Closing key-points card' },
 ]
 const frontierExample = `# The takeable edge of a map: todo + all blockers done + unassigned, in order
-curl -s 'http://localhost:43000/api/tickets?epicId=EPIC-14&frontier=true'
+curl -s 'http://localhost:43000/api/tickets?projectId=PROJ-14&frontier=true'
 
 # Claim the first one, do the work, then resolve it
 curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
@@ -167,8 +167,8 @@ const methodColor: Record<string, string> = {
     <UContainer class="prose-none max-w-3xl space-y-8 py-8">
       <section class="space-y-2">
         <p class="text-sm text-muted">
-          jTicket is a local-only store for drafting <strong>projects</strong>, <strong>epics</strong> &amp;
-          <strong>tickets</strong> (that hierarchy, top to bottom) before you author them to Jira by hand.
+          jTicket is a local-only store for drafting <strong>projects</strong> &amp;
+          <strong>tickets</strong> before you author them to Jira by hand.
           LLM skills (e.g. Matt Pocock's <code class="text-primary">to-tickets</code>) can author here
           first so you can review and edit before anything goes online.
         </p>
@@ -195,10 +195,9 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Bulk import (recommended for skills)</h2>
         <p class="mb-3 text-sm text-muted">
-          One call authors a whole breakdown across all three levels. Reference an epic's
-          <code>project</code> by title or key, a ticket's <code>epic</code> by title or key, and
-          <code>blockedBy</code> by ticket title or key — ids are generated for you.
-          <code>projects</code> and <code>epics</code> are optional.
+          One call authors a whole breakdown. Reference a ticket's <code>project</code> by title or
+          key, and <code>blockedBy</code> by ticket title or key — ids are generated for you.
+          <code>projects</code> is optional.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ importExample }}</code></pre>
       </section>
@@ -221,7 +220,7 @@ const methodColor: Record<string, string> = {
         <p class="mb-3 text-sm text-muted">
           One shared block vocabulary serves jTicket docs and jExplain articles (the
           <code>j-explain</code> format — see the to-jdoc / j-explain skills for payload shapes).
-          Ticket / epic / project descriptions and resolutions are plain GFM markdown:
+          Ticket / project descriptions and resolutions are plain GFM markdown:
         </p>
         <div class="overflow-hidden rounded-lg border border-default">
           <div
@@ -244,7 +243,7 @@ const methodColor: Record<string, string> = {
           <li><code>acceptanceCriteria</code> — string array</li>
           <li><code>type</code> — <code>AFK</code> (agent-runnable) or <code>HITL</code> (needs a human)</li>
           <li><code>status</code> — <code>todo</code> · <code>in_progress</code> · <code>done</code></li>
-          <li><code>epicId</code> / <code>epic</code> — parent epic</li>
+          <li><code>projectId</code> / <code>project</code> — parent project</li>
           <li><code>assignee</code> — free-form name of who is working on it (agents self-assign by name; <code>''</code> = unassigned)</li>
           <li><code>labels</code> — free-form strings; wayfinder uses <code>wayfinder:research|prototype|grilling|task</code></li>
           <li><code>resolution</code> — the answer, recorded on resolve (markdown)</li>
@@ -311,9 +310,9 @@ const methodColor: Record<string, string> = {
           <UIcon name="i-lucide-compass" class="size-4 text-primary" />Wayfinder mode
         </h2>
         <p class="mb-3 text-sm text-muted">
-          Set a project's <code>mode</code> to <code>wayfinder</code> and each of its epics becomes a
-          <strong>map</strong> (label it <code>wayfinder:map</code>; its description is the map body). Tickets are
-          wayfinder tickets — sub-type via a <code>wayfinder:&lt;research|prototype|grilling|task&gt;</code> label,
+          Set a project's <code>mode</code> to <code>wayfinder</code> and the project is a
+          <strong>map</strong> — its description is the map body. Tickets are wayfinder
+          tickets — sub-type via a <code>wayfinder:&lt;research|prototype|grilling|task&gt;</code> label,
           claim by setting <code>assignee</code>, resolve by setting <code>status: done</code> + <code>resolution</code>.
           The board groups them into <strong>Frontier · In progress · Blocked · Resolved</strong>.
         </p>

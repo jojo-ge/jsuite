@@ -22,13 +22,13 @@ export default defineEventHandler(async (event) => {
   // The wayfinder answer. Pass '' to clear.
   if (body.resolution !== undefined) ticket.resolution = typeof body.resolution === 'string' ? body.resolution.trim() : ''
 
-  if (body.epicId !== undefined) {
-    if (body.epicId === null || body.epicId === '') {
-      ticket.epicId = null
+  if (body.projectId !== undefined) {
+    if (body.projectId === null || body.projectId === '') {
+      ticket.projectId = null
     } else {
-      const epic = store.epics.find((e) => e.id === body.epicId || e.key === body.epicId)
-      if (!epic) throw createError({ statusCode: 400, statusMessage: `unknown epic: ${body.epicId}` })
-      ticket.epicId = epic.id
+      const project = store.projects.find((p) => p.id === body.projectId || p.key === body.projectId)
+      if (!project) throw createError({ statusCode: 400, statusMessage: `unknown project: ${body.projectId}` })
+      ticket.projectId = project.id
     }
   }
 

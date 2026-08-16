@@ -5,11 +5,11 @@
 // Rows are grouped by the day they were finished on (Today / Yesterday / date)
 // and carry the resolution preview, so the page reads as a log rather than a
 // second backlog.
-import type { Epic, Project, Ticket } from '~/composables/useTracker'
+import type { Project, Ticket } from '~/composables/useTracker'
 
 useHead({ title: 'Recently finished' })
 
-const { projects, epics, tickets } = useTracker()
+const { projects, tickets } = useTracker()
 const { openEditTicket, onDeleteTicket } = useTrackerModals()
 
 // `now` is the live clock, and it is deliberately client-only: it starts null so
@@ -59,7 +59,6 @@ function resolutionPreview(md: string): string {
 
 interface FinishedRow {
   ticket: Ticket
-  epic: Epic | null
   project: Project | null
 }
 interface FinishedDay {
@@ -70,11 +69,9 @@ interface FinishedDay {
 const days = computed<FinishedDay[]>(() => {
   const out: FinishedDay[] = []
   for (const ticket of inWindow.value) {
-    const epic = epics.value.find((e) => e.id === ticket.epicId) ?? null
     const row: FinishedRow = {
       ticket,
-      epic,
-      project: epic ? (projects.value.find((p) => p.id === epic.projectId) ?? null) : null,
+      project: projects.value.find((p) => p.id === ticket.projectId) ?? null,
     }
     // The list is already newest-first, so a day boundary is just "the label
     // changed" — no bucketing map needed, and the order comes out right.
@@ -153,7 +150,7 @@ const stats = computed(() => {
 
           <ul class="divide-y divide-default overflow-hidden rounded-lg border border-default">
             <li
-              v-for="{ ticket, epic, project } in d.rows"
+              v-for="{ ticket, project } in d.rows"
               :key="ticket.id"
               class="group cursor-pointer bg-elevated/20 px-4 py-3 transition hover:bg-elevated/60"
               @click="openEditTicket(ticket)"
@@ -182,16 +179,7 @@ const stats = computed(() => {
                     >
                       <UIcon name="i-lucide-folder-tree" class="size-3.5" />{{ project.title }}
                     </NuxtLink>
-                    <span v-if="project && epic">/</span>
-                    <NuxtLink
-                      v-if="epic"
-                      :to="`/epics/${epic.key}`"
-                      class="inline-flex items-center gap-1 hover:text-primary"
-                      @click.stop
-                    >
-                      <UIcon name="i-lucide-folder-open" class="size-3.5" />{{ epic.title }}
-                    </NuxtLink>
-                    <span v-else-if="!project" class="inline-flex items-center gap-1">
+                    <span v-else class="inline-flex items-center gap-1">
                       <UIcon name="i-lucide-layers" class="size-3.5" />Backlog
                     </span>
                     <span v-if="ticket.assignee" class="inline-flex items-center gap-1">

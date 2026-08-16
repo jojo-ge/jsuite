@@ -3,14 +3,14 @@
 // modal and the ticket detail modal fill in the same fields the same way.
 // The parent owns the save button (modal footers are sticky) and drives it
 // through the exposed save()/saving/canSave.
-import type { Epic, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
 
 const props = withDefaults(
   defineProps<{
     ticket?: Ticket | null
-    epics: Epic[]
+    projects: Project[]
     tickets: Ticket[]
-    defaultEpicId?: string | null
+    defaultProjectId?: string | null
     // Wayfinder projects get the sub-type and resolution fields. The parent
     // decides: it already knows which project the ticket sits under.
     wayfinder?: boolean
@@ -35,7 +35,7 @@ interface FormState {
   acceptanceCriteria: string[]
   type: TicketType
   status: TicketStatus
-  epicId: string | null
+  projectId: string | null
   assignee: string
   wfType: WayfinderType | null
   resolution: string
@@ -49,7 +49,7 @@ function blank(): FormState {
     acceptanceCriteria: [''],
     type: 'AFK',
     status: 'todo',
-    epicId: props.defaultEpicId ?? null,
+    projectId: props.defaultProjectId ?? null,
     assignee: '',
     wfType: null,
     resolution: '',
@@ -72,7 +72,7 @@ function reset() {
       acceptanceCriteria: t.acceptanceCriteria.length ? [...t.acceptanceCriteria] : [''],
       type: t.type,
       status: t.status,
-      epicId: t.epicId,
+      projectId: t.projectId,
       assignee: t.assignee ?? '',
       wfType: wayfinderType(t),
       resolution: t.resolution ?? '',
@@ -97,9 +97,9 @@ const statusOptions = [
   { label: 'In Progress', value: 'in_progress' },
   { label: 'Done', value: 'done' },
 ]
-const epicOptions = computed(() => [
-  { label: 'No epic (backlog)', value: null as string | null },
-  ...props.epics.map((e) => ({ label: `${e.key} — ${e.title}`, value: e.id })),
+const projectOptions = computed(() => [
+  { label: 'No project (backlog)', value: null as string | null },
+  ...props.projects.map((p) => ({ label: `${p.key} — ${p.title}`, value: p.id })),
 ])
 const blockerOptions = computed(() =>
   props.tickets
@@ -128,7 +128,7 @@ async function save() {
       acceptanceCriteria: form.acceptanceCriteria.map((s) => s.trim()).filter(Boolean),
       type: form.type,
       status: form.status,
-      epicId: form.epicId,
+      projectId: form.projectId,
       assignee: form.assignee.trim(),
       labels,
       resolution: form.resolution.trim(),
@@ -184,8 +184,8 @@ defineExpose({ save, reset, saving, canSave })
       <UFormField label="Status">
         <USelect v-model="form.status" :items="statusOptions" class="w-full" />
       </UFormField>
-      <UFormField label="Epic">
-        <USelect v-model="form.epicId" :items="epicOptions" class="w-full" />
+      <UFormField label="Project">
+        <USelect v-model="form.projectId" :items="projectOptions" class="w-full" />
       </UFormField>
     </div>
 

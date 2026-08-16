@@ -6,6 +6,13 @@ export default defineNuxtConfig({
   // @jsuite/charting — docs here are the same objects jExplain renders.
   extends: ['@jsuite/documents'],
   modules: ['@nuxt/ui'],
+  // Where jDiff lives, so the client can link a project's branch straight into
+  // a review. Same override the server side and the jdiff CLI use.
+  runtimeConfig: {
+    public: {
+      jdiffUrl: process.env.JDIFF_URL ?? 'https://jdiff.local',
+    },
+  },
   css: ['~/assets/css/main.css'],
   devtools: { enabled: true },
   // Pages set a bare page title ('Board', 'DOC-3 — Rollout plan'); app.vue's
@@ -13,7 +20,7 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: 'jTicket',
-      meta: [{ name: 'description', content: 'Local epics + tickets tracker' }],
+      meta: [{ name: 'description', content: 'Local projects + tickets tracker' }],
       link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
     },
   },

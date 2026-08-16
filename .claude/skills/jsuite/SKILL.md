@@ -17,7 +17,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | App | URL | Port | What it is |
 | --- | --- | --- | --- |
 | index | https://jsuite.local | — | static ecosystem page (no process) |
-| jTicket | https://jticket.local | 43000 | projects / epics / tickets / docs tracker |
+| jTicket | https://jticket.local | 43000 | projects / tickets / docs tracker |
 | jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
@@ -29,7 +29,7 @@ that port returns a 400, not a redirect.
 
 ## The products
 
-**jTicket** — the planning hub. A lean local tracker (projects, epics, tickets
+**jTicket** — the planning hub. A lean local tracker (projects, tickets
 with acceptance criteria and blocked-by edges) plus draft docs. A doc is a
 tracker record wrapping a **shared block document** (the jExplain format, one
 pool for both apps); descriptions and resolutions are plain GFM markdown.

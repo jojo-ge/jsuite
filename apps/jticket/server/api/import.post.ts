@@ -4,13 +4,13 @@
 //
 // Body shape:
 // {
-//   "epics":   [{ "title": "...", "description": "..." }],
+//   "projects": [{ "title": "...", "description": "..." }],
 //   "tickets": [{
 //     "title": "...",
 //     "description": "...",
 //     "acceptanceCriteria": ["...", "..."],
 //     "type": "AFK" | "HITL",
-//     "epic": "<epic title or key>",          // optional
+//     "project": "<project title or key>",     // optional
 //     "blockedBy": ["<ticket title or key>"]   // optional
 //   }]
 // }
@@ -18,12 +18,8 @@ interface ImportProject {
   title: string
   description?: string
   mode?: ProjectMode // 'wayfinder' turns the whole project into a wayfinder effort
-}
-interface ImportEpic {
-  title: string
-  description?: string
-  project?: string | null // project title or key
-  labels?: string[] // e.g. ['wayfinder:map']
+  repo?: string // path to a local clone — wires the project to GitHub
+  integrationBranch?: string // branch this project's PRs target
 }
 interface ImportTicket {
   title: string
@@ -31,7 +27,7 @@ interface ImportTicket {
   acceptanceCriteria?: string[]
   type?: TicketType
   status?: TicketStatus
-  epic?: string | null
+  project?: string | null // project title or key
   assignee?: string
   labels?: string[]
   wayfinderType?: string // shorthand → adds a 'wayfinder:<type>' label
@@ -42,14 +38,12 @@ interface ImportTicket {
 export default defineEventHandler(async (event) => {
   const body = await readBody<{
     projects?: ImportProject[]
-    epics?: ImportEpic[]
     tickets?: ImportTicket[]
   }>(event)
   const store = loadStore()
   const ts = now()
 
   const createdProjects: Project[] = []
-  const createdEpics: Epic[] = []
   const createdTickets: Ticket[] = []
 
   // 1. Create projects.
@@ -61,6 +55,8 @@ export default defineEventHandler(async (event) => {
       title: p.title.trim(),
       description: p.description?.trim() ?? '',
       mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard',
+      repo: p.repo?.trim() ?? '',
+      integrationBranch: p.integrationBranch?.trim() ?? '',
       createdAt: ts,
       updatedAt: ts,
     }
@@ -71,27 +67,7 @@ export default defineEventHandler(async (event) => {
   const findProject = (ref?: string | null) =>
     ref ? store.projects.find((p) => p.id === ref || p.key === ref || p.title === ref) : undefined
 
-  // 2. Create epics (referencing a project by title or key).
-  for (const e of body.epics ?? []) {
-    if (!e?.title?.trim()) continue
-    const epic: Epic = {
-      id: newId('epic'),
-      key: nextKey(store, 'epic'),
-      title: e.title.trim(),
-      description: e.description?.trim() ?? '',
-      projectId: findProject(e.project)?.id ?? null,
-      labels: cleanLabels(e.labels),
-      createdAt: ts,
-      updatedAt: ts,
-    }
-    store.epics.push(epic)
-    createdEpics.push(epic)
-  }
-
-  const findEpic = (ref?: string | null) =>
-    ref ? store.epics.find((e) => e.id === ref || e.key === ref || e.title === ref) : undefined
-
-  // 3. Create tickets (no edges yet — titles may reference not-yet-created tickets).
+  // 2. Create tickets (no edges yet — titles may reference not-yet-created tickets).
   const importPairs: Array<{ ticket: Ticket; src: ImportTicket }> = []
   for (const t of body.tickets ?? []) {
     if (!t?.title?.trim()) continue
@@ -104,7 +80,7 @@ export default defineEventHandler(async (event) => {
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
       type: t.type === 'HITL' ? 'HITL' : 'AFK',
       status,
-      epicId: findEpic(t.epic)?.id ?? null,
+      projectId: findProject(t.project)?.id ?? null,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
       labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
@@ -120,7 +96,7 @@ export default defineEventHandler(async (event) => {
     importPairs.push({ ticket, src: t })
   }
 
-  // 4. Resolve blocked-by edges now that every ticket exists (by title or key).
+  // 3. Resolve blocked-by edges now that every ticket exists (by title or key).
   const byRef = (ref: string) =>
     store.tickets.find((x) => x.id === ref || x.key === ref || x.title === ref)
   for (const { ticket, src } of importPairs) {
@@ -134,5 +110,5 @@ export default defineEventHandler(async (event) => {
 
   saveStore(store)
   setResponseStatus(event, 201)
-  return { projects: createdProjects, epics: createdEpics, tickets: createdTickets }
+  return { projects: createdProjects, tickets: createdTickets }
 })

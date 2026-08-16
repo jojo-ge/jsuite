@@ -5,17 +5,15 @@
 // the choice of what to create is a tab inside the modal.
 const props = defineProps<{
   open: boolean
-  // Set on a project page so a new epic lands in the project you're looking at.
+  // Set on a project page so a new ticket lands in the project you're looking at.
   defaultProjectId?: string | null
-  defaultEpicId?: string | null
 }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
-const { epics, tickets, projects } = useTracker()
+const { tickets, projects } = useTracker()
 
 const tabs = [
   { value: 'ticket', label: 'Ticket', icon: 'i-lucide-plus' },
-  { value: 'epic', label: 'Epic', icon: 'i-lucide-folder-plus' },
   { value: 'project', label: 'Project', icon: 'i-lucide-folder-tree' },
   { value: 'doc', label: 'Doc', icon: 'i-lucide-file-plus' },
 ]
@@ -24,32 +22,28 @@ const tab = ref('ticket')
 // Every panel stays mounted (v-show, not v-if) so switching tabs doesn't throw
 // away what you already typed in another one.
 const ticketForm = useTemplateRef('ticketForm')
-const epicForm = useTemplateRef('epicForm')
 const projectForm = useTemplateRef('projectForm')
-const active = computed(() =>
-  tab.value === 'epic' ? epicForm.value : tab.value === 'project' ? projectForm.value : ticketForm.value,
-)
+const active = computed(() => (tab.value === 'project' ? projectForm.value : ticketForm.value))
 
-// A new ticket only offers the wayfinder fields when its epic sits in a
-// wayfinder project — same rule the ticket modal uses.
-const wayfinder = computed(() => {
-  const epic = epics.value.find((e) => e.id === props.defaultEpicId)
-  return projects.value.find((p) => p.id === (epic?.projectId ?? props.defaultProjectId))?.mode === 'wayfinder'
-})
+// A new ticket only offers the wayfinder fields when it lands in a wayfinder
+// project — same rule the ticket modal uses.
+const wayfinder = computed(
+  () => projects.value.find((p) => p.id === props.defaultProjectId)?.mode === 'wayfinder',
+)
 
 // Docs are long-form and get their own page rather than a modal.
 const newDocTo = computed(() =>
   props.defaultProjectId ? `/docs/new?project=${props.defaultProjectId}` : '/docs/new',
 )
 
-const saveLabel = { ticket: 'Create ticket', epic: 'Create epic', project: 'Create project' } as const
+const saveLabel = { ticket: 'Create ticket', project: 'Create project' } as const
 </script>
 
 <template>
   <UModal
     :open="open"
     title="Create"
-    description="Add a ticket, epic, project or doc to the tracker."
+    description="Add a ticket, project or doc to the tracker."
     :ui="{ content: 'max-w-2xl', description: 'sr-only' }"
     @update:open="emit('update:open', $event)"
   >
@@ -60,18 +54,11 @@ const saveLabel = { ticket: 'Create ticket', epic: 'Create epic', project: 'Crea
         <TicketForm
           v-show="tab === 'ticket'"
           ref="ticketForm"
-          :epics="epics"
+          :projects="projects"
           :tickets="tickets"
-          :default-epic-id="defaultEpicId"
+          :default-project-id="defaultProjectId"
           :wayfinder="wayfinder"
           :autofocus="tab === 'ticket'"
-          @saved="emit('update:open', false)"
-        />
-        <EpicForm
-          v-show="tab === 'epic'"
-          ref="epicForm"
-          :default-project-id="defaultProjectId"
-          :autofocus="false"
           @saved="emit('update:open', false)"
         />
         <ProjectForm

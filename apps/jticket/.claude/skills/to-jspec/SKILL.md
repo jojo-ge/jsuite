@@ -1,6 +1,6 @@
 ---
 name: to-jspec
-description: Write a spec into jTicket as a doc — a block document in the shared jSuite document system (the jExplain format), which field renders what, and the exact publish call. Use when authoring or updating any jTicket doc body, ticket description, resolution, or epic description. Pair with /to-spec, which decides what the document says.
+description: Write a spec into jTicket as a doc — a block document in the shared jSuite document system (the jExplain format), which field renders what, and the exact publish call. Use when authoring or updating any jTicket doc body, ticket description, resolution, or project description. Pair with /to-spec, which decides what the document says.
 ---
 
 # To jspec
@@ -49,7 +49,6 @@ curl -sk --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 | Doc content (`blocks`) | **block document** | the spec itself — this is the one home of rich structure |
 | Ticket `description` | plain **GFM markdown**, plus a **plain-text preview** on the card | front-load the meaning; the card preview collapses it to one line |
 | Ticket `resolution` | plain GFM markdown | the answer, plus links to whatever it produced |
-| Epic `description` | plain GFM markdown | short — it sits above the ticket list |
 | Project `description` | plain GFM markdown on the board, preview on project cards | one or two lines |
 | Ticket `acceptanceCriteria[]` | **inline** markdown only | `` `code` ``, `**bold**`, links — nothing block-level |
 
@@ -121,6 +120,6 @@ pointing it at the `DOC-n` you just created.
 - **`/j-explain`** — the block vocabulary reference, and the same document system without
   a tracker record (for explainers that don't belong on the board).
 - **`/to-jdoc`** — general doc drafting into jTicket (non-spec pages).
-- **`/to-jticket`** — the rest of the jTicket surface: tickets, epics, direct reads and
+- **`/to-jticket`** — the rest of the jTicket surface: tickets, projects, direct reads and
   writes, the full [API reference](../to-jticket/reference/api.md).
 - **`/jwayfinder`** — if this is a wayfinder map rather than a spec, stop and use that.

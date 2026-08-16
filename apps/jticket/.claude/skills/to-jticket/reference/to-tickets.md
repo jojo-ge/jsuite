@@ -69,7 +69,7 @@ Ask the user:
 - Are the blocking edges correct — does each ticket only depend on tickets that
   genuinely gate it?
 - Should any tickets be merged or split further?
-- Which project and epic should these land under — a new one, or an existing one?
+- Which project should these land under — a new one, or an existing one?
 
 **Iterate until the user approves the breakdown. Do not publish before that.**
 
@@ -77,37 +77,33 @@ Resolve the destination before publishing:
 
 ```bash
 curl -s "$JTICKET/api/projects" | jq '.[] | {key, title, mode}'
-curl -s "$JTICKET/api/epics"    | jq '.[] | {key, title, projectId}'
 ```
 
 ## 5. Publish
 
-One `POST /api/import` for the whole breakdown. Import resolves `project`, `epic`, and
+One `POST /api/import` for the whole breakdown. Import resolves `project` and
 `blockedBy` by **title or key**, so no ids are needed and edges can reference tickets
 declared later in the same call.
 
 ```bash
 curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
   "projects": [{ "title": "Checkout", "description": "Everything payments-related" }],
-  "epics":    [{ "title": "Checkout revamp", "description": "New payment flow",
-                 "project": "Checkout" }],
   "tickets": [
     { "title": "Add cart schema", "description": "Persist a cart across sessions.",
-      "type": "AFK", "epic": "Checkout revamp",
+      "type": "AFK", "project": "Checkout",
       "acceptanceCriteria": ["A cart survives a refresh", "Two tabs see one cart"] },
     { "title": "Cart UI", "description": "Edit quantities from the cart page.",
-      "type": "AFK", "epic": "Checkout revamp", "blockedBy": ["Add cart schema"],
+      "type": "AFK", "project": "Checkout", "blockedBy": ["Add cart schema"],
       "acceptanceCriteria": ["Quantity edits persist"] }
   ]
 }'
 ```
 
-**Reuse, don't duplicate.** Import always creates — it never upserts. If the project or
-epic already exists, omit it from the payload and reference it **by key** from the
-tickets:
+**Reuse, don't duplicate.** Import always creates — it never upserts. If the project
+already exists, omit it from the payload and reference it **by key** from the tickets:
 
 ```jsonc
-{ "tickets": [ { "title": "…", "epic": "EPIC-2", "blockedBy": ["TICK-3"] } ] }
+{ "tickets": [ { "title": "…", "project": "PROJ-2", "blockedBy": ["TICK-3"] } ] }
 ```
 
 Ticket bodies follow this shape — see the `to-jspec` skill
@@ -140,7 +136,7 @@ Do **not** modify or close any parent ticket or doc.
 Import drops unresolvable refs silently, so check the edges actually landed:
 
 ```bash
-curl -s "$JTICKET/api/tickets?epicId=EPIC-2" \
+curl -s "$JTICKET/api/tickets?projectId=PROJ-2" \
   | jq '.[] | {key, title, type, blockedBy, blocked, frontier}'
 ```
 

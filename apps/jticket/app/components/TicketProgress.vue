@@ -2,14 +2,14 @@
 // A ticket set as one stacked bar: done · in progress · blocked · not started.
 // The four states are mutually exclusive and blocked wins over the ticket's own
 // status — something waiting on a blocker isn't moving, whatever it says. Same
-// precedence EpicBlock uses to bucket a board.
+// precedence TicketBoard uses to bucket a board.
 import type { Ticket } from '~/composables/useTracker'
 
 const props = defineProps<{
   // The tickets being summarised…
   tickets: Ticket[]
   // …and every ticket in the tracker, so blocked-by edges resolve even when the
-  // blocker lives in another epic.
+  // blocker lives in another project.
   allTickets: Ticket[]
   legend?: boolean
 }>()

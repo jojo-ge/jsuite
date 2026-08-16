@@ -14,7 +14,7 @@ const form = useTemplateRef('form')
   <UModal
     :open="open"
     :title="isEdit ? `Edit ${project?.key}` : 'New project'"
-    :description="isEdit ? 'Update this project.' : 'Group related epics under a project.'"
+    :description="isEdit ? 'Update this project.' : 'Group related tickets under a project.'"
     @update:open="emit('update:open', $event)"
   >
     <template #body>

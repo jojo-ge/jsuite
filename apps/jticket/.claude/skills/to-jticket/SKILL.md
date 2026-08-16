@@ -1,12 +1,12 @@
 ---
 name: to-jticket
-description: Interface with jTicket — the local projects/epics/tickets/docs tracker. Break a plan into tickets (to-tickets), author or update any project, epic, ticket, doc or attachment, and query the board. For writing a spec as a doc, and for which format each field takes, use to-jspec.
+description: Interface with jTicket — the local projects/tickets/docs tracker. Break a plan into tickets (to-tickets), author or update any project, ticket, doc or attachment, and query the board. For writing a spec as a doc, and for which format each field takes, use to-jspec.
 disable-model-invocation: true
 ---
 
 # To jTicket
 
-[jTicket](http://localhost:43000) is a **local** task tracker — projects, epics, tickets
+[jTicket](http://localhost:43000) is a **local** task tracker — projects and tickets
 (title, description, acceptance criteria, blocked-by edges) plus **docs**, draft
 Confluence-style pages. It is not connected to Jira or Confluence and has no relation
 to them. It exists so a breakdown or a document can be authored **locally first**, for
@@ -43,9 +43,11 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 
 ## 2. Core model
 
-- **Project** `PROJ-n` — `{ key, title, description, mode }`. `mode` is `standard` or `wayfinder`.
-- **Epic** `EPIC-n` — `{ key, title, description, projectId, labels[] }`. `projectId` may be null.
-- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, epicId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`
+- **Project** `PROJ-n` — `{ key, title, description, mode, repo, integrationBranch }`. `mode` is
+  `standard` or `wayfinder`. `repo` (path to a local clone) + `integrationBranch` are the
+  optional GitHub link — see **GitHub** below; both `""` when unset.
+- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`
+  - `projectId`: the parent project; `null` = backlog
   - `type`: `AFK` (an agent can take it cold) or `HITL` (needs a human)
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name; `""` = unassigned. **The assignee is the claim.**
@@ -93,13 +95,13 @@ One-off reads and writes. Resolve the target first (keys are the friendly handle
 ```bash
 # read the board
 curl -s "$JTICKET/api/projects"
-curl -s "$JTICKET/api/tickets?epicId=EPIC-2&status=todo"
+curl -s "$JTICKET/api/tickets?projectId=PROJ-2&status=todo"
 curl -s "$JTICKET/api/tickets/TICK-4"
 
-# add one ticket to an existing epic
+# add one ticket to an existing project
 curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' -d '{
   "title": "Persist the cart", "description": "…", "type": "AFK",
-  "epicId": "EPIC-2", "acceptanceCriteria": ["Survives refresh"], "blockedBy": ["TICK-3"] }'
+  "projectId": "PROJ-2", "acceptanceCriteria": ["Survives refresh"], "blockedBy": ["TICK-3"] }'
 
 # update
 curl -s -X PATCH "$JTICKET/api/tickets/TICK-4" -H 'content-type: application/json' \
@@ -110,9 +112,43 @@ curl -s "$JTICKET/api/tickets/TICK-4/comments" -H 'content-type: application/jso
   -d '{ "author": "claude", "body": "Blocked on the schema question — see TICK-3." }'
 ```
 
+### GitHub
+
+A project can be wired to a local clone, which turns on its pull-request view:
+
+```bash
+# repos this tracker has been pointed at before — prefer one of these over
+# guessing a path (each row carries its slug and which projects use it)
+curl -s "$JTICKET/api/repos"
+
+# wire the project to a repo (path, '~' allowed — the same path jDiff takes)
+curl -s -X PATCH "$JTICKET/api/projects/PROJ-3" -H 'content-type: application/json' \
+  -d '{ "repo": "~/code/my-repo" }'
+
+# cut the integration branch: an EMPTY branch off the default branch, pushed to
+# origin, that this project's PRs target. Idempotent — an existing branch is adopted.
+curl -s "$JTICKET/api/projects/PROJ-3/integration-branch" \
+  -H 'content-type: application/json' -d '{}'    # or { "branch": "...", "base": "..." }
+
+# …or adopt a branch that already exists: search the repo's branches (local and
+# on origin) and set the one you want — nothing is created or pushed
+curl -s "$JTICKET/api/projects/PROJ-3/branches?q=checkout"
+curl -s -X PATCH "$JTICKET/api/projects/PROJ-3" -H 'content-type: application/json' \
+  -d '{ "integrationBranch": "release/checkout" }'
+
+# the project's open PRs, each with a jDiff link and a github.com link
+curl -s "$JTICKET/api/projects/PROJ-3/github"
+```
+
+A PR belongs to a project if its **head** is the integration branch (the roll-up PR),
+its **base** is the integration branch, or its head branch / title names one of the
+project's keys (`PROJ-3`, `TICK-12`). That last rule is worth exploiting:
+**name the branch after the ticket** (`tick-12-persist-the-cart`) and the PR lands on
+the project's list on its own.
+
 Rules for direct writes:
 
-- **Never delete** a project, epic, ticket, or doc unless the user asks for that
+- **Never delete** a project, ticket, or doc unless the user asks for that
   specific thing by key. Deletes are unrecoverable — the store is one JSON file.
 - PATCH is a **field-level replace**, not a merge, for every array field. To add one
   `blockedBy` edge or one label, GET the current array, append, PATCH the whole thing.
@@ -124,17 +160,17 @@ Rules for direct writes:
 These are the ways a write silently does the wrong thing. All of them are real.
 
 1. **Only `/api/import` resolves refs by title.** `POST`/`PATCH` on `/api/tickets`
-   resolve `blockedBy` and `epicId` by **id or key only** — a title is silently dropped,
+   resolve `blockedBy` and `projectId` by **id or key only** — a title is silently dropped,
    leaving the edge missing and no error. Use keys outside import.
-2. **`/api/import` never upserts — it always creates.** Passing an existing project or
-   epic title in the `projects` / `epics` arrays makes a *duplicate*. To add tickets to
-   an existing epic, send only `tickets` and reference the epic by its key.
+2. **`/api/import` never upserts — it always creates.** Passing an existing project
+   title in the `projects` array makes a *duplicate*. To add tickets to an existing
+   project, send only `tickets` and reference the project by its key.
 3. **Unresolvable refs vanish without error.** After any import or edge write, GET the
    tickets back and confirm `blockedBy` is populated as intended.
 4. **`wayfinderType` shorthand exists only on import.** Elsewhere, set the
    `wayfinder:<type>` label explicitly in `labels`.
-5. **Epic PATCH takes `projectId`** (id or key) — not `project`. Docs take either
-   `project` (id, key, **or** title) or `projectId`.
+5. **Ticket POST/PATCH take `projectId`** (id or key) — not `project`. Docs take either
+   `project` (id, key, **or** title) or `projectId`; import tickets take `project`.
 6. **A ticket cannot block itself** — the API drops that edge.
 7. **`blocked` / `claimed` / `frontier` are read-only**, computed per GET. Writing them
    does nothing.

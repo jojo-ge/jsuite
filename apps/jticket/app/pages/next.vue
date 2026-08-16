@@ -4,16 +4,16 @@
 //
 // The board answers "what exists" and /running answers "what is moving". This
 // answers the question you actually have between sessions — what can be picked
-// up right now — which until now meant reading every epic and doing the
+// up right now — which until now meant reading every project and doing the
 // blocked/claimed arithmetic by eye. Each row carries the hand-off command, so
 // the page ends in dispatch rather than in another click.
-import type { Epic, Project, Ticket, WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, WayfinderType } from '~/composables/useTracker'
 
 useHead({ title: 'Up next' })
 
 // `changed` is the live-update highlight set — a ticket that arrives on the
 // frontier while you are looking at it flashes like it does on the board.
-const { projects, epics, tickets, updateTicket, changed: changedTickets } = useTracker()
+const { projects, tickets, updateTicket, changed: changedTickets } = useTracker()
 const { openEditTicket } = useTrackerModals()
 const toast = useToast()
 
@@ -39,12 +39,10 @@ function byKey(a: Ticket, b: Ticket) {
 // ring with and the same rule `?frontier=true` serves to agents.
 const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, tickets.value)).sort(byKey))
 
-const epicById = computed(() => new Map(epics.value.map((e) => [e.id, e])))
 const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))
 
 function projectOf(ticket: Ticket): Project | null {
-  const epic = ticket.epicId ? epicById.value.get(ticket.epicId) : null
-  return epic?.projectId ? (projectById.value.get(epic.projectId) ?? null) : null
+  return ticket.projectId ? (projectById.value.get(ticket.projectId) ?? null) : null
 }
 
 const shown = computed(() =>
@@ -60,57 +58,59 @@ const shown = computed(() =>
 interface NextRow {
   ticket: Ticket
   wf: (typeof WAYFINDER_TYPE_META)[WayfinderType] | null
+  // Whether the ticket lives in a wayfinder project — it decides which
+  // hand-off command the row copies, not just how the row is decorated.
+  wayfinder: boolean
 }
 interface NextGroup {
-  epic: Epic | null
   project: Project | null
   rows: NextRow[]
 }
 
-// One group per epic that has something takeable, in epic order, with loose
-// backlog tickets last — the same shape /running groups into, so the two flow
-// pages read the same way.
+// One group per project that has something takeable, in project order, with
+// loose backlog tickets last — the same shape /running groups into, so the two
+// flow pages read the same way.
 const groups = computed<NextGroup[]>(() => {
-  const byEpic = new Map<string, Ticket[]>()
+  const byProject = new Map<string, Ticket[]>()
   const loose: Ticket[] = []
   for (const t of shown.value) {
-    if (!t.epicId) {
+    if (!t.projectId) {
       loose.push(t)
       continue
     }
-    const bucket = byEpic.get(t.epicId)
+    const bucket = byProject.get(t.projectId)
     if (bucket) bucket.push(t)
-    else byEpic.set(t.epicId, [t])
+    else byProject.set(t.projectId, [t])
   }
 
   const rowsFor = (list: Ticket[], project: Project | null): NextRow[] =>
     list.map((ticket) => {
-      const type = project?.mode === 'wayfinder' ? wayfinderType(ticket) : null
-      return { ticket, wf: type ? WAYFINDER_TYPE_META[type] : null }
+      const wayfinder = project?.mode === 'wayfinder'
+      const type = wayfinder ? wayfinderType(ticket) : null
+      return { ticket, wf: type ? WAYFINDER_TYPE_META[type] : null, wayfinder }
     })
 
   const out: NextGroup[] = []
-  for (const epic of epics.value) {
-    const ready = byEpic.get(epic.id)
+  for (const project of projects.value) {
+    const ready = byProject.get(project.id)
     if (!ready) continue
-    const project = epic.projectId ? (projectById.value.get(epic.projectId) ?? null) : null
-    out.push({ epic, project, rows: rowsFor(ready, project) })
+    out.push({ project, rows: rowsFor(ready, project) })
   }
-  if (loose.length) out.push({ epic: null, project: null, rows: rowsFor(loose, null) })
+  if (loose.length) out.push({ project: null, rows: rowsFor(loose, null) })
   return out
 })
 
-// Collapsing an epic group is a per-page preference that outlives the session —
-// the frontier is a page you come back to, and re-hiding the same finished-with
-// epics on every visit is the friction this removes.
+// Collapsing a project group is a per-page preference that outlives the
+// session — the frontier is a page you come back to, and re-hiding the same
+// finished-with projects on every visit is the friction this removes.
 const { isCollapsed, toggle: toggleGroup, collapseAll, expandAll, prune } = useCollapsedGroups('jticket-next-collapsed')
-const groupKey = (g: NextGroup) => g.epic?.id ?? 'no-epic'
-// Prune against every epic, not the visible groups — a filtered-out epic is
-// still an epic, and should keep whatever collapsed state it had.
-// An empty list means the tracker has not loaded yet, not that every epic
+const groupKey = (g: NextGroup) => g.project?.id ?? 'no-project'
+// Prune against every project, not the visible groups — a filtered-out project
+// is still a project, and should keep whatever collapsed state it had.
+// An empty list means the tracker has not loaded yet, not that every project
 // vanished — pruning against it would forget every fold.
-watch(epics, (list) => {
-  if (list.length) prune([...list.map((e) => e.id), 'no-epic'])
+watch(projects, (list) => {
+  if (list.length) prune([...list.map((p) => p.id), 'no-project'])
 })
 const allCollapsed = computed(() => groups.value.length > 0 && groups.value.every((g) => isCollapsed(groupKey(g))))
 function toggleAll() {
@@ -176,9 +176,20 @@ watch(promptTarget, (value) => localStorage.setItem('jticket-next-prompt', value
 
 const prompt = computed(() => PROMPTS.find((p) => p.value === promptTarget.value) ?? PROMPTS[0])
 
+// Wayfinder tickets are not implementation work — the frontier of a map is
+// research, prototypes and grillings, and /jwayfinder is the skill that reads
+// one. So there the hand-off is the bare command: no worktree, no PR target,
+// which is why the prompt picker above does not apply to these rows.
+function commandLabel(wayfinder: boolean) {
+  return wayfinder ? '/jwayfinder' : '/jimplement'
+}
+function commandFor(t: Ticket, wayfinder: boolean) {
+  return wayfinder ? `/jwayfinder ${t.key}` : prompt.value.command(t.key)
+}
+
 const copied = ref<string | null>(null)
-async function copyCommand(t: Ticket) {
-  const command = prompt.value.command(t.key)
+async function copyCommand(t: Ticket, wayfinder: boolean) {
+  const command = commandFor(t, wayfinder)
   try {
     await navigator.clipboard.writeText(command)
     copied.value = t.id
@@ -299,32 +310,23 @@ async function start(t: Ticket) {
               color="neutral"
               size="xs"
               :aria-expanded="!isCollapsed(groupKey(g))"
-              :aria-label="`${isCollapsed(groupKey(g)) ? 'Expand' : 'Collapse'} ${g.epic?.title ?? 'tickets with no epic'}`"
+              :aria-label="`${isCollapsed(groupKey(g)) ? 'Expand' : 'Collapse'} ${g.project?.title ?? 'tickets with no project'}`"
               @click="toggleGroup(groupKey(g))"
             />
             <NuxtLink
               v-if="g.project"
               :to="`/projects/${g.project.key}`"
-              class="inline-flex items-center gap-1.5 text-xs text-muted hover:text-primary"
-            >
-              <UIcon name="i-lucide-folder-tree" class="size-3.5" />
-              <span class="font-mono">{{ g.project.key }}</span>
-              <span class="max-w-48 truncate">{{ g.project.title }}</span>
-            </NuxtLink>
-            <span v-if="g.project && g.epic" class="text-xs text-muted">/</span>
-            <NuxtLink
-              v-if="g.epic"
-              :to="`/epics/${g.epic.key}`"
               class="group inline-flex items-center gap-1.5 hover:text-primary"
             >
-              <h2 class="text-sm font-semibold">{{ g.epic.title }}</h2>
+              <span class="font-mono text-xs text-muted">{{ g.project.key }}</span>
+              <h2 class="text-sm font-semibold">{{ g.project.title }}</h2>
               <UIcon
                 name="i-lucide-arrow-up-right"
                 class="size-3.5 text-muted opacity-0 transition group-hover:opacity-100"
               />
             </NuxtLink>
             <h2 v-else class="cursor-pointer text-sm font-semibold" @click="toggleGroup(groupKey(g))">
-              Tickets with no epic
+              Tickets with no project
             </h2>
             <UBadge color="primary" variant="subtle" size="sm">{{ g.rows.length }} ready</UBadge>
             <div class="h-px flex-1 bg-default" />
@@ -335,7 +337,7 @@ async function start(t: Ticket) {
             class="divide-y divide-default overflow-hidden rounded-lg border border-default"
           >
             <li
-              v-for="{ ticket: t, wf } in g.rows"
+              v-for="{ ticket: t, wf, wayfinder } in g.rows"
               :key="t.id"
               class="group cursor-pointer bg-elevated/20 px-4 py-3 transition hover:bg-elevated/60"
               :class="changedTickets[t.id] ? 'jt-moved' : ''"
@@ -377,10 +379,10 @@ async function start(t: Ticket) {
                     :color="copied === t.id ? 'success' : 'neutral'"
                     variant="soft"
                     size="xs"
-                    :aria-label="`Copy /jimplement ${t.key}`"
-                    @click.stop="copyCommand(t)"
+                    :aria-label="`Copy ${commandLabel(wayfinder)} ${t.key}`"
+                    @click.stop="copyCommand(t, wayfinder)"
                   >
-                    {{ copied === t.id ? 'Copied' : '/jimplement' }}
+                    {{ copied === t.id ? 'Copied' : commandLabel(wayfinder) }}
                   </UButton>
                   <UButton
                     icon="i-lucide-play"

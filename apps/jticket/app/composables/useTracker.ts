@@ -10,17 +10,11 @@ export interface Project {
   title: string
   description: string
   mode: ProjectMode
-  createdAt: string
-  updatedAt: string
-}
-
-export interface Epic {
-  id: string
-  key: string
-  title: string
-  description: string
-  projectId: string | null
-  labels: string[]
+  // GitHub link — '' when the project isn't wired to a repo. `repo` is a path
+  // to a local clone (what jDiff takes as ?repo=); `integrationBranch` is the
+  // empty branch this project's PRs target. See <ProjectGithub>.
+  repo: string
+  integrationBranch: string
   createdAt: string
   updatedAt: string
 }
@@ -42,7 +36,7 @@ export interface Ticket {
   acceptanceCriteria: string[]
   type: TicketType
   status: TicketStatus
-  epicId: string | null
+  projectId: string | null
   assignee: string
   labels: string[]
   resolution: string
@@ -80,7 +74,6 @@ export const CHANGE_HIGHLIGHT_MS = 10_000
 
 export function useTracker() {
   const projects = useState<Project[]>('jticket-projects', () => [])
-  const epics = useState<Epic[]>('jticket-epics', () => [])
   const tickets = useState<Ticket[]>('jticket-tickets', () => [])
   const docs = useState<Doc[]>('jticket-docs', () => [])
   // Ids of tickets that moved in the last live update (see useLiveTracker).
@@ -112,14 +105,12 @@ export function useTracker() {
   }
 
   async function refresh() {
-    const [p, e, t, d] = await Promise.all([
+    const [p, t, d] = await Promise.all([
       $fetch<Project[]>('/api/projects'),
-      $fetch<Epic[]>('/api/epics'),
       $fetch<Ticket[]>('/api/tickets'),
       $fetch<Doc[]>('/api/docs'),
     ])
     projects.value = p
-    epics.value = e
     tickets.value = t
     docs.value = d
   }
@@ -135,20 +126,6 @@ export function useTracker() {
   }
   async function deleteProject(id: string) {
     await $fetch(`/api/projects/${id}`, { method: 'DELETE' })
-    await refresh()
-  }
-
-  // ── Epics ──
-  async function createEpic(input: Partial<Epic>) {
-    await $fetch('/api/epics', { method: 'POST', body: input })
-    await refresh()
-  }
-  async function updateEpic(id: string, input: Partial<Epic>) {
-    await $fetch(`/api/epics/${id}`, { method: 'PATCH', body: input })
-    await refresh()
-  }
-  async function deleteEpic(id: string) {
-    await $fetch(`/api/epics/${id}`, { method: 'DELETE' })
     await refresh()
   }
 
@@ -191,7 +168,6 @@ export function useTracker() {
 
   return {
     projects,
-    epics,
     tickets,
     docs,
     changed,
@@ -200,9 +176,6 @@ export function useTracker() {
     createProject,
     updateProject,
     deleteProject,
-    createEpic,
-    updateEpic,
-    deleteEpic,
     createTicket,
     updateTicket,
     deleteTicket,
@@ -239,7 +212,6 @@ export function isFrontier(ticket: Ticket, all: Ticket[]): boolean {
 }
 
 // ── Wayfinder labels ──
-export const WAYFINDER_MAP_LABEL = 'wayfinder:map'
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task'
 export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
 
@@ -257,10 +229,6 @@ export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | n
     if (m) return m[1] as WayfinderType
   }
   return null
-}
-
-export function isMapEpic(epic: Pick<Epic, 'labels'>): boolean {
-  return (epic.labels ?? []).includes(WAYFINDER_MAP_LABEL)
 }
 
 // ── Completion times ──

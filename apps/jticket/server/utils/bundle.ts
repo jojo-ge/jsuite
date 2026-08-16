@@ -1,6 +1,6 @@
 import type { Explainer, DocNotes } from '@jsuite/documents/store'
 import type { Chart, ChartNotes } from '@jsuite/charting/store'
-import type { Project, Epic, Ticket, Doc } from './store'
+import type { Project, Ticket, Doc } from './store'
 
 // A project bundle is the portable form of one project — everything needed to
 // recreate it on another jSuite install: the tracker records, the doc bodies
@@ -32,11 +32,16 @@ export interface ProjectBundle {
   version: 1
   exportedAt: string
   project: Project
-  epics: Epic[]
   tickets: Ticket[]
   docs: BundleDoc[]
   charts: BundleChart[]
   attachments: BundleAttachment[]
+}
+
+// Bundles exported before the epic layer was removed carry it between project
+// and tickets; the importer folds it away (see projects/import.post.ts).
+export interface LegacyBundleEpic {
+  description?: string
 }
 
 /** Every /attachments/<name> reference in a blob of text (markdown or JSON). */
