@@ -43,5 +43,11 @@ the shared chart pool (`.data/jchart/`).
 Plus `/api/documents/**` and `/api/charts/**` from the `@jsuite/documents` /
 `@jsuite/charting` layers this app extends.
 
+Those layers also put the whole shared pool on screen here, at `/documents`.
+jGrilling mounts that library itself so it can withhold delete, and points it at
+its own `/e/<key>` reader (which `/documents/<key>` redirects to): a debrief is
+deleted from jExplain, not from here. Deleting a *session* is jGrilling's to
+offer — the debrief it wrote outlives it.
+
 The `j-grilling` skill (in `.claude/skills/`) lets a Claude Code session push
 the plan it's discussing into a session and hand you the URL.
