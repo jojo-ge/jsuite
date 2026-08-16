@@ -2,6 +2,15 @@
 
 A local GitHub client that's really good at diffs. Nuxt 4 app; `gh` lists PRs, local `git` computes and highlights diffs. See README.md for architecture.
 
+**The UI is not in this app.** Every review screen — the PR page, the branch
+review, the diff itself, comments, the guidance summaries — lives in the
+`@jsuite/diff` layer at `packages/diff/app/`, which this app extends. What's
+here is `app/pages/*.vue`, two-line aliases mounting those screens on jDiff's
+short routes, plus the scratch prototypes under `app/components/scratch/`. Do UI
+work in `packages/diff/app/`; touch this app only for the aliases, the shell, or
+a prototype. Links between review screens go through `useDiffRoutes()`, never a
+hardcoded path — that is what keeps `/prs` and `/diffs/prs` the same screen.
+
 ## Design Context
 
 Before any UI work, read:

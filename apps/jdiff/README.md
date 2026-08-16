@@ -61,11 +61,27 @@ package; `npm link` (or `pnpm link --global`) puts it on your PATH.
 
 ## How it works
 
-The engine lives in the `@jsuite/diff` Nuxt layer (`packages/diff`), which this
-app `extends` — so every route below is served on jDiff's port, and on the port
-of any other jSuite app that extends the layer, against the same `.data/jdiff`
-pool. What stays in this app is the UI: the pages, the components, and the
-scratch prototypes.
+jDiff *is* the `@jsuite/diff` Nuxt layer (`packages/diff`), which this app
+`extends` — engine and UI both. Every route below is served on jDiff's port, and
+on the port of any other jSuite app that extends the layer, against the same
+`.data/jdiff` pool.
+
+What stays in this app is the shell: seven two-line pages that mount the layer's
+review screens on jDiff's short URLs, the `jdiff` CLI, and the scratch
+prototypes. The layer serves the same screens at `/diffs`, `/diffs/prs`,
+`/diffs/pr/<n>`, `/diffs/branch`, … — so `/prs` and `/diffs/prs` are the very
+same `<DiffPrList>`, not two copies of it. Which scheme an app uses is one line
+in its `app.config.ts`:
+
+```ts
+// apps/jdiff/app/app.config.ts — jDiff is nothing but reviews, so it takes the root
+export default defineAppConfig({
+  diff: { basePath: '', brand: 'jDiff' },
+})
+```
+
+`useDiffRoutes()` reads that, and every link between review screens goes through
+it.
 
 - `packages/diff/server/api/prs.get.ts` — `gh pr list` in the repo's directory
 - `packages/diff/server/api/diff.get.ts` — `git fetch origin +refs/pull/N/head:refs/jdiff/pr-N`
@@ -78,7 +94,16 @@ scratch prototypes.
 - `packages/diff/server/api/branch-*.ts` — local-branch endpoints: list branches,
   store/list/delete draft comments, and create a PR from a branch flushing its
   comments
+- `packages/diff/app/components/` — the review screens (`<DiffPrReview>`,
+  `<DiffBranchReview>`, `<DiffPrList>`, …) and the parts they are built from
+  (`<DiffFile>`, `<DiffFileNav>`, `<DiffFileGraph>`, `<DiffCommentList>`)
+- `packages/diff/app/composables/` — `useDiffRoutes` (where the UI is mounted),
+  `usePrArtifacts`, `useDiffAiTasks`, `useDiffNotifications`, `useDiffJump`
 - `packages/diff/app/utils/` — the review vocabulary the server and the UI share
-  (the rating shape, risk levels, tour shape, ask questions, file categories),
-  auto-imported and importable as `@jsuite/diff/rating`, `@jsuite/diff/risk`, …
+  (the rating shape, risk levels, tour shape, ask questions, file categories,
+  the comment entry), auto-imported and importable as `@jsuite/diff/rating`,
+  `@jsuite/diff/risk`, …
+- `packages/diff/app/assets/css/diff.css` — the palette, scoped to
+  `.diff-surface` / `.diff-overlay` so an app that only embeds a review screen
+  keeps its own theme everywhere else
 - `bin/jdiff.mjs` — the CLI
