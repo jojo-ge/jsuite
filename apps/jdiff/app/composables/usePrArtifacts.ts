@@ -1,7 +1,7 @@
-import type { SelfQuestion } from '~/utils/askYourself'
+import type { SelfQuestion } from '@jsuite/diff/askYourself'
 import type { ReviewRating } from '~/utils/rating'
-import type { FileRisk } from '~/utils/risk'
-import type { Tour } from '~/utils/tour'
+import type { FileRisk } from '@jsuite/diff/risk'
+import type { Tour } from '@jsuite/diff/tour'
 
 // The four guidance artifacts (rating, risk map, tour, ask yourself) for one
 // PR: each loads from its ~/.jdiff store on mount and is overwritten by the

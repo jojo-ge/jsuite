@@ -61,13 +61,24 @@ package; `npm link` (or `pnpm link --global`) puts it on your PATH.
 
 ## How it works
 
-- `server/api/prs.get.ts` — `gh pr list` in the repo's directory
-- `server/api/diff.get.ts` — `git fetch origin +refs/pull/N/head:refs/jdiff/pr-N`
+The engine lives in the `@jsuite/diff` Nuxt layer (`packages/diff`), which this
+app `extends` — so every route below is served on jDiff's port, and on the port
+of any other jSuite app that extends the layer, against the same `.data/jdiff`
+pool. What stays in this app is the UI: the pages, the components, and the
+scratch prototypes.
+
+- `packages/diff/server/api/prs.get.ts` — `gh pr list` in the repo's directory
+- `packages/diff/server/api/diff.get.ts` — `git fetch origin +refs/pull/N/head:refs/jdiff/pr-N`
   then `git diff origin/<base>...refs/jdiff/pr-N`, parsed with `parse-diff` and
   highlighted server-side with `shiki`
-- `server/utils/target.ts` — resolves a review "target" (a PR `?number=` or a
-  local branch `?branch=&base=`) into the git range, head ref, and store key
-  every shared route uses, so PRs and branches run through the same machinery
-- `server/api/branch-*.ts` — local-branch endpoints: list branches, store/list/
-  delete draft comments, and create a PR from a branch flushing its comments
+- `packages/diff/server/utils/target.ts` — resolves a review "target" (a PR
+  `?number=` or a local branch `?branch=&base=`) into the git range, head ref,
+  and store key every shared route uses, so PRs and branches run through the
+  same machinery
+- `packages/diff/server/api/branch-*.ts` — local-branch endpoints: list branches,
+  store/list/delete draft comments, and create a PR from a branch flushing its
+  comments
+- `packages/diff/app/utils/` — the review vocabulary the server and the UI share
+  (risk levels, tour shape, ask questions, file categories), auto-imported and
+  importable as `@jsuite/diff/risk`, `@jsuite/diff/tour`, …
 - `bin/jdiff.mjs` — the CLI

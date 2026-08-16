@@ -1,0 +1,24 @@
+{
+  "name": "@jsuite/diff",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared diff-review engine — target resolution, diff/graph/file/PR routes, claude analysis and the review artifact stores, packaged as a Nuxt layer any jSuite app can extend.",
+  "main": "./nuxt.config.ts",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./package.json": "./package.json",
+    "./askQuestions": "./app/utils/askQuestions.ts",
+    "./askYourself": "./app/utils/askYourself.ts",
+    "./fileCategories": "./app/utils/fileCategories.ts",
+    "./risk": "./app/utils/risk.ts",
+    "./tour": "./app/utils/tour.ts",
+    "./target": "./server/utils/target.ts"
+  },
+  "dependencies": {
+    "@jsuite/claude": "workspace:*",
+    "@jsuite/data": "workspace:*",
+    "parse-diff": "^0.12.0",
+    "shiki": "^4.3.1"
+  }
+}
