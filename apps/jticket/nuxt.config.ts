@@ -15,7 +15,7 @@ export default defineNuxtConfig({
   },
   css: ['~/assets/css/main.css'],
   devtools: { enabled: true },
-  // Pages set a bare page title ('Board', 'DOC-3 — Rollout plan'); app.vue's
+  // Pages set a bare page title ('Board', 'Rollout plan'); app.vue's
   // titleTemplate suffixes ' · jTicket'.
   app: {
     head: {
