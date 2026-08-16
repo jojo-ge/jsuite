@@ -77,12 +77,20 @@ the shape — that's why the layer's `app/utils/scene.ts` has `labelForElement()
 | | |
 |---|---|
 | `GET /api/charts` | list (key, title, counts, timestamps) |
-| `POST /api/charts` | `{ title, mermaid?, key?, replace? }` → `{ key, title, path }` (`path` is `/charts/<key>`, which every consumer serves) |
+| `POST /api/charts` | `{ title, mermaid?, key?, replace? }` → `{ key, title }` — no URL, see below |
 | `GET/PUT/DELETE /api/charts/:key` | PUT patches any of `{ title, source, scene }` |
 | `GET/PUT /api/charts/:key/notes` | `{ general, notes[] }` |
 
 The `j-chart` skill (`~/.claude/skills/j-chart/`) drives `POST /api/charts` and
 then reads the two files directly.
+
+**Create returns the key, not a URL.** Where a chart is *served* is the app's
+fact, not the pool's — jChart's workbench is `/c/<key>`, everyone else's is
+`/charts/<key>` — and one shared handler cannot tell which app it is in; the
+comment on `index.post.ts` has the full reason. So the caller routes the key:
+`useChartRoutes()` on the client. On the server, note that charting has no
+`chartRoutes()` to match `@jsuite/diff`'s `diffRoutes()` yet, so a consumer's
+Nitro code still writes its own prefix out — see TICK-197.
 
 ## Stack notes
 

@@ -1,7 +1,7 @@
 import { blankChart, keyFromTitle, uniqueKey, writeChart } from '../../utils/store'
 
 /**
- * Create a chart. Body: { title, mermaid?, key?, replace? }
+ * Create a chart. Body: { title, mermaid?, key?, replace? } → { key, title }
  *
  * The Mermaid source is stored as-is and converted to Excalidraw shapes by the
  * editor on first open — the conversion needs a DOM, so it can't run here.
@@ -23,7 +23,13 @@ export default defineEventHandler(async (event) => {
   })
   await writeChart(key, chart)
 
-  // The layer's own route, so `path` is openable in every consumer of it —
-  // jChart's shorter /c/<key> is an alias over the same component.
-  return { key, title, path: `/charts/${key}` }
+  // The key, and no path. A chart's URL is a fact about the app that mounts this
+  // layer, not about the pool it writes into — jChart's workbench is /c/<key>,
+  // everyone else's is /charts/<key> — and this handler is the same code in all
+  // of them, with no way to tell which one it is running in: Nuxt's import
+  // protection refuses `app.config.ts` (and `#build/*`) from server runtime, on
+  // purpose. So the route table stays where it can be right: `useChartRoutes()`
+  // on the client, the app's own prefix in a consumer's own Nitro code. A caller
+  // that knows which app it just POSTed to already knows how to open the key.
+  return { key, title }
 })
