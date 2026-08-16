@@ -66,8 +66,10 @@ line clamp stays honest.
     existing one; `PATCH` with `blocks` rewrites it (notes survive). Full
     reference at **/api-guide** in the running app.
   - `status`: `draft` · `ready`
-  - Images: `POST /api/attachments` with `{ name, base64 }` → serve from
-    `/attachments/<name>`, reference as `![alt](/attachments/<name>)` in prose.
+  - Images: `POST /api/uploads` with `{ name, base64 }` → serve from
+    `/uploads/<name>`, reference as `![alt](/uploads/<name>)` in prose. The old
+    `/api/attachments` and `/attachments/<name>` paths redirect here, so prose
+    written before the rename still resolves.
 
 ## HTTP API
 
@@ -82,7 +84,8 @@ See **/api-guide** in the running app. Summary:
 | POST | `/api/import` | Bulk-create a whole breakdown at once |
 | GET/POST | `/api/docs` | List (`?projectId=`, `?status=`, `?label=`) / create docs |
 | GET/PATCH/DELETE | `/api/docs/:id` | Read / update / delete a doc (id or key) |
-| GET/POST | `/api/attachments` | List / upload attachments for docs |
+| GET/POST | `/api/uploads` | List / upload files for docs (`/uploads/<name>`) |
+| GET/POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)

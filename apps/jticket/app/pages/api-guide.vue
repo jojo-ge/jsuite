@@ -32,7 +32,7 @@ const endpoints = [
   { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its tickets' },
   { m: 'PATCH', p: '/api/projects/:id', d: 'Update a project' },
   { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (tickets → backlog)' },
-  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, attachments)' },
+  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, uploads)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
   { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch and matching open PRs (?force=1 skips the 30s cache)" },
   { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
@@ -59,8 +59,9 @@ const endpoints = [
   { m: 'POST', p: '/api/documents', d: 'Create/replace a shared document { title, blocks, key?, replace? }' },
   { m: 'GET', p: '/api/documents/:key', d: 'Get a shared document / :key/notes for its notes' },
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
-  { m: 'GET', p: '/api/attachments', d: 'List uploaded attachments' },
-  { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
+  { m: 'GET', p: '/api/uploads', d: 'List uploaded files' },
+  { m: 'POST', p: '/api/uploads', d: 'Upload { name, base64 } → served at /uploads/:name' },
+  { m: 'GET', p: '/api/attachments', d: 'Legacy alias — redirects to /api/uploads (as does /attachments/:name)' },
 ]
 
 const docExample = `curl -s http://localhost:43000/api/docs \\

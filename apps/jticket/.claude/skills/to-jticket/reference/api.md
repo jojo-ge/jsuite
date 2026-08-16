@@ -15,8 +15,10 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | POST | `/api/import` | Bulk-author a whole breakdown |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
-| GET / POST | `/api/attachments` | List / upload attachments |
-| GET | `/attachments/:name` | Serve an uploaded file |
+| GET / POST | `/api/uploads` | List / upload files |
+| GET | `/uploads/:name` | Serve an uploaded file |
+| GET / POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
+| GET | `/attachments/:name` | Legacy alias — redirects to `/uploads/:name` |
 
 `:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`, `DOC-3`).
 
@@ -130,24 +132,30 @@ Docs render at `$JTICKET/docs/DOC-n` and are listed at the top of the board. The
 shared pool itself is at `GET /api/documents` (also served by jExplain — one
 document system, two apps).
 
-### Attachments
+### Uploads
+
+Uploads are **files** — the images you embed in markdown. Write to `/api/uploads`.
 
 ```jsonc
-POST /api/attachments
+POST /api/uploads
 { "name": "checkout-flow.png",
   "base64": "iVBORw0KGgo…" }            // bare base64 or a full data: URL
-→ 201 { "name": "checkout-flow.png", "url": "/attachments/checkout-flow.png", "size": 20480 }
+→ 201 { "name": "checkout-flow.png", "url": "/uploads/checkout-flow.png", "size": 20480 }
 ```
 
-Reference it from a doc body as `![Checkout flow](/attachments/checkout-flow.png)`.
+Reference it from a doc body as `![Checkout flow](/uploads/checkout-flow.png)`.
 **Same name overwrites** — no versioning, no warning.
 
 ```bash
 # upload a local file
-curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
+curl -s "$JTICKET/api/uploads" -H 'content-type: application/json' \
   -d "$(jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" \
         '{name:$n, base64:$b}')"
 ```
+
+`/api/attachments` and `/attachments/:name` still work — they redirect (308) to
+the `/uploads` equivalents, which is what keeps markdown written before the
+rename resolving. Prefer `/uploads` in anything you author now.
 
 ## Bulk import
 

@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 // Export one project (id or key) as a self-contained bundle for sharing:
 // project + tickets (comments included) + docs with their shared-pool bodies
-// inlined + the charts those docs embed + attachments referenced from any
+// inlined + the charts those docs embed + uploaded files referenced from any
 // markdown. Round-trips through POST /api/projects/import.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -49,9 +49,10 @@ export default defineEventHandler(async (event) => {
   }
 
   // Sweep every markdown surface (descriptions, resolutions, comments, doc
-  // bodies) for /attachments/<name> references and inline the files.
-  for (const name of attachmentRefs(JSON.stringify(bundle))) {
-    const p = join(ATTACHMENTS_DIR, name)
+  // bodies) for /uploads/<name> — and pre-rename /attachments/<name> —
+  // references, and inline the files.
+  for (const name of uploadRefs(JSON.stringify(bundle))) {
+    const p = join(UPLOADS_DIR, name)
     if (existsSync(p)) bundle.attachments.push({ name, base64: readFileSync(p).toString('base64') })
   }
 
