@@ -321,7 +321,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
       <span class="spinner" />
       <span>reading changed files &amp; extracting references…</span>
     </div>
-    <div v-else-if="error" class="error-box">{{ error.data?.message ?? error.message }}</div>
+    <div v-else-if="error" class="error-box">{{ fetchErrorMessage(error) }}</div>
     <template v-else-if="data">
       <div class="legend">
         <span v-for="c in usedCategories" :key="c" class="lg">

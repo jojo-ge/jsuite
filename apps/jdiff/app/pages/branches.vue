@@ -45,7 +45,7 @@ function linkTo(b: BranchInfo) {
     </p>
 
     <div v-if="pending" class="center"><span class="spinner" /></div>
-    <div v-else-if="error" class="error-box">{{ error.data?.message ?? error.message }}</div>
+    <div v-else-if="error" class="error-box">{{ fetchErrorMessage(error) }}</div>
     <div v-else-if="!branches.length" class="center muted">no local branches other than {{ defaultBranch }}</div>
 
     <ul v-else class="list">
