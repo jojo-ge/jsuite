@@ -16,6 +16,7 @@
     "dev:jexplain": "pnpm --filter jexplain dev --port 43004",
     "dev:jgrilling": "pnpm --filter jgrilling dev --port 43005",
     "dev:jrig": "pnpm --filter jrig dev --port 43006",
-    "typecheck": "pnpm -r --no-bail --if-present run typecheck"
+    "typecheck:constraints": "node scripts/check-typecheck-constraints.mjs",
+    "typecheck": "pnpm typecheck:constraints && pnpm -r --no-bail --if-present run typecheck"
   }
 }

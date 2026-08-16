@@ -51,8 +51,10 @@ that app's own skill rather than improvising one app's job in another.
   a bare `tsc`: it skips `.vue` entirely. TypeScript is pinned to 5.9 and
   `vue-router` to v5 workspace-wide because `vue-tsc` breaks on either bump, and
   a `packages/*` layer shipping `.vue` files must depend on `vue` itself or its
-  props silently go unchecked; see "Typechecking" in `README.md` before changing
-  those versions or adding a layer with components in it.
+  props silently go unchecked. All three are enforced by
+  `scripts/check-typecheck-constraints.mjs`, which runs first inside `pnpm
+  typecheck` and names the fix; see "Typechecking" in `README.md` before
+  changing those versions or adding a layer with components in it.
 - **Don't restart apps blindly.** `./jsuite status` first; `./jsuite start` is
   idempotent for already-running apps but refuses ports held by processes it
   didn't start. Logs are at `logs/<app>.log` (`./jsuite logs <app>`).
