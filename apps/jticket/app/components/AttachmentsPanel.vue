@@ -21,8 +21,16 @@ const props = withDefaults(
     ownerId: string
     /** Rendered flat (in a modal) rather than as a page section. */
     compact?: boolean
+    /**
+     * How a review opened from here should offer to get back to this record.
+     * The owner passes it because only the owner knows what to call itself and
+     * which page it is showing on; the layer just renders it in the review's
+     * bar. Nothing else here needs it — a document or a chart opens on a
+     * jTicket page that already wears the board's header.
+     */
+    from?: DiffFrom | null
   }>(),
-  { compact: false },
+  { compact: false, from: null },
 )
 
 const {
@@ -85,6 +93,16 @@ function toggle(a: ResolvedAttachment) {
 const openAttachment = computed(
   () => (attachments.value ?? []).find((a) => keyOf(a) === expanded.value && !a.missing) ?? null,
 )
+
+// "Open full" goes to the URL the server resolved — one place knows where an
+// artifact of each type lives — with the way back folded in by the layer that
+// owns review URLs. Only a destination without jTicket's header needs one, and
+// which types those are is ATTACHMENT_META's to say.
+const openUrl = computed(() => {
+  const a = openAttachment.value
+  if (!a?.url) return ''
+  return ATTACHMENT_META[a.type].hostChrome ? a.url : withFromUrl(a.url, props.from)
+})
 
 // A chart embeds its own fetch (<BlockChart> reads the pool itself); a document
 // needs its blocks here, so whatever opens one, the body follows it.
@@ -247,7 +265,7 @@ const view = ref<'rows' | 'chips'>('rows')
         <UIcon :name="ATTACHMENT_META[openAttachment.type].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="min-w-0 truncate text-xs font-medium text-muted">{{ openAttachment.title }}</span>
         <UButton
-          :to="openAttachment.url"
+          :to="openUrl"
           icon="i-lucide-maximize-2"
           size="xs"
           color="neutral"
@@ -280,7 +298,7 @@ const view = ref<'rows' | 'chips'>('rows')
       <!-- A diff: the review at a glance, read against the owning record's
            repo. `repo` is only ever set on a diff the server could resolve. -->
       <div v-else-if="openAttachment.type === 'diff'" class="p-3">
-        <DiffReviewCard :repo="openAttachment.repo ?? ''" :id="openAttachment.id" />
+        <DiffReviewCard :repo="openAttachment.repo ?? ''" :id="openAttachment.id" :from="from" />
       </div>
 
       <!-- A chart: the live canvas, autosaving to the shared pool -->

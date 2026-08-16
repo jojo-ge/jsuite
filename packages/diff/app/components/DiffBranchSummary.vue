@@ -80,6 +80,7 @@ function saveAnswer(i: number) {
   <main class="diff-surface summary-page">
     <header class="bar">
       <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <DiffHostBackLink />
       <NuxtLink :to="routes.branches(repo)" class="back">← branches</NuxtLink>
       <NuxtLink :to="reviewRoute" class="back">← diff</NuxtLink>
       <span class="slug">{{ info?.slug }}</span>

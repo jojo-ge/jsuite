@@ -40,16 +40,30 @@ export interface ResolvedAttachment extends Attachment {
  * diff's page needs the repo as well as the id, which only the server knows.
  * So the one place a full view is addressed from is `ResolvedAttachment.url`,
  * which the server resolves per ref, and all that is left to vary by type here
- * is how a row is labelled. What *renders* an opened artifact stays in
- * <AttachmentsPanel>: three embeds that share no shape worth tabulating.
+ * is how a row is labelled and whether its full view is a jTicket page. What
+ * *renders* an opened artifact stays in <AttachmentsPanel>: three embeds that
+ * share no shape worth tabulating.
  */
-export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: string }> = {
-  document: { label: 'Document', icon: 'i-lucide-file-text' },
+export const ATTACHMENT_META: Record<
+  AttachmentType,
+  {
+    label: string
+    icon: string
+    /**
+     * Does the full view wear jTicket's own <AppHeader>? Documents and charts
+     * open on jTicket pages that do; @jsuite/diff's review screens take the
+     * whole viewport and don't, which is why only a diff is handed a back-link
+     * on the way out (TICK-184).
+     */
+    hostChrome: boolean
+  }
+> = {
+  document: { label: 'Document', icon: 'i-lucide-file-text', hostChrome: true },
   // The same mark <BlockChart> puts on an embedded chart, so a chart looks like
   // a chart wherever it turns up. (It was the git-branch icon, which reads as a
   // diff — the one thing a chart is not.)
-  chart: { label: 'Chart', icon: 'i-lucide-shapes' },
-  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request' },
+  chart: { label: 'Chart', icon: 'i-lucide-shapes', hostChrome: true },
+  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request', hostChrome: false },
 }
 
 /** The stable identity of a ref — `type:id`, the key every list and map uses. */

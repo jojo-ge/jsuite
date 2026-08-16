@@ -315,6 +315,7 @@ async function createPr() {
   <main class="diff-surface branch-page">
     <header class="bar">
       <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <DiffHostBackLink />
       <NuxtLink :to="routes.branches(repo)" class="back">← branches</NuxtLink>
       <span class="slug">{{ info?.slug }}</span>
     </header>

@@ -13,13 +13,19 @@
 //
 // No useHead here: <DiffHome> sets its own title ('open a repo'), and a title
 // set in this parent would only be overwritten by the child a moment later.
+//
+// The heading names this corner of the app rather than taking the layer's
+// default of `diff.brand`, which in jTicket is 'jTicket' (see app.config.ts)
+// and would only say the app's name twice under its own header. Lowercase
+// because it renders inside `.diff-surface`, where jDiff's DESIGN.md rules —
+// short UI copy is lowercase there, whatever jTicket's own headings do.
 </script>
 
 <template>
   <div class="flex h-screen flex-col bg-default">
     <AppHeader />
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <DiffHome />
+      <DiffHome heading="diffs" />
     </div>
   </div>
 </template>

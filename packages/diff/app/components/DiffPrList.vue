@@ -136,6 +136,7 @@ const filtered = computed(() => [
   <main class="diff-surface prs">
     <header class="bar">
       <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <DiffHostBackLink />
       <span class="slug">{{ info?.slug ?? repo }}</span>
       <span class="tab on">pull requests</span>
       <NuxtLink :to="routes.branches(repo)" class="tab">local branches</NuxtLink>

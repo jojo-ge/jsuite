@@ -59,6 +59,16 @@ interface GithubInfo {
 
 const toast = useToast()
 const routes = useDiffRoutes()
+
+// Every one of these links leaves jTicket's chrome behind — the review screens
+// take the whole viewport — so each carries the way back to this project
+// (TICK-184). Same back-link the project page's own branch chip uses.
+const reviewBackLink = computed(() => projectBackLink(props.project))
+const prsLink = computed(() => withFrom(routes.prs(props.project.repo), reviewBackLink.value))
+const branchLink = (branch: string) =>
+  withFrom(routes.branch({ repo: props.project.repo, branch }), reviewBackLink.value)
+const prLink = (number: number) =>
+  withFrom(routes.pr(props.project.repo, number), reviewBackLink.value)
 const { refresh: refreshTracker } = useTracker()
 // Cutting the branch is shared with the project header's button — same action,
 // same in-flight state, and `revision` tells us when the other one changed it.
@@ -241,7 +251,7 @@ const prs = computed(() => data.value?.prs ?? [])
           <span v-else class="font-medium">{{ data.slug ?? 'local repo' }}</span>
           <span class="truncate font-mono text-xs text-muted">{{ data.repo }}</span>
           <UButton
-            :to="routes.prs(project.repo)"
+            :to="prsLink"
             icon="i-lucide-git-compare"
             size="xs"
             color="neutral"
@@ -281,7 +291,7 @@ const prs = computed(() => data.value?.prs ?? [])
               />
             </UTooltip>
             <UButton
-              :to="routes.branch({ repo: project.repo, branch: data.branch.name })"
+              :to="branchLink(data.branch.name)"
               icon="i-lucide-git-compare"
               size="xs"
               color="neutral"
@@ -367,7 +377,7 @@ const prs = computed(() => data.value?.prs ?? [])
           <div class="flex shrink-0 gap-1">
             <UTooltip text="Review this PR here">
               <UButton
-                :to="routes.pr(project.repo, pr.number)"
+                :to="prLink(pr.number)"
                 icon="i-lucide-git-compare"
                 size="xs"
                 color="neutral"

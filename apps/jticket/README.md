@@ -211,12 +211,22 @@ behind them, `/api/diff`, `/api/prs`, the artifact stores and the claude
 analysis runs. It is the same code jDiff serves at its own shorter routes, over
 the same `.data/jdiff` pool: a review created here reads back identically there.
 
-Two rules for anything that links to a review:
+Three rules for anything that links to a review:
 
 - **Never write a review path out.** Build it with `useDiffRoutes()` on the
   client or `diffRoutes(DIFF_BASE_PATH)` (`@jsuite/diff/routes`) on the server.
   A hardcoded `/pr/<n>` only works in jDiff, and a hardcoded `/diffs/pr/<n>`
   only works here.
+- **Carry the way back.** `/diffs` wears jTicket's header; the review screens
+  below it cannot, so a link that leaves for one hands over where it came from:
+  `withFrom(routes.pr(repo, n), projectBackLink(project))`, and
+  `<DiffHostBackLink>` renders `← PROJ-17` in the review's bar. What a record is
+  called and where it lives is `projectBackLink()` / `ticketBackLink()` in
+  `app/composables/reviewBackLink.ts` — one rule, three link sites. `?ticket=` is
+  a deep link app.vue consumes on arrival — it opens that ticket's modal and
+  strips itself from the URL, which is as close to a ticket route as jTicket
+  has. `diff.brand` is set to `jTicket` for the same reason; see
+  "Getting back out of a review" in the root README for the whole decision.
 - **The review surface brings its own palette.** `.diff-surface` is dark and
   scoped, so extending the layer doesn't repaint jTicket; `/diffs` is the one
   page that wears both (jTicket's header over the layer's ground), and

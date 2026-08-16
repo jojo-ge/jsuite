@@ -187,6 +187,33 @@ consumer's *server* code — which has no app config to read — can build the s
 links: that is how jTicket resolves an attached diff to a URL on its own review
 page rather than jDiff's.
 
+### Getting back out of a review
+
+A review screen takes the whole viewport, so a host can put its own header above
+the repo picker but not above a diff. Two things follow, and both are decided
+rather than incidental:
+
+- **`diff.brand` is the app, not the layer.** It is a link to `routes.home` —
+  in a host, that host's own diffs page, wearing that host's chrome — so it has
+  to be spelled the way the door it opens is. jDiff sets `'jDiff'`, jTicket sets
+  `'jTicket'`, and the layer's `'diffs'` is what a consumer that has not thought
+  about it yet gets. The repo picker is the exception: a host wrapping it in its
+  own header would only see the app's name twice, so `<DiffHome heading="…">`
+  overrides it there (jTicket says "Diffs", the nav entry that got you there).
+- **The way back to a specific record is a per-navigation back-link**, not
+  config: two reviews opened from two tickets go back to two different places.
+  A host puts one on a link with `withFrom(route, { path, label })`, or with
+  `withFromUrl(url, from)` when what it holds is an already-resolved review URL
+  (jTicket's Nitro routes turn a stored attachment ref into one, but which
+  record you came from is client-side knowledge that arrives afterwards). The
+  layer renders `<DiffHostBackLink>` in every screen's bar and `diffRoutes()`
+  carries the pair onto every link it builds, so it survives moving around
+  inside the review surface. The layer stays ticket-ignorant: it renders the
+  label it was given and points where it was told, having first checked the
+  path is same-origin. Nothing in jDiff sends one, so nothing renders there —
+  the mechanism is inert rather than switched off, so a URL hand-written with
+  `?from=` works anywhere the review screens do.
+
 Those seven are screens, and they behave like it — full height, teleported
 panels, they take the page title and the body's scroll. `<DiffReviewCard>` is
 the small one, for hosts that want a review *inside* a page: one target, what

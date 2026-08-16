@@ -1,6 +1,14 @@
 <script setup lang="ts">
 const routes = useDiffRoutes()
 
+// The picker is the one review screen a host can wrap in its own chrome, which
+// makes it the one place the brand is the wrong heading: under jTicket's header
+// `<h1>jTicket</h1>` just says the app's name twice. So the heading is the
+// brand where the app *is* the reviews (jDiff), and whatever the host calls
+// this corner of itself where it isn't.
+const props = withDefaults(defineProps<{ heading?: string }>(), { heading: '' })
+const heading = computed(() => props.heading || routes.brand)
+
 useHead({ title: 'open a repo' })
 
 const path = ref('')
@@ -52,7 +60,7 @@ async function open(target?: string) {
 
 <template>
   <main class="diff-surface home">
-    <h1>{{ routes.brand }}</h1>
+    <h1>{{ heading }}</h1>
     <p class="sub">point at a local clone; PRs come from github, diffs come from your git</p>
 
     <form class="picker" @submit.prevent="open()">

@@ -38,9 +38,18 @@ const stats = computed(() => ({
 // as the project's own endpoints do.
 const { creating: creatingBranch, createBranch } = useIntegrationBranch()
 const diffRoutes = useDiffRoutes()
+
+// A review screen has no jTicket header to get back from, so every link that
+// leaves this page for one carries the way back (TICK-184). <ProjectGithub>'s
+// rows take the same one.
+const reviewBackLink = computed(() => (project.value ? projectBackLink(project.value) : null))
+
 const branchReviewUrl = computed(() =>
   project.value?.repo && project.value.integrationBranch
-    ? diffRoutes.branch({ repo: project.value.repo, branch: project.value.integrationBranch })
+    ? withFrom(
+        diffRoutes.branch({ repo: project.value.repo, branch: project.value.integrationBranch }),
+        reviewBackLink.value,
+      )
     : null,
 )
 
@@ -146,7 +155,7 @@ async function removeProject() {
         <!-- The artifacts this project links: specs, diagrams, diffs. Each
              opens in place — a project is where you go to see what it is, and
              that is the documents and diagrams, not just the ticket list. -->
-        <AttachmentsPanel owner="projects" :owner-id="project.id" />
+        <AttachmentsPanel owner="projects" :owner-id="project.id" :from="reviewBackLink" />
 
         <!-- GitHub — the project's integration branch and its open PRs -->
         <ProjectGithub :project="project" @configure="openEditProject(project)" />
