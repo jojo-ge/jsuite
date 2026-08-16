@@ -303,8 +303,8 @@ async function createPr() {
     } else {
       router.push(routes.pr(repo.value, res.number))
     }
-  } catch (e: any) {
-    createError.value = e.data?.message ?? e.message ?? 'failed to create PR'
+  } catch (e) {
+    createError.value = fetchErrorMessage(e, 'failed to create PR')
   } finally {
     creating.value = false
   }

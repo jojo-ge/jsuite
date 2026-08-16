@@ -57,10 +57,6 @@ const targetError = ref('')
 // this should run on the server: `gh pr view` and `git` are seconds of
 // subprocess, and a host page must not wait on them to render. There is
 // nothing to hydrate either way — the card is opened by a click.
-function messageOf(err: any): string {
-  return String(err?.data?.message ?? err?.data?.statusMessage ?? err?.message ?? err)
-}
-
 async function load() {
   const t = target.value
   const q = { repo: props.repo, ...targetQuery(t) }
@@ -92,7 +88,7 @@ async function load() {
       if (!branch) throw new Error(`no local branch ${t.branch} in ${props.repo}`)
       return { pr: null, branch, base: list.defaultBranch }
     })().catch((err) => {
-      targetError.value = messageOf(err)
+      targetError.value = fetchErrorMessage(err, 'failed to load target')
       return { pr: null, branch: null, base: '' }
     }),
   ])

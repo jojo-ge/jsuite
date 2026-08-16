@@ -25,8 +25,8 @@ async function browse() {
       path.value = picked.path
       await open(picked.path)
     }
-  } catch (e: any) {
-    error.value = e.data?.message ?? e.message ?? 'folder picker failed'
+  } catch (e) {
+    error.value = fetchErrorMessage(e, 'folder picker failed')
   } finally {
     browsing.value = false
   }
@@ -42,8 +42,8 @@ async function open(target?: string) {
     const next = [{ path: info.path, slug: info.slug }, ...recents.value.filter((r) => r.path !== info.path)].slice(0, 10)
     localStorage.setItem('jdiff:recents', JSON.stringify(next))
     navigateTo(routes.prs(info.path))
-  } catch (e: any) {
-    error.value = e.data?.message ?? e.message ?? 'failed to open repo'
+  } catch (e) {
+    error.value = fetchErrorMessage(e, 'failed to open repo')
   } finally {
     busy.value = false
   }
