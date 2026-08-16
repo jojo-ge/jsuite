@@ -62,17 +62,22 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
     moving out of `done` clears it. `GET /api/tickets?finished=true` lists done tickets
     newest-first, `&since=<ISO>` narrows the window.
   - GET responses also carry derived `blocked` / `claimed` / `frontier` booleans (never persisted)
-- **Doc** `DOC-n` — `{ key, title, documentKey, projectId, labels[], status }`. The
-  content is a **block document** in the shared jSuite document system (`documentKey`
-  points into the pool jExplain also reads); `status` is `draft` or `ready`. Docs render
-  at `/docs/DOC-n` — and in jExplain.
+- **Attachment** `{ type: 'document' | 'chart' | 'diff', id }` — an artifact ref. Both
+  projects and tickets carry an `attachments` array; jTicket owns the link, and the
+  shared pools stay ticket-ignorant. `id` is a **document** key (the pool jExplain also
+  reads, rendered at `/documents/<key>`), a **chart** key (the jChart pool), or a jDiff review
+  target (`'123'` for a PR, `'branch/<name>'`), read against the owning project's `repo`.
+  There is no `DOC-n` wrapper record any more — a document belongs to a project by being
+  attached to it. Attach and detach with `POST` / `DELETE
+  /api/{projects,tickets}/:id/attachments`; `GET` the same path to resolve every ref to
+  its title and url, with dangling ones flagged `missing`.
 
 Keys are global and sequential across the whole store — `TICK-7` is the seventh ticket
 ever created, not the seventh in its project.
 
 Full endpoint list, query params, and payload shapes: **[reference/api.md](reference/api.md)**.
-Doc content is authored as blocks (the jExplain format — vocabulary in the `j-explain`
-skill); descriptions and resolutions are plain GFM markdown. See **`to-jspec`**,
+Document content is authored as blocks (the jExplain format — vocabulary in the
+`j-explain` skill); descriptions and resolutions are plain GFM markdown. See **`to-jspec`**,
 [SKILL.md](../to-jspec/SKILL.md), before writing any doc, description, or resolution.
 
 ## Mode: tickets

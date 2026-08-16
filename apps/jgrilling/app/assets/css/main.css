@@ -5,6 +5,10 @@
    renderers, DocumentArticle, NotesRail live outside this app's source tree). */
 @source "../../../../../packages/documents/app";
 
+/* And for @jsuite/charting's — the chart library and workbench it serves at
+   /charts are the layer's components too. */
+@source "../../../../../packages/charting/app";
+
 html,
 body,
 #__nuxt {

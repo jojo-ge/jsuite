@@ -31,11 +31,6 @@ const wayfinder = computed(
   () => projects.value.find((p) => p.id === props.defaultProjectId)?.mode === 'wayfinder',
 )
 
-// Docs are long-form and get their own page rather than a modal.
-const newDocTo = computed(() =>
-  props.defaultProjectId ? `/docs/new?project=${props.defaultProjectId}` : '/docs/new',
-)
-
 const saveLabel = { ticket: 'Create ticket', project: 'Create project' } as const
 </script>
 
@@ -70,10 +65,11 @@ const saveLabel = { ticket: 'Create ticket', project: 'Create project' } as cons
 
         <div v-if="tab === 'doc'" class="space-y-3 py-2">
           <p class="text-sm text-muted">
-            Docs are written on their own page — a full-width block editor rather than a modal.
+            Documents live in the shared pool, not in the tracker — create one from the documents
+            page, then attach it to a project or ticket.
           </p>
-          <UButton icon="i-lucide-file-plus" :to="newDocTo" @click="emit('update:open', false)">
-            New doc
+          <UButton icon="i-lucide-file-plus" to="/documents" @click="emit('update:open', false)">
+            All documents
           </UButton>
         </div>
       </div>

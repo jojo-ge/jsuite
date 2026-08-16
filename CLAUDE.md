@@ -11,14 +11,14 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 
 | Request smells like… | App | How to drive it |
 | --- | --- | --- |
-| tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement` |
+| tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement`. Also the **shell**: it serves the whole-pool Docs (`/documents`), Charts (`/charts`) and Diffs (`/diffs`) libraries, and renders a ticket's or project's attached documents, charts and diff reviews in place |
 | PR review, branch diff, review comments | `apps/jdiff` | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`); the UI itself is `packages/diff` |
 | diagrams the human edits/annotates | `apps/jchart` | skill `j-chart`; API on :43003; state in `.data/jchart/` |
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
 | grill/stress-test a plan with the human answering in a UI | `apps/jgrilling` | skill `j-grilling`; API on :43005; state in `.data/jgrilling/` |
 | avatar characters — draw, rig, keyframe 2D avatars | `apps/jrig` | studio at https://jrig.local; character/clip JSON in `.data/jrig/` (documents API on :43006); see `apps/jrig/docs/PLAN.md` |
-| charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
-| block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
+| charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` **and the chart UI** — library at `/charts`, workbench at `/charts/<key>` — in every consumer; jExplain charts ARE jChart charts |
+| block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` **and a whole-pool library at `/documents`** (reader at `/documents/<key>`) over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
 | diff review computed from a local checkout | shared pool | `packages/diff` serves the whole review API (`/api/diff`, `/api/prs`, `/api/analyze-generate`, the artifact stores) over `.data/jdiff/` **and the whole review UI** at `/diffs/…` in every consumer — jDiff just aliases it onto short routes |
 | running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff and jGrilling both drive claude through it |
 
