@@ -1,4 +1,5 @@
 import { DIFF_BASE_PATH, diffRouteUrl, diffRoutes } from '@jsuite/diff/routes'
+import { documentPath } from '@jsuite/documents/routes'
 import type { Attachment, Project, Store, Ticket } from './store'
 
 // The review routes as jTicket mounts them. jTicket sets no `diff.basePath` of
@@ -71,7 +72,7 @@ async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttach
       return {
         ...att,
         title: doc.title || att.id,
-        url: `/documents/${att.id}`,
+        url: documentPath(att.id),
         updatedAt: doc.updatedAt ?? '',
         missing: false,
       }

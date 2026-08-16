@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ExplainerMeta } from '@jsuite/documents/types'
+import { documentPath } from '@jsuite/documents/routes'
 import type { Project } from '~/composables/useTracker'
 
 // A document in the shared pool. `project` is passed in by whoever grouped it —
@@ -12,7 +13,7 @@ defineProps<{ doc: ExplainerMeta; project?: Project }>()
   <UCard
     :ui="{ body: 'p-4 sm:p-4' }"
     class="cursor-pointer transition hover:ring-2 hover:ring-primary/40"
-    @click="navigateTo(`/documents/${doc.key}`)"
+    @click="navigateTo(documentPath(doc.key))"
   >
     <div class="flex items-center gap-2">
       <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />

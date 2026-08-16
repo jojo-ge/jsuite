@@ -15,6 +15,10 @@ import { fileURLToPath } from 'node:url'
 //     the document store as Nitro server auto-imports
 //   - types via `@jsuite/documents/types` (client-safe) and
 //     `@jsuite/documents/store` (server)
+//   - `@jsuite/documents/routes` — DOCUMENTS_READER_BASE and documentPath(),
+//     the one place that knows a document reads at `<base>/<key>`. Client and
+//     Nitro code alike build a reader link through it rather than spelling the
+//     path out; see routes.ts for why the API can only name the layer's own
 //   - everything from @jsuite/charting (extended below): <ExcalidrawCanvas>,
 //     mermaidToScene(), /api/charts/** over the shared .data/jchart pool, and
 //     the chart UI itself — /charts and /charts/<key> as pages

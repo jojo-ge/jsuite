@@ -15,6 +15,8 @@
 // no delete affordance to withhold — where the layer's <DocumentLibrary> would
 // need :deletable="false" to reach the same place. /documents/<key> holds the
 // same line. See "who may delete out of the pool" in the root README for why.
+import { documentPath } from '@jsuite/documents/routes'
+
 useHead({ title: 'Documents' })
 
 const { documents, projects, tickets, refresh } = useTracker()
@@ -73,7 +75,7 @@ async function create() {
     creating.value = false
     newTitle.value = ''
     await refresh()
-    navigateTo(`/documents/${doc.key}`)
+    navigateTo(documentPath(doc.key))
   } catch (err) {
     // Stay open with what they typed — retyping a title because the pool was
     // briefly unreachable is a worse outcome than an inline error.

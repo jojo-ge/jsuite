@@ -1,5 +1,6 @@
 import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, cleanDocLabels, type Explainer } from '../../utils/store'
 import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
+import { documentPath } from '../../../routes'
 
 /**
  * Create a document in the shared pool. Body: { title, subtitle?, kicker?,
@@ -8,8 +9,12 @@ import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
  * Chart blocks may carry inline `mermaid`; they're materialised into the shared
  * jChart store and stored as { chartKey } references. `replace: true`
  * overwrites the named doc in place (keeping createdAt and its notes sidecar)
- * so a skill can re-publish a revision at the same URL. The returned `path`
- * is the jExplain reader route — the pool's canonical reading surface.
+ * so a skill can re-publish a revision at the same URL. The returned `path` is
+ * this app's own reader route: the pool is mounted in three apps and the layer's
+ * `/documents/<key>` is the one reader all three serve, so that — and not
+ * jExplain's branded `/e/<key>` — is what an answer from any of them can
+ * truthfully name (TICK-190). It comes from `documentPath()`, with the rest of
+ * the routing knowledge, rather than being spelled out here.
  *
  * On a replace, omitting `labels` keeps the ones already on the document —
  * re-publishing a revision is about the body, and a skill that rewrites blocks
@@ -40,5 +45,5 @@ export default defineEventHandler(async (event) => {
   }
   await writeDoc(key, doc)
 
-  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length, labels: doc.labels }
+  return { key, title, path: documentPath(key), blocks: doc.blocks.length, labels: doc.labels }
 })

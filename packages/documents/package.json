@@ -9,7 +9,8 @@
     ".": "./nuxt.config.ts",
     "./types": "./types.ts",
     "./store": "./server/utils/store.ts",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./routes": "./routes.ts"
   },
   "dependencies": {
     "@jsuite/charting": "workspace:*",
