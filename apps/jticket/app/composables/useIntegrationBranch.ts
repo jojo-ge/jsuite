@@ -3,6 +3,8 @@
 // Two places do this — the button in the project header and the GitHub panel
 // below it — and each has to see the other's result, so the action and the
 // "reload the panel" signal live here rather than in either component.
+import { fetchErrorMessage } from '@jsuite/http'
+
 export function useIntegrationBranch() {
   const toast = useToast()
   const { refresh: refreshTracker } = useTracker()
@@ -39,10 +41,10 @@ export function useIntegrationBranch() {
       await refreshTracker()
       invalidate()
       return true
-    } catch (err: any) {
+    } catch (err) {
       toast.add({
         title: 'Could not create the integration branch',
-        description: branchErrorText(err),
+        description: fetchErrorMessage(err, 'the request failed'),
         color: 'error',
         icon: 'i-lucide-triangle-alert',
       })
@@ -53,8 +55,4 @@ export function useIntegrationBranch() {
   }
 
   return { creating, revision, invalidate, createBranch }
-}
-
-export function branchErrorText(err: any): string {
-  return String(err?.data?.statusMessage ?? err?.data?.message ?? err?.statusMessage ?? err?.message ?? err)
 }

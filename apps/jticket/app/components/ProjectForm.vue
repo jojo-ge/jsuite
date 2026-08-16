@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Project create/edit fields, shared by ProjectModal and the tabbed create
 // modal. The parent owns the save button (save()/saving/canSave).
+import { fetchErrorMessage } from '@jsuite/http'
 import type { Project, ProjectMode } from '~/composables/useTracker'
 
 const props = withDefaults(
@@ -61,9 +62,9 @@ async function browse() {
   try {
     const picked = await $fetch<{ path: string | null }>('/api/repos/pick')
     if (picked.path) form.repo = picked.path
-  } catch (err: any) {
+  } catch (err) {
     // macOS-only; elsewhere (or if osascript is blocked) typing still works.
-    probe.value = { ok: false, path: form.repo, error: errorText(err) }
+    probe.value = { ok: false, path: form.repo, error: fetchErrorMessage(err, 'the folder picker failed') }
   } finally {
     browsing.value = false
   }
@@ -76,10 +77,6 @@ async function forgetRepo(path: string) {
 
 function repoLabel(r: KnownRepo): string {
   return r.slug || r.path.split('/').filter(Boolean).pop() || r.path
-}
-
-function errorText(err: any): string {
-  return String(err?.data?.statusMessage ?? err?.data?.message ?? err?.statusMessage ?? err?.message ?? err)
 }
 
 // What the project page would name the branch if you cut it there — shown as a

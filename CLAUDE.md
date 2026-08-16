@@ -21,6 +21,7 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` **and a whole-pool library at `/documents`** (reader at `/documents/<key>`) over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
 | diff review computed from a local checkout | shared pool | `packages/diff` serves the whole review API (`/api/diff`, `/api/prs`, `/api/analyze-generate`, the artifact stores) over `.data/jdiff/` **and the whole review UI** at `/diffs/…` in every consumer — jDiff aliases it onto short routes, jTicket mounts it as-is. Never write a review path out: `useDiffRoutes()` on the client, `diffRoutes()` (`@jsuite/diff/routes`) on the server |
 | running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff and jGrilling both drive claude through it |
+| the message to show when a `$fetch` fails | shared pool | `packages/http` (`fetchErrorMessage(error, fallback)`) — never hand-write an `err.data?.message ?? …` chain; the arm order is the module's whole point, see "@jsuite/http" in `README.md` |
 
 When a request spans apps (e.g. "spec this, then diagram it"), do each part with
 that app's own skill rather than improvising one app's job in another.
@@ -68,6 +69,6 @@ Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
 apps/             # jticket jdiff jchart jexplain jgrilling jrig
-packages/         # @jsuite/charting + @jsuite/documents + @jsuite/diff (Nuxt layers: pages, components, server routes), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner)
+packages/         # @jsuite/charting + @jsuite/documents + @jsuite/diff (Nuxt layers: pages, components, server routes), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner), @jsuite/http (fetch-error messages)
 .data/<app>/      # ALL app state, gitignored
 ```

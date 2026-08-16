@@ -75,6 +75,7 @@ jsuite/
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
     ├── diff/           # @jsuite/diff — shared diff-review engine + UI (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
+    ├── http/           # @jsuite/http — shared reading of a failed fetch's message
     └── data/           # @jsuite/data — shared .data resolver
 ```
 
@@ -314,6 +315,36 @@ return. Like `@jsuite/data` it is plain ESM with no layer to extend — add
 `"@jsuite/claude": "workspace:*"` to `dependencies` and import. Failures throw
 `ClaudeError` with an HTTP-ish `statusCode`, so h3 handlers can rethrow them
 directly. jDiff and jGrilling both run on it.
+
+## @jsuite/http
+
+`fetchErrorMessage(error, fallback)` — the one line of text an app shows when a
+`$fetch`/`useFetch` call fails. Every app was writing its own `?? ?? ??` chain
+over the error, and they disagreed on the order, so the same failure read
+differently depending on which app you were in. The order is the point:
+
+- **`data.message`** — `data` is the parsed error body, and h3 mirrors
+  `createError({ statusMessage })` into `message`, so this arm is right whether
+  a route threw `statusMessage` (jTicket's do) or `message` (jGrilling's, and
+  the diff layer's).
+- **`error.message`** — ofetch's own line (`[POST] "/api/x": 400 Bad Request`),
+  the best thing left when the call never reached a route.
+- **`data.statusMessage`** — last, because h3 fills it with the bare status
+  reason (`"Server Error"`) whenever the route didn't set one. Ranked higher,
+  that boilerplate hides real messages.
+- **`fallback`** — what the call site would rather say than nothing.
+
+There is no top-level `error.statusMessage` arm: it can only win when the body
+didn't parse, and `error.message` already spells that case out
+(`[GET] "/api/x": 502 Bad Gateway`). Nor a terminal `String(error)` — that's
+what `fallback` is for. One consequence worth knowing: on an *unhandled* 500 the
+error boxes now show the raw exception rather than "Server Error". For a local
+engineering tool that's the better half of the trade.
+
+Everything is read structurally, so callers pass `unknown` and catch blocks
+don't need `catch (e: any)`. Like `@jsuite/data` it's plain ESM with no layer to
+extend — add `"@jsuite/http": "workspace:*"` and import. Being a package rather
+than a layer util is what lets `server/` code use it too.
 
 ## jSkills
 

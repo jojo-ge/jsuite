@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchErrorMessage } from '@jsuite/http'
 import type { GrillSession, GrillStreamEvent, GrillTurn } from '~/utils/grillTypes'
 
 const route = useRoute()
@@ -93,8 +94,8 @@ async function submitAnswer(text?: string) {
     })
     answer.value = ''
     startNext()
-  } catch (err: any) {
-    streamError.value = String(err.data?.message ?? err.message ?? err)
+  } catch (err) {
+    streamError.value = fetchErrorMessage(err, 'could not submit the answer')
   } finally {
     submitting.value = false
   }

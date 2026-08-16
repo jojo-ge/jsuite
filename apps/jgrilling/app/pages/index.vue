@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchErrorMessage } from '@jsuite/http'
 import type { GrillMeta } from '~/utils/grillTypes'
 
 useHead({ title: 'Sessions' })
@@ -24,8 +25,8 @@ async function createSession() {
       body: { title: form.title, plan: form.plan, repoPath: form.repoPath },
     })
     router.push(res.path)
-  } catch (err: any) {
-    createError.value = String(err.data?.message ?? err.message ?? err)
+  } catch (err) {
+    createError.value = fetchErrorMessage(err, 'could not start the session')
   } finally {
     creating.value = false
   }
