@@ -4,38 +4,46 @@ import type { Explainer } from '@jsuite/documents/store'
 
 // Import a bundle produced by GET /api/projects/:id/export. Always creates a
 // new project — fresh ids and keys minted on this tracker, titles, statuses,
-// comments and timestamps preserved. Doc bodies land in the shared document
-// pool, charts in the chart pool, attachments on disk; anything whose key or
-// name collides with different content gets a suffixed copy (byte-identical
-// content is reused, and every reference is rewritten to the new key/name).
+// comments and timestamps preserved. Document bodies land in the shared
+// document pool, charts in the chart pool, uploaded files on disk; anything
+// whose key or name collides with different content gets a suffixed copy
+// (byte-identical content is reused, and every reference — including the
+// attachment refs on the project and its tickets — is rewritten to the new
+// key/name).
 export default defineEventHandler(async (event) => {
-  const bundle = await readBody<ProjectBundle & { epics?: LegacyBundleEpic[] }>(event)
+  const bundle = await readBody<
+    ProjectBundle & { epics?: LegacyBundleEpic[]; docs?: LegacyBundleDoc[] }
+  >(event)
   if (bundle?.format !== BUNDLE_FORMAT || !bundle.project?.title?.trim()) {
     throw createError({ statusCode: 400, statusMessage: 'not a jticket project bundle' })
   }
   const store = loadStore()
   const ts = now()
 
-  // 1. Attachments — suffix names that collide with different bytes.
-  const attachmentRenames = new Map<string, string>()
-  if (bundle.attachments?.length) mkdirSync(ATTACHMENTS_DIR, { recursive: true })
+  // 1. Uploaded files — suffix names that collide with different bytes. The
+  // bundle field is still called `attachments` (see BundleAttachment).
+  const uploadRenames = new Map<string, string>()
+  if (bundle.attachments?.length) mkdirSync(UPLOADS_DIR, { recursive: true })
   for (const att of bundle.attachments ?? []) {
-    const name = safeAttachmentName(att.name)
+    const name = safeUploadName(att.name)
     const buf = Buffer.from(String(att.base64 ?? ''), 'base64')
     if (!buf.length) continue
-    const path = join(ATTACHMENTS_DIR, name)
+    const path = join(UPLOADS_DIR, name)
     if (!existsSync(path)) {
       writeFileSync(path, buf)
     } else if (!readFileSync(path).equals(buf)) {
-      const renamed = uniqueAttachmentName(name)
-      writeFileSync(join(ATTACHMENTS_DIR, renamed), buf)
-      attachmentRenames.set(name, renamed)
+      const renamed = uniqueUploadName(name)
+      writeFileSync(join(UPLOADS_DIR, renamed), buf)
+      uploadRenames.set(name, renamed)
     }
   }
-  const fixAttachments = (text: string): string =>
-    attachmentRenames.size
-      ? text.replace(/\/attachments\/([\w.-]+)/g, (whole, n: string) =>
-          attachmentRenames.has(n) ? `/attachments/${attachmentRenames.get(n)}` : whole,
+  // Only the renamed files are rewritten, and each keeps whichever prefix the
+  // markdown already used — a bundle authored before the rename stays on
+  // /attachments/<name>, which the legacy redirect resolves.
+  const fixUploads = (text: string): string =>
+    uploadRenames.size
+      ? text.replace(uploadRefPattern(), (whole, prefix: string, n: string) =>
+          uploadRenames.has(n) ? `/${prefix}/${uploadRenames.get(n)}` : whole,
         )
       : text
 
@@ -52,7 +60,58 @@ export default defineEventHandler(async (event) => {
     if (entry.notes) await writeNotes(target, entry.notes)
   }
 
-  // 3. Project. Bundles exported before the epic layer was removed carried the
+  // 3. Documents — bodies into the shared pool (rewriting chart keys and
+  // uploaded-file urls), suffixing colliding keys. Bundles exported before the
+  // Doc wrapper dissolved carry `docs` instead: same bodies, each behind a
+  // tracker record whose only surviving meaning is "this belongs to the
+  // project" — so those become document attachments on the imported project.
+  const legacyDocs: LegacyBundleDoc[] = bundle.docs ?? []
+  const incoming: BundleDocument[] = [
+    ...(bundle.documents ?? []),
+    ...legacyDocs.map((d) => ({
+      key: d?.document?.key || d?.record?.documentKey || '',
+      document: d?.document ?? null,
+      notes: d?.documentNotes ?? null,
+    })),
+  ]
+
+  const documentRenames = new Map<string, string>()
+  const landedDocumentKeys = new Set<string>()
+  for (const entry of incoming) {
+    const key = sanitizeDocKey(entry?.key)
+    if (!key) continue
+    if (!entry.document) {
+      // The body wasn't bundled. If this pool already has it, the ref still
+      // points at something real; otherwise it lands dangling, which is a
+      // state attachments are built to survive.
+      if (await readDoc(key)) landedDocumentKeys.add(key)
+      continue
+    }
+    const document = JSON.parse(fixUploads(JSON.stringify(entry.document))) as Explainer
+    for (const b of document.blocks ?? []) {
+      if (b.type === 'chart' && chartRenames.has(b.chartKey)) b.chartKey = chartRenames.get(b.chartKey)!
+    }
+    const existing = await readDoc(key)
+    if (existing && JSON.stringify(existing) === JSON.stringify({ ...document, key })) {
+      landedDocumentKeys.add(key)
+      continue
+    }
+    const target = existing ? await uniqueDocKey(key) : key
+    if (target !== key) documentRenames.set(key, target)
+    await writeDoc(target, { ...document, key: target })
+    if (entry.notes) await writeDocNotes(target, entry.notes)
+    landedDocumentKeys.add(target)
+  }
+
+  // Attachment refs follow their artifact to wherever it landed.
+  const remapAttachments = (list: unknown): Attachment[] =>
+    cleanAttachments(list).map((a) => {
+      if (a.type === 'chart') return { ...a, id: chartRenames.get(a.id) ?? a.id }
+      if (a.type === 'document') return { ...a, id: documentRenames.get(a.id) ?? a.id }
+      return a
+    })
+
+  // 4. Project. Bundles exported before the epic layer was removed carried the
   // epic bodies separately — fold them into the description, as loadStore does.
   let description = String(bundle.project.description ?? '').trim()
   for (const e of bundle.epics ?? []) {
@@ -63,19 +122,27 @@ export default defineEventHandler(async (event) => {
     id: newId('proj'),
     key: nextKey(store, 'project'),
     title: bundle.project.title.trim(),
-    description: fixAttachments(description),
+    description: fixUploads(description),
     mode: bundle.project.mode === 'wayfinder' ? 'wayfinder' : 'standard',
     // The integration branch travels with the bundle (it names a branch on the
     // shared remote); the repo path does not — it's local to the machine that
     // exported it, so the importer points the project at their own clone.
     repo: '',
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
+    attachments: remapAttachments([
+      ...(bundle.project.attachments ?? []),
+      // Legacy wrapper records were the project↔document link; keep it.
+      ...legacyDocs.map((d) => ({
+        type: 'document',
+        id: d?.document?.key || d?.record?.documentKey || '',
+      })),
+    ]),
     createdAt: bundle.project.createdAt || ts,
     updatedAt: bundle.project.updatedAt || ts,
   }
   store.projects.push(project)
 
-  // 4. Tickets — comments come along; blockedBy is remapped once all exist.
+  // 5. Tickets — comments come along; blockedBy is remapped once all exist.
   // Every bundled ticket belonged to the exported project, so they all land in
   // the new one (legacy bundles referenced the project through an epic).
   const ticketIdMap = new Map<string, string>()
@@ -86,21 +153,22 @@ export default defineEventHandler(async (event) => {
       id: newId('tick'),
       key: nextKey(store, 'ticket'),
       title: t.title.trim(),
-      description: fixAttachments(String(t.description ?? '')),
+      description: fixUploads(String(t.description ?? '')),
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s)).filter(Boolean),
       type: t.type === 'HITL' ? 'HITL' : 'AFK',
       status: isStatus(t.status) ? t.status : 'todo',
       projectId: project.id,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
       labels: cleanLabels(t.labels),
-      resolution: fixAttachments(String(t.resolution ?? '')),
+      resolution: fixUploads(String(t.resolution ?? '')),
       blockedBy: [],
+      attachments: remapAttachments(t.attachments),
       comments: (t.comments ?? [])
         .filter((c) => c?.body)
         .map((c) => ({
           id: newId('cmt'),
           author: c.author?.trim() || 'anonymous',
-          body: fixAttachments(String(c.body)),
+          body: fixUploads(String(c.body)),
           createdAt: c.createdAt || ts,
         })),
       // The bundle carries the original completion stamp; bundles exported
@@ -122,59 +190,20 @@ export default defineEventHandler(async (event) => {
     ticket.blockedBy = [...edges]
   }
 
-  // 5. Docs — bodies into the shared pool (rewriting chart keys + attachment
-  // urls), tracker records pointing at wherever the body landed.
-  let docCount = 0
-  for (const d of bundle.docs ?? []) {
-    const record = d?.record
-    if (!record?.title?.trim()) continue
-    let documentKey = ''
-    if (d.document) {
-      const document = JSON.parse(fixAttachments(JSON.stringify(d.document))) as Explainer
-      for (const b of document.blocks ?? []) {
-        if (b.type === 'chart' && chartRenames.has(b.chartKey)) b.chartKey = chartRenames.get(b.chartKey)!
-      }
-      const desired = sanitizeDocKey(d.document.key || record.documentKey) || docKeyFromTitle(record.title)
-      const existing = await readDoc(desired)
-      if (existing && JSON.stringify(existing) === JSON.stringify({ ...document, key: desired })) {
-        documentKey = desired
-      } else {
-        documentKey = existing ? await uniqueDocKey(desired) : desired
-        await writeDoc(documentKey, { ...document, key: documentKey })
-        if (d.documentNotes) await writeDocNotes(documentKey, d.documentNotes)
-      }
-    } else if (record.documentKey && (await readDoc(record.documentKey))) {
-      documentKey = record.documentKey // body wasn't bundled but this pool already has it
-    }
-    const doc: Doc = {
-      id: newId('doc'),
-      key: nextKey(store, 'doc'),
-      title: record.title.trim(),
-      documentKey,
-      projectId: project.id,
-      labels: cleanLabels(record.labels),
-      status: isDocStatus(record.status) ? record.status : 'draft',
-      createdAt: record.createdAt || ts,
-      updatedAt: record.updatedAt || ts,
-    }
-    store.docs.push(doc)
-    docCount++
-  }
-
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return {
     project,
-    imported: { tickets: pairs.length, docs: docCount },
+    imported: { tickets: pairs.length, documents: landedDocumentKeys.size, charts: bundle.charts?.length ?? 0 },
   }
 })
 
-function uniqueAttachmentName(name: string): string {
+function uniqueUploadName(name: string): string {
   const ext = extname(name)
   const base = name.slice(0, name.length - ext.length)
   for (let i = 2; i < 500; i++) {
     const candidate = `${base}-${i}${ext}`
-    if (!existsSync(join(ATTACHMENTS_DIR, candidate))) return candidate
+    if (!existsSync(join(UPLOADS_DIR, candidate))) return candidate
   }
   return `${base}-${Date.now()}${ext}`
 }

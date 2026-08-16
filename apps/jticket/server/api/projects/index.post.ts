@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     mode: body.mode === 'wayfinder' ? 'wayfinder' : 'standard',
     repo: body.repo?.trim() ?? '',
     integrationBranch: body.integrationBranch?.trim() ?? '',
+    attachments: cleanAttachments(body.attachments),
     createdAt: ts,
     updatedAt: ts,
   }
@@ -21,6 +22,6 @@ export default defineEventHandler(async (event) => {
   // the slug gets filled in the first time the project's GitHub panel loads.
   if (project.repo) rememberRepo(store, { path: expandHome(project.repo) })
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return project
 })

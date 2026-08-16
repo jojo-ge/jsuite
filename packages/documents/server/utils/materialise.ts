@@ -23,7 +23,10 @@ export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): P
   const mediaKept: string[] = []
 
   for (let i = 0; i < rawBlocks.length; i++) {
-    const raw = { ...(rawBlocks[i] as Record<string, unknown>) } as ChartBlockInput & Record<string, unknown>
+    // Untrusted input: every block shape arrives here, so keep `raw` loose and
+    // narrow per branch. Typing it as one block kind makes the other branches
+    // unreachable to the compiler.
+    const raw = { ...(rawBlocks[i] as Record<string, unknown>) } as Record<string, unknown> & { id: string }
     // Stable ids for notes to pin to; keep any the author supplied.
     raw.id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `b${i + 1}`
 
@@ -70,16 +73,17 @@ export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): P
     }
 
     chartN++
-    const mermaid = typeof raw.mermaid === 'string' ? raw.mermaid.trim() : ''
-    let chartKey = raw.chartKey ? keyFromTitle(String(raw.chartKey)) : ''
+    const chart = raw as unknown as ChartBlockInput & Record<string, unknown>
+    const mermaid = typeof chart.mermaid === 'string' ? chart.mermaid.trim() : ''
+    let chartKey = chart.chartKey ? keyFromTitle(String(chart.chartKey)) : ''
 
     if (mermaid) {
-      if (!chartKey) chartKey = keyFromTitle(`${docKey} ${raw.title || `chart ${chartN}`}`)
+      if (!chartKey) chartKey = keyFromTitle(`${docKey} ${chart.title || `chart ${chartN}`}`)
       const existing = (await readChart(chartKey)) as Chart | null
       if (!existing || existing.source?.text?.trim() !== mermaid) {
         const fresh = blankChart({
           key: chartKey,
-          title: String(raw.title || `${docKey} — chart ${chartN}`),
+          title: String(chart.title || `${docKey} — chart ${chartN}`),
           source: { type: 'mermaid', text: mermaid },
         }) as Chart
         if (existing?.createdAt) fresh.createdAt = existing.createdAt
@@ -96,9 +100,9 @@ export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): P
       id: raw.id,
       type: 'chart',
       chartKey,
-      title: raw.title,
-      caption: raw.caption,
-      height: raw.height,
+      title: chart.title,
+      caption: chart.caption,
+      height: chart.height,
     })
   }
 

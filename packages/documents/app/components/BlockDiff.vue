@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DiffBlock } from '../../types'
+import type { DiffAnnotation, DiffBlock } from '../../types'
 
 const props = defineProps<{ block: DiffBlock }>()
 const { render } = useMarkdown()
@@ -17,7 +17,7 @@ const lines = computed<DiffLine[]>(() => {
   return (props.block.diff ?? '')
     .replace(/\n$/, '')
     .split('\n')
-    .map((text) => {
+    .map((text: string) => {
       let kind: Kind = 'ctx'
       if (text.startsWith('@@')) kind = 'hunk'
       else if (text.startsWith('+++') || text.startsWith('---') || text.startsWith('diff ') || text.startsWith('index '))
@@ -27,7 +27,7 @@ const lines = computed<DiffLine[]>(() => {
 
       // Annotations attach by exact line text, first unused match wins.
       const annotations: string[] = []
-      ;(props.block.annotations ?? []).forEach((a, i) => {
+      ;(props.block.annotations ?? []).forEach((a: DiffAnnotation, i: number) => {
         if (!used.has(i) && a.on === text) {
           used.add(i)
           annotations.push(a.md)

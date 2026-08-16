@@ -71,7 +71,7 @@ jsuite/
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
 │   └── jrig/           # avatar studio — draw, rig and keyframe 2D characters
 └── packages/
-    ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
+    ├── charting/       # @jsuite/charting — shared chart module + UI (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
     ├── diff/           # @jsuite/diff — shared diff-review engine + UI (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
@@ -111,21 +111,34 @@ overrides the search when set.
 
 ## @jsuite/charting
 
-The Excalidraw canvas, Mermaid→scene conversion, and scene utilities live in
-`packages/charting` as a Nuxt layer so any app can embed charts. A consumer
-needs three things:
+The whole chart experience — Excalidraw canvas, Mermaid→scene conversion, scene
+utilities, the store **and the UI** — lives in `packages/charting` as a Nuxt
+layer, so an app can serve charts rather than merely embed them. A consumer
+needs four things:
 
 1. `"@jsuite/charting": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/charting']` in `nuxt.config.ts`
 3. a postinstall step to copy the Excalidraw fonts into its `public/`:
    `node ../../packages/charting/scripts/copy-excalidraw-assets.mjs`
+4. one line in its Tailwind entry css so the layer components' utility classes
+   are generated: `@source "../../../../../packages/charting/app";`
 
 That provides `<ExcalidrawCanvas>`, `mermaidToScene()`, the scene utils
-(auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'` —
-**and the shared chart store**: the layer carries `server/api/charts/**` over
-`.data/jchart/`, so every consumer serves the same chart pool. A chart embedded
-in jExplain is the same object opened in jChart; edits and notes flow both ways.
-jChart stays the specialised workbench UI on top.
+(auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'`,
+**the shared chart store** — `server/api/charts/**` over `.data/jchart/` — and
+**the pages**: `/charts` (the library) and `/charts/<key>` (the full workbench:
+canvas, notes, Mermaid source editor), rendered by `<ChartLibrary>` and
+`<ChartWorkbench>`. Every consumer serves the same chart pool, so a chart
+embedded in jExplain is the same object opened in jChart; edits and notes flow
+both ways.
+
+An app that wants that UI on different paths overrides `charting.indexPath` and
+`charting.chartPath` in its `app.config.ts` and mounts the components itself —
+which is all jChart is now: `/` and `/c/<key>` are aliases over the same
+components the layer serves at `/charts`. An app that wants the layer's paths
+but its own chrome mounts `<ChartLibrary>` under it: jTicket's `/charts` is the
+library under the board's header, while `/charts/<key>` is left to the layer,
+the workbench being a full-screen canvas that a nav bar only steals height from.
 
 ## @jsuite/diff
 
@@ -189,24 +202,40 @@ short routes, the scratch prototypes, and the `jdiff` CLI.
 The block-based document system born in jExplain — the model (prose, callout,
 code, diff, chart, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
-experience with margin notes), `useMarkdown()`/`useShiki()`, and the
-`server/api/documents/**` routes over `.data/jexplain/` — lives in
-`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself,
-so chart blocks and `/api/charts/**` ride in transitively. A consumer needs:
+experience with margin notes), `useMarkdown()`/`useShiki()`, the whole-pool
+library and reader (`<DocumentLibrary>`, `<DocumentReader>`, mounted at
+`/documents` and `/documents/<key>`), and the `server/api/documents/**` routes
+over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It
+`extends` `@jsuite/charting` itself, so chart blocks, `/api/charts/**` **and the
+`/charts` chart UI** ride in transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/documents']` in `nuxt.config.ts`
 3. the charting postinstall step (chart blocks render Excalidraw):
    `node ../../packages/charting/scripts/copy-excalidraw-assets.mjs`
-4. one line in its Tailwind entry css so the layer components' utility
-   classes are generated: `@source "../../../../../packages/documents/app";`
+4. two lines in its Tailwind entry css so both layers' component utility
+   classes are generated — charting rides in transitively, so it needs its
+   own `@source` too:
+   ```css
+   @source "../../../../../packages/documents/app";
+   @source "../../../../../packages/charting/app";
+   ```
 
 Types come from `'@jsuite/documents/types'` (client-safe) and
 `'@jsuite/documents/store'` (server). **One document pool serves every
 consumer**: a jTicket doc (tracker record + `documentKey`) is the same object
 jExplain lists and renders; review notes and chart edits flow both ways.
-jExplain stays the canonical reading shell; jTicket wraps documents in
-project/status/label metadata.
+Every consumer therefore gets a documents library at `/documents` for free —
+the whole pool, explainers and specs and grilling debriefs alike. An app that
+wants it under its own routes mounts the components instead of copying them:
+jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
+jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket
+mounts `<DocumentReader>` at `/documents/<key>` with delete withheld and the
+projects a document is attached to in its `#chrome` slot — and it is the one
+consumer that *replaces* the library page rather than mounting it, because it
+knows something about these documents the pool does not: which project attaches
+each. Same pool, grouped. (Its old `/docs` paths redirect there; the DOC-n
+wrapper records they listed are gone.)
 
 ## @jsuite/claude
 
@@ -260,6 +289,36 @@ Always include the scheme: `https://jticket.local`.
 ```
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
+
+### Typechecking
+
+```sh
+pnpm typecheck                    # every app, including .vue files
+pnpm --filter jticket typecheck   # one app
+```
+
+`pnpm typecheck` is **the** typecheck entry point for the workspace. Each app's
+`typecheck` script is `nuxt typecheck`, which regenerates `.nuxt` types and then
+runs `vue-tsc` over the app's project references — so `.vue` files are checked
+(script *and* template), not just the `.ts` ones. The root script fans out with
+`--no-bail`, so one failing app doesn't hide the others; it exits non-zero if
+any app fails.
+
+Two constraints keep this working, both easy to undo by accident:
+
+- **TypeScript is pinned to 5.9 workspace-wide** (`overrides` in
+  `pnpm-workspace.yaml`, plus an explicit `typescript` devDependency in each
+  app). `vue-tsc` 3.x loads `typescript/lib/tsc`, which TypeScript 7 dropped
+  from its exports; apps that take `typescript` only as an auto-installed peer
+  silently resolve 7 and die with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+- **`vue-router` must be v5** — Nuxt 4.5's generated tsconfig loads
+  `vue-router/volar/sfc-route-blocks`, which only v5 exports. On v4 the Vue
+  language plugin fails to load and typing quietly degrades.
+
+Known gap: components that live in a `packages/*` layer (`@jsuite/charting`,
+`@jsuite/documents`) still get `any` for their `defineProps` result, so their
+props are unchecked. Components under `apps/*/app/` are typed correctly.
+Tracked as TICK-152.
 
 ## Design
 

@@ -15,7 +15,16 @@ export default defineNuxtConfig({
   },
   css: ['~/assets/css/main.css'],
   devtools: { enabled: true },
-  // Pages set a bare page title ('Board', 'DOC-3 — Rollout plan'); app.vue's
+  // /docs was jTicket's own docs area back when a document had a DOC-n wrapper
+  // record in front of it. The wrappers are gone (TICK-138) and the pool's own
+  // library serves the same content at /documents, so the old paths redirect
+  // rather than 404: `/docs/<key>` links are written into stored markdown, into
+  // ticket resolutions, and into the skills' output going back months.
+  routeRules: {
+    '/docs': { redirect: { to: '/documents', statusCode: 301 } },
+    '/docs/**': { redirect: { to: '/documents/**', statusCode: 301 } },
+  },
+  // Pages set a bare page title ('Board', 'Rollout plan'); app.vue's
   // titleTemplate suffixes ' · jTicket'.
   app: {
     head: {

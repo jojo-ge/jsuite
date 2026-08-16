@@ -2,12 +2,13 @@
   "name": "jchart",
   "private": true,
   "type": "module",
-  "description": "Local diagram workbench — Claude authors a Mermaid chart, you edit it freehand on an Excalidraw canvas and pin notes to shapes. The canvas itself lives in @jsuite/charting; this app adds storage, notes, and the workbench UI.",
+  "description": "Local diagram workbench — Claude authors a Mermaid chart, you edit it freehand on an Excalidraw canvas and pin notes to shapes. The canvas, store and workbench UI all live in @jsuite/charting; this app is the branded shell that aliases them onto / and /c/<key>.",
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs"
+    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs",
+    "typecheck": "nuxt typecheck"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.0",
@@ -16,6 +17,10 @@
     "@nuxt/ui": "^4.10.0",
     "nuxt": "^4.5.0",
     "vue": "^3.5.0",
-    "vue-router": "^4.4.0"
+    "vue-router": "^5.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.9"
   }
 }
