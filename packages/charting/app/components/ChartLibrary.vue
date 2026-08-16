@@ -6,7 +6,9 @@
  * useChartRoutes() because jChart mounts this at `/` and everyone else at
  * /charts.
  */
-const { data: charts, refresh } = await useFetch('/api/charts')
+import type { ChartMeta } from '../../server/utils/store'
+
+const { data: charts, refresh } = await useFetch<ChartMeta[]>('/api/charts')
 const router = useRouter()
 const routes = useChartRoutes()
 

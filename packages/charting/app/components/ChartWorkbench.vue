@@ -9,6 +9,7 @@
  */
 import type { ChartNote } from './ChartNotesPanel.vue'
 import type { Scene, SceneElement } from '../utils/scene'
+import type { Chart, ChartNotes } from '../../server/utils/store'
 
 const props = defineProps<{ chartKey: string }>()
 
@@ -17,8 +18,8 @@ const toast = useToast()
 const routes = useChartRoutes()
 const key = computed(() => props.chartKey)
 
-const { data: chart, error } = await useFetch(() => `/api/charts/${key.value}`)
-const { data: notesDoc } = await useFetch(() => `/api/charts/${key.value}/notes`)
+const { data: chart, error } = await useFetch<Chart>(() => `/api/charts/${key.value}`)
+const { data: notesDoc } = await useFetch<ChartNotes>(() => `/api/charts/${key.value}/notes`)
 
 const canvas = ref<{
   setScene: (s: Scene, o?: { scrollToContent?: boolean }) => void

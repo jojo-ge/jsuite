@@ -26,6 +26,6 @@ export default defineEventHandler(async (event) => {
 
   mkdirSync(UPLOADS_DIR, { recursive: true })
   writeFileSync(join(UPLOADS_DIR, name), buf)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return { name, url: `/uploads/${name}`, size: buf.length }
 })

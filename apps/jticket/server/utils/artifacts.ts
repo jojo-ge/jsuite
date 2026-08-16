@@ -206,7 +206,7 @@ export function attachHandler(kind: OwnerKind) {
     record.attachments = addAttachment(record.attachments, attachment)
     record.updatedAt = now()
     saveStore(store)
-    setResponseStatus(event, 201)
+    setCreated(event)
     return record.attachments
   })
 }
