@@ -77,12 +77,20 @@ the shape — that's why the layer's `app/utils/scene.ts` has `labelForElement()
 | | |
 |---|---|
 | `GET /api/charts` | list (key, title, counts, timestamps) |
-| `POST /api/charts` | `{ title, mermaid?, key?, replace? }` → `{ key, title, path }` (`path` is `/charts/<key>`, which every consumer serves) |
+| `POST /api/charts` | `{ title, mermaid?, key?, replace? }` → `{ key, title }` — no URL, see below |
 | `GET/PUT/DELETE /api/charts/:key` | PUT patches any of `{ title, source, scene }` |
 | `GET/PUT /api/charts/:key/notes` | `{ general, notes[] }` |
 
 The `j-chart` skill (`~/.claude/skills/j-chart/`) drives `POST /api/charts` and
 then reads the two files directly.
+
+**Create returns the key, not a URL.** Where a chart is *served* is a fact about
+the app, not about the pool: jChart's workbench is `/c/<key>`, every other
+consumer's is `/charts/<key>`, and `server/api/charts/index.post.ts` is the same
+file in all of them with no way to tell which — Nuxt forbids reading
+`app.config.ts` from server runtime. The route table therefore lives only where
+it can be right: `useChartRoutes()` on the client, and each consumer's own
+prefix in its own Nitro code. Callers build `<base>/<key>` themselves.
 
 ## Stack notes
 
