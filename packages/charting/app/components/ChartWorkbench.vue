@@ -6,12 +6,24 @@
  *
  * The key arrives as a prop rather than off the route, so an app can mount this
  * at whatever path it likes without the component knowing about routing.
+ *
+ * `deletable` is the host's answer to "may this app destroy a chart out of the
+ * shared pool?", matching <ChartLibrary> here and the <DocumentLibrary>/
+ * <DocumentReader> pair in the sibling layer. See "who may delete out of the
+ * pool" in the root README.
  */
 import type { ChartNote } from './ChartNotesPanel.vue'
 import type { Scene, SceneElement } from '../utils/scene'
 import type { Chart, ChartNotes } from '../../server/utils/store'
 
-const props = defineProps<{ chartKey: string }>()
+const props = withDefaults(
+  defineProps<{
+    chartKey: string
+    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
+    deletable?: boolean
+  }>(),
+  { deletable: true },
+)
 
 const router = useRouter()
 const toast = useToast()
@@ -242,6 +254,7 @@ const statusLabel = computed(
         @click="sourceOpen = true"
       />
       <UButton
+        v-if="props.deletable"
         icon="i-lucide-trash-2"
         color="neutral"
         variant="ghost"

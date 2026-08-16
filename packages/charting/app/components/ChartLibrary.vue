@@ -5,6 +5,12 @@
  * list; <ChartWorkbench> is the other half. Links resolve through
  * useChartRoutes() because jChart mounts this at `/` and everyone else at
  * /charts.
+ *
+ * `deletable` is a prop rather than a constant for the same reason it is one on
+ * <DocumentLibrary> in the sibling layer: one pool backs every consumer, so
+ * destroying a chart is the host's call, not the library's. <ChartWorkbench>
+ * carries the same prop. See "who may delete out of the pool" in the root
+ * README for the rule itself.
  */
 import type { ChartMeta } from '../../server/utils/store'
 
@@ -12,8 +18,15 @@ const { data: charts, refresh } = await useFetch<ChartMeta[]>('/api/charts')
 const router = useRouter()
 const routes = useChartRoutes()
 
-/** Heading above the list — jChart brands it, other consumers take the default. */
-withDefaults(defineProps<{ heading?: string }>(), { heading: 'Charts' })
+const props = withDefaults(
+  defineProps<{
+    /** Heading above the list — jChart brands it, other consumers take the default. */
+    heading?: string
+    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
+    deletable?: boolean
+  }>(),
+  { heading: 'Charts', deletable: true },
+)
 
 const newOpen = ref(false)
 const newTitle = ref('')
@@ -120,6 +133,7 @@ function ago(iso: string): string {
         </NuxtLink>
         <UBadge v-if="c.hasSource" color="neutral" variant="subtle" size="sm" class="shrink-0">mermaid</UBadge>
         <UButton
+          v-if="props.deletable"
           icon="i-lucide-trash-2"
           color="neutral"
           variant="ghost"

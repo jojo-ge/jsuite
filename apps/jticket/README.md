@@ -29,7 +29,7 @@ pnpm dev          # http://localhost:43000
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
 | `/documents` · `/documents/<key>` | **Docs** — the shared document pool, grouped by which project attaches each, and one document. (`/docs` redirects here.) |
-| `/charts` · `/charts/<key>` | **Charts** — the shared chart pool and the workbench, served by `@jsuite/charting` |
+| `/charts` · `/charts/<key>` | **Charts** — the shared chart pool and the workbench, served by `@jsuite/charting`. Read/write, never delete (TICK-179): ending a chart is jChart's call |
 | `/api-guide` | Full HTTP API reference, live in the app |
 
 ## Data model

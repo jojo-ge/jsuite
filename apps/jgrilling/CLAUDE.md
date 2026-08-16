@@ -17,10 +17,12 @@ Rules that matter here:
 - Debriefs go through the shared documents utils (`writeDoc`,
   `materialiseBlocks`) so charts land in the jChart pool — don't write document
   JSON by hand.
-- **jGrilling never destroys a document out of the shared pool** (TICK-154).
-  Deleting a *session* is fine (`DELETE /api/sessions/:key`, the debrief stays);
-  deleting the debrief is jExplain's call. Every document surface here holds
-  that line — `/e/<key>` and `/documents` both pass `:deletable="false"`, and
+- **jGrilling never destroys anything out of a shared pool** — not a document
+  (TICK-154), not a chart (TICK-179). Deleting a *session* is fine
+  (`DELETE /api/sessions/:key`, the debrief stays); ending the debrief is
+  jExplain's call, and ending a chart is jChart's. Every pool surface here holds
+  that line: `/e/<key>` and `/documents` pass `:deletable="false"`,
   `/documents/<key>` redirects to `/e/<key>` so there is only one reader to keep
-  honest. A new page mounting `<DocumentLibrary>`/`<DocumentReader>` must pass
-  it too: the layer still defaults to `true`.
+  honest, and `/charts` + `/charts/<key>` pass `:deletable="false"` too. A new
+  page mounting `<DocumentLibrary>`/`<DocumentReader>`/`<ChartLibrary>`/
+  `<ChartWorkbench>` must pass it as well: both layers still default to `true`.
