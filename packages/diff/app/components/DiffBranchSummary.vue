@@ -305,12 +305,12 @@ a.rate-btn, a.rate-btn:hover { text-decoration: none; }
 .risk-title { font-weight: 600; }
 .risk-counts { display: flex; gap: 10px; font-family: var(--mono); font-size: 12px; }
 .rc.high { color: var(--red); }
-.rc.medium { color: #d29922; }
+.rc.medium { color: var(--amber); }
 .rc.low { color: var(--green); }
 .risk-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
 .risk-list li { display: flex; gap: 8px; }
 .factor-dot.risk-high { background: var(--red); }
-.factor-dot.risk-medium { background: #d29922; }
+.factor-dot.risk-medium { background: var(--amber); }
 .factor-dot.risk-low { background: var(--green); }
 .show-low {
   margin-top: 10px; border: 1px solid var(--border); background: transparent; color: var(--muted);

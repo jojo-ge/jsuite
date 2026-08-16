@@ -995,8 +995,8 @@ a.card-link:hover { color: inherit; text-decoration: none; }
 .stale-badge {
   font-size: 11px;
   font-family: var(--mono);
-  color: #d29922;
-  border: 1px solid #d2992255;
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
   border-radius: 10px;
   padding: 0 8px;
   white-space: nowrap;
@@ -1315,7 +1315,7 @@ a.todo-link:hover { text-decoration: none; }
   margin-right: 2px;
 }
 .todo-rdot.high { background: var(--red); }
-.todo-rdot.medium { background: #d29922; }
+.todo-rdot.medium { background: var(--amber); }
 .todo-rdot.low { background: var(--green); }
 .sidebar {
   position: sticky;
