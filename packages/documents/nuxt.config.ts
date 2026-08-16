@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url'
 //     the reading page — plus the pages that mount them at /documents and
 //     /documents/<key>. An app that wants them under its own routes (jExplain's
 //     / and /e/<key>) mounts the components itself rather than copying them.
-//   - useMarkdown() (glossary-aware markdown, block + inline) and useShiki()
-//   - labelForBlock() and markdownPreview() app utils
+//   - useMarkdown() (glossary-aware markdown, block + inline), useShiki(),
+//     and useLabelFilter() — the chip bar's selection state and filtered list
+//   - labelForBlock(), markdownPreview() and labelPool() app utils
 //   - the /api/documents/** routes over the shared .data/jexplain pool, plus
 //     the document store as Nitro server auto-imports
 //   - types via `@jsuite/documents/types` (client-safe) and

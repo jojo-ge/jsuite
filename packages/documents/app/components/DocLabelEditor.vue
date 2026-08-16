@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ExplainerMeta } from '../../types'
+import type { LabelSource } from '../utils/labels'
 
 // File a document without republishing it — the read-side counterpart to
 // `PATCH /api/documents/<key>`. What the server stores is what gets emitted
@@ -17,10 +18,10 @@ const error = ref('')
 // typo joins `wayfinder:asset` instead of silently founding `wayfinder:aset`.
 // A label's whole job is to be matched by `?label=`, and a misspelt one is
 // invisible until a filter comes back empty.
-const labelPool = ref<string[]>([])
+const pool = ref<string[]>([])
 
-function mergeIntoLabelPool(labels: string[]) {
-  labelPool.value = [...new Set([...labelPool.value, ...labels])].sort()
+function mergeIntoPool(more: readonly LabelSource[]) {
+  pool.value = labelPool([...pool.value, ...more])
 }
 
 // Loaded when the input opens, not on mount: this editor sits in a reader
@@ -34,7 +35,7 @@ let poolRequest: Promise<void> | null = null
 function loadLabelPool() {
   poolRequest ||= $fetch<ExplainerMeta[]>('/api/documents')
     .then((docs) => {
-      mergeIntoLabelPool(docs.flatMap((d) => d.labels))
+      mergeIntoPool(docs)
     })
     .catch(() => {
       // Suggesting is a convenience, never a gate — if the pool won't load the
@@ -45,7 +46,7 @@ function loadLabelPool() {
 
 // Suggestions exclude what this document already carries — offering a label
 // that is already a chip two inches away is noise.
-const suggestions = computed(() => labelPool.value.filter((l) => !props.labels.includes(l)))
+const suggestions = computed(() => pool.value.filter((l) => !props.labels.includes(l)))
 
 // Two editors on one page would collide on a shared datalist id, and the input
 // can only point at the suggestions by id.
@@ -66,7 +67,7 @@ async function save(next: string[]) {
     })
     // A label just written is in use now, so it belongs in the suggestions the
     // next document sees from this session without refetching the pool.
-    mergeIntoLabelPool(res.labels)
+    mergeIntoPool(res.labels)
     emit('update:labels', res.labels)
   } catch (err) {
     error.value = String((err as { message?: string })?.message ?? err)

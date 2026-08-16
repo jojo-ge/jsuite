@@ -37,21 +37,7 @@ const { data: docs, refresh } = await useFetch<ExplainerMeta[]>('/api/documents'
 // server-side filter would shrink the very list those chips are derived from.
 // The query parameter is there for callers that aren't holding the pool —
 // skills looking their own output back up.
-const selected = ref<string[]>([])
-
-const allLabels = computed(() =>
-  [...new Set((docs.value ?? []).flatMap((d) => d.labels))].sort(),
-)
-
-const shown = computed(() =>
-  (docs.value ?? []).filter((d) => selected.value.every((label) => d.labels.includes(label))),
-)
-
-function toggle(label: string) {
-  selected.value = selected.value.includes(label)
-    ? selected.value.filter((l) => l !== label)
-    : [...selected.value, label]
-}
+const { selected, allLabels, filtered, toggle, clear } = useLabelFilter(docs)
 
 const fmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
 function updated(iso: string): string {
@@ -86,7 +72,7 @@ async function remove(key: string, title: string) {
           color="neutral"
           variant="ghost"
           label="Clear"
-          @click="selected = []"
+          @click="clear()"
         />
       </div>
 
@@ -100,13 +86,13 @@ async function remove(key: string, title: string) {
         </slot>
       </div>
 
-      <div v-else-if="!shown.length" class="rounded-xl border border-dashed border-accented p-10 text-center">
+      <div v-else-if="!filtered.length" class="rounded-xl border border-dashed border-accented p-10 text-center">
         <p class="font-medium">Nothing filed under that</p>
         <p class="mt-1 text-sm text-muted">No document carries all of: {{ selected.join(', ') }}.</p>
       </div>
 
       <ul v-else class="space-y-3">
-        <li v-for="d in shown" :key="d.key">
+        <li v-for="d in filtered" :key="d.key">
           <NuxtLink
             :to="`${props.readerBase}/${d.key}`"
             class="group block rounded-xl border border-default p-5 transition hover:border-primary/50 hover:bg-elevated/40"

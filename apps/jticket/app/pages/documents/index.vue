@@ -22,19 +22,9 @@ const { documents, projects, tickets, refresh } = useTracker()
 // A document's labels are its own filing, carried in the shared pool rather
 // than on the attachment — so the chip bar is built from every document here,
 // not from the projects, and filtering by one narrows every section at once.
-const selected = ref<string[]>([])
-
-const allLabels = computed(() => [...new Set(documents.value.flatMap((d) => d.labels))].sort())
-
-const filtered = computed(() =>
-  documents.value.filter((d) => selected.value.every((label) => d.labels.includes(label))),
-)
-
-function toggle(label: string) {
-  selected.value = selected.value.includes(label)
-    ? selected.value.filter((l) => l !== label)
-    : [...selected.value, label]
-}
+// The chip bar itself is the layer's, same as <DocumentLibrary>'s; this page
+// only differs in what it does with the survivors, which it groups below.
+const { selected, allLabels, filtered, toggle, clear } = useLabelFilter(documents)
 
 const grouped = computed(() => {
   const claimed = new Set<string>()
@@ -115,7 +105,7 @@ async function create() {
           color="neutral"
           variant="ghost"
           label="Clear"
-          @click="selected = []"
+          @click="clear()"
         />
       </div>
 
@@ -133,7 +123,7 @@ async function create() {
           <p class="text-lg font-medium">Nothing filed under that</p>
           <p class="text-sm text-muted">No document carries all of: {{ selected.join(', ') }}.</p>
         </div>
-        <UButton color="neutral" variant="subtle" @click="selected = []">Clear filter</UButton>
+        <UButton color="neutral" variant="subtle" @click="clear()">Clear filter</UButton>
       </div>
 
       <div v-else class="space-y-10">
