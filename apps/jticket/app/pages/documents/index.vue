@@ -12,9 +12,11 @@
 //
 // It creates and it groups, but it does not delete (TICK-151): jTicket never
 // destroys a document out of the shared pool. Being jTicket's own page, it has
-// no delete affordance to withhold — where the layer's <DocumentLibrary> would
-// need :deletable="false" to reach the same place. /documents/<key> holds the
-// same line. See "who may delete out of the pool" in the root README for why.
+// no delete affordance to withhold at all — and since TICK-178 the layer's
+// <DocumentLibrary> would not offer one either, because it now withholds delete
+// unless a host declares it owns the pool's lifecycle. /documents/<key> holds
+// the same line, explicitly. See "who may delete out of the pool" in the root
+// README for why.
 useHead({ title: 'Documents' })
 
 const { documents, projects, tickets, refresh } = useTracker()

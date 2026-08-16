@@ -22,5 +22,8 @@ Rules that matter here:
   deleting the debrief is jExplain's call. Every document surface here holds
   that line — `/e/<key>` and `/documents` both pass `:deletable="false"`, and
   `/documents/<key>` redirects to `/e/<key>` so there is only one reader to keep
-  honest. A new page mounting `<DocumentLibrary>`/`<DocumentReader>` must pass
-  it too: the layer still defaults to `true`.
+  honest. Since TICK-178 the layer **defaults `deletable` to `false`**, so a new
+  page mounting `<DocumentLibrary>`/`<DocumentReader>` inherits that line rather
+  than having to remember it. The two explicit `:deletable="false"` here are
+  redundant and stay on purpose — the rule should be readable at the mount site
+  without knowing the layer's default.

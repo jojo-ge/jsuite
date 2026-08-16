@@ -19,6 +19,10 @@
 //
 // So the list points at that surviving reader (`reader-base="/e"`) and the
 // library and the reader cannot disagree: they are one reader.
+//
+// Since TICK-178 the layer withholds delete by default, so `:deletable="false"`
+// no longer *does* anything here. It stays as a statement: this app's answer
+// should be legible without knowing what the layer defaults to.
 useHead({ title: 'Documents' })
 </script>
 

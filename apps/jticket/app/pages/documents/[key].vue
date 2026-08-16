@@ -9,6 +9,10 @@
 //     there is no wrapper any more, so the only thing left to delete is the
 //     shared document itself. See "who may delete out of the pool" in the root
 //     README for why. /documents holds the same line.
+//     Since TICK-178 the layer defaults `deletable` off, so the prop is
+//     redundant — kept on purpose: "this app does not delete" should be
+//     readable at the mount site without knowing what the layer defaults to,
+//     and it survives the default being reconsidered.
 //   - the projects it's attached to, as chips into the board. That link lives
 //     on the project's attachments, so only jTicket can draw it.
 const route = useRoute()

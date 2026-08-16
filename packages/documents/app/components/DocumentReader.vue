@@ -14,10 +14,10 @@ const props = withDefaults(
     backLabel?: string
     /** Send the back arrow through history instead of to `backTo`. */
     backInHistory?: boolean
-    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
+    /** Offer the delete button — off unless the host declares it owns the pool's lifecycle. */
     deletable?: boolean
   }>(),
-  { backTo: '/documents', backLabel: 'Back to all documents', backInHistory: false, deletable: true },
+  { backTo: '/documents', backLabel: 'Back to all documents', backInHistory: false, deletable: false },
 )
 
 const router = useRouter()

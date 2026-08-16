@@ -248,9 +248,11 @@ Every consumer therefore gets a documents library at `/documents` for free —
 the whole pool, explainers and specs and grilling debriefs alike. An app that
 wants it under its own routes mounts the components instead of copying them:
 jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
-jExplain's framing, and jGrilling's `/e/<key>` is the same reader — as is its
-`/documents`, which mounts `<DocumentLibrary>` over the layer's own page to
-withhold delete and point the list at `/e/<key>`. jTicket
+jExplain's framing, and since TICK-178 it shadows the layer's inherited
+`/documents` and `/documents/<key>` with redirects onto those two — one library
+and one reader over the pool, not two of each. jGrilling's `/e/<key>` is the
+same reader — as is its `/documents`, which mounts `<DocumentLibrary>` over the
+layer's own page to withhold delete and point the list at `/e/<key>`. jTicket
 mounts `<DocumentReader>` at `/documents/<key>` with delete withheld and the
 projects a document is attached to in its `#chrome` slot — and it is the one
 consumer that *replaces* the library page rather than mounting it, because it
@@ -261,18 +263,37 @@ wrapper records they listed are gone.)
 ### Who may delete out of the pool
 
 The host app's call, not the layer's — one shared file backs every consumer, so
-`<DocumentLibrary>` and `<DocumentReader>` both take a `deletable` prop (default
-`true`) rather than deciding for everyone. jExplain owns the pool's lifecycle
-and leaves both on.
+`<DocumentLibrary>` and `<DocumentReader>` both take a `deletable` prop rather
+than deciding for everyone. Since TICK-178 that prop **defaults to `false`**: an
+app that never said whether it owns the pool's lifecycle has not earned a delete
+button, and gets a read-only library. Safe by default, destruction by
+declaration.
+
+**jExplain owns the pool's lifecycle, and opts in** (TICK-178). The pool is
+`.data/jexplain/`; this is the app a document is *ended* from, and every other
+consumer's reader defers here in so many words. So its `/` and `/e/<key>` pass
+`deletable` explicitly — a statement made at the mount site, not the accident of
+a default. That opt-in lives on the pages rather than in a layer-level config
+flag on purpose: `deletable` then has exactly one place to be read, next to the
+component it governs, and an app's answer is legible from the page that mounts
+it instead of from a config file two directories away.
+
+Its own two routes being the deleting ones then makes the layer's inherited
+`/documents` and `/documents/<key>` a problem rather than a spare: read-only
+copies of surfaces jExplain already serves, disagreeing with them about the same
+document. Both are shadowed by redirects onto `/` and `/e/<key>` — the TICK-154
+move, for the TICK-154 reason. A second library is a second thing to keep
+honest.
 
 **jTicket never destroys a pool document from its UI** (TICK-151). Deleting the
 shared file would dangle every attachment ref pointing at it while jExplain goes
 on reading the same object; the tracker's job is to link artifacts, not to end
 them. In practice its reader passes `:deletable="false"` and its library is
-jTicket's own page with no delete affordance at all. The prop exists so the
-rule is expressible in the layer instead of resting on the accident that jTicket
-shadows the layer's `/documents` page: unshadow it and the button returns, which
-is exactly what happened between TICK-136 and TICK-139.
+jTicket's own page with no delete affordance at all. The rule was expressible in
+the layer rather than resting on the accident that jTicket shadows the layer's
+`/documents` page — unshadow it and the button returned, which is exactly what
+happened between TICK-136 and TICK-139. After TICK-178 unshadowing it returns a
+read-only library instead, so the accident no longer has that shape at all.
 
 **jGrilling never destroys a pool document either** (TICK-154). It writes
 debriefs into the pool and reads them back; ending one is jExplain's call, which
@@ -296,11 +317,23 @@ Both rules bind the **UI only**, deliberately. The layer's
 `DELETE /api/documents/<key>` stays mounted in every consumer, jTicket and
 jGrilling included, so agents keep `:43000` as one API surface (TICK-143).
 
-Both were also closed app by app. The layer still *defaults* `deletable` to
-`true` and still ships a bare `<DocumentLibrary />` at `/documents`, so the next
-consumer inherits delete unless someone remembers to shadow the page — which is
-how jGrilling got it. Flipping that default and having jExplain opt in is
-TICK-178; the same hole, untouched, on the **chart** pool is TICK-179.
+Both rules were closed **app by app** — jTicket, then jGrilling — while the
+layer went on defaulting `deletable` to `true` and shipping a bare
+`<DocumentLibrary />` at `/documents`, so each new consumer inherited delete
+until someone remembered to shadow the page. That is how jGrilling got it.
+TICK-178 closed it at the layer instead: the default is `false`, jExplain
+declares its ownership, and a consumer added tomorrow is safe without anyone
+remembering anything.
+
+Both apps' `:deletable="false"` are therefore redundant now, and **stay** — a
+deliberate call, not an oversight. "This app does not delete" should be readable
+where the component is mounted, without the reader having to know what the layer
+defaults to this month, and it keeps holding if the default is ever
+reconsidered. The layer decides what an app that says *nothing* gets; the prop
+is how an app says something.
+
+The same hole, untouched, on the **chart** pool is TICK-179: `<ChartLibrary>`
+and `<ChartWorkbench>` delete out of `.data/jchart/` with no prop at all.
 
 ## @jsuite/claude
 
