@@ -33,7 +33,9 @@ export default defineNuxtConfig({
     },
   },
   ui: {
-    // Slate/indigo, dashboard-functional not flashy.
+    // Dashboard-functional, not flashy. The palette itself is periwinkle on
+    // slate and lives in app/app.config.ts — app.config.ts resolves against
+    // srcDir, so a copy at the app root would be dead (TICK-194).
     colorMode: true,
   },
   // Served behind the jSuite Caddy edge at https://jticket.local — allow that
