@@ -1,5 +1,5 @@
 import { readFile, writeFile, readdir, rm } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
 import type { Block, Explainer, DocNote, DocNotes, ExplainerMeta } from '../../types'
@@ -33,6 +33,32 @@ export function docKeyFromTitle(title: string): string {
   return sanitizeDocKey(title) || 'document'
 }
 
+/**
+ * Normalise a document's labels: trimmed, lowercased, deduped, in the order
+ * first given, capped at 24 of 60 characters each.
+ *
+ * Lowercasing is what makes `?label=Spec` find a document filed as `spec` — a
+ * label is a filing key, not prose, so two spellings of one word must not
+ * become two labels. Anything that isn't a string is dropped rather than
+ * coerced, so a malformed body can't put `[object Object]` in the pool.
+ *
+ * Named `cleanDocLabels` rather than `cleanLabels` because jTicket's tracker
+ * store exports a `cleanLabels` for *ticket* labels, and both land in the same
+ * Nitro auto-import namespace — one would silently shadow the other, and
+ * ticket labels are deliberately not lowercased.
+ */
+export function cleanDocLabels(input: unknown): string[] {
+  if (!Array.isArray(input)) return []
+  const out: string[] = []
+  for (const raw of input) {
+    if (typeof raw !== 'string') continue
+    const label = raw.trim().toLowerCase().slice(0, 60)
+    if (label && !out.includes(label)) out.push(label)
+    if (out.length >= 24) break
+  }
+  return out
+}
+
 const docPath = (key: string) => join(DATA_DIR, sanitizeDocKey(key) + '.json')
 const docNotesPath = (key: string) => join(DATA_DIR, sanitizeDocKey(key) + '.notes.json')
 
@@ -50,7 +76,12 @@ export async function readDoc(key: string): Promise<Explainer | null> {
   const p = docPath(key)
   if (!existsSync(p)) return null
   try {
-    return JSON.parse(await readFile(p, 'utf8')) as Explainer
+    const doc = JSON.parse(await readFile(p, 'utf8')) as Explainer
+    // Documents written before labels existed have none; normalising on read
+    // (rather than rewriting the pool) means every caller sees an array and
+    // the file only gains the field the next time it's written.
+    doc.labels = cleanDocLabels(doc.labels)
+    return doc
   } catch {
     return null
   }
@@ -58,6 +89,34 @@ export async function readDoc(key: string): Promise<Explainer | null> {
 
 export async function writeDoc(key: string, doc: Explainer): Promise<void> {
   await writeFile(docPath(key), JSON.stringify(doc, null, 2) + '\n', 'utf8')
+}
+
+/**
+ * Add labels to a document already in the pool, keeping the ones it has.
+ *
+ * Synchronous on purpose, and the one sync writer here: jTicket's store
+ * migration is a synchronous read of a single JSON file, and this is how the
+ * labels its dissolved Doc wrapper carried land on the documents themselves.
+ * A missing, unparseable or foreign-format file is a silent no-op — a
+ * migration must never be the thing that fails a boot — and re-running it
+ * changes nothing, since the labels are already there.
+ */
+export function addDocLabelsSync(key: string, labels: unknown): void {
+  const add = cleanDocLabels(labels)
+  if (!add.length) return
+  const p = docPath(key)
+  if (!existsSync(p)) return
+  try {
+    const doc = JSON.parse(readFileSync(p, 'utf8')) as Explainer
+    if (doc.format !== 'j-explain') return
+    const before = cleanDocLabels(doc.labels)
+    const merged = cleanDocLabels([...before, ...add])
+    if (merged.length === before.length) return
+    doc.labels = merged
+    writeFileSync(p, JSON.stringify(doc, null, 2) + '\n', 'utf8')
+  } catch {
+    // Leave the document exactly as it was.
+  }
 }
 
 export async function deleteDoc(key: string): Promise<void> {
@@ -104,6 +163,7 @@ export async function listDocs(): Promise<ExplainerMeta[]> {
         blockCount: blocks.length,
         chartCount: blocks.filter((b) => b.type === 'chart').length,
         noteCount: notes.filter((n) => (n.text || '').trim()).length,
+        labels: cleanDocLabels(doc.labels),
       })
     } catch {
       // An unparseable file just doesn't appear in the list.

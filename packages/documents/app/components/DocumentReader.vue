@@ -63,6 +63,13 @@ useHead(() => ({ title: doc.value?.title ?? key.value }))
         :aria-label="props.backLabel"
       />
       <span class="min-w-0 truncate text-sm font-medium text-muted">{{ doc?.title }}</span>
+      <DocLabelEditor
+        v-if="doc"
+        :doc-key="key"
+        :labels="doc.labels ?? []"
+        class="min-w-0"
+        @update:labels="doc.labels = $event"
+      />
       <!-- Whatever the host app knows about this document that the pool
            doesn't — jTicket puts the projects it's attached to here. -->
       <slot name="chrome" :doc="doc" />

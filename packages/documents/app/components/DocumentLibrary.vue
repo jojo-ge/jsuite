@@ -23,6 +23,27 @@ const props = withDefaults(
 
 const { data: docs, refresh } = await useFetch<ExplainerMeta[]>('/api/documents')
 
+// Filtering happens over the list already in hand rather than by refetching
+// with `?label=`: the chip bar has to show every label in the pool, and a
+// server-side filter would shrink the very list those chips are derived from.
+// The query parameter is there for callers that aren't holding the pool —
+// skills looking their own output back up.
+const selected = ref<string[]>([])
+
+const allLabels = computed(() =>
+  [...new Set((docs.value ?? []).flatMap((d) => d.labels))].sort(),
+)
+
+const shown = computed(() =>
+  (docs.value ?? []).filter((d) => selected.value.every((label) => d.labels.includes(label))),
+)
+
+function toggle(label: string) {
+  selected.value = selected.value.includes(label)
+    ? selected.value.filter((l) => l !== label)
+    : [...selected.value, label]
+}
+
 const fmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' })
 function updated(iso: string): string {
   // Render dates client-side only via ClientOnly below (hydration safety).
@@ -48,6 +69,18 @@ async function remove(key: string, title: string) {
         <p class="mt-1 text-muted">{{ props.subtitle }}</p>
       </header>
 
+      <div v-if="allLabels.length" class="mb-6 flex flex-wrap items-center gap-2">
+        <DocLabels :labels="allLabels" :active="selected" interactive size="sm" @select="toggle" />
+        <UButton
+          v-if="selected.length"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          label="Clear"
+          @click="selected = []"
+        />
+      </div>
+
       <div v-if="!docs?.length" class="rounded-xl border border-dashed border-accented p-10 text-center">
         <slot name="empty">
           <UIcon name="i-lucide-book-open-text" class="mx-auto mb-3 size-8 text-dimmed" />
@@ -58,8 +91,13 @@ async function remove(key: string, title: string) {
         </slot>
       </div>
 
+      <div v-else-if="!shown.length" class="rounded-xl border border-dashed border-accented p-10 text-center">
+        <p class="font-medium">Nothing filed under that</p>
+        <p class="mt-1 text-sm text-muted">No document carries all of: {{ selected.join(', ') }}.</p>
+      </div>
+
       <ul v-else class="space-y-3">
-        <li v-for="d in docs" :key="d.key">
+        <li v-for="d in shown" :key="d.key">
           <NuxtLink
             :to="`${props.readerBase}/${d.key}`"
             class="group block rounded-xl border border-default p-5 transition hover:border-primary/50 hover:bg-elevated/40"
@@ -79,6 +117,7 @@ async function remove(key: string, title: string) {
               />
             </div>
             <p v-if="d.subtitle" class="mt-0.5 text-sm text-muted">{{ d.subtitle }}</p>
+            <DocLabels :labels="d.labels" class="mt-2" />
             <p class="mt-2.5 flex items-center gap-3 text-xs text-dimmed">
               <span>{{ d.blockCount }} block{{ d.blockCount === 1 ? '' : 's' }}</span>
               <span v-if="d.chartCount" class="flex items-center gap-1">

@@ -161,6 +161,16 @@ export interface Explainer {
   blocks: Block[]
   /** term -> definition; terms get dotted-underline hover definitions in prose. */
   glossary: Record<string, string>
+  /**
+   * Free-form tags, lowercased and deduped — the document's own filing, owned
+   * by the document rather than by whatever attaches it, so it reads the same
+   * in jExplain and in jTicket. Two conventions ride on this one field: a
+   * namespaced label marks a document as some tool's output (`wayfinder:asset`
+   * is how the jwayfinder skill finds its research again), and lifecycle is
+   * just a label like any other (`draft`, `ready`) rather than a field of its
+   * own. Filter the pool with `GET /api/documents?label=`.
+   */
+  labels: string[]
 }
 
 /**
@@ -204,4 +214,5 @@ export interface ExplainerMeta {
   blockCount: number
   chartCount: number
   noteCount: number
+  labels: string[]
 }

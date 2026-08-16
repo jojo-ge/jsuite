@@ -53,6 +53,7 @@ curl -sk https://jticket.local/api/documents \
   "kicker": "DESIGN NOTES",
   "subtitle": "Why the legacy flow is being rebuilt, and how.",
   "glossary": { "PCI": "payment card industry — the compliance scope" },
+  "labels": ["design", "draft"],
   "blocks": [
     { "id": "why", "type": "prose", "md": "## Why now\n\nThe legacy flow drops **12%** of carts at the payment step." },
     { "id": "trap", "type": "callout", "tone": "warning", "title": "The trap", "md": "PCI scope is unconfirmed." },
@@ -115,14 +116,39 @@ curl -sk https://jticket.local/api/documents \
   -d '{ "key": "checkout-revamp-design-notes", "replace": true, "title": "…", "blocks": [ … ] }'
 ```
 
-Attachments point at the key, so a replace needs no re-attaching.
+Attachments point at the key, so a replace needs no re-attaching. Labels survive a
+replace unless the body names them — rewriting the blocks shouldn't unfile the document.
+
+## Labels: the document's own filing
+
+`labels` is a flat list of lowercase tags on the **document**, in the shared pool — so it
+reads the same in jTicket and in jExplain, and it survives the document being attached
+somewhere else or nowhere at all. Filter the library, or the pool, with `?label=`:
+
+```bash
+curl -sk 'https://jticket.local/api/documents?label=design&label=draft'   # AND, not OR
+```
+
+Two conventions ride on the one field: a namespaced label marks tool output
+(`wayfinder:asset` is how the jwayfinder skill finds its research again), and lifecycle is
+just a label — `draft`, `ready` — rather than a status field of its own.
+
+Refile without republishing the body:
+
+```bash
+curl -sk -X PATCH https://jticket.local/api/documents/checkout-revamp-design-notes \
+  -H 'content-type: application/json' -d '{ "labels": ["design", "ready"] }'
+```
+
+`labels` is replaced wholesale, so read-append-write to add one.
 
 ## Other endpoints
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/documents` | The whole shared pool (also served by jExplain) |
+| GET | `/api/documents` | The whole shared pool (also served by jExplain); `?label=` filters |
 | GET | `/api/documents/:key` | One document |
+| PATCH | `/api/documents/:key` | Refile it — `{ labels }` only, the body stays a POST |
 | DELETE | `/api/documents/:key` | Delete it — every attachment ref to it then reads as `missing` |
 | GET | `/api/documents/:key/notes` | The user's review notes for a document |
 | GET | `/api/projects/:id/attachments` | A project's artifacts, resolved (title, url, `missing`) |
