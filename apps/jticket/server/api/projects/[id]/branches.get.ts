@@ -4,7 +4,9 @@
 //
 // ?q=      filter by name or commit subject
 // ?fetch=1 prune + refresh origin first (a network round-trip; the picker's ↻)
-export default defineEventHandler(async (event) => {
+import type { ProjectBranches } from '#shared/types/github'
+
+export default defineEventHandler(async (event): Promise<ProjectBranches> => {
   const id = getRouterParam(event, 'id')
   const query = getQuery(event)
   const store = loadStore()

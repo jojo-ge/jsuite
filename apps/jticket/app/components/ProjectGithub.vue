@@ -17,45 +17,20 @@
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
 // the rest of the project page never waits on GitHub.
+//
+// Neither fetch below names its response type. Both paths are `/api/projects/
+// <id>/<thing>`, which Nitro matches to the handler, so the shape here is the
+// shape the handler returns — checked, not asserted. This panel used to declare
+// its own `ProjectPr` and `GithubInfo`; they had already drifted (the server's
+// PRs carry `url` and `reviewDecision`, that copy carried neither). The
+// declarations now live in shared/types/github.ts, which the handlers are
+// annotated with.
 import type { Project } from '#shared/types/tracker'
 
 const props = defineProps<{ project: Project }>()
 // Nothing to configure inline — "connect a repo" opens the project edit modal
 // the page already owns.
 const emit = defineEmits<{ configure: [] }>()
-
-interface ProjectPr {
-  number: number
-  title: string
-  author?: { login?: string } | null
-  headRefName: string
-  baseRefName: string
-  isDraft: boolean
-  updatedAt: string
-  additions?: number
-  deletions?: number
-  matchedBy: ('integration' | 'base' | 'key')[]
-  keys: string[]
-  githubUrl: string
-}
-interface GithubInfo {
-  configured: boolean
-  repo: string
-  slug: string | null
-  repoUrl?: string | null
-  defaultBranch: string
-  integrationBranch: string
-  suggestedBranch: string
-  branch: {
-    name: string
-    local: boolean
-    remote: boolean
-    githubUrl: string | null
-    comparePrUrl: string | null
-  } | null
-  prs: ProjectPr[]
-  prsError: string | null
-}
 
 const toast = useToast()
 const routes = useDiffRoutes()
@@ -65,7 +40,7 @@ const { refresh: refreshTracker } = useTracker()
 const { creating, revision, invalidate, createBranch: cutBranch } = useIntegrationBranch()
 
 const force = ref<string | undefined>(undefined)
-const { data, pending, error, refresh } = useFetch<GithubInfo>(
+const { data, pending, error, refresh } = useFetch(
   () => `/api/projects/${props.project.id}/github`,
   { query: { force }, lazy: true, server: false },
 )
@@ -98,16 +73,6 @@ const errorText = branchErrorText
 // The integration branch doesn't have to have been cut here: point the project
 // at a branch somebody made by hand and everything else (PR matching, the
 // roll-up link) works the same.
-interface BranchCandidate {
-  name: string
-  oid: string
-  subject: string
-  committedAt: string
-  local: boolean
-  remote: boolean
-  isDefault: boolean
-}
-
 const pickerOpen = ref(false)
 const branchQuery = ref('')
 const debouncedQuery = ref('')
@@ -125,7 +90,7 @@ const {
   data: branchData,
   pending: branchPending,
   refresh: refreshBranches,
-} = useFetch<{ branches: BranchCandidate[]; current: string }>(
+} = useFetch(
   () => `/api/projects/${props.project.id}/branches`,
   { query: { q: debouncedQuery, fetch: fetchStamp }, lazy: true, server: false, immediate: false },
 )
@@ -377,7 +342,7 @@ const prs = computed(() => data.value?.prs ?? [])
             </UTooltip>
             <UTooltip text="Open on GitHub">
               <UButton
-                :to="pr.githubUrl"
+                :to="pr.url"
                 target="_blank"
                 external
                 icon="i-lucide-github"

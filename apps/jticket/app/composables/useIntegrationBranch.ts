@@ -23,7 +23,7 @@ export function useIntegrationBranch() {
   async function createBranch(projectId: string, branch?: string): Promise<boolean> {
     creating.value = projectId
     try {
-      const res = await $fetch<{ branch: string; base: string; created: boolean }>(
+      const res = await $fetch(
         `/api/projects/${projectId}/integration-branch`,
         { method: 'POST', body: { branch: branch?.trim() || undefined } },
       )

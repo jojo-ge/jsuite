@@ -7,8 +7,7 @@
 // up right now — which until now meant reading every project and doing the
 // blocked/claimed arithmetic by eye. Each row carries the hand-off command, so
 // the page ends in dispatch rather than in another click.
-import type { Project, Ticket } from '#shared/types/tracker'
-import type { WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, WayfinderType } from '#shared/types/tracker'
 
 useHead({ title: 'Up next' })
 

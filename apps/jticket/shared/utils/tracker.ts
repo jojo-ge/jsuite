@@ -7,7 +7,7 @@
 // Everything here is a pure function of the records — no store, no fetch, no
 // view meta. Auto-imported on both sides (`shared/utils/`), so call sites just
 // use the names.
-import type { Attachment, Ticket, TicketDerived } from '#shared/types/tracker'
+import type { Attachment, Ticket, TicketDerived, WayfinderType } from '#shared/types/tracker'
 
 // ── Derived ticket state (wayfinder) ────────────────────────────────────────
 // A ticket is blocked while any ticket it depends on is not yet done.
@@ -50,6 +50,38 @@ export function byCompletedAtDesc(a: Ticket, b: Ticket): number {
 export function byKeyNumber(a: { key: string }, b: { key: string }): number {
   const n = (k: string) => Number(k.split('-').pop()) || 0
   return n(a.key) - n(b.key)
+}
+
+// ── Wayfinder sub-types ─────────────────────────────────────────────────────
+// The sub-type lives in a ticket's labels as 'wayfinder:<type>'. This is the
+// one place that knows that encoding: the picker builds a label with
+// wayfinderLabel(), every reader parses one back with wayfinderTypeOfLabel(),
+// and /api/import validates what it was handed with isWayfinderType() rather
+// than writing a label no screen can render.
+export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
+
+export function isWayfinderType(v: unknown): v is WayfinderType {
+  return WAYFINDER_TYPES.includes(v as WayfinderType)
+}
+
+/** 'research' → 'wayfinder:research' — the label a ticket actually carries. */
+export function wayfinderLabel(type: WayfinderType): string {
+  return `wayfinder:${type}`
+}
+
+/** 'wayfinder:research' → 'research'; anything else (including an unknown sub-type) → null. */
+export function wayfinderTypeOfLabel(label: string): WayfinderType | null {
+  const rest = label.startsWith('wayfinder:') ? label.slice('wayfinder:'.length) : null
+  return isWayfinderType(rest) ? rest : null
+}
+
+/** A ticket's sub-type: the first 'wayfinder:<type>' label it carries, if any. */
+export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | null {
+  for (const l of ticket.labels ?? []) {
+    const type = wayfinderTypeOfLabel(l)
+    if (type) return type
+  }
+  return null
 }
 
 // ── Attachments ─────────────────────────────────────────────────────────────

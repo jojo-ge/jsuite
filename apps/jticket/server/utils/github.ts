@@ -17,6 +17,7 @@
 import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
+import type { BranchCandidate, GhPr, PrMatch, ProjectPr } from '#shared/types/github'
 import type { Project } from '#shared/types/tracker'
 import type { Store } from './store'
 
@@ -166,16 +167,6 @@ export async function probeRepo(repo: string): Promise<RepoProbe> {
 }
 
 // ── Branches ────────────────────────────────────────────────────────────────
-export interface BranchCandidate {
-  name: string // short name; a remote-only branch is named without 'origin/'
-  oid: string
-  subject: string
-  committedAt: string
-  local: boolean
-  remote: boolean
-  isDefault: boolean
-}
-
 /**
  * Every branch in the repo — local and on origin, merged by short name — newest
  * commit first. This is what the "use an existing branch" picker searches, so a
@@ -253,20 +244,7 @@ export async function listBranches(
 }
 
 // ── PR listing ──────────────────────────────────────────────────────────────
-export interface GhPr {
-  number: number
-  title: string
-  author?: { login?: string } | null
-  headRefName: string
-  baseRefName: string
-  isDraft: boolean
-  url: string
-  updatedAt: string
-  additions?: number
-  deletions?: number
-  reviewDecision?: string | null
-}
-
+// The fields asked for here are the fields GhPr declares — keep the two in step.
 const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,additions,deletions,reviewDecision,url'
 
 // `gh pr list` is a network round-trip and the project page refetches on every
@@ -294,16 +272,6 @@ export function projectKeys(store: Store, project: Project): string[] {
   return [project.key, ...tickets.map((t) => t.key)]
 }
 
-export type PrMatch = 'integration' | 'base' | 'key'
-
-export interface ProjectPr extends GhPr {
-  /** Why this PR is on the project's list — a PR can match more than one way. */
-  matchedBy: PrMatch[]
-  /** Project keys named by the PR's head branch or title. */
-  keys: string[]
-  githubUrl: string
-}
-
 // No review link is built here any more. jTicket serves the review UI itself
 // (it extends @jsuite/diff), so a PR row links to jTicket's own /diffs page —
 // a client-side route the panel builds with useDiffRoutes() off `repo` and the
@@ -329,7 +297,7 @@ export function matchProjectPrs(
     if (keys.length) matchedBy.push('key')
 
     if (!matchedBy.length) continue
-    matched.push({ ...pr, matchedBy, keys, githubUrl: pr.url })
+    matched.push({ ...pr, matchedBy, keys })
   }
 
   // The roll-up PR first, then most recently touched.

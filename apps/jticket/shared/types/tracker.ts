@@ -22,6 +22,14 @@ export type TicketStatus = 'todo' | 'in_progress' | 'done'
 // grouped into frontier / blocked / done.
 export type ProjectMode = 'standard' | 'wayfinder'
 
+// Inside a wayfinder project a ticket also has a *sub-type*: what kind of
+// unknown it closes. It is carried as a 'wayfinder:<type>' label rather than a
+// field, so a standard ticket never has to hold one — see the wayfinder helpers
+// in shared/utils/tracker.ts, which are the only things that read or write it.
+// Shared because /api/import accepts one and must reject a type no screen could
+// render; the icons and colours per type stay client-side in useTracker.ts.
+export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task'
+
 // ── Attachments ─────────────────────────────────────────────────────────────
 // jTicket owns the ticket↔artifact link. An attachment is a *reference* into
 // one of the shared pools — never a copy — so the pools (and the apps that

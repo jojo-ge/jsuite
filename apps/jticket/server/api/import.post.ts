@@ -31,7 +31,7 @@ interface ImportTicket {
   project?: string | null // project title or key
   assignee?: string
   labels?: string[]
-  wayfinderType?: string // shorthand → adds a 'wayfinder:<type>' label
+  wayfinderType?: WayfinderType // shorthand → adds a 'wayfinder:<type>' label
   resolution?: string
   blockedBy?: string[]
   attachments?: Attachment[] // artifact refs — { type: document|chart|diff, id }
@@ -42,6 +42,20 @@ export default defineEventHandler(async (event) => {
     projects?: ImportProject[]
     tickets?: ImportTicket[]
   }>(event)
+
+  // Reject an unknown sub-type before anything is created. It used to be written
+  // through as 'wayfinder:<whatever>', which imports a label no screen can
+  // render and no filter can find — a silent typo rather than a 400. Checked up
+  // front so a bad row can't leave half a breakdown behind.
+  for (const t of body.tickets ?? []) {
+    if (t?.wayfinderType != null && !isWayfinderType(t.wayfinderType)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `unknown wayfinderType '${String(t.wayfinderType)}' on '${t.title ?? ''}' — expected one of ${WAYFINDER_TYPES.join(', ')}`,
+      })
+    }
+  }
+
   const store = loadStore()
   const ts = now()
 
@@ -85,7 +99,7 @@ export default defineEventHandler(async (event) => {
       status,
       projectId: findProject(t.project)?.id ?? null,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
-      labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
+      labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [wayfinderLabel(t.wayfinderType)] : [])]),
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
       comments: [],

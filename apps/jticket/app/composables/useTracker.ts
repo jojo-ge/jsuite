@@ -5,7 +5,7 @@
 // (auto-imported) — both sides of the app share those.
 
 import type { ExplainerMeta } from '@jsuite/documents/types'
-import type { AttachmentType, Project, Ticket, TicketStatus } from '#shared/types/tracker'
+import type { AttachmentType, Project, Ticket, TicketStatus, WayfinderType } from '#shared/types/tracker'
 
 /**
  * Everything that differs by artifact type, in one place — so a new type is a
@@ -150,23 +150,14 @@ export const STATUS_META: Record<TicketStatus, { label: string; color: 'neutral'
 }
 
 // ── Wayfinder labels ──
-export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task'
-export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
-
+// The sub-type itself, the set of them and the label encoding are shared (the
+// server validates an imported one against the same set) — see
+// shared/utils/tracker.ts. What stays here is how one *looks*.
 export const WAYFINDER_TYPE_META: Record<WayfinderType, { label: string; icon: string; color: 'info' | 'warning' | 'success' | 'neutral' }> = {
   research: { label: 'Research', icon: 'i-lucide-book-open', color: 'info' },
   prototype: { label: 'Prototype', icon: 'i-lucide-flask-conical', color: 'warning' },
   grilling: { label: 'Grilling', icon: 'i-lucide-messages-square', color: 'success' },
   task: { label: 'Task', icon: 'i-lucide-wrench', color: 'neutral' },
-}
-
-// Pull the wayfinder sub-type out of a ticket's labels (first wayfinder:<type>).
-export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | null {
-  for (const l of ticket.labels ?? []) {
-    const m = /^wayfinder:(research|prototype|grilling|task)$/.exec(l)
-    if (m) return m[1] as WayfinderType
-  }
-  return null
 }
 
 // ── Completion times ──
