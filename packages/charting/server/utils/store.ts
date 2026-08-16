@@ -78,11 +78,7 @@ export function chartFilePath(key: string): string {
   return chartPath(key)
 }
 
-/**
- * Where this pool lives on disk. Handed back by the API so a caller — a skill
- * script, the copy-for-Claude output — can name a path that actually exists on
- * the machine serving it, instead of hardcoding one that goes stale on a move.
- */
+/** Where this pool lives on disk — handed to callers so nothing has to hardcode it. */
 export function chartDataDir(): string {
   return DATA_DIR
 }

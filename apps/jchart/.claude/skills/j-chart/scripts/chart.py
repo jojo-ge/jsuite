@@ -79,17 +79,26 @@ def open_in_browser(url, browser=None):
 def data_dir(res):
     """Where the chart pool lives on disk, never guessed.
 
-    The server that just answered the publish call resolved its own `.data` and
-    hands it back as `dataDir`, so the path we print is true for whatever
-    checkout is actually running. `$JSUITE_DATA_DIR` (exported by `./jsuite`)
-    covers an older server that doesn't send it; if neither is available we say
-    nothing rather than print a path that may not exist.
+    This script is installed under ~/.claude/skills, so it can't find the repo
+    relative to itself — and it can be a different vintage from the server it's
+    talking to. The server that just answered the publish call resolved its own
+    `.data` and hands it back as `dataDir`, so that's the truth for whatever
+    checkout is actually running. `$JSUITE_DATA_DIR` covers a server too old to
+    send it, but only helps if the caller exported it (`./jsuite` exports it to
+    the app processes it starts, not to this shell).
+
+    Returns None rather than a guess, and only returns a directory that exists —
+    a path the caller can't open is worse than no path at all.
     """
-    served = (res or {}).get("dataDir")
-    if served:
-        return served
+    for candidate in ((res or {}).get("dataDir"), _env_pool("jchart")):
+        if candidate and os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def _env_pool(app):
     env = os.environ.get("JSUITE_DATA_DIR")
-    return os.path.join(os.path.expanduser(env), "jchart") if env else None
+    return os.path.join(os.path.expanduser(env), app) if env else None
 
 
 def slugify(text):
@@ -161,8 +170,10 @@ def main():
         print(f"chart: {os.path.join(pool, res['key'] + '.json')}")
         print(f"notes: {os.path.join(pool, res['key'] + '.notes.json')}")
     else:
-        print(f"chart: {res['key']}.json (+ .notes.json) in the jChart pool — "
-              "set $JSUITE_DATA_DIR to have the full paths printed")
+        # No pool we can vouch for: name the files, not a path that won't open.
+        print(f"chart: {res['key']}.json (+ .notes.json) in the jChart pool "
+              "(.data/jchart/ at the jSuite root) — export $JSUITE_DATA_DIR, or "
+              "update the running app, to have absolute paths printed here")
     return 0
 
 

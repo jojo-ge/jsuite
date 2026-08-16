@@ -112,12 +112,11 @@ function focusBlock(blockId: string) {
 
 // ── copy for Claude ───────────────────────────────────────────────────────────
 
-// Where this app's pools actually live, published by the @jsuite/charting layer
-// from the same @jsuite/data resolver the server writes through — so the paths
-// pasted below open on the machine serving the page, whatever the workspace is
-// called there.
-const dataRoot = computed(() => useRuntimeConfig().public.jsuiteDataRoot || '.data')
-const docPool = computed(() => `${dataRoot.value}/jexplain`)
+// Where this app's pools actually live, per the serving app's @jsuite/data — so
+// the paths pasted below open on that machine, whatever its workspace is called.
+// (useDataRoot() comes from the @jsuite/charting layer, which this one extends.)
+const docPool = computed(() => useDataRoot().pool('jexplain'))
+const chartPool = computed(() => useDataRoot().pool('jchart'))
 
 function buildMarkdown(): string {
   let out = `## Document notes: ${props.doc.title ?? key.value}\n\n`
@@ -160,7 +159,7 @@ function buildMarkdown(): string {
     out += '### Charts\n'
     for (const c of charts) {
       if (c.type === 'chart')
-        out += `- \`${c.chartKey}\` — shared with jChart; scene + shape notes in \`${dataRoot.value}/jchart/${c.chartKey}.json\` / \`.notes.json\`\n`
+        out += `- \`${c.chartKey}\` — shared with jChart; scene + shape notes in \`${chartPool.value}/${c.chartKey}.json\` / \`.notes.json\`\n`
     }
   }
   return out

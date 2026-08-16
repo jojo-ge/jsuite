@@ -24,7 +24,7 @@ Use this when the user asks you to *explain* something and deserves better than 
    - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail.
    - Click **Copy notes for Claude** when done.
 
-4. **Read the result back.** Either the pasted markdown, or directly — `explain.py` prints the absolute path of each of these on publish (`explainer:`, `notes:`, `charts:`); read them from there rather than assuming a location:
+4. **Read the result back.** Either the pasted markdown, or directly — on publish `explain.py` prints the absolute path of each of these (`explainer:`, `notes:`, `charts:`), asking the running app where its pools are; read them from what it printed rather than assuming a location:
    - `<key>.json` in the document pool (`.data/jexplain/`) — the document
    - `<key>.notes.json` alongside it — `{ general, notes: [{ blockId, label, text }] }`
    - `<chartKey>.json` + `.notes.json` in the chart pool (`.data/jchart/`) — each chart's live scene and shape notes (the user may have redrawn the diagram — the scene is the truth, not your original mermaid)

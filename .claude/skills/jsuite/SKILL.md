@@ -84,9 +84,9 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   port; OrbStack resolves the names and terminates HTTPS (no certs, no
   /etc/hosts). Apps run natively (jDiff needs host `git`/`gh`/`claude`); only
   Caddy is Dockerised.
-- **One state directory**: every app stores state under
-  `~/code/jojo/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
-  place to read, back up, or wipe.
+- **One state directory**: every app stores state under `.data/<app>/` in the
+  repo above (gitignored) via `@jsuite/data` — one place to read, back up, or
+  wipe.
 - **One chart pool**: the `@jsuite/charting` Nuxt layer carries the Excalidraw
   canvas, `server/api/charts/**` over `.data/jchart/`, AND the chart UI — the
   library at `/charts` and the full workbench at `/charts/<key>` — so every

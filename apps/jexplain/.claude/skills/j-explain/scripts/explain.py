@@ -70,20 +70,37 @@ def not_running():
 def data_dirs(res):
     """The (document, chart) pools on disk, never guessed.
 
-    The server that just answered the publish call resolved its own `.data` and
-    hands both pools back, so the paths we print are true for whatever checkout
-    is actually running. `$JSUITE_DATA_DIR` (exported by `./jsuite`) covers an
-    older server that doesn't send them; if neither is available we say nothing
-    rather than print paths that may not exist.
+    This script is installed under ~/.claude/skills, so it can't find the repo
+    relative to itself — and it can be a different vintage from the server it's
+    talking to. The server that just answered the publish call resolved its own
+    `.data` and hands both pools back, so that's the truth for whatever checkout
+    is actually running. `$JSUITE_DATA_DIR` covers a server too old to send them,
+    but only helps if the caller exported it (`./jsuite` exports it to the app
+    processes it starts, not to this shell).
+
+    Returns None for a pool rather than a guess, and only returns directories
+    that exist — a path the caller can't open is worse than no path at all. The
+    chart pool sits beside the document pool, so a server that named one but not
+    the other still gets both.
     """
     res = res or {}
-    if res.get("dataDir"):
-        return res["dataDir"], res.get("chartDataDir")
     env = os.environ.get("JSUITE_DATA_DIR")
-    if not env:
-        return None, None
-    root = os.path.expanduser(env)
-    return os.path.join(root, "jexplain"), os.path.join(root, "jchart")
+    root = os.path.expanduser(env) if env else None
+
+    docs = _first_dir(res.get("dataDir"), os.path.join(root, "jexplain") if root else None)
+    charts = _first_dir(
+        res.get("chartDataDir"),
+        os.path.join(os.path.dirname(docs), "jchart") if docs else None,
+        os.path.join(root, "jchart") if root else None,
+    )
+    return docs, charts
+
+
+def _first_dir(*candidates):
+    for c in candidates:
+        if c and os.path.isdir(c):
+            return c
+    return None
 
 
 def open_in_browser(url, browser=None):
@@ -165,8 +182,10 @@ def main():
         print(f"explainer: {os.path.join(doc_pool, res['key'] + '.json')}")
         print(f"notes:     {os.path.join(doc_pool, res['key'] + '.notes.json')}")
     else:
-        print(f"explainer: {res['key']}.json (+ .notes.json) in the document pool — "
-              "set $JSUITE_DATA_DIR to have the full paths printed")
+        # No pool we can vouch for: name the files, not a path that won't open.
+        print(f"explainer: {res['key']}.json (+ .notes.json) in the document pool "
+              "(.data/jexplain/ at the jSuite root) — export $JSUITE_DATA_DIR, or "
+              "update the running app, to have absolute paths printed here")
     if chart_pool:
         print(f"charts:    {os.path.join(chart_pool, '<chartKey>.json')} "
               "(keys in the explainer's chart blocks)")

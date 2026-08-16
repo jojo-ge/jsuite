@@ -64,4 +64,4 @@ curl -sk https://jgrilling.local/api/documents/<documentKey>
 
 Treat the answers and the debrief as the user's decisions: enact the plan
 against them, don't re-litigate settled questions. Sessions are also readable
-on disk at `~/code/jojo/jsuite/.data/jgrilling/<key>.json`.
+on disk at `.data/jgrilling/<key>.json` in the jSuite repo.

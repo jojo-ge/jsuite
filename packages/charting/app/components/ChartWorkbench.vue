@@ -139,11 +139,10 @@ async function reimport() {
 
 // ── notes → clipboard ─────────────────────────────────────────────────────────
 
-// This component runs in every consumer of the layer, so the pool location comes
-// from runtime config — resolved by @jsuite/data on the server that's serving
-// this page, the same resolver its /api/charts routes write through. The pasted
-// paths therefore open as-is, in whatever checkout that happens to be.
-const chartPool = computed(() => `${useRuntimeConfig().public.jsuiteDataRoot || '.data'}/jchart`)
+// This component runs in every consumer of the layer, so the pool location can't
+// be written down here — useDataRoot() reports where the serving app's @jsuite/data
+// actually put it, so the pasted paths open as-is in whatever checkout that is.
+const chartPool = computed(() => useDataRoot().pool('jchart'))
 
 function buildMarkdown(): string {
   const els = elements.value
