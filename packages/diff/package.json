@@ -26,5 +26,8 @@
     "marked": "^18.0.6",
     "parse-diff": "^0.12.0",
     "shiki": "^4.3.1"
+  },
+  "devDependencies": {
+    "vue": "^3.5.0"
   }
 }
