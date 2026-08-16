@@ -65,7 +65,7 @@ jsuite/
 ├── .data/              # every app's state, gitignored (see @jsuite/data)
 ├── apps/
 │   ├── jticket/        # projects + tickets + docs (owns most jskills, has its own j-setup)
-│   ├── jdiff/          # diff / PR review workbench
+│   ├── jdiff/          # diff / PR review shell — short routes over @jsuite/diff
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
@@ -73,7 +73,7 @@ jsuite/
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
-    ├── diff/           # @jsuite/diff — shared diff-review engine (Nuxt layer)
+    ├── diff/           # @jsuite/diff — shared diff-review engine + UI (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
 ```
@@ -145,16 +145,39 @@ the artifact routes (`/api/comment(s)`, `/api/branch-comment(s)`, `/api/rating`,
 auto-imports (`resolveTarget`/`prepareTarget`, `run`/`resolveRepoPath`,
 `buildDiff`, `highlight`, the stores), and the review vocabulary the UI shares
 with the server — the rating shape, risk levels, tour shape, ask questions,
-file categories — is auto-imported as app utils and also importable explicitly
-from `'@jsuite/diff/rating'`, `'/risk'`, `'/tour'`, `'/askQuestions'`,
-`'/askYourself'`, `'/fileCategories'`.
+file categories, the comment entry — is auto-imported as app utils and also
+importable explicitly from `'@jsuite/diff/rating'`, `'/risk'`, `'/tour'`,
+`'/askQuestions'`, `'/askYourself'`, `'/fileCategories'`, `'/comments'`.
+
+**And the whole review UI**, as pages namespaced under `/diffs`:
+
+| route | screen |
+| --- | --- |
+| `/diffs` | the repo picker |
+| `/diffs/prs` | open pull requests in `?repo=` |
+| `/diffs/pr/<n>` | the PR diff — comments, tour, risk, per-line asks |
+| `/diffs/pr/<n>/summary` | that PR's guidance artifacts |
+| `/diffs/branches` | local branches in `?repo=` |
+| `/diffs/branch` | a local branch diff (`?branch=&base=`) |
+| `/diffs/branch-summary` | that branch's guidance artifacts |
+
+Each of those pages is a two-line wrapper over a component the layer also
+exports — `<DiffHome>`, `<DiffPrList>`, `<DiffPrReview>`, `<DiffPrSummary>`,
+`<DiffBranchList>`, `<DiffBranchReview>`, `<DiffBranchSummary>` — so a consumer
+can mount the same screen anywhere else instead. Links *between* screens go
+through `useDiffRoutes()`, which reads `diff.basePath` and `diff.brand` from the
+app's `app.config.ts`; that is how jDiff keeps serving the same components on
+its own short URLs (`/prs`, `/pr/<n>`, `/branch`) with no duplicated code. The
+palette is scoped to `.diff-surface` / `.diff-overlay` rather than `:root`, so
+an app that only embeds a review screen keeps its own theme everywhere else.
 
 **One review pool serves every consumer**: all state stays in `.data/jdiff/`
 via `@jsuite/data`, so a rating, tour or draft comment created through one
-consumer reads back identically in another. A target is always addressed by
-query params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local
-branch) — so the layer holds no per-app repo config. jDiff stays the
-specialised review UI on top.
+consumer reads back identically in another — and, now that the UI is shared
+too, identically through either route. A target is always addressed by query
+params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local branch) —
+so the layer holds no per-app repo config. jDiff stays a thin shell over it: its
+short routes, the scratch prototypes, and the `jdiff` CLI.
 
 ## @jsuite/documents
 

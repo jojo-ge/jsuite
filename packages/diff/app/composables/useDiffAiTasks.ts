@@ -9,10 +9,10 @@
 //
 // A "target" is either a GitHub PR ({ number }) or a local branch
 // ({ branch, base? }); the id derived from it matches the server's storeKey,
-// so PR runs key by the bare number (keeping useAiTasksHub compatible) and
+// so PR runs key by the bare number (keeping useDiffAiTasksHub compatible) and
 // branch runs key by "branch/<name>".
 //
-// useAiTasks binds one target (a review page); useAiTasksHub binds a whole
+// useDiffAiTasks binds one target (a review page); useDiffAiTasksHub binds a whole
 // repo (the PR list view: kick off runs per row, badge rows with running jobs).
 
 export type AiToolKind = 'rating' | 'risk' | 'tour' | 'self'
@@ -101,7 +101,7 @@ function blankTool(): AiToolState {
   return { pending: false, error: '', log: [], showLog: false, result: null }
 }
 
-function useAiTasksStore(): Store {
+function useDiffAiTasksStore(): Store {
   return useState<Record<string, PrAiTasks>>('ai-tasks', () => ({}))
 }
 
@@ -298,8 +298,8 @@ async function settleAll(pr: PrAiTasks, kinds: AiToolKind[], repo: string, targe
   await Promise.all(kinds.map((k) => settleFromStore(pr[k], k, repo, target, failures)))
 }
 
-export function useAiTasks(repo: Ref<string>, target: Ref<ReviewTarget>) {
-  const store = useAiTasksStore()
+export function useDiffAiTasks(repo: Ref<string>, target: Ref<ReviewTarget>) {
+  const store = useDiffAiTasksStore()
   const tasks = computed(() => ensurePr(store, repo.value, targetId(target.value)))
   const anyPending = computed(() => TOOL_KINDS.some((k) => tasks.value[k].pending))
 
@@ -356,8 +356,8 @@ function localLastLog(pr: PrAiTasks): string {
 // answers instantly for runs started in this session; a light poll of
 // /api/ai-jobs catches runs from before a reload or another tab), plus a
 // fire-and-forget starter per row.
-export function useAiTasksHub(repo: Ref<string>) {
-  const store = useAiTasksStore()
+export function useDiffAiTasksHub(repo: Ref<string>) {
+  const store = useDiffAiTasksStore()
   const serverRunning = ref<Record<string, string[]>>({})
   const serverJobs = ref<JobSummary[]>([])
 

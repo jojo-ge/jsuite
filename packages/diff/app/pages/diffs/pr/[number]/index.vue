@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// jDiff's short PR-review URL — an alias over the layer's <DiffPrReview>, also
-// served at /diffs/pr/<n>.
+// Reviewing one pull request. jDiff aliases the same component onto /pr/<n>.
 const route = useRoute()
 </script>
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { AppNotification } from '~/composables/useNotifications'
+import type { AppNotification } from '../composables/useDiffNotifications'
 
 const props = defineProps<{ repo: string }>()
 
-const { notifications, unreadCount, isUnread, markAllRead, refresh } = useNotifications(
+const { notifications, unreadCount, isUnread, markAllRead, refresh } = useDiffNotifications(
   toRef(props, 'repo'),
 )
 

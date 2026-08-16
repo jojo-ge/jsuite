@@ -5,7 +5,7 @@ import type { Tour } from '@jsuite/diff/tour'
 
 // The four guidance artifacts (rating, risk map, tour, ask yourself) for one
 // PR: each loads from its ~/.jdiff store on mount and is overwritten by the
-// live result of a claude run streaming through useAiTasks. Both the review
+// live result of a claude run streaming through useDiffAiTasks. Both the review
 // page and the tool-summary page fold the same two sources, so the folding
 // lives here; page-specific concerns (logs UI, tour walking, checklists)
 // stay in the pages.
@@ -14,7 +14,7 @@ export function usePrArtifacts(
   target: Ref<ReviewTarget>,
   lastPushedAt: Ref<string | null | undefined>,
 ) {
-  const ai = useAiTasks(repo, target)
+  const ai = useDiffAiTasks(repo, target)
   const { tasks } = ai
 
   // Every saved-artifact fetch is keyed by repo + the target's params.

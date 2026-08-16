@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CommentEntry } from '~/utils/comments'
+import type { CommentEntry } from '@jsuite/diff/comments'
 
 // Comment mode: every comment on the change, read in one pass — where it
 // sits, the diff line it hangs off, and the whole of what it says. Clicking
@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="cdir" :title="r.entry.path">{{ r.dir }}</span>
             <span class="cwho">
-              <AuthorAvatar v-if="r.entry.login" :login="r.entry.login" :size="16" />
+              <DiffAuthorAvatar v-if="r.entry.login" :login="r.entry.login" :size="16" />
               {{ r.entry.user }}
             </span>
             <span v-if="r.entry.replies" class="creplies">

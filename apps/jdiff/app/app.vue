@@ -5,5 +5,5 @@ useHead({ titleTemplate: (t) => (t && t !== 'jDiff' ? `${t} · jDiff` : 'jDiff')
 
 <template>
   <NuxtPage />
-  <ScrollTopButton />
+  <DiffScrollTopButton />
 </template>

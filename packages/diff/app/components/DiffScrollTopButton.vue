@@ -17,7 +17,7 @@ function toTop() {
 </script>
 
 <template>
-  <button v-if="visible" class="scroll-top" title="scroll to top" @click="toTop">
+  <button v-if="visible" class="diff-overlay scroll-top" title="scroll to top" @click="toTop">
     ↑ top
   </button>
 </template>
