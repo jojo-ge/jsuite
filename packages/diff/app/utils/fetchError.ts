@@ -1,11 +1,8 @@
-// A useFetch error's `data` is the parsed response body, typed `{}` unless the
-// call site declares an error type — so `error.data?.message` fails to
-// typecheck even though the H3 error payload carries a message at runtime.
-// Read it structurally here, once, instead of casting at every error box.
-export function fetchErrorMessage(error: { data?: unknown; message?: string } | null | undefined): string {
-  const data = error?.data
-  if (data && typeof data === 'object' && 'message' in data && typeof data.message === 'string') {
-    return data.message
-  }
-  return error?.message ?? ''
-}
+// The review UI's error boxes read a failed fetch through the suite's one
+// helper, re-exported here so Nuxt keeps auto-importing it under the same name
+// inside this layer. It used to be implemented here, but jTicket extends this
+// layer *and* has its own error boxes: two functions called `fetchErrorMessage`
+// in the same scope, disagreeing about which field to read, is a trap for
+// whoever writes the next catch block. There is one now, in @jsuite/http, and
+// unlike a layer util a package can be imported from `server/` too.
+export { fetchErrorMessage } from '@jsuite/http'

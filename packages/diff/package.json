@@ -24,6 +24,7 @@
   "dependencies": {
     "@jsuite/claude": "workspace:*",
     "@jsuite/data": "workspace:*",
+    "@jsuite/http": "workspace:*",
     "marked": "^18.0.6",
     "parse-diff": "^0.12.0",
     "shiki": "^4.3.1"
