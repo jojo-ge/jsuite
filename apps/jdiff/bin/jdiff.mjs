@@ -8,7 +8,7 @@ import https from 'node:https'
 import http from 'node:http'
 
 // --- base url --------------------------------------------------------------
-// Default host: the jSuite edge (~/code/anyway/jsuite) — OrbStack resolves
+// Default host: the jSuite edge (~/code/jojo/jsuite) — OrbStack resolves
 // jdiff.local and terminates TLS, Caddy proxies to the native dev server.
 const DEFAULT_BASE = 'https://jdiff.local'
 // strip trailing slash so we can concatenate paths cleanly.
@@ -122,7 +122,7 @@ function healthCheck(base) {
 
 function warnUnreachable(base) {
   process.stderr.write(
-    `warning: jDiff server not reachable at ${base} — start the suite: ~/code/anyway/jsuite/jsuite start\n`
+    `warning: jDiff server not reachable at ${base} — start the suite: ~/code/jojo/jsuite/jsuite start\n`
   )
 }
 

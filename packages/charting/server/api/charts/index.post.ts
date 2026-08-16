@@ -1,4 +1,4 @@
-import { blankChart, keyFromTitle, uniqueKey, writeChart } from '../../utils/store'
+import { blankChart, chartDataDir, keyFromTitle, uniqueKey, writeChart } from '../../utils/store'
 
 /**
  * Create a chart. Body: { title, mermaid?, key?, replace? }
@@ -24,6 +24,8 @@ export default defineEventHandler(async (event) => {
   await writeChart(key, chart)
 
   // The layer's own route, so `path` is openable in every consumer of it —
-  // jChart's shorter /c/<key> is an alias over the same component.
-  return { key, title, path: `/charts/${key}` }
+  // jChart's shorter /c/<key> is an alias over the same component. `dataDir` is
+  // this pool on disk, so the publishing script can tell the user where to read
+  // the scene and notes back from without hardcoding a repo location.
+  return { key, title, path: `/charts/${key}`, dataDir: chartDataDir() }
 })

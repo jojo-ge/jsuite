@@ -102,7 +102,7 @@ ArtStyle's slots ARE the bone bindings, there is no separate rigging table.
 
 ## Storage + API
 
-- Pool: `~/code/anyway/jsuite/.data/jrig/documents/` (gitignored state — suite convention). First boot seeds `house` + `hoodie` + the 10 built-in clips from the TS sources via `rig/migrate.ts`.
+- Pool: `~/code/jojo/jsuite/.data/jrig/documents/` (gitignored state — suite convention). First boot seeds `house` + `hoodie` + the 10 built-in clips from the TS sources via `rig/migrate.ts`.
 - `GET /api/rig/documents` on :43006 lists `{name, kind, mtimeMs}` (`?content=1` inlines contents); `GET /api/rig/documents/<name>` returns one. The studio polls mtimes every 2s, so your file edits appear in a running page within seconds. (PUT with an mtime fence lands in M3 — a 409 there means YOUR edit raced the studio: re-read, merge, retry.)
 
 ## Worked example (abridged character)

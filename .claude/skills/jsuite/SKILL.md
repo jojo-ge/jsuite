@@ -5,12 +5,12 @@ description: Map of the jSuite local product ecosystem — what jTicket, jDiff, 
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of six local Nuxt
+jSuite is a pnpm-workspace monorepo at `~/code/jojo/jsuite` of six local Nuxt
 apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
 ```sh
-cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
+cd ~/code/jojo/jsuite && ./jsuite start    # apps + Caddy edge
 ./jsuite status | stop | restart | logs [app] | open [app]
 ```
 
@@ -85,7 +85,7 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   /etc/hosts). Apps run natively (jDiff needs host `git`/`gh`/`claude`); only
   Caddy is Dockerised.
 - **One state directory**: every app stores state under
-  `~/code/anyway/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
+  `~/code/jojo/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
   place to read, back up, or wipe.
 - **One chart pool**: the `@jsuite/charting` Nuxt layer carries the Excalidraw
   canvas, `server/api/charts/**` over `.data/jchart/`, AND the chart UI — the
@@ -131,6 +131,6 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
 | be grilled about a plan, answering in a UI | `j-grilling` |
 | draw / rig / animate an avatar character | jRig — https://jrig.local (companion skill lands with its M9 milestone) |
 
-If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
+If an app isn't responding, `cd ~/code/jojo/jsuite && ./jsuite status` then
 `./jsuite start` (it refuses ports held by processes it didn't launch — a stale
 dev server must be killed first). Logs: `./jsuite logs <app>`.

@@ -24,10 +24,10 @@ Use this when the user asks you to *explain* something and deserves better than 
    - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail.
    - Click **Copy notes for Claude** when done.
 
-4. **Read the result back.** Either the pasted markdown, or directly:
-   - `~/code/anyway/jsuite/.data/jexplain/<key>.json` — the document
-   - `~/code/anyway/jsuite/.data/jexplain/<key>.notes.json` — `{ general, notes: [{ blockId, label, text }] }`
-   - `~/code/anyway/jsuite/.data/jchart/<chartKey>.json` + `.notes.json` — each chart's live scene and shape notes (the user may have redrawn the diagram — the scene is the truth, not your original mermaid)
+4. **Read the result back.** Either the pasted markdown, or directly — `explain.py` prints the absolute path of each of these on publish (`explainer:`, `notes:`, `charts:`); read them from there rather than assuming a location:
+   - `<key>.json` in the document pool (`.data/jexplain/`) — the document
+   - `<key>.notes.json` alongside it — `{ general, notes: [{ blockId, label, text }] }`
+   - `<chartKey>.json` + `.notes.json` in the chart pool (`.data/jchart/`) — each chart's live scene and shape notes (the user may have redrawn the diagram — the scene is the truth, not your original mermaid)
 
 5. **Act on it.** Revise the payload and re-run with `--replace`.
 
@@ -109,7 +109,7 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 ## Notes
 
 - `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The app's home page is <https://jexplain.local>.
-- The app is jExplain in the jSuite (`~/code/anyway/jsuite/apps/jexplain`, port 43004). Start everything with `jsuite start`.
+- The app is jExplain in the jSuite (`~/code/jojo/jsuite/apps/jexplain`, port 43004). Start everything with `jsuite start`.
 - Charts live in the shared chart pool — deleting an explainer never deletes its charts.
 - Publishing goes to `POST /api/documents` (explain.py handles this). For a document that should sit on the jTicket board with project/status/labels, use `/to-jdoc` instead — same format, plus a tracker record.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JEXPLAIN_BROWSER`.

@@ -62,6 +62,15 @@ export function cleanDocLabels(input: unknown): string[] {
 const docPath = (key: string) => join(DATA_DIR, sanitizeDocKey(key) + '.json')
 const docNotesPath = (key: string) => join(DATA_DIR, sanitizeDocKey(key) + '.notes.json')
 
+/**
+ * Where this pool lives on disk. Handed back by the API so a caller — a skill
+ * script, the copy-for-Claude output — can name a path that actually exists on
+ * the machine serving it, instead of hardcoding one that goes stale on a move.
+ */
+export function docDataDir(): string {
+  return DATA_DIR
+}
+
 export async function uniqueDocKey(base: string): Promise<string> {
   const root = sanitizeDocKey(base) || 'document'
   if (!existsSync(docPath(root))) return root

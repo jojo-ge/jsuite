@@ -6,7 +6,7 @@ instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
 
 ```sh
-cd ~/code/anyway/jsuite
+cd ~/code/jojo/jsuite
 ./jsuite setup      # once (re-runnable) — see Setup below
 ./jsuite start      # apps + edge
 ```
@@ -99,6 +99,13 @@ it's plain ESM, so Nitro consumes it with no transpile step and there's no layer
 to extend. The root is found by walking up to `pnpm-workspace.yaml`, so it works
 however an app is launched; `./jsuite` also exports `JSUITE_DATA_DIR`, which
 overrides the search when set.
+
+Nothing should ever write a `.data` location down by hand — a hardcoded path
+goes stale the moment the workspace moves. Where a path has to leave the server,
+it comes from this resolver: the `@jsuite/charting` layer publishes the root as
+`runtimeConfig.public.jsuiteDataRoot` for components that paste on-disk paths
+(the copy-for-Claude output), and `POST /api/charts` and `POST /api/documents`
+return their pool as `dataDir` so the skill scripts can print it.
 
 | app | state |
 | --- | --- |

@@ -78,6 +78,15 @@ export function chartFilePath(key: string): string {
   return chartPath(key)
 }
 
+/**
+ * Where this pool lives on disk. Handed back by the API so a caller — a skill
+ * script, the copy-for-Claude output — can name a path that actually exists on
+ * the machine serving it, instead of hardcoding one that goes stale on a move.
+ */
+export function chartDataDir(): string {
+  return DATA_DIR
+}
+
 export async function uniqueKey(base: string): Promise<string> {
   await ensureDir()
   const root = sanitizeKey(base) || 'chart'

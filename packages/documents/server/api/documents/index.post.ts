@@ -1,4 +1,4 @@
-import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, cleanDocLabels, type Explainer } from '../../utils/store'
+import { docDataDir, docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, cleanDocLabels, type Explainer } from '../../utils/store'
 import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
 
 /**
@@ -40,5 +40,17 @@ export default defineEventHandler(async (event) => {
   }
   await writeDoc(key, doc)
 
-  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length, labels: doc.labels }
+  // `dataDir`/`chartDataDir` are the two pools on disk. The publishing script
+  // prints them so the user's notes can be read straight back off the machine
+  // that served this call, rather than from a hardcoded repo location.
+  // chartDataDir() is a Nitro auto-import from the @jsuite/charting layer.
+  return {
+    key,
+    title,
+    path: `/e/${key}`,
+    blocks: doc.blocks.length,
+    labels: doc.labels,
+    dataDir: docDataDir(),
+    chartDataDir: chartDataDir(),
+  }
 })

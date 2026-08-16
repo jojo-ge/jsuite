@@ -6,9 +6,9 @@ Usage:
     explain.py --list
 
 The doc is a j-explain JSON authoring payload (title, blocks, glossary — see the
-skill's SKILL.md for the block vocabulary). It's stored as an explainer at
-~/code/anyway/jsuite/.data/jexplain/<key>.json; chart blocks with inline mermaid
-are materialised into the shared jChart store (.data/jchart/), where the user
+skill's SKILL.md for the block vocabulary). It's stored as an explainer in the
+shared document pool, <data>/jexplain/<key>.json; chart blocks with inline mermaid
+are materialised into the shared jChart store (<data>/jchart/), where the user
 can also open them in the full jChart workbench.
 
 Prints the explainer URL plus the data file paths to read the user's notes back
@@ -26,8 +26,6 @@ import urllib.request
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
 EDGE_BASE = "https://jexplain.local"
 DIRECT_BASE = "http://localhost:43004"
-DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jexplain")
-CHART_DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
 
 # Preferred browser (macOS app name). Override with --browser or $JEXPLAIN_BROWSER.
 DEFAULT_BROWSER = "Arc"
@@ -67,6 +65,25 @@ def not_running():
         file=sys.stderr,
     )
     return 2
+
+
+def data_dirs(res):
+    """The (document, chart) pools on disk, never guessed.
+
+    The server that just answered the publish call resolved its own `.data` and
+    hands both pools back, so the paths we print are true for whatever checkout
+    is actually running. `$JSUITE_DATA_DIR` (exported by `./jsuite`) covers an
+    older server that doesn't send them; if neither is available we say nothing
+    rather than print paths that may not exist.
+    """
+    res = res or {}
+    if res.get("dataDir"):
+        return res["dataDir"], res.get("chartDataDir")
+    env = os.environ.get("JSUITE_DATA_DIR")
+    if not env:
+        return None, None
+    root = os.path.expanduser(env)
+    return os.path.join(root, "jexplain"), os.path.join(root, "jchart")
 
 
 def open_in_browser(url, browser=None):
@@ -143,9 +160,16 @@ def main():
         open_in_browser(url, args.browser)
 
     print(url)
-    print(f"explainer: {os.path.join(DATA_DIR, res['key'] + '.json')}")
-    print(f"notes:     {os.path.join(DATA_DIR, res['key'] + '.notes.json')}")
-    print(f"charts:    {CHART_DATA_DIR}/<chartKey>.json (keys in the explainer's chart blocks)")
+    doc_pool, chart_pool = data_dirs(res)
+    if doc_pool:
+        print(f"explainer: {os.path.join(doc_pool, res['key'] + '.json')}")
+        print(f"notes:     {os.path.join(doc_pool, res['key'] + '.notes.json')}")
+    else:
+        print(f"explainer: {res['key']}.json (+ .notes.json) in the document pool — "
+              "set $JSUITE_DATA_DIR to have the full paths printed")
+    if chart_pool:
+        print(f"charts:    {os.path.join(chart_pool, '<chartKey>.json')} "
+              "(keys in the explainer's chart blocks)")
     return 0
 
 
