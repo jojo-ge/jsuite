@@ -1,8 +1,37 @@
+import type { ExplainerMeta } from '@jsuite/documents/types'
+
 // Client-side mirror of the server types (see server/utils/store.ts).
 export type TicketType = 'AFK' | 'HITL'
 export type TicketStatus = 'todo' | 'in_progress' | 'done'
-export type DocStatus = 'draft' | 'ready'
 export type ProjectMode = 'standard' | 'wayfinder'
+
+// An artifact reference — jTicket owns the ticket↔artifact link; the shared
+// pools stay ticket-ignorant. `id` is a document or chart pool key, or a jDiff
+// review target ('123' / 'branch/<name>'). See server/utils/store.ts.
+export type AttachmentType = 'document' | 'chart' | 'diff'
+
+export interface Attachment {
+  type: AttachmentType
+  id: string
+}
+
+// What GET /api/{tickets,projects}/:id/attachments returns: the ref plus what
+// the artifact says about itself, read fresh from its pool. `missing` means the
+// artifact is gone (or, for a diff, that there's no repo to read it against) —
+// a state to render, not an error.
+export interface ResolvedAttachment extends Attachment {
+  title: string
+  url: string
+  updatedAt: string
+  missing: boolean
+  reason?: string
+}
+
+export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: string }> = {
+  document: { label: 'Document', icon: 'i-lucide-file-text' },
+  chart: { label: 'Chart', icon: 'i-lucide-git-branch' },
+  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request' },
+}
 
 export interface Project {
   id: string
@@ -15,6 +44,7 @@ export interface Project {
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string
+  attachments: Attachment[]
   createdAt: string
   updatedAt: string
 }
@@ -42,6 +72,7 @@ export interface Ticket {
   resolution: string
   blockedBy: string[]
   comments: TicketComment[]
+  attachments: Attachment[]
   // When the ticket last became done; null while unfinished. Stamped by the
   // server on the status change, not by callers — see /finished.
   completedAt: string | null
@@ -54,28 +85,16 @@ export interface Ticket {
   frontier?: boolean
 }
 
-// A tracker record wrapping a document in the shared @jsuite/documents pool —
-// the content (blocks, glossary) lives in the shared document, which jExplain
-// lists and renders too.
-export interface Doc {
-  id: string
-  key: string
-  title: string
-  documentKey: string
-  projectId: string | null
-  labels: string[]
-  status: DocStatus
-  createdAt: string
-  updatedAt: string
-}
-
 // How long a ticket stays ringed after it moves under you.
 export const CHANGE_HIGHLIGHT_MS = 10_000
 
 export function useTracker() {
   const projects = useState<Project[]>('jticket-projects', () => [])
   const tickets = useState<Ticket[]>('jticket-tickets', () => [])
-  const docs = useState<Doc[]>('jticket-docs', () => [])
+  // The whole shared document pool — the same list jExplain reads. jTicket no
+  // longer keeps a record per document; a document belongs to a project by
+  // being attached to it.
+  const documents = useState<ExplainerMeta[]>('jticket-documents', () => [])
   // Ids of tickets that moved in the last live update (see useLiveTracker).
   // Cards ring themselves while an id is in here, so a change somebody *else*
   // made — an agent, another tab — is visible without re-reading the board.
@@ -108,11 +127,12 @@ export function useTracker() {
     const [p, t, d] = await Promise.all([
       $fetch<Project[]>('/api/projects'),
       $fetch<Ticket[]>('/api/tickets'),
-      $fetch<Doc[]>('/api/docs'),
+      // The shared pool can be unreachable without the board being broken.
+      $fetch<ExplainerMeta[]>('/api/documents').catch(() => [] as ExplainerMeta[]),
     ])
     projects.value = p
     tickets.value = t
-    docs.value = d
+    documents.value = d
   }
 
   // ── Projects ──
@@ -151,25 +171,27 @@ export function useTracker() {
     await refresh()
   }
 
-  // ── Docs ──
-  async function createDoc(input: Partial<Doc>): Promise<Doc> {
-    const doc = await $fetch<Doc>('/api/docs', { method: 'POST', body: input })
-    await refresh()
-    return doc
-  }
-  async function updateDoc(id: string, input: Partial<Doc>) {
-    await $fetch(`/api/docs/${id}`, { method: 'PATCH', body: input })
+  // ── Attachments ──
+  // Owner-scoped so one ref can be added or dropped without a read-modify-write
+  // race against another tab (or an agent) editing the same record.
+  type Owner = 'tickets' | 'projects'
+  async function attach(owner: Owner, id: string, att: Attachment) {
+    await $fetch(`/api/${owner}/${id}/attachments`, { method: 'POST', body: att })
     await refresh()
   }
-  async function deleteDoc(id: string) {
-    await $fetch(`/api/docs/${id}`, { method: 'DELETE' })
+  async function detach(owner: Owner, id: string, att: Attachment) {
+    await $fetch(`/api/${owner}/${id}/attachments`, { method: 'DELETE', query: att })
     await refresh()
+  }
+  /** The artifacts behind a record's refs, dangling ones flagged `missing`. */
+  function resolvedAttachments(owner: Owner, id: string) {
+    return $fetch<ResolvedAttachment[]>(`/api/${owner}/${id}/attachments`)
   }
 
   return {
     projects,
     tickets,
-    docs,
+    documents,
     changed,
     markChanged,
     refresh,
@@ -181,9 +203,9 @@ export function useTracker() {
     deleteTicket,
     addComment,
     deleteComment,
-    createDoc,
-    updateDoc,
-    deleteDoc,
+    attach,
+    detach,
+    resolvedAttachments,
   }
 }
 
@@ -192,11 +214,6 @@ export const STATUS_META: Record<TicketStatus, { label: string; color: 'neutral'
   todo: { label: 'To Do', color: 'neutral' },
   in_progress: { label: 'In Progress', color: 'info' },
   done: { label: 'Done', color: 'success' },
-}
-
-export const DOC_STATUS_META: Record<DocStatus, { label: string; color: 'neutral' | 'success' }> = {
-  draft: { label: 'Draft', color: 'neutral' },
-  ready: { label: 'Ready', color: 'success' },
 }
 
 export function isBlocked(ticket: Ticket, all: Ticket[]): boolean {

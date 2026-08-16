@@ -1,45 +1,35 @@
 <script setup lang="ts">
-import type { Doc } from '~/composables/useTracker'
 import type { Explainer } from '@jsuite/documents/types'
 
+// The route param is a key into the shared document pool — the same key
+// jExplain reads and an attachment ref carries. There is no tracker record in
+// front of it any more; which projects it belongs to is read off their
+// attachments.
 const route = useRoute()
-const { docs, projects, updateDoc, deleteDoc, refresh } = useTracker()
+const { projects, refresh } = useTracker()
+const docKey = computed(() => String(route.params.id))
 
-// The route param is a doc key (e.g. DOC-1) or id; resolve from state.
-const docRef = computed(() => String(route.params.id))
-const doc = computed(() => docs.value.find((d) => d.key === docRef.value || d.id === docRef.value))
-useHead(() => ({ title: doc.value ? `${doc.value.key} ${doc.value.title}` : docRef.value }))
-const project = computed(() =>
-  doc.value ? projects.value.find((p) => p.id === doc.value!.projectId) : undefined,
+const { data: doc } = await useAsyncData<Explainer | null>(
+  () => $fetch<Explainer>(`/api/documents/${docKey.value}`).catch(() => null),
+  { watch: [docKey] },
+)
+useHead(() => ({ title: doc.value?.title ?? docKey.value }))
+
+const attachedTo = computed(() =>
+  projects.value.filter((p) => p.attachments.some((a) => a.type === 'document' && a.id === docKey.value)),
 )
 
-// The content lives in the shared @jsuite/documents pool — same object
-// jExplain renders. Served by this app's own /api/documents (from the layer).
-const { data: sharedDoc, refresh: refreshDocument } = await useAsyncData<Explainer | null>(
-  () => (doc.value?.documentKey ? $fetch(`/api/documents/${doc.value.documentKey}`) : Promise.resolve(null)),
-  { watch: [() => doc.value?.documentKey] },
-)
-
-const editing = ref(false)
 const railOpen = ref(false)
-const status = computed(() => (doc.value ? DOC_STATUS_META[doc.value.status] : null))
-
-async function onSave(payload: Partial<Doc>) {
-  if (!doc.value) return
-  await updateDoc(doc.value.id, payload)
-  await refreshDocument()
-  editing.value = false
-}
 
 async function onDelete() {
-  if (!doc.value) return
-  if (!confirm(`Delete ${doc.value.key} — ${doc.value.title}? The shared document stays in the pool.`)) return
-  await deleteDoc(doc.value.id)
+  if (!confirm(`Delete "${doc.value?.title ?? docKey.value}" from the shared pool? Every ref to it will read as missing.`)) return
+  await $fetch(`/api/documents/${docKey.value}`, { method: 'DELETE' })
+  await refresh()
   navigateTo('/docs')
 }
 
 onMounted(() => {
-  if (!docs.value.length) refresh()
+  if (!projects.value.length) refresh()
 })
 </script>
 
@@ -47,32 +37,25 @@ onMounted(() => {
   <div class="flex h-screen flex-col bg-default">
     <AppHeader />
 
-    <!-- Not found -->
+    <!-- Not found: the pool has no document under this key -->
     <div v-if="!doc" class="flex flex-col items-center gap-4 py-24 text-center">
       <UIcon name="i-lucide-file-x" class="size-12 text-muted" />
       <div>
         <p class="text-lg font-medium">Document not found</p>
-        <p class="text-sm text-muted">It may have been deleted.</p>
+        <p class="text-sm text-muted">
+          Nothing in the shared pool under <code class="font-mono text-xs">{{ docKey }}</code> — it may have been deleted.
+        </p>
       </div>
       <UButton icon="i-lucide-arrow-left" to="/docs">Back to documents</UButton>
     </div>
 
-    <!-- Edit mode: metadata only — content is the shared block document -->
-    <UContainer v-else-if="editing" class="py-8">
-      <DocEditor :doc="doc" @save="onSave" @cancel="editing = false" />
-    </UContainer>
-
     <template v-else>
-      <!-- Tracker metadata bar -->
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-6 py-2">
         <UButton icon="i-lucide-arrow-left" size="xs" color="neutral" variant="ghost" to="/docs" aria-label="All documents" />
-        <span class="font-mono text-xs text-muted">{{ doc.key }}</span>
-        <UBadge v-if="status" :color="status.color" variant="subtle" size="sm">{{ status.label }}</UBadge>
-        <NuxtLink v-if="project" :to="`/projects/${project.key}`">
-          <UBadge color="secondary" variant="outline" size="sm" class="font-mono">{{ project.key }}</UBadge>
+        <span class="font-mono text-xs text-muted">{{ docKey }}</span>
+        <NuxtLink v-for="p in attachedTo" :key="p.id" :to="`/projects/${p.key}`">
+          <UBadge color="secondary" variant="outline" size="sm" class="font-mono">{{ p.key }}</UBadge>
         </NuxtLink>
-        <UBadge v-for="l in doc.labels" :key="l" color="neutral" variant="outline" size="sm">{{ l }}</UBadge>
-        <span class="font-mono text-[11px] text-dimmed">{{ doc.documentKey }}</span>
         <span class="flex-1" />
         <UButton
           :icon="railOpen ? 'i-lucide-panel-right-close' : 'i-lucide-message-square'"
@@ -82,17 +65,17 @@ onMounted(() => {
           label="Notes"
           @click="railOpen = !railOpen"
         />
-        <UButton icon="i-lucide-pencil" size="xs" variant="soft" @click="editing = true">Edit</UButton>
-        <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost" aria-label="Delete doc" @click="onDelete" />
+        <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost" aria-label="Delete document" @click="onDelete" />
       </div>
 
       <!-- The shared document, rendered exactly as jExplain renders it -->
-      <DocumentArticle v-if="sharedDoc" :doc="sharedDoc" v-model:rail-open="railOpen" />
+      <DocumentArticle v-if="doc.blocks?.length" :doc="doc" v-model:rail-open="railOpen" />
       <div v-else class="py-16 text-center text-sm text-muted">
-        <p>No content yet — this doc's shared document is empty or missing.</p>
+        <p>No content yet — this document is empty.</p>
         <p class="mt-1">
           Author it with the <code class="font-mono text-xs">to-jdoc</code> skill:
-          <code class="font-mono text-xs">PATCH /api/docs/{{ doc.key }}</code> with a blocks payload.
+          <code class="font-mono text-xs">POST /api/documents</code> with
+          <code class="font-mono text-xs">{{ `{ key: '${docKey}', replace: true, blocks: [...] }` }}</code>.
         </p>
       </div>
     </template>

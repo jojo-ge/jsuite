@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { Doc } from '~/composables/useTracker'
+import type { ResolvedAttachment } from '~/composables/useTracker'
 import type { Explainer } from '@jsuite/documents/types'
 
 const route = useRoute()
-const { projects, tickets, docs } = useTracker()
+const { projects, tickets, resolvedAttachments } = useTracker()
 const {
   openNewTicket,
   openEditTicket,
@@ -21,8 +21,12 @@ useHead(() => ({
   title: project.value ? `${project.value.key} ${project.value.title}` : projectRef.value,
 }))
 
-const projectDocs = computed(() =>
-  project.value ? docs.value.filter((d) => d.projectId === project.value!.id) : [],
+// The project's attached artifacts, resolved against their pools. Refs whose
+// artifact has since been deleted come back flagged `missing` rather than
+// missing from the list — a link the human made is worth showing as broken.
+const { data: attachments } = await useAsyncData<ResolvedAttachment[]>(
+  () => (project.value ? resolvedAttachments('projects', project.value.id) : Promise.resolve([])),
+  { watch: [() => project.value?.id], default: () => [] },
 )
 // Every ticket under this project — the header's rollup line and its
 // done / in progress / blocked / not started bar.
@@ -34,28 +38,27 @@ const stats = computed(() => ({
   done: projectTickets.value.filter((x) => x.status === 'done').length,
 }))
 
-// Documents render compact — a one-line list or a pill strip — instead of full
-// cards that read like tickets. The choice is per-visitor and in-memory.
-const docsView = ref<'rows' | 'chips'>('rows')
+// Attachments render compact — a one-line list or a pill strip — instead of
+// full cards that read like tickets. The choice is per-visitor and in-memory.
+const attachmentsView = ref<'rows' | 'chips'>('rows')
 
-// Clicking a doc previews its shared document (the same object /docs/[key]
-// renders) in a modal; a footer link opens the full page.
-const previewDoc = ref<Doc | null>(null)
+// A document previews inline (the same object /docs/[key] renders); a chart or
+// a diff lives in another app, so it opens there. A missing one does neither.
+const previewDoc = ref<ResolvedAttachment | null>(null)
 const previewContent = ref<Explainer | null>(null)
 const previewLoading = ref(false)
 const previewOpen = ref(false)
-async function openDocPreview(d: Doc) {
-  previewDoc.value = d
+function openAttachment(a: ResolvedAttachment) {
+  if (a.missing) return
+  if (a.type !== 'document') return navigateTo(a.url, { external: true })
+  previewDoc.value = a
   previewContent.value = null
   previewOpen.value = true
   previewLoading.value = true
-  try {
-    previewContent.value = d.documentKey ? await $fetch<Explainer>(`/api/documents/${d.documentKey}`) : null
-  } catch {
-    previewContent.value = null
-  } finally {
-    previewLoading.value = false
-  }
+  $fetch<Explainer>(`/api/documents/${a.id}`)
+    .then((doc) => { previewContent.value = doc })
+    .catch(() => { previewContent.value = null })
+    .finally(() => { previewLoading.value = false })
 }
 
 // The integration branch, from the header: cut it in one click when the project
@@ -171,73 +174,74 @@ async function removeProject() {
           </div>
         </div>
 
-        <!-- Documents — compact, with a Rows / Chips toggle; a click previews the doc -->
-        <section v-if="projectDocs.length" class="mb-8">
+        <!-- Attachments — the artifacts this project links: documents, charts,
+             diffs. Compact, with a Rows / Chips toggle; a click opens it. -->
+        <section v-if="attachments.length" class="mb-8">
           <div class="mb-2 flex items-center gap-2">
-            <UIcon name="i-lucide-file-text" class="size-4 text-muted" />
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Documents</h2>
-            <span class="text-xs text-muted">{{ projectDocs.length }}</span>
+            <UIcon name="i-lucide-paperclip" class="size-4 text-muted" />
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Attached</h2>
+            <span class="text-xs text-muted">{{ attachments.length }}</span>
             <UFieldGroup size="xs" class="ml-auto">
               <UButton
                 icon="i-lucide-list"
-                :color="docsView === 'rows' ? 'primary' : 'neutral'"
-                :variant="docsView === 'rows' ? 'solid' : 'outline'"
-                @click="docsView = 'rows'"
+                :color="attachmentsView === 'rows' ? 'primary' : 'neutral'"
+                :variant="attachmentsView === 'rows' ? 'solid' : 'outline'"
+                @click="attachmentsView = 'rows'"
               >
                 Rows
               </UButton>
               <UButton
                 icon="i-lucide-tags"
-                :color="docsView === 'chips' ? 'primary' : 'neutral'"
-                :variant="docsView === 'chips' ? 'solid' : 'outline'"
-                @click="docsView = 'chips'"
+                :color="attachmentsView === 'chips' ? 'primary' : 'neutral'"
+                :variant="attachmentsView === 'chips' ? 'solid' : 'outline'"
+                @click="attachmentsView = 'chips'"
               >
                 Chips
               </UButton>
             </UFieldGroup>
-            <UButton
-              icon="i-lucide-file-plus"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-              :to="`/docs/new?project=${project.id}`"
-            >
-              New doc
+            <UButton icon="i-lucide-file-text" size="xs" color="neutral" variant="ghost" to="/docs">
+              All documents
             </UButton>
           </div>
 
           <!-- Rows: a tight one-line list -->
-          <div v-if="docsView === 'rows'" class="overflow-hidden rounded-lg border border-default">
+          <div v-if="attachmentsView === 'rows'" class="overflow-hidden rounded-lg border border-default">
             <button
-              v-for="d in projectDocs"
-              :key="d.id"
+              v-for="a in attachments"
+              :key="`${a.type}:${a.id}`"
               type="button"
-              class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-1.5 text-left text-sm last:border-0 hover:bg-elevated/40"
-              @click="openDocPreview(d)"
+              :disabled="a.missing"
+              class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-1.5 text-left text-sm last:border-0 enabled:hover:bg-elevated/40 disabled:cursor-default"
+              @click="openAttachment(a)"
             >
-              <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0 text-muted" />
-              <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ d.key }}</span>
-              <span class="truncate">{{ d.title }}</span>
-              <UBadge :color="DOC_STATUS_META[d.status].color" variant="subtle" size="sm" class="ml-auto shrink-0">
-                {{ DOC_STATUS_META[d.status].label }}
+              <UIcon :name="ATTACHMENT_META[a.type].icon" class="size-3.5 shrink-0 text-muted" />
+              <span class="w-20 shrink-0 truncate font-mono text-xs text-muted">{{ a.id }}</span>
+              <span class="truncate" :class="a.missing && 'text-dimmed line-through'">{{ a.title }}</span>
+              <UTooltip v-if="a.missing" :text="a.reason ?? 'the artifact is gone'" class="ml-auto shrink-0">
+                <UBadge color="error" variant="subtle" size="sm">Missing</UBadge>
+              </UTooltip>
+              <UBadge v-else color="neutral" variant="subtle" size="sm" class="ml-auto shrink-0">
+                {{ ATTACHMENT_META[a.type].label }}
               </UBadge>
             </button>
           </div>
 
           <!-- Chips: a wrapping row of pills; hover shows the full title -->
           <div v-else class="flex flex-wrap gap-2">
-            <UTooltip v-for="d in projectDocs" :key="d.id" :text="d.title">
+            <UTooltip
+              v-for="a in attachments"
+              :key="`${a.type}:${a.id}`"
+              :text="a.missing ? `${a.title} — ${a.reason ?? 'missing'}` : a.title"
+            >
               <button
                 type="button"
-                class="flex items-center gap-1.5 rounded-full border border-default bg-elevated/40 px-3 py-1 text-xs hover:bg-elevated/70"
-                @click="openDocPreview(d)"
+                :disabled="a.missing"
+                class="flex items-center gap-1.5 rounded-full border border-default bg-elevated/40 px-3 py-1 text-xs enabled:hover:bg-elevated/70 disabled:cursor-default"
+                :class="a.missing && 'border-error/40 text-dimmed'"
+                @click="openAttachment(a)"
               >
-                <span
-                  class="size-1.5 rounded-full"
-                  :class="DOC_STATUS_META[d.status].color === 'success' ? 'bg-success' : 'bg-neutral-400'"
-                />
-                <span class="font-mono text-muted">{{ d.key }}</span>
-                <span class="max-w-44 truncate">{{ d.title }}</span>
+                <UIcon :name="ATTACHMENT_META[a.type].icon" class="size-3 shrink-0 text-muted" />
+                <span class="max-w-44 truncate" :class="a.missing && 'line-through'">{{ a.title }}</span>
               </button>
             </UTooltip>
           </div>
@@ -262,7 +266,7 @@ async function removeProject() {
     <!-- Document preview -->
     <UModal
       v-model:open="previewOpen"
-      :title="previewDoc ? `${previewDoc.key} — ${previewDoc.title}` : 'Document'"
+      :title="previewDoc?.title ?? 'Document'"
       :ui="{ content: 'sm:max-w-4xl' }"
     >
       <template #body>
@@ -275,7 +279,7 @@ async function removeProject() {
       <template #footer>
         <div class="flex w-full justify-end gap-2">
           <UButton color="neutral" variant="ghost" @click="previewOpen = false">Close</UButton>
-          <UButton v-if="previewDoc" icon="i-lucide-external-link" @click="navigateTo(`/docs/${previewDoc.key}`)">
+          <UButton v-if="previewDoc" icon="i-lucide-external-link" @click="navigateTo(`/docs/${previewDoc.id}`)">
             Open full document
           </UButton>
         </div>
