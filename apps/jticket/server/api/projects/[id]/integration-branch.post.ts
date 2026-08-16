@@ -10,7 +10,9 @@
 // Body: { branch?: string, base?: string }  (both optional)
 //   branch — defaults to 'proj/<KEY>-<title-slug>'
 //   base   — defaults to the repo's default branch
-export default defineEventHandler(async (event) => {
+import type { IntegrationBranchResult } from '#shared/types/github'
+
+export default defineEventHandler(async (event): Promise<IntegrationBranchResult> => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<{ branch?: string; base?: string }>(event)
   const store = loadStore()

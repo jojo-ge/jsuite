@@ -17,6 +17,7 @@
 import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
+import type { BranchCandidate, GhPr, PrMatch, ProjectPr } from '#shared/types/github'
 import type { Project } from '#shared/types/tracker'
 import type { Store } from './store'
 
@@ -166,16 +167,6 @@ export async function probeRepo(repo: string): Promise<RepoProbe> {
 }
 
 // ── Branches ────────────────────────────────────────────────────────────────
-export interface BranchCandidate {
-  name: string // short name; a remote-only branch is named without 'origin/'
-  oid: string
-  subject: string
-  committedAt: string
-  local: boolean
-  remote: boolean
-  isDefault: boolean
-}
-
 /**
  * Every branch in the repo — local and on origin, merged by short name — newest
  * commit first. This is what the "use an existing branch" picker searches, so a
@@ -253,21 +244,24 @@ export async function listBranches(
 }
 
 // ── PR listing ──────────────────────────────────────────────────────────────
-export interface GhPr {
-  number: number
-  title: string
-  author?: { login?: string } | null
-  headRefName: string
-  baseRefName: string
-  isDraft: boolean
-  url: string
-  updatedAt: string
-  additions?: number
-  deletions?: number
-  reviewDecision?: string | null
-}
-
-const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,additions,deletions,reviewDecision,url'
+// What we ask `gh` for is exactly what GhPr declares, and the compiler holds the
+// two together: `satisfies Record<keyof GhPr, true>` fails if a field is added
+// to GhPr and not asked for here, and fails again if we ask for one GhPr doesn't
+// declare. That pairing was the last hand-kept thing in this family — the client
+// half of it is a shared declaration now, and this half is checked.
+const PR_FIELDS = Object.keys({
+  number: true,
+  title: true,
+  author: true,
+  headRefName: true,
+  baseRefName: true,
+  isDraft: true,
+  url: true,
+  updatedAt: true,
+  additions: true,
+  deletions: true,
+  reviewDecision: true,
+} satisfies Record<keyof GhPr, true>).join(',')
 
 // `gh pr list` is a network round-trip and the project page refetches on every
 // live tracker change, so hold the answer briefly per repo. ?force=1 busts it.
@@ -292,16 +286,6 @@ export async function listOpenPrs(path: string, force = false): Promise<GhPr[]> 
 export function projectKeys(store: Store, project: Project): string[] {
   const tickets = store.tickets.filter((t) => t.projectId === project.id)
   return [project.key, ...tickets.map((t) => t.key)]
-}
-
-export type PrMatch = 'integration' | 'base' | 'key'
-
-export interface ProjectPr extends GhPr {
-  /** Why this PR is on the project's list — a PR can match more than one way. */
-  matchedBy: PrMatch[]
-  /** Project keys named by the PR's head branch or title. */
-  keys: string[]
-  githubUrl: string
 }
 
 // No review link is built here any more. jTicket serves the review UI itself
@@ -329,7 +313,7 @@ export function matchProjectPrs(
     if (keys.length) matchedBy.push('key')
 
     if (!matchedBy.length) continue
-    matched.push({ ...pr, matchedBy, keys, githubUrl: pr.url })
+    matched.push({ ...pr, matchedBy, keys })
   }
 
   // The roll-up PR first, then most recently touched.

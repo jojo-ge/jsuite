@@ -3,8 +3,7 @@
 // modal and the ticket detail modal fill in the same fields the same way.
 // The parent owns the save button (modal footers are sticky) and drives it
 // through the exposed save()/saving/canSave.
-import type { Project, Ticket, TicketStatus, TicketType } from '#shared/types/tracker'
-import type { WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, TicketStatus, TicketType, WayfinderType } from '#shared/types/tracker'
 
 const props = withDefaults(
   defineProps<{
@@ -121,8 +120,8 @@ async function save() {
   saving.value = true
   try {
     // Preserve any non-wayfinder labels; set the sub-type from the picker.
-    const otherLabels = (live.value?.labels ?? []).filter((l) => !/^wayfinder:(research|prototype|grilling|task)$/.test(l))
-    const labels = form.wfType ? [...otherLabels, `wayfinder:${form.wfType}`] : otherLabels
+    const otherLabels = (live.value?.labels ?? []).filter((l) => !wayfinderTypeOfLabel(l))
+    const labels = form.wfType ? [...otherLabels, wayfinderLabel(form.wfType)] : otherLabels
     const payload = {
       title: form.title,
       description: form.description,

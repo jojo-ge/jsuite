@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { Ticket } from '#shared/types/tracker'
-import type { WayfinderType } from '~/composables/useTracker'
+import type { Ticket, WayfinderType } from '#shared/types/tracker'
 
 // Map mode for a wayfinder project: tickets as nodes in dependency layers
 // flowing left → right toward the destination, blocking edges drawn between

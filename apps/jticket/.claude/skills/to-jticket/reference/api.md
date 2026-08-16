@@ -227,7 +227,11 @@ that resolves references by **title**, which is what makes it usable before any 
   created, then tickets, then `blockedBy` edges are wired in a second pass — so a
   ticket may block-reference one declared later in the same array.
 - `wayfinderType: "research"` on a ticket is shorthand that adds the label
-  `wayfinder:research`. Only valid here.
+  `wayfinder:research`. Only valid here. The sub-type is a **closed set** —
+  `research`, `prototype`, `grilling`, `task` — and the whole import **400s**
+  on anything else, before creating a thing. The same goes for a
+  `wayfinder:<type>` written straight into `labels`; every other label is
+  free-form.
 - `attachments` is accepted on both projects and tickets, exactly as on POST.
 - **It always creates.** There is no upsert. Re-running the same import duplicates
   everything. To extend an existing project, send only `tickets` and reference the

@@ -31,7 +31,7 @@ interface ImportTicket {
   project?: string | null // project title or key
   assignee?: string
   labels?: string[]
-  wayfinderType?: string // shorthand → adds a 'wayfinder:<type>' label
+  wayfinderType?: string // shorthand → adds a 'wayfinder:<type>' label; must be a known sub-type
   resolution?: string
   blockedBy?: string[]
   attachments?: Attachment[] // artifact refs — { type: document|chart|diff, id }
@@ -42,6 +42,26 @@ export default defineEventHandler(async (event) => {
     projects?: ImportProject[]
     tickets?: ImportTicket[]
   }>(event)
+
+  // Reject a sub-type nothing can render, before anything is created. Both doors
+  // into the namespace: the `wayfinderType` shorthand, and a 'wayfinder:<type>'
+  // written straight into `labels`. Either used to be written through unchecked,
+  // which imports a label no screen renders and no filter finds — a silent typo
+  // rather than a 400. Checked up front so a bad row can't leave half a
+  // breakdown behind. Labels outside the namespace stay free-form.
+  for (const t of body.tickets ?? []) {
+    const unknown = [
+      ...[t?.wayfinderType].filter((v) => v != null).map(String),
+      ...(t?.labels ?? []).map(String).filter(isWayfinderLabel).map((l) => l.slice(WAYFINDER_PREFIX.length)),
+    ].filter((v) => !isWayfinderType(v))
+    if (unknown.length) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `unknown wayfinder sub-type ${unknown.map((v) => `'${v}'`).join(', ')} on '${t?.title ?? ''}' — expected one of ${WAYFINDER_TYPES.join(', ')}`,
+      })
+    }
+  }
+
   const store = loadStore()
   const ts = now()
 
@@ -85,7 +105,7 @@ export default defineEventHandler(async (event) => {
       status,
       projectId: findProject(t.project)?.id ?? null,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
-      labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
+      labels: cleanLabels([...(t.labels ?? []), ...(isWayfinderType(t.wayfinderType) ? [wayfinderLabel(t.wayfinderType)] : [])]),
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
       comments: [],

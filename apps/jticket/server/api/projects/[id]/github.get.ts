@@ -8,9 +8,13 @@
 // { configured: false } with a suggested branch name, and a `gh` that can't
 // reach GitHub (offline, not logged in) still returns the branch state with the
 // failure reported in `prsError`.
-import type { ProjectPr } from '../../../utils/github'
+//
+// The return annotation is what makes ProjectGithubInfo the single declaration
+// of this response: both exits below are checked against it, so the shape can't
+// vary by branch and the panel that renders it can't fall behind.
+import type { ProjectGithubInfo, ProjectPr } from '#shared/types/github'
 
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async (event): Promise<ProjectGithubInfo> => {
   const id = getRouterParam(event, 'id')
   const force = !!getQuery(event).force
   const store = loadStore()
@@ -23,6 +27,7 @@ export default defineEventHandler(async (event) => {
       configured: false,
       repo: '',
       slug: null,
+      repoUrl: null,
       defaultBranch: '',
       integrationBranch: project.integrationBranch,
       suggestedBranch,
