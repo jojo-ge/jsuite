@@ -7,13 +7,7 @@ import type { SelfQuestion } from '../../app/utils/askYourself'
 // their prompts from the same format blocks and clean the results with the
 // same functions, so the two paths cannot drift apart.
 
-export interface ReviewRating {
-  score: number
-  effort: 'quick' | 'moderate' | 'involved' | 'heavy'
-  summary: string
-  factors: { label: string; impact: 'good' | 'neutral' | 'bad'; detail: string }[]
-  readingOrder: { path: string; note: string }[]
-}
+export type { ReviewRating } from '../../app/utils/rating'
 
 export const MAX_TOUR_STOPS = 20
 export const QUESTION_COUNT = 3

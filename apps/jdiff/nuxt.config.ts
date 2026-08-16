@@ -1,5 +1,11 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  // The whole review engine — target resolution, the diff/graph/file/PR routes,
+  // the claude analysis runs and every artifact store — lives in @jsuite/diff,
+  // along with the review vocabulary the UI shares with it (risk, tour, ask
+  // questions, file categories). What's left here is the jDiff shell: the pages,
+  // the components and the scratch prototypes.
+  extends: ['@jsuite/diff'],
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   css: ['~/assets/css/main.css'],

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SavedAsk } from '~/utils/askQuestions'
+import type { SavedAsk } from '@jsuite/diff/askQuestions'
 import type { CommentEntry } from '~/utils/comments'
 
 export interface ReviewComment {

@@ -73,6 +73,7 @@ jsuite/
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module + UI (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
+    ├── diff/           # @jsuite/diff — shared diff-review engine (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
 ```
@@ -136,15 +137,45 @@ An app that wants that UI on different paths overrides `charting.indexPath` and
 which is all jChart is now: `/` and `/c/<key>` are aliases over the same
 components the layer serves at `/charts`.
 
+## @jsuite/diff
+
+The diff-review engine born in jDiff — target resolution, the diff/graph/file/PR
+routes, the claude analysis runs, and every review artifact store — lives in
+`packages/diff` as a Nuxt layer. A consumer needs two things:
+
+1. `"@jsuite/diff": "workspace:*"` in `dependencies`
+2. `extends: ['@jsuite/diff']` in `nuxt.config.ts`
+
+That serves the whole review API off the consumer's own port: `/api/diff`,
+`/api/file`, `/api/graph`, `/api/prs`, `/api/pr`, `/api/branches`, `/api/repo`,
+the artifact routes (`/api/comment(s)`, `/api/branch-comment(s)`, `/api/rating`,
+`/api/risk`, `/api/tour`, `/api/ask(s)`, `/api/ask-yourself*`,
+`/api/notifications`), and the claude runs (`/api/analyze-generate`,
+`/api/ai-jobs`, `/api/ai-job-cancel`). The server utils come as Nitro
+auto-imports (`resolveTarget`/`prepareTarget`, `run`/`resolveRepoPath`,
+`buildDiff`, `highlight`, the stores), and the review vocabulary the UI shares
+with the server — the rating shape, risk levels, tour shape, ask questions,
+file categories — is auto-imported as app utils and also importable explicitly
+from `'@jsuite/diff/rating'`, `'/risk'`, `'/tour'`, `'/askQuestions'`,
+`'/askYourself'`, `'/fileCategories'`.
+
+**One review pool serves every consumer**: all state stays in `.data/jdiff/`
+via `@jsuite/data`, so a rating, tour or draft comment created through one
+consumer reads back identically in another. A target is always addressed by
+query params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local
+branch) — so the layer holds no per-app repo config. jDiff stays the
+specialised review UI on top.
+
 ## @jsuite/documents
 
 The block-based document system born in jExplain — the model (prose, callout,
 code, diff, chart, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
-experience with margin notes), `useMarkdown()`/`useShiki()`, and the
-`server/api/documents/**` routes over `.data/jexplain/` — lives in
-`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself, so
-chart blocks, `/api/charts/**` **and the `/charts` chart UI** ride in
+experience with margin notes), `useMarkdown()`/`useShiki()`, the whole-pool
+library and reader (`<DocumentLibrary>`, `<DocumentReader>`, mounted at
+`/documents` and `/documents/<key>`), and the `server/api/documents/**` routes
+over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself,
+so chart blocks, `/api/charts/**` **and the `/charts` chart UI** ride in
 transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
@@ -163,8 +194,13 @@ Types come from `'@jsuite/documents/types'` (client-safe) and
 `'@jsuite/documents/store'` (server). **One document pool serves every
 consumer**: a jTicket doc (tracker record + `documentKey`) is the same object
 jExplain lists and renders; review notes and chart edits flow both ways.
-jExplain stays the canonical reading shell; jTicket wraps documents in
-project/status/label metadata.
+Every consumer therefore gets a documents library at `/documents` for free —
+the whole pool, explainers and specs and grilling debriefs alike. An app that
+wants it under its own routes mounts the components instead of copying them:
+jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
+jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket's
+own `/docs` stays a *subset* view — the documents its tracker knows about,
+wrapped in project/status/label metadata.
 
 ## @jsuite/claude
 
