@@ -191,7 +191,7 @@ export default defineEventHandler(async (event) => {
   }
 
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return {
     project,
     imported: { tickets: pairs.length, documents: landedDocumentKeys.size, charts: bundle.charts?.length ?? 0 },

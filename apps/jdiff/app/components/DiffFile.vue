@@ -187,6 +187,11 @@ const gapViews = computed<(GapView | null)[]>(() =>
   }),
 )
 
+/** The gap after the last hunk. Named once because `file.hunks.length` is not
+    a narrowable index expression, so repeating it in the template loses the
+    null check on `remaining`. */
+const trailingGap = computed(() => gapViews.value[props.file.hunks.length] ?? null)
+
 async function expandGap(gi: number, dir: 'down' | 'up' | 'all') {
   actionError.value = ''
   if (!(await ensureFullLines())) return
@@ -688,24 +693,24 @@ async function copyAsk(a: SavedAsk) {
           </template>
         </template>
 
-        <template v-if="gapViews[file.hunks.length]">
-          <template v-for="r in gapViews[file.hunks.length]!.topRows" :key="'gt' + r.rightNum">
+        <template v-if="trailingGap">
+          <template v-for="r in trailingGap.topRows" :key="'gt' + r.rightNum">
             <div class="num ctx">{{ r.leftNum }}</div>
             <div class="code ctx" v-html="r.html" />
             <div class="num ctx">{{ r.rightNum }}</div>
             <div class="code ctx" v-html="r.html" />
           </template>
-          <div v-if="gapViews[file.hunks.length]!.remaining !== 0" class="expander">
+          <div v-if="trailingGap.remaining !== 0" class="expander">
             <button
-              v-if="gapViews[file.hunks.length]!.remaining == null || gapViews[file.hunks.length]!.remaining > EXPAND_STEP"
+              v-if="trailingGap.remaining == null || trailingGap.remaining > EXPAND_STEP"
               class="exp"
               title="show 20 more lines below the hunk above"
               @click="expandGap(file.hunks.length, 'down')"
             >↓ 20</button>
             <button class="exp" @click="expandGap(file.hunks.length, 'all')">
-              ⇕ {{ gapViews[file.hunks.length]!.remaining == null
+              ⇕ {{ trailingGap.remaining == null
                 ? 'expand to end of file'
-                : `expand ${gapViews[file.hunks.length]!.remaining} hidden line${gapViews[file.hunks.length]!.remaining === 1 ? '' : 's'}` }}
+                : `expand ${trailingGap.remaining} hidden line${trailingGap.remaining === 1 ? '' : 's'}` }}
             </button>
           </div>
         </template>

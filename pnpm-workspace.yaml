@@ -4,3 +4,11 @@ packages:
 
 patchedDependencies:
   '@excalidraw/mermaid-to-excalidraw': patches/@excalidraw__mermaid-to-excalidraw.patch
+
+# vue-tsc 3.x loads `typescript/lib/tsc`, which TypeScript 7 no longer exports.
+# Several apps take typescript only as an auto-installed peer (via @nuxt/ui,
+# nuxt), so without this they silently resolve TS 7 and `nuxt typecheck` dies
+# with ERR_PACKAGE_PATH_NOT_EXPORTED. Pin the whole workspace to TS 5.9 until
+# the Vue toolchain ships a TS 7 checker. See TICK-145.
+overrides:
+  typescript: ^5.9.3

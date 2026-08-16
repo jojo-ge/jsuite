@@ -4,7 +4,7 @@
 // lifecycle (fetch, debounced save, copy-for-Claude). The host page supplies
 // the doc and the surrounding chrome; this component fills its parent, which
 // should be a `flex min-h-0` region (the article column scrolls internally).
-import type { Block, DocNote, Explainer, NoteAttachment } from '../../types'
+import type { Block, DocNote, DocNotes, Explainer, NoteAttachment } from '../../types'
 
 const props = defineProps<{ doc: Explainer }>()
 const emit = defineEmits<{ progress: [pct: number] }>()
@@ -13,7 +13,7 @@ const railOpen = defineModel<boolean>('railOpen', { default: false })
 const toast = useToast()
 const key = computed(() => props.doc.key)
 
-const { data: notesDoc } = await useFetch(() => `/api/documents/${key.value}/notes`)
+const { data: notesDoc } = await useFetch<DocNotes>(() => `/api/documents/${key.value}/notes`)
 
 // Every prose renderer below picks the glossary up from here.
 const glossary = computed(() => props.doc.glossary ?? {})

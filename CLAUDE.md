@@ -46,6 +46,11 @@ that app's own skill rather than improvising one app's job in another.
   ones).
 - **One git repo covers the whole workspace.** Apps no longer carry their own
   `.git`; commit everything (apps, packages, skills) from this root.
+- **`pnpm typecheck` at the root is the typecheck entry point** — every app,
+  `.vue` files included (`nuxt typecheck` → `vue-tsc` per app). Don't reach for
+  a bare `tsc`: it skips `.vue` entirely. TypeScript is pinned to 5.9 and
+  `vue-router` to v5 workspace-wide because `vue-tsc` breaks on either bump; see
+  "Typechecking" in `README.md` before changing those versions.
 - **Don't restart apps blindly.** `./jsuite status` first; `./jsuite start` is
   idempotent for already-running apps but refuses ports held by processes it
   didn't start. Logs are at `logs/<app>.log` (`./jsuite logs <app>`).
