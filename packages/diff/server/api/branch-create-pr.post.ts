@@ -49,8 +49,13 @@ export default defineEventHandler(async (event) => {
       // Drop each draft as soon as it lands, so a retry only re-sends failures.
       deleteBranchComment(repo, branch, c.id)
       posted++
-    } catch (err: any) {
-      failed.push({ body: c.body.slice(0, 80), error: String(err.data?.message ?? err.message ?? err).slice(0, 200) })
+    } catch (err) {
+      // Deliberately not the `data.message` chain the UI's error boxes use:
+      // what throws here is `run()`, which wraps the `gh` subprocess's stderr
+      // in a local H3 error. Nothing crossed the wire, so there is no response
+      // body — the message is the whole of it.
+      const message = err instanceof Error ? err.message : String(err)
+      failed.push({ body: c.body.slice(0, 80), error: message.slice(0, 200) })
     }
   }
 

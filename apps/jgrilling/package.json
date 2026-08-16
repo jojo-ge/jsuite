@@ -15,6 +15,7 @@
     "@jsuite/claude": "workspace:*",
     "@jsuite/data": "workspace:*",
     "@jsuite/documents": "workspace:*",
+    "@jsuite/http": "workspace:*",
     "@nuxt/ui": "^4.10.0",
     "nuxt": "^4.5.0",
     "vue": "^3.5.0",

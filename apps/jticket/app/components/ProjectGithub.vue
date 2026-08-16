@@ -17,6 +17,7 @@
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
 // the rest of the project page never waits on GitHub.
+import { fetchErrorMessage } from '@jsuite/http'
 import type { Project } from '~/composables/useTracker'
 
 const props = defineProps<{ project: Project }>()
@@ -92,8 +93,6 @@ async function createBranch() {
 // Somebody else changed the branch — the header button, or another tab.
 watch(revision, () => reload())
 
-const errorText = branchErrorText
-
 // ── Adopting a branch that already exists ──
 // The integration branch doesn't have to have been cut here: point the project
 // at a branch somebody made by hand and everything else (PR matching, the
@@ -159,8 +158,8 @@ async function useBranch(name: string) {
     pickerOpen.value = false
     await refreshTracker()
     invalidate()
-  } catch (err: any) {
-    toast.add({ title: 'Could not set the branch', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } catch (err) {
+    toast.add({ title: 'Could not set the branch', description: fetchErrorMessage(err, 'the request failed'), color: 'error', icon: 'i-lucide-triangle-alert' })
   } finally {
     picking.value = ''
   }
@@ -223,7 +222,7 @@ const prs = computed(() => data.value?.prs ?? [])
       variant="subtle"
       icon="i-lucide-triangle-alert"
       title="Can't read this project's repo"
-      :description="errorText(error)"
+      :description="fetchErrorMessage(error, 'could not read the repo')"
     />
 
     <div v-else-if="data?.configured" class="space-y-3">
