@@ -147,8 +147,8 @@ async function postAnswer(i: number) {
       body: { repo: repo.value, number: number.value, index: i, answer: q.answer },
     })
     q.postedUrl = res.url
-  } catch (e: any) {
-    selfError.value = e.data?.message ?? e.message ?? 'failed to post comment'
+  } catch (e) {
+    selfError.value = fetchErrorMessage(e, 'failed to post comment')
   } finally {
     postingIdx.value = null
   }

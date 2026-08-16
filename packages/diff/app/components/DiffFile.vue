@@ -101,8 +101,8 @@ async function ensureFullLines(): Promise<boolean> {
     })
     fullLines.value = res.lines
     return true
-  } catch (e: any) {
-    actionError.value = e.data?.message ?? e.message ?? 'failed to load file'
+  } catch (e) {
+    actionError.value = fetchErrorMessage(e, 'failed to load file')
     return false
   } finally {
     fullBusy.value = false
@@ -254,8 +254,8 @@ async function openInEditor() {
       method: 'POST',
       body: { repo: props.repo, path: props.file.path, line: firstChangeLine.value },
     })
-  } catch (e: any) {
-    actionError.value = e.data?.message ?? e.message ?? 'failed to open editor'
+  } catch (e) {
+    actionError.value = fetchErrorMessage(e, 'failed to open editor')
   }
 }
 
@@ -352,8 +352,8 @@ async function submit() {
     })
     cancel()
     emit('posted')
-  } catch (e: any) {
-    postError.value = e.data?.message ?? e.message ?? 'failed to post'
+  } catch (e) {
+    postError.value = fetchErrorMessage(e, 'failed to post')
   } finally {
     busy.value = false
   }
