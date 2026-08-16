@@ -6,7 +6,7 @@ import type { Explainer } from '@jsuite/documents/types'
 // front of it any more; which projects it belongs to is read off their
 // attachments.
 const route = useRoute()
-const { projects, refresh } = useTracker()
+const { projects, documents, refresh } = useTracker()
 const docKey = computed(() => String(route.params.id))
 
 const { data: doc } = await useAsyncData<Explainer | null>(
@@ -18,6 +18,14 @@ useHead(() => ({ title: doc.value?.title ?? docKey.value }))
 const attachedTo = computed(() =>
   projects.value.filter((p) => p.attachments.some((a) => a.type === 'document' && a.id === docKey.value)),
 )
+
+// The pool list in tracker state holds each document's labels too; updating it
+// in place keeps the library's chip bar honest without refetching everything.
+function onLabels(labels: string[]) {
+  if (doc.value) doc.value.labels = labels
+  const meta = documents.value.find((d) => d.key === docKey.value)
+  if (meta) meta.labels = labels
+}
 
 const railOpen = ref(false)
 
@@ -55,6 +63,7 @@ onMounted(() => {
         <NuxtLink v-for="p in attachedTo" :key="p.id" :to="`/projects/${p.key}`">
           <UBadge color="secondary" variant="outline" size="sm" class="font-mono">{{ p.key }}</UBadge>
         </NuxtLink>
+        <DocLabelEditor :doc-key="docKey" :labels="doc.labels ?? []" @update:labels="onLabels" />
         <span class="flex-1" />
         <UButton
           :icon="railOpen ? 'i-lucide-panel-right-close' : 'i-lucide-message-square'"

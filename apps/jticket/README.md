@@ -65,6 +65,11 @@ line clamp stays honest.
     Content is authored as **blocks** (prose, callout, code, diff, chart, steps,
     compare, timeline, takeaway + glossary). `POST /api/documents` writes one;
     `replace: true` rewrites it in place (notes survive). Rendered at `/docs/<key>`.
+    A document carries its own `labels` — lowercase tags in the shared pool, not on
+    the attachment, so the filing reads the same here and in jExplain. There is no
+    document status field: `draft` / `ready` are labels, as is `wayfinder:asset`.
+    `GET /api/documents?label=` filters (AND across labels);
+    `PATCH /api/documents/:key` `{ labels }` refiles one without republishing it.
   - `chart` — a key in the shared jChart pool (root `.data/jchart/`).
   - `diff` — a jDiff review target: `"123"` for a PR, `"branch/<name>"` for a branch,
     read against the owning project's `repo`.
@@ -88,8 +93,8 @@ See **/api-guide** in the running app. Summary:
 | POST | `/api/import` | Bulk-create a whole breakdown at once |
 | GET/POST/DELETE | `/api/tickets/:id/attachments` | Resolve / attach / detach a ticket's artifacts |
 | GET/POST/DELETE | `/api/projects/:id/attachments` | Same, for a project |
-| GET/POST | `/api/documents` | The shared document pool (also served by jExplain) |
-| GET/DELETE | `/api/documents/:key` | Read / delete one shared document |
+| GET/POST | `/api/documents` | The shared document pool (also served by jExplain); `?label=` filters |
+| GET/PATCH/DELETE | `/api/documents/:key` | Read / refile (`{ labels }`) / delete one shared document |
 | GET/POST | `/api/attachments` | List / upload image FILES for markdown (not artifact refs) |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 

@@ -1,15 +1,20 @@
-import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, type Explainer } from '../../utils/store'
+import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, cleanDocLabels, type Explainer } from '../../utils/store'
 import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
 
 /**
  * Create a document in the shared pool. Body: { title, subtitle?, kicker?,
- * blocks, glossary?, key?, replace? }
+ * blocks, glossary?, labels?, key?, replace? }
  *
  * Chart blocks may carry inline `mermaid`; they're materialised into the shared
  * jChart store and stored as { chartKey } references. `replace: true`
  * overwrites the named doc in place (keeping createdAt and its notes sidecar)
  * so a skill can re-publish a revision at the same URL. The returned `path`
  * is the jExplain reader route — the pool's canonical reading surface.
+ *
+ * On a replace, omitting `labels` keeps the ones already on the document —
+ * re-publishing a revision is about the body, and a skill that rewrites blocks
+ * shouldn't silently unfile the document. Send `labels: []` to clear them, or
+ * PATCH the document to change filing without touching the body.
  */
 export default defineEventHandler(async (event) => {
   const body = (await readBody(event)) ?? {}
@@ -31,8 +36,9 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
     blocks: await materialiseBlocks(key, Array.isArray(body.blocks) ? body.blocks : []),
     glossary: cleanGlossary(body.glossary),
+    labels: body.labels === undefined ? (existing?.labels ?? []) : cleanDocLabels(body.labels),
   }
   await writeDoc(key, doc)
 
-  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length }
+  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length, labels: doc.labels }
 })

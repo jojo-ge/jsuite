@@ -23,6 +23,7 @@ defineProps<{ doc: ExplainerMeta; project?: Project }>()
     </div>
     <p class="mt-1 truncate font-medium">{{ doc.title }}</p>
     <p v-if="doc.subtitle" class="mt-0.5 truncate text-sm text-muted">{{ doc.subtitle }}</p>
+    <DocLabels :labels="doc.labels" class="mt-2" />
     <div class="mt-2 flex flex-wrap gap-2 text-xs text-dimmed">
       <span>{{ doc.blockCount }} blocks</span>
       <span v-if="doc.chartCount">· {{ doc.chartCount }} charts</span>

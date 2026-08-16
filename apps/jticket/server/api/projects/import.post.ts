@@ -84,6 +84,10 @@ export default defineEventHandler(async (event) => {
       continue
     }
     const document = JSON.parse(fixAttachments(JSON.stringify(entry.document))) as Explainer
+    // A bundle is an arbitrary file the user hands us; its labels go through the
+    // same normalisation a write does, so an import can't put anything in the
+    // pool that `?label=` would then fail to match.
+    document.labels = cleanDocLabels(document.labels)
     for (const b of document.blocks ?? []) {
       if (b.type === 'chart' && chartRenames.has(b.chartKey)) b.chartKey = chartRenames.get(b.chartKey)!
     }

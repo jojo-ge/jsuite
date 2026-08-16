@@ -40,6 +40,7 @@ Use this when the user asks you to *explain* something and deserves better than 
   "kicker": "PR #4821",
   "key": "cache-invalidation-pr-4821",
   "glossary": { "TTL": "time-to-live — how long a cache entry survives" },
+  "labels": ["post-mortem", "draft"],
   "blocks": [ ... ]
 }
 ```
@@ -47,6 +48,7 @@ Use this when the user asks you to *explain* something and deserves better than 
 - `key` — stable slug; always set it so `--replace` republishes the same URL.
 - `kicker` — small uppercase context line (PR number, subsystem, "post-mortem").
 - `glossary` — term → definition; first occurrence per prose block gets a dotted-underline hover definition. Use for jargon, not for words the user knows.
+- `labels` — lowercase tags for the library's filter bar, deduped on write. Lifecycle is a label like any other (`draft`, `ready`); there is no status field. The same pool is jTicket's document library, so these show up there too. Omit on a `--replace` and the existing labels survive; edit them in the reader header, or `PATCH /api/documents/<key>` with `{ "labels": [...] }`.
 
 ## Block vocabulary
 

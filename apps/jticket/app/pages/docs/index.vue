@@ -7,19 +7,36 @@ useHead({ title: 'Documents' })
 // and a document nothing links still shows, under "Not attached".
 const { documents, projects, refresh } = useTracker()
 
+// A document's labels are its own filing, carried in the shared pool rather
+// than on the attachment — so the chip bar is built from every document here,
+// not from the projects, and filtering by one narrows every section at once.
+const selected = ref<string[]>([])
+
+const allLabels = computed(() => [...new Set(documents.value.flatMap((d) => d.labels))].sort())
+
+const filtered = computed(() =>
+  documents.value.filter((d) => selected.value.every((label) => d.labels.includes(label))),
+)
+
+function toggle(label: string) {
+  selected.value = selected.value.includes(label)
+    ? selected.value.filter((l) => l !== label)
+    : [...selected.value, label]
+}
+
 const grouped = computed(() => {
   const claimed = new Set<string>()
   const sections = projects.value
     .map((project) => {
       const keys = project.attachments.filter((a) => a.type === 'document').map((a) => a.id)
       const docs = keys
-        .map((key) => documents.value.find((d) => d.key === key))
+        .map((key) => filtered.value.find((d) => d.key === key))
         .filter((d): d is NonNullable<typeof d> => !!d)
       for (const d of docs) claimed.add(d.key)
       return { project, docs }
     })
     .filter((s) => s.docs.length)
-  return { sections, loose: documents.value.filter((d) => !claimed.has(d.key)) }
+  return { sections, loose: filtered.value.filter((d) => !claimed.has(d.key)) }
 })
 
 const creating = ref(false)
@@ -68,12 +85,33 @@ async function create() {
         <p v-if="createError" class="mt-2 text-sm text-error">{{ createError }}</p>
       </form>
 
+      <div v-if="allLabels.length" class="mb-6 flex flex-wrap items-center gap-2">
+        <DocLabels :labels="allLabels" :active="selected" interactive size="sm" @select="toggle" />
+        <UButton
+          v-if="selected.length"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          label="Clear"
+          @click="selected = []"
+        />
+      </div>
+
       <div v-if="!documents.length" class="flex flex-col items-center gap-4 py-24 text-center">
         <UIcon name="i-lucide-file-text" class="size-12 text-muted" />
         <div>
           <p class="text-lg font-medium">No documents yet</p>
           <p class="text-sm text-muted">Write one here, or let a skill post to /api/documents.</p>
         </div>
+      </div>
+
+      <div v-else-if="!filtered.length" class="flex flex-col items-center gap-4 py-24 text-center">
+        <UIcon name="i-lucide-tag" class="size-12 text-muted" />
+        <div>
+          <p class="text-lg font-medium">Nothing filed under that</p>
+          <p class="text-sm text-muted">No document carries all of: {{ selected.join(', ') }}.</p>
+        </div>
+        <UButton color="neutral" variant="subtle" @click="selected = []">Clear filter</UButton>
       </div>
 
       <div v-else class="space-y-10">

@@ -138,9 +138,12 @@ that answers its own questions has broken this). This is the ticket's `type` fie
 
 - **Research** (AFK) — `wayfinder:research`. Reading documentation, third-party APIs, or
   local resources like knowledge bases. Creates a markdown summary as a linked asset —
-  in jTicket that's a **document** (`POST /api/documents`), attached to the ticket
+  in jTicket that's a **document** (`POST /api/documents` with
+  `labels: ['wayfinder:asset']`), attached to the ticket
   (`POST /api/tickets/<key>/attachments` with `{ type: 'document', id: <key> }`) and
-  linked from the resolution. Use when knowledge outside the current working directory is required.
+  linked from the resolution. The label is how the assets are found again across every
+  map — `GET /api/documents?label=wayfinder:asset` — so it goes on at creation, not
+  afterwards. Use when knowledge outside the current working directory is required.
 - **Prototype** (HITL) — `wayfinder:prototype`. Raise the fidelity of the discussion by
   making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub,
   or UI/logic code via the `/prototype` skill. Links the prototype as an asset. Use when
@@ -320,6 +323,11 @@ appended a decision since you loaded it.
 - `completedAt` is stamped by the server when a ticket moves to `done` (and cleared when it
   moves out) — writing it does nothing. `?finished=true` lists resolved tickets
   newest-first, which is how you recap what a map has landed.
+- **Assets carry `wayfinder:asset`.** A document's labels live on the document itself, in
+  the shared pool, so jExplain shows them too. Label at creation; refile an existing one
+  with `PATCH /api/documents/<key>` `{ labels: [...] }` (labels only — the body stays a
+  POST). Lifecycle is a label like any other: add `draft` or `ready` if it's worth saying.
+  Labels are lowercased and deduped on write, so `?label=` matching is case-insensitive.
 - The answer goes in `resolution`; longer assets become docs. Ticket **comments**
   (`POST /api/tickets/:id/comments`) are for discussion only — human direction left
   before handoff (read them before working a ticket) and your own questions or progress

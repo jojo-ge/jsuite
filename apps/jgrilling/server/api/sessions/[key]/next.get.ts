@@ -99,6 +99,9 @@ export default defineEventHandler(async (event) => {
           updatedAt: now,
           blocks: await materialiseBlocks(docKey, Array.isArray(parsed.blocks) ? parsed.blocks : []),
           glossary: cleanGlossary(parsed.glossary),
+          // Namespaced like the other tool output in the pool (wayfinder:asset),
+          // so a debrief is findable as one: ?label=grilling:debrief.
+          labels: ['grilling:debrief'],
         })
 
         session.status = 'done'

@@ -25,7 +25,15 @@ useHead(() => ({ title: doc.value?.title ?? key.value }))
 
     <header class="flex shrink-0 items-center gap-3 border-b border-default px-3 py-2">
       <UButton to="/" icon="i-lucide-arrow-left" color="neutral" variant="ghost" size="sm" aria-label="All explainers" />
-      <span class="min-w-0 flex-1 truncate text-sm font-medium text-muted">{{ doc?.title }}</span>
+      <span class="min-w-0 truncate text-sm font-medium text-muted">{{ doc?.title }}</span>
+      <DocLabelEditor
+        v-if="doc"
+        :doc-key="key"
+        :labels="doc.labels ?? []"
+        class="min-w-0"
+        @update:labels="doc.labels = $event"
+      />
+      <span class="flex-1" />
       <UButton
         :icon="railOpen ? 'i-lucide-panel-right-close' : 'i-lucide-message-square'"
         color="neutral"

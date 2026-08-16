@@ -16,7 +16,7 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / POST / DELETE | `/api/tickets/:id/attachments` | A ticket's artifact refs — resolve / attach / detach |
 | GET / POST / DELETE | `/api/projects/:id/attachments` | Same, for a project |
 | GET / POST | `/api/documents` | The shared document pool (also served by jExplain) |
-| GET / DELETE | `/api/documents/:key` | One shared document |
+| GET / PATCH / DELETE | `/api/documents/:key` | One shared document (PATCH refiles its labels) |
 | GET | `/api/charts` | The shared chart pool (also served by jChart) |
 | GET / POST | `/api/attachments` | List / upload FILES for markdown — *not* artifact refs |
 | GET | `/attachments/:name` | Serve an uploaded file |
@@ -33,6 +33,9 @@ GET /api/tickets?projectId=PROJ-2   # project id or key
                 &frontier=true      # todo + unblocked + unassigned, key-ordered
                 &finished=true      # done tickets, newest completedAt first
                 &since=<ISO>        # completedAt >= this (pairs with finished=true)
+
+GET /api/documents?label=wayfinder:asset    # repeat or comma-separate; AND, not OR
+                  &label=draft              # so this is "assets still in draft"
 ```
 
 Filters combine with AND. `frontier=true` is applied last and sorts by key number
@@ -158,6 +161,20 @@ to add or drop one ref without a read-modify-write.
 
 Writing the document itself is `POST /api/documents` (see **to-jdoc**); the document then
 renders at `$JTICKET/docs/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
+
+A document's **labels** are its own — they live on the document in the shared pool, not on
+the attachment, so the same filing shows in jTicket and jExplain. Set them at creation, or
+refile without republishing the body:
+
+```jsonc
+PATCH /api/documents/checkout-rewrite-spec
+{ "labels": ["spec", "wayfinder:asset", "ready"] }
+→ 200 { "key": "checkout-rewrite-spec", "labels": ["spec", "wayfinder:asset", "ready"] }
+```
+
+Labels are lowercased, trimmed and deduped on write, and `labels` is the *whole* list —
+PATCH replaces it, so read-append-write to add one. There is no separate document status:
+`draft` / `ready` are labels like any other.
 
 ### Uploaded files
 
