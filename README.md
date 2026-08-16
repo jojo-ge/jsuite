@@ -233,12 +233,12 @@ the fix. Treat the list below as the reasoning; the script is the rule.
   `vue-router/volar/sfc-route-blocks`, which only v5 exports. On v4 the Vue
   language plugin fails to load and typing quietly degrades.
 - **Every `packages/*` layer that ships `.vue` files must declare `vue` as a
-  devDependency** (`@jsuite/charting`, `@jsuite/documents`). `vue-tsc` compiles
-  an SFC to virtual TS that reaches for `vue` from the SFC's *own* directory,
-  and under pnpm's strict layout a layer with no `vue` dependency cannot
-  resolve it — an `@ts-ignore` in the generated code swallows the resolution
-  failure, so `defineProps` silently returns `any` and every prop goes
-  unchecked, in script and template alike, while the rest of the file still
+  devDependency** (`@jsuite/charting`, `@jsuite/documents`, `@jsuite/diff`).
+  `vue-tsc` compiles an SFC to virtual TS that reaches for `vue` from the SFC's
+  *own* directory, and under pnpm's strict layout a layer with no `vue`
+  dependency cannot resolve it — an `@ts-ignore` in the generated code swallows
+  the resolution failure, so `defineProps` silently returns `any` and every prop
+  goes unchecked, in script and template alike, while the rest of the file still
   type-checks normally. It must stay a *dev*Dependency: the host app owns the
   runtime copy, and promoting it to `dependencies` would ship a second Vue
   instance into the bundle.
