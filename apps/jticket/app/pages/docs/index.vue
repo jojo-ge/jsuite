@@ -5,7 +5,7 @@ useHead({ title: 'Documents' })
 // no per-document tracker record any more: a document belongs to a project by
 // being attached to it, so the grouping is read from the projects' attachments
 // and a document nothing links still shows, under "Not attached".
-const { documents, projects } = useTracker()
+const { documents, projects, refresh } = useTracker()
 
 const grouped = computed(() => {
   const claimed = new Set<string>()
@@ -24,11 +24,22 @@ const grouped = computed(() => {
 
 const creating = ref(false)
 const newTitle = ref('')
+const createError = ref('')
 async function create() {
   const title = newTitle.value.trim()
   if (!title) return
-  const doc = await $fetch<{ key: string }>('/api/documents', { method: 'POST', body: { title, blocks: [] } })
-  navigateTo(`/docs/${doc.key}`)
+  createError.value = ''
+  try {
+    const doc = await $fetch<{ key: string }>('/api/documents', { method: 'POST', body: { title, blocks: [] } })
+    creating.value = false
+    newTitle.value = ''
+    await refresh()
+    navigateTo(`/docs/${doc.key}`)
+  } catch (err) {
+    // Stay open with what they typed — retyping a title because the pool was
+    // briefly unreachable is a worse outcome than an inline error.
+    createError.value = String((err as { message?: string })?.message ?? err)
+  }
 }
 </script>
 
@@ -48,10 +59,13 @@ async function create() {
         <UButton icon="i-lucide-file-plus" @click="creating = !creating">New doc</UButton>
       </div>
 
-      <form v-if="creating" class="mb-6 flex gap-2" @submit.prevent="create">
-        <UInput v-model="newTitle" placeholder="Document title" class="flex-1" autofocus />
-        <UButton type="submit" :disabled="!newTitle.trim()">Create</UButton>
-        <UButton color="neutral" variant="ghost" @click="creating = false">Cancel</UButton>
+      <form v-if="creating" class="mb-6" @submit.prevent="create">
+        <div class="flex gap-2">
+          <UInput v-model="newTitle" placeholder="Document title" class="flex-1" autofocus />
+          <UButton type="submit" :disabled="!newTitle.trim()">Create</UButton>
+          <UButton color="neutral" variant="ghost" @click="creating = false">Cancel</UButton>
+        </div>
+        <p v-if="createError" class="mt-2 text-sm text-error">{{ createError }}</p>
       </form>
 
       <div v-if="!documents.length" class="flex flex-col items-center gap-4 py-24 text-center">

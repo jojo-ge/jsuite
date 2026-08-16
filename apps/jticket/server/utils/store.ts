@@ -271,13 +271,6 @@ export function stampCompletion(ticket: Ticket, nextStatus: TicketStatus, ts: st
   return ticket.completedAt ?? ts
 }
 
-// Accepts a project id, key, or exact title and returns the project (import
-// and the attachment endpoints both let callers reference projects loosely).
-export function findProjectRef(store: Store, ref: unknown): Project | undefined {
-  if (typeof ref !== 'string' || !ref) return undefined
-  return store.projects.find((p) => p.id === ref || p.key === ref || p.title === ref)
-}
-
 // ── Known repos ─────────────────────────────────────────────────────────────
 /**
  * Upsert a repo into the remembered list. Only ever *adds* information: a
@@ -338,19 +331,24 @@ export function isAttachmentType(v: unknown): v is AttachmentType {
 // here so a ref written by hand lands on the file the pool would have written.
 // A diff id is not a pool key at all — it is a jDiff review target, so it
 // keeps its shape: a bare PR number, or 'branch/<ref>'.
-const POOL_KEY = /^[a-z0-9_-]{1,80}$/
 // Same shape jDiff's own isSafeRef enforces on a branch it will hand to git:
 // no '..', no '//', no leading '-', nothing outside git-legal-ish characters.
 const DIFF_TARGET = /^(\d+|branch\/(?!-)[\w./+-]{1,200})$/
 
+/**
+ * The id a ref should be stored under. A pool key goes through *that pool's own*
+ * sanitiser — not a copy of its rules — so a ref written by hand always lands on
+ * the file the pool would have written, and can never drift out of step with it.
+ * A diff id is not a pool key at all but a jDiff review target, so it keeps its
+ * shape. '' means "not a usable id", and the caller drops the ref.
+ */
 export function normaliseAttachmentId(type: AttachmentType, raw: unknown): string {
   const id = String(raw ?? '').trim()
   if (type === 'diff') {
     if (id.includes('..') || id.includes('//') || id.endsWith('/')) return ''
     return DIFF_TARGET.test(id) ? id : ''
   }
-  const key = id.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
-  return POOL_KEY.test(key) ? key : ''
+  return type === 'document' ? sanitizeDocKey(id) : sanitizeKey(id)
 }
 
 /**

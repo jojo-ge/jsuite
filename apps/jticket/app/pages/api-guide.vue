@@ -212,12 +212,13 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Docs — draft Confluence-style pages</h2>
         <p class="mb-3 text-sm text-muted">
-          A doc is a tracker record wrapping a <strong>shared block document</strong> (the jExplain
-          format): <code>title</code>, <code>blocks</code> (or <code>documentKey</code> to link an
-          existing document), optional <code>project</code> (by title, key, or id), <code>labels</code>,
-          and <code>status</code> (<code>draft</code> · <code>ready</code>). Nothing is ever posted
-          anywhere external — docs render at <code>/docs/&lt;key&gt;</code> (and in jExplain, which reads the
-          same pool). PATCH with <code>blocks</code> rewrites the content; notes survive.
+          A doc is a <strong>shared block document</strong> (the jExplain format), written straight
+          into the pool with <code>title</code> and <code>blocks</code>; there is no tracker record
+          in front of it. It belongs to a project or ticket by being <em>attached</em> to one — the
+          second call below. Nothing is ever posted anywhere external — docs render at
+          <code>/docs/&lt;key&gt;</code> (and in jExplain, which reads the same pool). Re-POST with
+          <code>replace: true</code> to revise; notes and unchanged charts survive, and attachments
+          point at the key so nothing needs re-attaching.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ docExample }}</code></pre>
       </section>
@@ -225,7 +226,7 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Document blocks</h2>
         <p class="mb-3 text-sm text-muted">
-          One shared block vocabulary serves jTicket docs and jExplain articles (the
+          One shared block vocabulary serves jTicket documents and jExplain articles (the
           <code>j-explain</code> format — see the to-jdoc / j-explain skills for payload shapes).
           Ticket / project descriptions and resolutions are plain GFM markdown:
         </p>

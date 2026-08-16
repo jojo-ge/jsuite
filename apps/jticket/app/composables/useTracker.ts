@@ -172,19 +172,8 @@ export function useTracker() {
   }
 
   // ── Attachments ──
-  // Owner-scoped so one ref can be added or dropped without a read-modify-write
-  // race against another tab (or an agent) editing the same record.
-  type Owner = 'tickets' | 'projects'
-  async function attach(owner: Owner, id: string, att: Attachment) {
-    await $fetch(`/api/${owner}/${id}/attachments`, { method: 'POST', body: att })
-    await refresh()
-  }
-  async function detach(owner: Owner, id: string, att: Attachment) {
-    await $fetch(`/api/${owner}/${id}/attachments`, { method: 'DELETE', query: att })
-    await refresh()
-  }
   /** The artifacts behind a record's refs, dangling ones flagged `missing`. */
-  function resolvedAttachments(owner: Owner, id: string) {
+  function resolvedAttachments(owner: 'tickets' | 'projects', id: string) {
     return $fetch<ResolvedAttachment[]>(`/api/${owner}/${id}/attachments`)
   }
 
@@ -203,8 +192,6 @@ export function useTracker() {
     deleteTicket,
     addComment,
     deleteComment,
-    attach,
-    detach,
     resolvedAttachments,
   }
 }

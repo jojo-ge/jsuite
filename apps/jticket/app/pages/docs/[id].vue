@@ -21,12 +21,11 @@ const attachedTo = computed(() =>
 
 const railOpen = ref(false)
 
-async function onDelete() {
-  if (!confirm(`Delete "${doc.value?.title ?? docKey.value}" from the shared pool? Every ref to it will read as missing.`)) return
-  await $fetch(`/api/documents/${docKey.value}`, { method: 'DELETE' })
-  await refresh()
-  navigateTo('/docs')
-}
+// There is deliberately no delete here. The old page deleted a tracker record
+// and left the document in the pool; the only thing left to delete now is the
+// shared document itself, which jExplain reads too and which every attachment
+// ref would be left dangling on. That is not a button this page should grow
+// without someone asking for it.
 
 onMounted(() => {
   if (!projects.value.length) refresh()
@@ -65,7 +64,6 @@ onMounted(() => {
           label="Notes"
           @click="railOpen = !railOpen"
         />
-        <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost" aria-label="Delete document" @click="onDelete" />
       </div>
 
       <!-- The shared document, rendered exactly as jExplain renders it -->
