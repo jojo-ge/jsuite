@@ -17,6 +17,7 @@
 #   https://jexplain.local   jExplain
 #   https://jgrilling.local  jGrilling
 #   https://jrig.local       jRig
+#   https://jagent.local     jAgent
 set -euo pipefail
 
 # Resolve through symlinks so a shim on PATH (e.g. ~/.local/bin/jsuite) still
@@ -50,9 +51,10 @@ APPS=(
   "jexplain|jexplain|43004|pnpm dev --port 43004"
   "jgrilling|jgrilling|43005|pnpm dev --port 43005"
   "jrig|jrig|43006|pnpm dev --port 43006"
+  "jagent|jagent|43007|pnpm dev --port 43007"
 )
 
-DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jrig.local)
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jrig.local jagent.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
@@ -250,6 +252,15 @@ cmd_setup() {
   [[ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null)" == OrbStack ]] \
     || die "Docker context isn't OrbStack — run: docker context use orbstack"
   ok "OrbStack is the active docker context"
+
+  bold "tmux"
+  # jAgent runs each dispatched agent inside a tmux session it owns — a hard
+  # prerequisite alongside OrbStack (dispatch also preflights and fails loudly).
+  if command -v tmux >/dev/null; then
+    ok "tmux $(tmux -V | cut -d' ' -f2)"
+  else
+    warn "tmux not installed — jAgent can't dispatch agents without it: brew install tmux"
+  fi
 
   bold "workspace deps"
   command -v pnpm >/dev/null || die "pnpm not installed — corepack enable (or brew install pnpm)"

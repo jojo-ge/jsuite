@@ -1,6 +1,6 @@
-import type { FilePayload } from '../utils/buildDiff'
+import type { FilePayload } from '@jsuite/diff/types'
 
-export type { FilePayload } from '../utils/buildDiff'
+export type { FilePayload } from '@jsuite/diff/types'
 
 export default defineEventHandler(async (event): Promise<{ files: FilePayload[] }> => {
   const path = resolveRepoPath(event)

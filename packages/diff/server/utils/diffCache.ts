@@ -10,8 +10,11 @@ export interface CachedDiff {
   files: FilePayload[]
 }
 
-// Parsed + highlighted diff per resolved repo path + PR number, valid while
-// the PR's head commit is unchanged; a push overwrites on the next open.
+// Parsed + highlighted diff per resolved repo path + target key, valid while
+// the target's head commit is unchanged; a push overwrites on the next open.
+// This cache serves pr/branch targets only — worktree targets have no stable
+// head to key on and never touch it. The data dir stays 'jdiff' on purpose:
+// it is jDiff's review cache, wherever the code lives.
 const DIR = join(appDataDir('jdiff'), 'diff-cache')
 
 function fileFor(repo: string, number: string): string {

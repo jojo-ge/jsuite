@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
     labels:
       # Every name here must have a matching site block in the Caddyfile.
-      dev.orbstack.domains: jsuite.local,jticket.local,jdiff.local,jchart.local,jexplain.local,jgrilling.local,jrig.local
+      dev.orbstack.domains: jsuite.local,jticket.local,jdiff.local,jchart.local,jexplain.local,jgrilling.local,jrig.local,jagent.local
       # Skip OrbStack's port auto-detection — Caddy listens on 80.
       dev.orbstack.http-port: "80"
     volumes:

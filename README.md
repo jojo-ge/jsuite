@@ -1,6 +1,6 @@
 # jSuite
 
-A pnpm-workspace monorepo of six local dev apps behind one HTTPS edge — one
+A pnpm-workspace monorepo of seven local dev apps behind one HTTPS edge — one
 command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
 instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
@@ -20,6 +20,7 @@ cd ~/code/anyway/jsuite
 | https://jexplain.local   | jExplain                  | 43004     |
 | https://jgrilling.local  | jGrilling                 | 43005     |
 | https://jrig.local       | jRig                      | 43006     |
+| https://jagent.local     | jAgent                    | 43007     |
 
 ## Setup
 
@@ -30,6 +31,9 @@ Prerequisites:
   the `.local` names and terminates HTTPS, so there is nothing to configure:
   no certs, no `/etc/hosts`, no sudo.
 - **Node + pnpm** (`corepack enable`, or `brew install pnpm`).
+- **tmux** (`brew install tmux`) — jAgent runs each dispatched agent inside a
+  tmux session it owns; without it, dispatch fails loudly. `gh` (authed) is
+  needed for jAgent's Accept-to-PR and jDiff's PR reviews.
 
 Then, from the repo root:
 
@@ -39,7 +43,8 @@ Then, from the repo root:
 
 which does, in order:
 
-1. verifies OrbStack is installed, running, and the active Docker context
+1. verifies OrbStack is installed, running, and the active Docker context,
+   and warns if tmux is missing
 2. `pnpm install` — one lockfile at the root installs every app and package
 3. installs every repo-owned jskill into `~/.claude/skills` (manifest:
    `SKILLS_MANIFEST` in `./jsuite`), then — when run from a real terminal —
@@ -69,10 +74,12 @@ jsuite/
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
-│   └── jrig/           # avatar studio — draw, rig and keyframe 2D characters
+│   ├── jrig/           # avatar studio — draw, rig and keyframe 2D characters
+│   └── jagent/         # agent fleet — dispatch tickets to claude agents, watch live diffs
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
+    ├── diff/           # @jsuite/diff — shared git-diff pipeline (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
 ```
@@ -107,6 +114,7 @@ overrides the search when set.
 | jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
 | jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
 | jrig | `.data/jrig/` — character/clip JSON documents (schema-validated) |
+| jagent | `.data/jagent/jagent.json` (workspaces + runs) + `worktrees/`, `runs/` |
 
 ## @jsuite/charting
 
@@ -149,6 +157,23 @@ consumer**: a jTicket doc (tracker record + `documentKey`) is the same object
 jExplain lists and renders; review notes and chart edits flow both ways.
 jExplain stays the canonical reading shell; jTicket wraps documents in
 project/status/label metadata.
+
+## @jsuite/diff
+
+jDiff's diff pipeline — target resolution (`?number=` PRs, `?branch=` local
+branches, and programmatic **worktree** targets that diff the merge-base
+against a live working tree, untracked files synthesised), `parse-diff` +
+side-by-side alignment, shiki highlighting, and the on-disk diff cache — lives
+in `packages/diff` as a server-only Nuxt layer. A consumer needs:
+
+1. `"@jsuite/diff": "workspace:*"` in `dependencies`
+2. `extends: ['@jsuite/diff']` in `nuxt.config.ts`
+
+Everything in its `server/utils` (`buildDiff`, `prepareTarget`,
+`rawWorktreeDiff`, `highlightLines`, `run`, …) auto-imports into the
+consumer's Nitro context; types come from `'@jsuite/diff/types'`
+(`FilePayload` is the one payload shape both jDiff's review UI and jAgent's
+live viewer render). jDiff and jAgent both run on it.
 
 ## @jsuite/claude
 
@@ -197,7 +222,7 @@ Always include the scheme: `https://jticket.local`.
 ./jsuite status           # pid + live HTTPS status code per app
 ./jsuite logs [app|edge]  # tail -F; no arg = every app
 ./jsuite open [app]       # open in the browser (default: the index)
-./jsuite setup            # onboarding: OrbStack check, pnpm install, skill install,
+./jsuite setup            # onboarding: OrbStack + tmux checks, pnpm install, skill install,
                           # cleanup of the old mkcert/hosts edge — re-runnable
 ```
 
@@ -211,7 +236,7 @@ picker and open-in-VSCode, none of which survive containerisation. OrbStack
 terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
 
 ```
-browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006,43007}
                         │
                         └─ OrbStack local CA, auto-trusted on first visit
 ```

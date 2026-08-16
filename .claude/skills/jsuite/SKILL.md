@@ -1,11 +1,11 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling and jRig each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jRig and jAgent each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
 ---
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of six local Nuxt
+jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of seven local Nuxt
 apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
@@ -23,6 +23,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
 | jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — claude interrogates a plan |
 | jRig | https://jrig.local | 43006 | avatar studio — draw, rig and keyframe 2D characters |
+| jAgent | https://jagent.local | 43007 | agent fleet — dispatch tickets to claude agents, watch live diffs |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
@@ -78,6 +79,18 @@ Claude edits the files, the studio hot-reloads them); the studio has Illustrate
 mode (vector tools, palette roles, mirror symmetry) and Animate mode (timeline
 keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
 
+**jAgent** — the middle of the suite: jTicket supplies the work, jAgent runs
+it, jDiff reviews it. Dispatch tickets from jTicket's frontier (or queue them
+for fleet mode); each run is a real interactive `claude` in a tmux session,
+working in its own git worktree, with `/jimplement <key>` and a preamble that
+forbids self-marking done. One screen shows every run with a **live diff**
+(via `@jsuite/diff`'s worktree targets) and the agent's actual terminal —
+type into it, or Nudge (feedback lands as a ticket comment AND in the
+session). A run flips to needs-review when the agent's resolution lands on
+the ticket (observed over jTicket's SSE); Accept commits, pushes, opens a PR
+(`gh`) and deep-links to jDiff. State in `.data/jagent/`; tmux is a hard
+prerequisite. No skill — driven from its own UI.
+
 ## How they relate
 
 - **One edge**: a Caddy container routes each `.local` name to its native host
@@ -96,6 +109,10 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   `server/api/documents/**` over `.data/jexplain/`, so a jTicket doc is the
   same object jExplain renders — one document system serving both apps, notes
   included.
+- **One diff pipeline**: the `@jsuite/diff` layer carries target resolution
+  (PR / branch / live worktree), parse + side-by-side alignment, and shiki
+  highlighting; jDiff's review UI and jAgent's live viewer render the same
+  `FilePayload`.
 - **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
   `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
   cancellation. jDiff's review tools and jGrilling's interviewer both run on it.
@@ -119,6 +136,7 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
 | be grilled about a plan, answering in a UI | `j-grilling` |
 | draw / rig / animate an avatar character | jRig — https://jrig.local (companion skill lands with its M9 milestone) |
+| run ticket(s) with agents and watch/steer/ship the diffs | jAgent — https://jagent.local (no skill; dispatch from its UI) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
 `./jsuite start` (it refuses ports held by processes it didn't launch — a stale

@@ -1,0 +1,18 @@
+{
+  "name": "@jsuite/diff",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared git-diff pipeline as a Nuxt layer — target resolution (PR / branch / worktree), parse + side-by-side align + shiki highlight, and the on-disk diff cache. jDiff renders review UIs over it; jAgent renders live worktree diffs over it.",
+  "main": "./nuxt.config.ts",
+  "exports": {
+    ".": "./nuxt.config.ts",
+    "./types": "./types.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@jsuite/data": "workspace:*",
+    "parse-diff": "^0.12.0",
+    "shiki": "^4.3.1"
+  }
+}

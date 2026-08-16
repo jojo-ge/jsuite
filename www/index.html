@@ -19,6 +19,7 @@
       <a href="#jexplain">jExplain</a>
       <a href="#jgrilling">jGrilling</a>
       <a href="https://jrig.local">jRig</a>
+      <a href="#jagent">jAgent</a>
       <a href="#ecosystem">How it works</a>
       <a href="/pricing.html">Pricing</a>
       <a class="nav-cta" href="#quickstart">Get started</a>
@@ -28,11 +29,12 @@
 
 <section class="hero">
   <div class="wrap">
-    <span class="eyebrow-pill"><b>Six apps · one edge</b> — stable <code>.local</code> names, HTTPS by OrbStack</span>
+    <span class="eyebrow-pill"><b>Seven apps · one edge</b> — stable <code>.local</code> names, HTTPS by OrbStack</span>
     <h1>A local workbench where <span class="grad">Claude authors and you review</span></h1>
-    <p class="sub">jSuite is six local apps behind one HTTPS edge — plan work, review diffs,
-      sketch diagrams, publish explainers, get grilled about plans, and draw rigged avatars, all on localhost.
-      Every app has a stable name, so skills and bookmarks never chase a dev-server port.</p>
+    <p class="sub">jSuite is seven local apps behind one HTTPS edge — plan work, review diffs,
+      sketch diagrams, publish explainers, get grilled about plans, draw rigged avatars, and dispatch
+      agents on your tickets, all on localhost. Every app has a stable name, so skills and bookmarks
+      never chase a dev-server port.</p>
     <div class="hero-ctas">
       <a class="btn btn-primary" href="#jticket">Tour the apps <span class="arrow">→</span></a>
       <a class="btn btn-ghost" href="#quickstart">Quick start</a>
@@ -47,6 +49,7 @@
 <span class="ok">✓</span> jexplain  <a href="https://jexplain.local">https://jexplain.local</a>
 <span class="ok">✓</span> jgrilling <a href="https://jgrilling.local">https://jgrilling.local</a>
 <span class="ok">✓</span> jrig      <a href="https://jrig.local">https://jrig.local</a>
+<span class="ok">✓</span> jagent    <a href="https://jagent.local">https://jagent.local</a>
 <span class="ok">✓</span> edge      Caddy up <span class="c"># HTTPS by OrbStack, green lock</span></pre>
     </div>
   </div>
@@ -82,6 +85,11 @@
     <a class="k" href="https://jrig.local">jRig <span class="ext">↗</span></a>
     <span class="v">Avatar studio — draw, rig and keyframe 2D characters</span>
     <span class="u"><a href="https://jrig.local">jrig.local</a></span>
+  </div>
+  <div data-app="jagent">
+    <a class="k" href="https://jagent.local">jAgent <span class="ext">↗</span></a>
+    <span class="v">Agent fleet — dispatch tickets to claude agents and watch every live diff</span>
+    <span class="u"><a href="https://jagent.local">jagent.local</a> · <a href="#jagent">tour ↓</a></span>
   </div>
 </nav>
 
@@ -288,11 +296,63 @@
   </div>
 </section>
 
+<!-- ============ jAgent ============ -->
+<section class="fold flip" id="jagent" data-app="jagent">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jAgent · Agent fleet <span class="port">:43007</span></p>
+      <h2>Dispatch a fleet, watch every diff land live</h2>
+      <p class="lede">Queue jTicket tickets and hand each one to a claude agent. A rail shows
+        every run with a live diffstat, and fleet mode drains the whole queue unattended
+        at a concurrency cap.</p>
+      <ul class="fold-points">
+        <li><b>A worktree per ticket.</b> Every dispatched agent runs in its own git worktree and tmux session, so runs never trample each other.</li>
+        <li><b>Live diffs, not scrollback.</b> The Diff tab shows the tree changing as the agent works; the rail keeps a diffstat per run.</li>
+        <li><b>Steer the real session.</b> The Terminal tab is the agent's actual tmux session — type into it, nudge it mid-run.</li>
+        <li><b>Accept → PR → jDiff.</b> When the agent writes its resolution the run flips to needs-review; Accept commits, pushes, opens a PR and deep-links to jDiff.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">No skill — driven from its own UI</span>
+        <span class="chip">jTicket supplies the work</span><span class="chip">jDiff reviews it</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jagent.local">Open jAgent <span class="arrow">→</span></a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jagent.local</span></div>
+        <div class="mock-fleet">
+          <div class="mock-rail">
+            <div class="mock-run live">
+              <span class="id">JT-21 · paginate tickets API</span>
+              <span class="state">running · <b class="plus">+214</b> <b class="minus">−38</b></span>
+              <span class="bar w70"></span>
+            </div>
+            <div class="mock-run review">
+              <span class="id">JT-19 · store refactor</span>
+              <span class="state">needs review</span>
+              <span class="bar w55"></span>
+            </div>
+          </div>
+          <div class="mock-diff">
+            <div class="file">server/api/tickets.ts · live</div>
+            <div class="ln ctx">  export async function list() {</div>
+            <div class="ln del">-   return store.tickets</div>
+            <div class="ln add">+   const page = clampPage(query)</div>
+            <div class="ln add">+   return paginate(store.tickets, page)</div>
+            <div class="ln ctx">  }</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ ecosystem ============ -->
 <section class="section" id="ecosystem">
   <div class="wrap">
     <div class="section-head">
-      <h2>One suite, not five tabs</h2>
+      <h2>One suite, not seven tabs</h2>
       <p>The apps share an edge, a state directory, a chart pool, a claude runner and a review loop —
          so work flows between them instead of getting stuck in one.</p>
     </div>
@@ -337,7 +397,7 @@
   <div class="wrap">
     <div class="section-head" style="margin-bottom:0">
       <h2>Up in one command</h2>
-      <p>The launcher starts all six apps and the Caddy edge, checks their health over
+      <p>The launcher starts all seven apps and the Caddy edge, checks their health over
          HTTPS, and tails their logs. <code>./jsuite setup</code> handles onboarding —
          deps, jskills into <code>~/.claude/skills</code>, OrbStack checks — in one go.</p>
     </div>
@@ -345,7 +405,7 @@
       <div class="terminal-bar"><i></i><i></i><i></i></div>
       <pre><span class="p">$</span> cd ~/code/anyway/jsuite
 <span class="p">$</span> ./jsuite setup      <span class="c"># once: deps + jskills + OrbStack checks</span>
-<span class="p">$</span> ./jsuite start      <span class="c"># all six apps + the Caddy edge</span>
+<span class="p">$</span> ./jsuite start      <span class="c"># all seven apps + the Caddy edge</span>
 <span class="p">$</span> ./jsuite status     <span class="c"># pid + live HTTPS check per app</span>
 <span class="p">$</span> ./jsuite logs jdiff <span class="c"># tail one app (or: logs edge)</span></pre>
     </div>
@@ -365,6 +425,7 @@
         <a href="https://jexplain.local">jexplain.local</a>
         <a href="https://jgrilling.local">jgrilling.local</a>
         <a href="https://jrig.local">jrig.local</a>
+        <a href="https://jagent.local">jagent.local</a>
       </span>
       <span class="foot-col">
         <b>Learn</b>
