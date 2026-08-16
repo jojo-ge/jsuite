@@ -214,7 +214,7 @@ rather than at jdiff.local, and attaches reviews to tickets.
 One thing to watch when extending the layer alongside server code of your own:
 `run` and `resolveRepoDir` are Nitro auto-imports here, and a consumer that
 already has helpers by those names will have the collision resolved for it,
-silently. jTicket's are `gitRun`/`projectRepoDir` for exactly that reason.
+silently. jTicket's are `runInRepo`/`projectRepoDir` for exactly that reason.
 
 ## @jsuite/documents
 

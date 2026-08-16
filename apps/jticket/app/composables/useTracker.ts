@@ -39,8 +39,9 @@ export interface ResolvedAttachment extends Attachment {
  * @jsuite/charting, and, since TICK-142, a diff through @jsuite/diff — and a
  * diff's page needs the repo as well as the id, which only the server knows.
  * So the one place a full view is addressed from is `ResolvedAttachment.url`,
- * which the server resolves per ref, and what is left to vary by type is how a
- * row looks and what it embeds.
+ * which the server resolves per ref, and all that is left to vary by type here
+ * is how a row is labelled. What *renders* an opened artifact stays in
+ * <AttachmentsPanel>: three embeds that share no shape worth tabulating.
  */
 export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: string }> = {
   document: { label: 'Document', icon: 'i-lucide-file-text' },

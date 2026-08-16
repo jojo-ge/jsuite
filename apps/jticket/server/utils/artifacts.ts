@@ -1,10 +1,11 @@
 import { DIFF_BASE_PATH, diffRouteUrl, diffRoutes } from '@jsuite/diff/routes'
 import type { Attachment, Project, Store, Ticket } from './store'
 
-// The review routes as jTicket mounts them. jTicket keeps @jsuite/diff's
-// namespaced default (it sets no `diff.basePath` of its own), and this is the
-// constant that default is written from — so the URL a diff ref resolves to and
-// the route the layer actually serves cannot drift apart.
+// The review routes as jTicket mounts them. jTicket sets no `diff.basePath` of
+// its own, so it gets the layer's namespaced default — and this is the constant
+// that default is written from, which is as close as server code can get to
+// reading app config. Give jTicket its own `diff.basePath` and this has to be
+// pointed at it too.
 const review = diffRoutes(DIFF_BASE_PATH)
 
 // Reading and writing the far end of an attachment. A ref is just {type, id};
@@ -46,9 +47,9 @@ export interface ResolvedAttachment extends Attachment {
   /** Why it's missing, for a UI that wants to say more than "missing". */
   reason?: string
   /**
-   * The repo a `diff` was resolved against, expanded — what the review engine
-   * takes as `?repo=`. Only diffs have one, and only a renderer that mounts the
-   * review itself (rather than following `url`) needs it.
+   * The repo a `diff` was resolved against, as the project stores it — what the
+   * review engine takes as `?repo=`. Only diffs have one, and only a renderer
+   * that mounts the review itself (rather than following `url`) needs it.
    */
   repo?: string
 }
@@ -92,17 +93,23 @@ async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttach
       // A diff has no pool file to look for: it is a review target computed
       // from a repo on demand. Without a repo there is nowhere to send anyone.
       if (!repo.trim()) return gone('no repo to review this against')
-      const path = expandHome(repo.trim())
+      // As stored, '~' and all, rather than expanded — the review engine
+      // expands it server-side, and spelling it the same way everywhere in
+      // jTicket is what keeps the review UI's client-side state (keyed on this
+      // string) from splitting in two.
+      const repoRef = repo.trim()
       const branch = att.id.startsWith('branch/') ? att.id.slice('branch/'.length) : null
       return {
         ...att,
         title: branch ? `branch ${branch}` : `#${att.id}`,
         // In-app, like a document or a chart: jTicket extends @jsuite/diff, so
         // the review renders here rather than bouncing the reader over to jDiff.
-        url: diffRouteUrl(branch ? review.branch({ repo: path, branch }) : review.pr(path, att.id)),
+        url: diffRouteUrl(
+          branch ? review.branch({ repo: repoRef, branch }) : review.pr(repoRef, att.id),
+        ),
         updatedAt: '',
         missing: false,
-        repo: path,
+        repo: repoRef,
       }
     }
   }

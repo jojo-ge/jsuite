@@ -7,6 +7,13 @@
 // jTicket serves @jsuite/diff's screens at /diffs, jDiff serves the same
 // components at the root, and a hardcoded path only works in one of them.
 //
+// They carry the repo *as the project stores it*, not the expanded `data.repo`
+// this panel displays. The engine expands either one server-side, but the
+// review UI keys its client state (the live analysis tasks, `${repo} ${id}`)
+// on the string it was given — so a review reached from here and the same
+// review reached from a ticket's attachment have to be spelled the same way or
+// they are two reviews as far as the browser is concerned.
+//
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
 // the rest of the project page never waits on GitHub.
@@ -234,7 +241,7 @@ const prs = computed(() => data.value?.prs ?? [])
           <span v-else class="font-medium">{{ data.slug ?? 'local repo' }}</span>
           <span class="truncate font-mono text-xs text-muted">{{ data.repo }}</span>
           <UButton
-            :to="routes.prs(data.repo)"
+            :to="routes.prs(project.repo)"
             icon="i-lucide-git-compare"
             size="xs"
             color="neutral"
@@ -274,7 +281,7 @@ const prs = computed(() => data.value?.prs ?? [])
               />
             </UTooltip>
             <UButton
-              :to="routes.branch({ repo: data.repo, branch: data.branch.name })"
+              :to="routes.branch({ repo: project.repo, branch: data.branch.name })"
               icon="i-lucide-git-compare"
               size="xs"
               color="neutral"
@@ -360,7 +367,7 @@ const prs = computed(() => data.value?.prs ?? [])
           <div class="flex shrink-0 gap-1">
             <UTooltip text="Review this PR here">
               <UButton
-                :to="routes.pr(data.repo, pr.number)"
+                :to="routes.pr(project.repo, pr.number)"
                 icon="i-lucide-git-compare"
                 size="xs"
                 color="neutral"

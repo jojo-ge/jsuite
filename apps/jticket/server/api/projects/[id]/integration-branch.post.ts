@@ -35,10 +35,10 @@ export default defineEventHandler(async (event) => {
     // local base ref below.
     await tryFetch(path, base)
     const startPoint = (await remoteRefExists(path, base)) ? `refs/remotes/origin/${base}` : base
-    await gitRun('git', ['branch', branch, startPoint], path)
+    await runInRepo('git', ['branch', branch, startPoint], path)
   }
   if (!hadRemote) {
-    await gitRun('git', ['push', '--set-upstream', 'origin', `${branch}:${branch}`], path)
+    await runInRepo('git', ['push', '--set-upstream', 'origin', `${branch}:${branch}`], path)
   }
 
   project.integrationBranch = branch
@@ -58,13 +58,13 @@ export default defineEventHandler(async (event) => {
 
 async function tryFetch(path: string, base: string): Promise<void> {
   try {
-    await gitRun('git', ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], path)
+    await runInRepo('git', ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], path)
   } catch { /* offline or no origin — the local base ref will have to do */ }
 }
 
 async function remoteRefExists(path: string, base: string): Promise<boolean> {
   try {
-    const out = await gitRun('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], path)
+    const out = await runInRepo('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], path)
     return !!out.trim()
   } catch {
     return false

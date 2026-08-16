@@ -23,8 +23,18 @@ const props = defineProps<{
 
 const routes = useDiffRoutes()
 
+// The target, narrowed once for the whole component: exactly one of these is
+// set, and everything downstream reads them instead of re-testing the union.
 const target = computed(() => targetFromId(props.id))
-const isPr = computed(() => 'number' in target.value)
+const prNumber = computed(() => {
+  const t = target.value
+  return 'number' in t ? t.number : ''
+})
+const branchName = computed(() => {
+  const t = target.value
+  return 'branch' in t ? t.branch : ''
+})
+const isPr = computed(() => !!prNumber.value)
 
 interface CardData {
   /** PR metadata from gh, when the target is a PR. */
@@ -33,54 +43,68 @@ interface CardData {
   branch: { name: string; oid: string; subject: string; committedAt: string } | null
   base: string
   rating: ReviewRating | null
+  /** When the rating was generated — the review UI always says so next to it. */
+  ratedAt: string
   risks: FileRisk[]
 }
 
 const data = ref<CardData | null>(null)
 const pending = ref(true)
-const error = ref('')
+// Only the *target* can fail this way, and it fails on its own: see load().
+const targetError = ref('')
 
-// Plain $fetch, driven from onMounted rather than useFetch. Two reasons: none
-// of this should run on the server — `gh pr view` and `git` are seconds of
-// subprocess, and a host page must not wait on them to render — and a useFetch
-// call site keys on the call site, not on the target, so two cards on one page
-// would quietly share an answer.
+// Plain $fetch, driven from onMounted rather than useFetch, because none of
+// this should run on the server: `gh pr view` and `git` are seconds of
+// subprocess, and a host page must not wait on them to render. There is
+// nothing to hydrate either way — the card is opened by a click.
+function messageOf(err: any): string {
+  return String(err?.data?.message ?? err?.data?.statusMessage ?? err?.message ?? err)
+}
+
 async function load() {
   const t = target.value
   const q = { repo: props.repo, ...targetQuery(t) }
   pending.value = true
-  error.value = ''
-  try {
-    // The guidance artifacts are plain store reads — no git, no gh, no claude —
-    // and a target with no analysis yet answers null rather than failing, so
-    // they never take the card down with them.
-    const [rating, risk] = await Promise.all([
+  targetError.value = ''
+
+  // The two halves fail independently, and that is the whole point. A ref is a
+  // locator, not a promise that the target still exists — the branch may be
+  // gone, the PR may have been in another repo, `gh` may be offline. When that
+  // happens the *verdict* is still there in the store and is still worth
+  // reading, so a dead target costs the card its meta line, not its contents.
+  const [artifacts, meta] = await Promise.all([
+    // Plain store reads — no git, no gh, no claude — and a target nobody has
+    // analyzed answers null rather than failing.
+    Promise.all([
       $fetch<{ rating: ReviewRating; createdAt: string } | null>('/api/rating', { query: q }),
       $fetch<{ risks: FileRisk[]; createdAt: string } | null>('/api/risk', { query: q }),
-    ])
-    const next: CardData = { pr: null, branch: null, base: '', rating: rating?.rating ?? null, risks: risk?.risks ?? [] }
+    ]).catch(() => [null, null] as const),
 
-    if ('number' in t) {
-      next.pr = await $fetch<any>('/api/pr', { query: q })
-    } else {
+    (async () => {
+      if ('number' in t) return { pr: await $fetch<any>('/api/pr', { query: q }), branch: null, base: '' }
       // A branch has no metadata beyond its tip commit, which is what the
       // branch list already reads — one `git for-each-ref` for the whole repo.
       const list = await $fetch<{
         branches: { name: string; oid: string; subject: string; committedAt: string }[]
         defaultBranch: string
       }>('/api/branches', { query: { repo: props.repo } })
-      next.branch = list.branches.find((b) => b.name === t.branch) ?? null
-      next.base = list.defaultBranch
-      // A ref is a locator, not a promise that the target still exists.
-      if (!next.branch) throw new Error(`no local branch ${t.branch} in ${props.repo}`)
-    }
-    data.value = next
-  } catch (err: any) {
-    data.value = null
-    error.value = String(err?.data?.message ?? err?.data?.statusMessage ?? err?.message ?? err)
-  } finally {
-    pending.value = false
+      const branch = list.branches.find((b) => b.name === t.branch)
+      if (!branch) throw new Error(`no local branch ${t.branch} in ${props.repo}`)
+      return { pr: null, branch, base: list.defaultBranch }
+    })().catch((err) => {
+      targetError.value = messageOf(err)
+      return { pr: null, branch: null, base: '' }
+    }),
+  ])
+
+  const [rating, risk] = artifacts
+  data.value = {
+    ...meta,
+    rating: rating?.rating ?? null,
+    ratedAt: rating?.createdAt ?? '',
+    risks: risk?.risks ?? [],
   }
+  pending.value = false
 }
 
 onMounted(load)
@@ -91,177 +115,190 @@ watch(() => [props.repo, props.id], load)
 const pr = computed(() => data.value?.pr ?? null)
 const branch = computed(() => data.value?.branch ?? null)
 const rating = computed(() => data.value?.rating ?? null)
+// Same thresholds the PR list and the guidance page colour a score by, so one
+// number never reads two ways depending on where you met it.
+const scoreClass = computed(() => {
+  const n = rating.value?.score ?? 0
+  return n >= 7 ? 'good' : n >= 4 ? 'mid' : 'bad'
+})
 const riskCounts = computed(() => {
   const c = { high: 0, medium: 0, low: 0 }
   for (const r of data.value?.risks ?? []) c[r.level]++
   return c
 })
 
-const title = computed(() => {
-  if (isPr.value) return pr.value?.title ?? ''
-  return branch.value?.subject ?? ''
-})
-const label = computed(() =>
-  isPr.value ? `#${(target.value as { number: string }).number}` : (target.value as { branch: string }).branch,
-)
+const title = computed(() => (isPr.value ? pr.value?.title : branch.value?.subject) ?? '')
+const label = computed(() => (isPr.value ? `#${prNumber.value}` : branchName.value))
 const reviewLink = computed(() =>
   isPr.value
-    ? routes.pr(props.repo, (target.value as { number: string }).number)
-    : routes.branch({ repo: props.repo, branch: (target.value as { branch: string }).branch }),
+    ? routes.pr(props.repo, prNumber.value)
+    : routes.branch({ repo: props.repo, branch: branchName.value }),
 )
 const summaryLink = computed(() =>
   isPr.value
-    ? routes.prSummary(props.repo, (target.value as { number: string }).number)
-    : routes.branchSummary({ repo: props.repo, branch: (target.value as { branch: string }).branch }),
+    ? routes.prSummary(props.repo, prNumber.value)
+    : routes.branchSummary({ repo: props.repo, branch: branchName.value }),
 )
 </script>
 
 <template>
   <article class="diff-embed card">
-    <header class="head">
-      <NuxtLink :to="reviewLink" class="label">{{ label }}</NuxtLink>
-      <span v-if="isPr && pr?.isDraft" class="pill">draft</span>
-      <span v-else-if="isPr && pr?.state && pr.state !== 'OPEN'" class="pill">{{ String(pr.state).toLowerCase() }}</span>
-      <span v-else-if="!isPr" class="pill">local branch</span>
+    <div class="top">
+      <NuxtLink :to="reviewLink" class="number">{{ label }}</NuxtLink>
       <span class="title">{{ title }}</span>
-    </header>
+      <span v-if="isPr && pr?.isDraft" class="badge">draft</span>
+      <span v-else-if="isPr && pr?.state && pr.state !== 'OPEN'" class="badge">{{ String(pr.state).toLowerCase() }}</span>
+      <span v-else-if="!isPr" class="badge">local branch</span>
+    </div>
 
-    <div v-if="error" class="error-box">{{ error }}</div>
-    <div v-else-if="pending" class="center"><span class="spinner" /></div>
+    <div v-if="pending" class="center"><span class="spinner" /></div>
 
     <template v-else>
-      <dl class="facts">
-        <div v-if="isPr && pr" class="fact">
-          <dt>refs</dt>
-          <dd class="mono">{{ pr.headRefName }} → {{ pr.baseRefName }}</dd>
-        </div>
-        <div v-else-if="branch" class="fact">
-          <dt>base</dt>
-          <dd class="mono">{{ data?.base }}</dd>
-        </div>
-        <div v-if="isPr && pr?.author?.login" class="fact">
-          <dt>author</dt>
-          <dd>{{ pr.author.login }}</dd>
-        </div>
-        <div v-if="isPr && pr && pr.additions != null" class="fact">
-          <dt>diff</dt>
-          <dd>
-            <span class="add">+{{ pr.additions }}</span>
-            <span class="del">−{{ pr.deletions }}</span>
-            <span class="muted">{{ pr.changedFiles }} files</span>
-          </dd>
-        </div>
-        <div v-if="!isPr && branch" class="fact">
-          <dt>tip</dt>
-          <dd><span class="mono">{{ branch.oid }}</span> <span class="muted">{{ timeAgo(branch.committedAt) }}</span></dd>
-        </div>
-      </dl>
+      <!-- The target is gone, or couldn't be read. Said in one line, because
+           whatever was already learned about it below is still worth reading. -->
+      <div v-if="targetError" class="error-box">{{ targetError }}</div>
+
+      <div v-else class="meta">
+        <span v-if="isPr && pr" class="branch">{{ pr.headRefName }} → {{ pr.baseRefName }}</span>
+        <span v-else-if="branch" class="branch">{{ branch.name }} → {{ data?.base }}</span>
+        <span v-if="isPr && pr?.author?.login" class="who">{{ pr.author.login }}</span>
+        <span v-if="isPr && pr && pr.additions != null" class="stats">
+          <span class="add">+{{ pr.additions }}</span><span class="del">−{{ pr.deletions }}</span>
+          <span class="files">{{ pr.changedFiles }} files</span>
+        </span>
+        <span v-if="!isPr && branch" class="stats">{{ branch.oid }}</span>
+        <span v-if="!isPr && branch">{{ timeAgo(branch.committedAt) }}</span>
+      </div>
 
       <div v-if="rating" class="rating">
-        <span class="score">{{ rating.score }}<span class="of">/10</span></span>
-        <div class="verdict">
-          <span class="effort">{{ rating.effort }} read</span>
-          <span v-if="riskCounts.high || riskCounts.medium" class="risks">
-            <span v-if="riskCounts.high" class="risk high">{{ riskCounts.high }} high</span>
-            <span v-if="riskCounts.medium" class="risk medium">{{ riskCounts.medium }} medium</span>
+        <div class="rating-head">
+          <span class="rating-score" :class="scoreClass">{{ rating.score }}/10</span>
+          <span class="rating-effort">{{ rating.effort }} review</span>
+          <span v-if="data?.ratedAt" class="rating-effort">rated {{ timeAgo(data.ratedAt) }}</span>
+          <span v-if="riskCounts.high || riskCounts.medium || riskCounts.low" class="risk-counts">
+            <span v-if="riskCounts.high" class="rc high">{{ riskCounts.high }} high</span>
+            <span v-if="riskCounts.medium" class="rc medium">{{ riskCounts.medium }} medium</span>
+            <span v-if="riskCounts.low" class="rc low">{{ riskCounts.low }} low</span>
           </span>
-          <p class="summary">{{ rating.summary }}</p>
         </div>
+        <p class="rating-summary">{{ rating.summary }}</p>
       </div>
       <p v-else class="unanalyzed">not analyzed yet — open the review to run it</p>
     </template>
 
-    <footer class="foot">
-      <NuxtLink :to="reviewLink" class="go">read the diff</NuxtLink>
-      <NuxtLink v-if="rating" :to="summaryLink" class="go quiet">guidance</NuxtLink>
-      <a v-if="isPr && pr?.url" :href="pr.url" target="_blank" rel="noreferrer" class="go quiet">on github</a>
-    </footer>
+    <div class="foot">
+      <NuxtLink :to="reviewLink">read the diff</NuxtLink>
+      <NuxtLink v-if="rating" :to="summaryLink" class="quiet">guidance</NuxtLink>
+      <a v-if="isPr && pr?.url" :href="pr.url" target="_blank" rel="noreferrer" class="quiet">on github</a>
+    </div>
   </article>
 </template>
 
 <style scoped>
+/* Every value here is the layer's own: a review embedded in a host app should
+   look like the review screens, not like a second design that happens to be
+   dark. The card is `card-panel` from DESIGN.md; the row, the meta line and the
+   rating block are the ones <DiffPrList> and <DiffPrSummary> already use. */
 .card {
+  padding: 12px 16px;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 
-.head {
+.top {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  flex-wrap: wrap;
 }
-.label {
+.number {
   font-family: var(--mono);
-  font-weight: 600;
-  color: var(--accent);
+  color: var(--muted);
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.number:hover { color: var(--accent); }
 .title {
-  flex: 1;
+  font-weight: 600;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
 }
-.pill {
-  padding: 1px 6px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--muted);
+.badge {
+  flex: none;
   font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--muted);
 }
 
 .center { padding: 20px 0; text-align: center; }
+/* The layer's error box is sized for a page; in a card it just needs a gap. */
+.error-box { margin: 10px 0 0; }
 .center .spinner { display: inline-block; }
 
-.facts {
+.meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
-  margin: 10px 0 0;
+  column-gap: 14px;
+  row-gap: 4px;
+  margin-top: 4px;
   font-size: 12px;
+  color: var(--muted);
 }
-.fact { display: flex; gap: 6px; align-items: baseline; }
-.fact dt { color: var(--muted); }
-.fact dd { margin: 0; display: flex; gap: 6px; }
-.mono { font-family: var(--mono); }
-.muted { color: var(--muted); }
+.meta > * { white-space: nowrap; }
+.branch {
+  font-family: var(--mono);
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stats { font-family: var(--mono); }
 .add { color: var(--green); }
-.del { color: var(--red); }
+.del { color: var(--red); margin-left: 6px; }
+.files { margin-left: 6px; }
 
-.rating {
+.rating { margin-top: 10px; }
+.rating-head {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
 }
-.score {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text);
-}
-.of { font-size: 12px; color: var(--muted); }
-.verdict { min-width: 0; flex: 1; }
-.effort { font-size: 12px; color: var(--muted); }
-.risks { margin-left: 8px; display: inline-flex; gap: 6px; }
-.risk { font-size: 11px; }
-.risk.high { color: var(--red); }
-.risk.medium { color: #d29922; }
-.summary {
-  margin: 4px 0 0;
+.rating-score {
+  font-family: var(--mono);
   font-size: 12px;
-  color: var(--text);
+  font-weight: 700;
+}
+.rating-score.good { color: var(--green); }
+.rating-score.mid { color: var(--accent); }
+.rating-score.bad { color: var(--red); }
+.rating-effort { color: var(--muted); font-size: 12px; }
+.risk-counts {
+  display: flex;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.rc.high { color: var(--red); }
+/* Risk amber, inlined the way every other risk-medium site in the layer does
+   it — the palette block has no token for it. */
+.rc.medium { color: #d29922; }
+.rc.low { color: var(--green); }
+.rating-summary {
+  margin: 8px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .unanalyzed {
-  margin: 12px 0 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  margin: 10px 0 0;
   font-size: 12px;
   color: var(--muted);
 }
@@ -272,6 +309,6 @@ const summaryLink = computed(() =>
   margin-top: 12px;
   font-size: 12px;
 }
-.go { color: var(--accent); }
-.go.quiet { color: var(--muted); }
+.foot .quiet { color: var(--muted); }
+.foot .quiet:hover { color: var(--accent); }
 </style>

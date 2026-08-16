@@ -21,14 +21,15 @@ import type { Project, Store } from './store'
 
 const pExecFile = promisify(execFile)
 
-// Prefixed because jTicket extends @jsuite/diff, whose server utils
-// auto-import into this same Nitro scope under the bare names `run` and
-// `resolveRepoDir`. Two same-named auto-imports resolve silently, and the two
-// implementations are not interchangeable — the layer's `run` reports failures
-// in `message` where every caller here reads `statusMessage`, and its repo
-// resolver has no idea a project is the thing missing a repo. Keeping jTicket's
-// distinct makes which one you get a decision rather than a load order.
-export async function gitRun(cmd: string, args: string[], cwd: string): Promise<string> {
+// `git` or `gh`, in a repo directory. Named rather than `run` because jTicket
+// extends @jsuite/diff, whose server utils auto-import into this same Nitro
+// scope under the bare names `run` and `resolveRepoDir`. Two same-named
+// auto-imports resolve silently, and the two implementations are not
+// interchangeable — the layer's `run` reports failures in `message` where every
+// caller here reads `statusMessage`, and its repo resolver has no idea a
+// project is the thing missing a repo. Keeping jTicket's distinct makes which
+// one you get a decision rather than a load order.
+export async function runInRepo(cmd: string, args: string[], cwd: string): Promise<string> {
   try {
     const { stdout } = await pExecFile(cmd, args, { cwd, maxBuffer: 16 * 1024 * 1024 })
     return stdout
@@ -188,11 +189,11 @@ export async function listBranches(
 ): Promise<BranchCandidate[]> {
   if (opts.fetch) {
     try {
-      await gitRun('git', ['fetch', '--prune', '--quiet', 'origin'], path)
+      await runInRepo('git', ['fetch', '--prune', '--quiet', 'origin'], path)
     } catch { /* offline / no origin — list what we have */ }
   }
 
-  const raw = await gitRun(
+  const raw = await runInRepo(
     'git',
     [
       'for-each-ref',
@@ -275,7 +276,7 @@ const prCache = new Map<string, { at: number; prs: GhPr[] }>()
 export async function listOpenPrs(path: string, force = false): Promise<GhPr[]> {
   const hit = prCache.get(path)
   if (!force && hit && Date.now() - hit.at < PR_TTL_MS) return hit.prs
-  const out = await gitRun('gh', ['pr', 'list', '--limit', '100', '--json', PR_FIELDS], path)
+  const out = await runInRepo('gh', ['pr', 'list', '--limit', '100', '--json', PR_FIELDS], path)
   const prs = JSON.parse(out) as GhPr[]
   prCache.set(path, { at: Date.now(), prs })
   return prs
