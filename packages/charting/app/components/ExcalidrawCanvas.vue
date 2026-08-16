@@ -8,6 +8,7 @@
  *
  * No JSX anywhere: React.createElement keeps Vite's Vue-only pipeline untouched.
  */
+import type { Root } from 'react-dom/client'
 import type { Scene, SceneElement } from '../utils/scene'
 
 const props = defineProps<{
@@ -26,7 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const host = ref<HTMLElement | null>(null)
-let root: { render: (n: unknown) => void; unmount: () => void } | null = null
+let root: Root | null = null
 let api: any = null
 // Saving is gated on the scene version so panning and selecting don't write.
 // Element mirroring is gated separately and starts at -1, so the first onChange
@@ -83,7 +84,6 @@ onMounted(async () => {
       import('react-dom/client'),
       import('@excalidraw/excalidraw'),
     ])
-    // @ts-expect-error — CSS side-effect import, no types
     await import('@excalidraw/excalidraw/index.css')
 
     getSceneVersionFn = excalidraw.getSceneVersion as any

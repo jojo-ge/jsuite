@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChartNote } from '~/components/NotesPanel.vue'
+import type { Chart, ChartNotes } from '@jsuite/charting/store'
 import type { Scene, SceneElement } from '@jsuite/charting/scene'
 
 const route = useRoute()
@@ -7,8 +8,8 @@ const router = useRouter()
 const toast = useToast()
 const key = computed(() => String(route.params.key))
 
-const { data: chart, error } = await useFetch(() => `/api/charts/${key.value}`)
-const { data: notesDoc } = await useFetch(() => `/api/charts/${key.value}/notes`)
+const { data: chart, error } = await useFetch<Chart>(() => `/api/charts/${key.value}`)
+const { data: notesDoc } = await useFetch<ChartNotes>(() => `/api/charts/${key.value}/notes`)
 
 const canvas = ref<{
   setScene: (s: Scene, o?: { scrollToContent?: boolean }) => void

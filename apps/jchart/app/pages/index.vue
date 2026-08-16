@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const { data: charts, refresh } = await useFetch('/api/charts')
+import type { ChartMeta } from '@jsuite/charting/store'
+const { data: charts, refresh } = await useFetch<ChartMeta[]>('/api/charts')
 const router = useRouter()
 
 const newOpen = ref(false)

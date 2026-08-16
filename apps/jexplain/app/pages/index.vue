@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const { data: docs, refresh } = await useFetch('/api/documents')
+import type { ExplainerMeta } from '@jsuite/documents/types'
+const { data: docs, refresh } = await useFetch<ExplainerMeta[]>('/api/documents')
 
 useHead({ title: 'Library' })
 

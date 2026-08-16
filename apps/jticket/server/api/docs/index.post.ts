@@ -59,6 +59,6 @@ export default defineEventHandler(async (event) => {
   }
   store.docs.push(doc)
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return doc
 })

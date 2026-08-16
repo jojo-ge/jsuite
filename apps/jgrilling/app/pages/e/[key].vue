@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Reader for debrief documents — the same shared-pool page jExplain serves,
 // here so the `/e/<key>` links a session produces work inside this app too.
+import type { Explainer } from '@jsuite/documents/types'
 const route = useRoute()
 const router = useRouter()
 const key = computed(() => String(route.params.key))
 
-const { data: doc, error } = await useFetch(() => `/api/documents/${key.value}`)
+const { data: doc, error } = await useFetch<Explainer>(() => `/api/documents/${key.value}`)
 
 const railOpen = ref(false)
 const progress = ref(0)
