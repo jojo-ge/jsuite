@@ -39,9 +39,7 @@ const { data: docs, refresh } = await useFetch<ExplainerMeta[]>('/api/documents'
 // skills looking their own output back up.
 const selected = ref<string[]>([])
 
-const allLabels = computed(() =>
-  [...new Set((docs.value ?? []).flatMap((d) => d.labels))].sort(),
-)
+const allLabels = computed(() => labelPool(docs.value ?? []))
 
 const shown = computed(() =>
   (docs.value ?? []).filter((d) => selected.value.every((label) => d.labels.includes(label))),
