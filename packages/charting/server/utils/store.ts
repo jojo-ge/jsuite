@@ -78,6 +78,11 @@ export function chartFilePath(key: string): string {
   return chartPath(key)
 }
 
+/** Where this pool lives on disk — handed to callers so nothing has to hardcode it. */
+export function chartDataDir(): string {
+  return DATA_DIR
+}
+
 export async function uniqueKey(base: string): Promise<string> {
   await ensureDir()
   const root = sanitizeKey(base) || 'chart'

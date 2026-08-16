@@ -5,8 +5,8 @@ Usage:
     chart.py <diagram.mmd> [--title "My Diagram"] [--replace] [--key slug] [--no-open]
     chart.py --list
 
-The diagram is stored as a chart in ~/code/anyway/jsuite/.data/jchart/<key>.json. jChart
-lays it out as editable Excalidraw shapes on first open; the user can then
+The diagram is stored as a chart in the shared jChart pool, <data>/jchart/<key>.json.
+jChart lays it out as editable Excalidraw shapes on first open; the user can then
 redraw it freely and pin notes to individual shapes.
 
 Prints the chart URL, plus the data file paths to read the user's notes back
@@ -25,7 +25,6 @@ import urllib.request
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
 EDGE_BASE = "https://jchart.local"
 DIRECT_BASE = "http://localhost:43003"
-DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
 
 # Preferred browser (macOS app name). Override with --browser or $JCHART_BROWSER.
 DEFAULT_BROWSER = "Arc"
@@ -75,6 +74,31 @@ def open_in_browser(url, browser=None):
         subprocess.run([browser, url] if browser else ["xdg-open", url], check=False)
     elif sys.platform.startswith("win"):
         subprocess.run(["cmd", "/c", "start", "", url], check=False)
+
+
+def data_dir(res):
+    """Where the chart pool lives on disk, never guessed.
+
+    This script is installed under ~/.claude/skills, so it can't find the repo
+    relative to itself — and it can be a different vintage from the server it's
+    talking to. The server that just answered the publish call resolved its own
+    `.data` and hands it back as `dataDir`, so that's the truth for whatever
+    checkout is actually running. `$JSUITE_DATA_DIR` covers a server too old to
+    send it, but only helps if the caller exported it (`./jsuite` exports it to
+    the app processes it starts, not to this shell).
+
+    Returns None rather than a guess, and only returns a directory that exists —
+    a path the caller can't open is worse than no path at all.
+    """
+    for candidate in ((res or {}).get("dataDir"), _env_pool("jchart")):
+        if candidate and os.path.isdir(candidate):
+            return candidate
+    return None
+
+
+def _env_pool(app):
+    env = os.environ.get("JSUITE_DATA_DIR")
+    return os.path.join(os.path.expanduser(env), app) if env else None
 
 
 def slugify(text):
@@ -141,8 +165,15 @@ def main():
         open_in_browser(url, args.browser)
 
     print(url)
-    print(f"chart: {os.path.join(DATA_DIR, res['key'] + '.json')}")
-    print(f"notes: {os.path.join(DATA_DIR, res['key'] + '.notes.json')}")
+    pool = data_dir(res)
+    if pool:
+        print(f"chart: {os.path.join(pool, res['key'] + '.json')}")
+        print(f"notes: {os.path.join(pool, res['key'] + '.notes.json')}")
+    else:
+        # No pool we can vouch for: name the files, not a path that won't open.
+        print(f"chart: {res['key']}.json (+ .notes.json) in the jChart pool "
+              "(.data/jchart/ at the jSuite root) — export $JSUITE_DATA_DIR, or "
+              "update the running app, to have absolute paths printed here")
     return 0
 
 

@@ -17,7 +17,9 @@ import { fileURLToPath } from 'node:url'
 //     `@jsuite/documents/store` (server)
 //   - everything from @jsuite/charting (extended below): <ExcalidrawCanvas>,
 //     mermaidToScene(), /api/charts/** over the shared .data/jchart pool, and
-//     the chart UI itself — /charts and /charts/<key> as pages
+//     the chart UI itself — /charts and /charts/<key> as pages, plus useDataRoot()
+//     (and the runtimeConfig.public.jsuiteDataRoot behind it) — <DocumentArticle>
+//     pastes on-disk paths through it
 //
 // Consumers must also add TWO lines to their Tailwind entry css so the utility
 // classes used by this layer's components — and by the charting layer's, which

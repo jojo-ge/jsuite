@@ -1,7 +1,8 @@
 # jRig — the avatar studio (illustration + keyframing for rigged avatars)
 
-> Adapted from `~/code/anyway/avatar-studio-plan.md` (written for a standalone repo) to a
-> **jSuite app** at `apps/jrig`. The source rig was ported from the kraken monorepo:
+> Adapted from the standalone `avatar-studio-plan.md` design document (written for a
+> repo of its own, and not carried into this workspace) to a **jSuite app** at
+> `apps/jrig`. The source rig was ported from the kraken monorepo:
 > `kraken/packages/kui/components/KUI/Avatar/` on branch `avatar-rig` (uncommitted working
 > tree at port time, 2026-08-02). The original plan document remains the design deep-dive
 > for everything not changed by the pivot below; this file is the executable version.

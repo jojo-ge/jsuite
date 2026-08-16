@@ -25,9 +25,9 @@ Unlike a static image, the user can redraw the diagram — move, add, delete, re
 
 4. **Read the result back.** Two ways, both fine:
    - The user pastes the copied markdown (general notes, per-shape annotations, Mermaid source).
-   - Or **read the files directly** — the script prints their paths:
-     - `~/code/anyway/jsuite/.data/jchart/<key>.json` — title, Mermaid source, and the live Excalidraw scene
-     - `~/code/anyway/jsuite/.data/jchart/<key>.notes.json` — `{ general, notes: [{ elementId, label, text }] }`
+   - Or **read the files directly** — the script prints their absolute paths on the `chart:` and `notes:` lines (the shared jChart pool, `.data/jchart/`); read them from there rather than assuming a location:
+     - `<key>.json` — title, Mermaid source, and the live Excalidraw scene
+     - `<key>.notes.json` — `{ general, notes: [{ elementId, label, text }] }`
 
    Reading the files is usually better: it works without waiting for a paste, and the scene shows structural edits the user made that the notes don't mention. Match a note to its shape via `elementId`; a shape's caption is a separate `text` element whose `containerId` points at it.
 
@@ -41,4 +41,4 @@ Unlike a static image, the user can redraw the diagram — move, add, delete, re
 - If Mermaid fails to parse, the app shows the parser error in a toast and the canvas stays empty — fix the source and re-run.
 - Node types Mermaid can't lay out (some newer diagram kinds) fall back to a best-effort conversion; if a diagram comes through badly, the user can just redraw it.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JCHART_BROWSER`; the default lives in `DEFAULT_BROWSER` at the top of `chart.py`.
-- The app is jChart in the jSuite (`~/code/anyway/jsuite/apps/jchart`, port 43003). Start everything with `jsuite start`.
+- The app is jChart in the jSuite (`~/code/jojo/jsuite/apps/jchart`, port 43003). Start everything with `jsuite start`.

@@ -62,6 +62,11 @@ export function cleanDocLabels(input: unknown): string[] {
 const docPath = (key: string) => join(DATA_DIR, sanitizeDocKey(key) + '.json')
 const docNotesPath = (key: string) => join(DATA_DIR, sanitizeDocKey(key) + '.notes.json')
 
+/** Where this pool lives on disk — handed to callers so nothing has to hardcode it. */
+export function docDataDir(): string {
+  return DATA_DIR
+}
+
 export async function uniqueDocKey(base: string): Promise<string> {
   const root = sanitizeDocKey(base) || 'document'
   if (!existsSync(docPath(root))) return root
