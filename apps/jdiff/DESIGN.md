@@ -119,8 +119,11 @@ Matte layers of blue-black graphite carve the space; one blue voice directs atte
 - **Diff Red** (#f85149): Deletions, requested changes, bad scores, high risk, destructive hovers. Washes rgba(248,81,73,0.12) / 0.28.
 - **Risk Amber** (#d29922): Medium risk and staleness. The only voice between green and red.
 
+### Categorical
+One scale, used in one place: the file map's seven file categories (`--cat-source`, `--cat-tests`, `--cat-config`, `--cat-docs`, `--cat-data`, `--cat-assets`, `--cat-generated`). These hues carry no meaning individually — they only have to be told apart, the way any categorical scale does. Three of them equal a palette colour by value; they are separate tokens so that retuning Cursor Blue, Diff Green or Risk Amber cannot silently recolour a file category, and so that nothing reads a category's colour as a semantic signal.
+
 ### Named Rules
-**The One Voice Rule.** Cursor Blue is the only decorative accent, and it always means "attention" or "interactive". Green, red, and amber may appear only with their semantic meaning (diff status, risk, verdicts) — never as decoration.
+**The One Voice Rule.** Cursor Blue is the only decorative accent, and it always means "attention" or "interactive". Green, red, and amber may appear only with their semantic meaning (diff status, risk, verdicts) — never as decoration. The categorical scale is the one exception, and it is not decoration either: it encodes data, inside the file map's own frame, where the legend states what each hue stands for.
 
 **The Wash Rule.** Colored area fills are translucent washes over the graphite (12–30% alpha), never opaque color blocks. Tints layer via background-image so diff coloring and tour highlights stack without erasing each other.
 

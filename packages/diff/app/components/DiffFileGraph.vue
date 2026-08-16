@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { categorize, type FileCategory } from '@jsuite/diff/fileCategories'
+import { categorize, CATEGORY_ORDER, type FileCategory } from '@jsuite/diff/fileCategories'
 import type { FileRisk } from '@jsuite/diff/risk'
 
 interface DiffFileMeta {
@@ -60,16 +60,6 @@ const stale = computed(() =>
   new Date(props.lastPushedAt).getTime() > new Date(fetchedAt.value).getTime(),
 )
 
-const CATEGORY_COLORS: Record<FileCategory, string> = {
-  source: '#58a6ff',
-  tests: '#3fb950',
-  config: '#d29922',
-  docs: '#bc8cff',
-  data: '#39c5cf',
-  assets: '#f778ba',
-  generated: '#6e7681',
-}
-
 interface SimNode {
   path: string
   name: string
@@ -79,7 +69,6 @@ interface SimNode {
   vx: number
   vy: number
   r: number
-  color: string
   category: FileCategory
 }
 
@@ -110,7 +99,7 @@ const hoveredNode = computed(() =>
 
 const usedCategories = computed(() => {
   const cats = new Set(simNodes.value.map((n) => n.category))
-  return (Object.keys(CATEGORY_COLORS) as FileCategory[]).filter((c) => cats.has(c))
+  return CATEGORY_ORDER.filter((c) => cats.has(c))
 })
 const hasMentions = computed(() => simEdges.value.some((e) => e.kind === 'mention'))
 const hasImports = computed(() => simEdges.value.some((e) => e.kind === 'import'))
@@ -173,7 +162,6 @@ function buildSim() {
       vx: 0,
       vy: 0,
       r: Math.max(6, Math.min(20, 4 + Math.sqrt(churn.get(n.path) ?? 0) * 0.9)),
-      color: CATEGORY_COLORS[category],
       category,
     }
   })
@@ -325,7 +313,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
     <template v-else-if="data">
       <div class="legend">
         <span v-for="c in usedCategories" :key="c" class="lg">
-          <span class="dot" :style="{ background: CATEGORY_COLORS[c] }" />{{ c }}
+          <span class="dot" :class="`cat-${c}`" />{{ c }}
         </span>
         <span class="lg sep" />
         <span v-if="hasImports" class="lg"><span class="edge-sample import" />import</span>
@@ -386,8 +374,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
             :cx="n.x"
             :cy="n.y"
             :r="n.r"
-            :fill="n.color"
-            :class="{ risky: risks?.[n.path]?.level === 'high' }"
+            :class="[`cat-${n.category}`, { risky: risks?.[n.path]?.level === 'high' }]"
           />
           <text :x="n.x" :y="n.y + n.r + 11" class="node-label">{{ n.name }}</text>
         </a>
@@ -482,6 +469,17 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
   height: 8px;
   border-radius: 50%;
 }
+/* The category scale reaches the SVG through CSS rather than the `fill`
+   presentation attribute, where `var()` substitution is not dependable across
+   browsers. One rule serves both marks: the legend dot reads `background`, the
+   graph node reads `fill`, and each ignores the other. */
+.cat-source { fill: var(--cat-source); background: var(--cat-source); }
+.cat-tests { fill: var(--cat-tests); background: var(--cat-tests); }
+.cat-config { fill: var(--cat-config); background: var(--cat-config); }
+.cat-docs { fill: var(--cat-docs); background: var(--cat-docs); }
+.cat-data { fill: var(--cat-data); background: var(--cat-data); }
+.cat-assets { fill: var(--cat-assets); background: var(--cat-assets); }
+.cat-generated { fill: var(--cat-generated); background: var(--cat-generated); }
 .edge-sample {
   width: 16px;
   height: 0;
