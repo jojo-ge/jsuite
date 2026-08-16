@@ -30,6 +30,14 @@ that app's own skill rather than improvising one app's job in another.
 - **State lives in `.data/<app>/` at this root, never inside an app.** Use
   `@jsuite/data` (`appDataDir`/`appDataFile`) to resolve paths. jTicket's state
   is API-only — go through :43000, don't hand-edit `.data/jticket/jticket.json`.
+- **Only the pool's owner deletes out of it.** jExplain ends documents, jChart
+  ends charts; every other consumer of `@jsuite/documents` / `@jsuite/charting`
+  serves the same libraries with delete withheld. Both layers still default
+  `deletable` to `true`, so a page in a **non-owner** app that mounts
+  `<DocumentLibrary>`, `<DocumentReader>`, `<ChartLibrary>` or `<ChartWorkbench>`
+  must pass `:deletable="false"`. The layers' own fallback pages under
+  `packages/*/app/pages/` stay bare on purpose — they are what a consumer
+  shadows. See "Who may delete out of the pool" in `README.md`.
 - **URLs always carry the scheme**: `https://<app>.local`. Bare host ports
   (43000–43006) work too but the `.local` names are what tooling hardcodes.
 - **Ports are fixed.** The `APPS` table in `./jsuite`, the `Caddyfile`, and

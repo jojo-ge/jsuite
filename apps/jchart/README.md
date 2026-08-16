@@ -21,12 +21,20 @@ This app is the shell that brands them and gives them shorter URLs:
 
 | route | renders | |
 |---|---|---|
-| `/` | `<ChartLibrary heading="jChart">` | also at `/charts` |
-| `/c/<key>` | `<ChartWorkbench>` | also at `/charts/<key>` |
+| `/` | `<ChartLibrary heading="jChart" :deletable="true">` | `/charts` redirects here |
+| `/c/<key>` | `<ChartWorkbench :deletable="true">` | `/charts/<key>` redirects here |
 
-The aliasing is one entry in `app/app.config.ts` (`charting.indexPath` /
-`charting.chartPath`); the layer's components link through `useChartRoutes()`,
-so they never hardcode either scheme.
+The aliasing is one entry in `app/app.config.ts` (`charting.libraryPath` /
+`charting.chartBasePath`); the layer's components link through
+`useChartRoutes()`, so they never hardcode either scheme. The layer's own
+`/charts` pages are shadowed by redirects onto these two, so nothing here is
+served twice.
+
+**jChart is the only app that deletes charts** (TICK-179). It owns the chart
+pool's lifecycle; jTicket, jExplain and jGrilling all serve the same library and
+workbench with `:deletable="false"`, because a chart they embed and then destroy
+leaves the embedding block pointing at nothing. See "Who may delete out of the
+pool" in the root README.
 
 ## How it fits together
 

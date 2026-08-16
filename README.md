@@ -132,13 +132,19 @@ canvas, notes, Mermaid source editor), rendered by `<ChartLibrary>` and
 embedded in jExplain is the same object opened in jChart; edits and notes flow
 both ways.
 
-An app that wants that UI on different paths overrides `charting.indexPath` and
-`charting.chartPath` in its `app.config.ts` and mounts the components itself —
-which is all jChart is now: `/` and `/c/<key>` are aliases over the same
-components the layer serves at `/charts`. An app that wants the layer's paths
-but its own chrome mounts `<ChartLibrary>` under it: jTicket's `/charts` is the
-library under the board's header, while `/charts/<key>` is left to the layer,
-the workbench being a full-screen canvas that a nav bar only steals height from.
+An app that wants that UI on different paths overrides `charting.libraryPath`
+and `charting.chartBasePath` in its `app.config.ts` and mounts the components
+itself — which is all jChart is now: `/` and `/c/<key>` are aliases over the
+same components the layer serves at `/charts` (whose routes redirect onto them
+here, so jChart has one library and one workbench, not two). An app that wants
+the layer's paths but its own chrome mounts `<ChartLibrary>` under it: jTicket's
+`/charts` is the library under the board's header, while its `/charts/<key>`
+stays the bare full-screen canvas — no nav bar, which would only steal height
+from the drawing surface.
+
+Every consumer shadows both routes, because both components take a `deletable`
+prop and each host states its own answer — see
+[Who may delete out of the pool](#who-may-delete-out-of-the-pool).
 
 ## @jsuite/diff
 
@@ -260,10 +266,24 @@ wrapper records they listed are gone.)
 
 ### Who may delete out of the pool
 
-The host app's call, not the layer's — one shared file backs every consumer, so
-`<DocumentLibrary>` and `<DocumentReader>` both take a `deletable` prop (default
-`true`) rather than deciding for everyone. jExplain owns the pool's lifecycle
-and leaves both on.
+There are **two** shared pools — documents in `.data/jexplain/` and charts in
+`.data/jchart/` — and one rule over both: **the app that owns a pool's lifecycle
+deletes out of it, and nobody else does.** jExplain owns the documents; jChart
+owns the charts. Every other consumer lists, reads and edits.
+
+It is the host app's call, not the layer's, because one shared file backs every
+consumer — so all four surface components take a `deletable` prop (default
+`true`) rather than deciding for everyone: `<DocumentLibrary>` and
+`<DocumentReader>` in `@jsuite/documents` (TICK-151), `<ChartLibrary>` and
+`<ChartWorkbench>` in `@jsuite/charting` (TICK-179). The two pairs are
+deliberately identical in name, default and semantics.
+
+The chart half matters *more* than the document half, not less. A document is
+linked to; a chart is **embedded**. Delete a document and an attachment ref
+dangles; delete a chart and the block that renders it stays put in whatever
+article or spec holds it, pointing at nothing.
+
+#### The documents pool
 
 **jTicket never destroys a pool document from its UI** (TICK-151). Deleting the
 shared file would dangle every attachment ref pointing at it while jExplain goes
@@ -300,7 +320,57 @@ Both were also closed app by app. The layer still *defaults* `deletable` to
 `true` and still ships a bare `<DocumentLibrary />` at `/documents`, so the next
 consumer inherits delete unless someone remembers to shadow the page — which is
 how jGrilling got it. Flipping that default and having jExplain opt in is
-TICK-178; the same hole, untouched, on the **chart** pool is TICK-179.
+TICK-178.
+
+#### The chart pool
+
+`/charts` and `/charts/<key>` are mounted in **every** consumer of
+`@jsuite/charting` — and it rides in transitively through `@jsuite/documents`,
+so jTicket, jExplain and jGrilling all serve them whether or not they asked to.
+Until TICK-179 all three offered to destroy charts out of the pool that jExplain
+articles and jTicket specs embed, and there was no prop to withhold it with.
+
+**Only jChart deletes charts** (TICK-179). No consumer inherits an answer any
+more — three state one on the route itself, and jChart routes to the surface
+that states it:
+
+| App | `/charts` | `/charts/<key>` |
+| --- | --- | --- |
+| jChart | → `/`, which is `<ChartLibrary :deletable="true">` | → `/c/<key>`, which is `<ChartWorkbench :deletable="true">` |
+| jTicket | `<ChartLibrary :deletable="false">` under the board header | `<ChartWorkbench :deletable="false">`, full-screen |
+| jExplain | `<ChartLibrary :deletable="false">` | `<ChartWorkbench :deletable="false">` |
+| jGrilling | `<ChartLibrary :deletable="false">` | `<ChartWorkbench :deletable="false">` |
+
+jExplain and jGrilling both *write* charts into the pool — chart blocks in an
+article, a debrief's diagram — and neither ends one, which is the same line they
+already hold for documents one pool over. jTicket links artifacts; it does not
+end them.
+
+jChart is the only app with a duplicate: `app.config.ts` aliases the chart UI
+onto `/` and `/c/<key>`, so the layer's `/charts` pair was a second library and
+a second workbench, reachable by URL only and never linked from anything jChart
+renders. They **redirect** onto the canonical routes rather than restating the
+answer — the call TICK-154 made for jGrilling's duplicate reader, for the same
+reason: a second surface is a second thing to keep honest. Page shadows, not
+`routeRules`, so the layer's pages leave jChart's route table entirely instead
+of being stood in front of. `POST /api/charts` hands agents a `/charts/<key>`
+path, and the redirect keeps that path landing on the workbench.
+
+Every consumer being explicit also makes the layer default **inert**: flipping
+`@jsuite/charting` to `deletable: false` changes no app's behaviour. That is on
+purpose — the default stays `true` today only so documents and charts don't sit
+on opposite defaults while TICK-178 is open, and whichever way it lands, both
+layers move together.
+
+So this pool, like the document one, is still closed **app by app**: the layer
+ships `<ChartLibrary />` bare at `/charts`, and a *new* consumer of
+`@jsuite/charting` inherits delete unless it shadows both pages. TICK-179 could
+not close that without putting the two layers on opposite defaults, which is the
+one thing it was told not to do. TICK-178 closes both.
+
+As with documents, the rule binds the **UI only**:
+`DELETE /api/charts/<key>` stays mounted everywhere, so `:43000` remains one API
+surface.
 
 ## @jsuite/claude
 
