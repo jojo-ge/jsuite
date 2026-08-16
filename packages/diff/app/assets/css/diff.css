@@ -33,6 +33,12 @@
   --muted: #8b949e;
   --green: #3fb950;
   --red: #f85149;
+  --amber: #d29922;
+  /* The one alpha the amber is ever used at: the 1px rule around a
+     medium-risk callout. Spelled out rather than color-mix'd so it stays
+     the exact byte the screens shipped with, the way --add-bg does for
+     the green. */
+  --amber-border: #d2992255;
   --accent: #58a6ff;
   --add-bg: rgba(46, 160, 67, 0.15);
   --add-num-bg: rgba(46, 160, 67, 0.3);

@@ -361,7 +361,7 @@ const rows = computed<Row[]>(() => {
   align-self: center;
 }
 .rdot.low { background: var(--green); }
-.rdot.medium { background: #d29922; }
+.rdot.medium { background: var(--amber); }
 .rdot.high { background: var(--red); }
 .fname {
   flex: 1;

@@ -60,6 +60,11 @@ const stale = computed(() =>
   new Date(props.lastPushedAt).getTime() > new Date(fetchedAt.value).getTime(),
 )
 
+// A categorical scale, not the semantic palette: `config` is this hue because
+// seven categories needed seven distinguishable hues, not because config files
+// are medium-risk. Kept as literals — and off `--amber` — so that retuning the
+// risk colour doesn't silently recolour a file category. These also feed an SVG
+// `fill` attribute, where `var()` is not reliably substituted.
 const CATEGORY_COLORS: Record<FileCategory, string> = {
   source: '#58a6ff',
   tests: '#3fb950',
@@ -460,8 +465,8 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 }
 .lg.hint { margin-left: auto; }
 .lg.stale-badge {
-  color: #d29922;
-  border: 1px solid #d2992255;
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
   border-radius: 10px;
   padding: 0 8px;
   white-space: nowrap;
@@ -553,6 +558,6 @@ svg {
 .status .path { color: var(--text); overflow-wrap: anywhere; }
 .status .muted { color: var(--muted); }
 .status .risk.high { color: var(--red); }
-.status .risk.medium { color: #d29922; }
+.status .risk.medium { color: var(--amber); }
 .status .risk.low { color: var(--green); }
 </style>

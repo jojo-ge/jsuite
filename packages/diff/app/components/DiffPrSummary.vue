@@ -611,8 +611,8 @@ a.rate-btn:hover { text-decoration: none; }
 .stale-badge {
   font-size: 11px;
   font-family: var(--mono);
-  color: #d29922;
-  border: 1px solid #d2992255;
+  color: var(--amber);
+  border: 1px solid var(--amber-border);
   border-radius: 10px;
   padding: 0 8px;
   white-space: nowrap;
@@ -659,7 +659,7 @@ a.rate-btn:hover { text-decoration: none; }
   font-size: 12px;
 }
 .rc.high { color: var(--red); }
-.rc.medium { color: #d29922; }
+.rc.medium { color: var(--amber); }
 .rc.low { color: var(--green); }
 .risk-list {
   list-style: none;
@@ -675,7 +675,7 @@ a.rate-btn:hover { text-decoration: none; }
   gap: 8px;
 }
 .factor-dot.risk-high { background: var(--red); }
-.factor-dot.risk-medium { background: #d29922; }
+.factor-dot.risk-medium { background: var(--amber); }
 .factor-dot.risk-low { background: var(--green); }
 .show-low {
   margin-top: 10px;

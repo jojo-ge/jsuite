@@ -286,9 +286,7 @@ const summaryLink = computed(() =>
   font-size: 12px;
 }
 .rc.high { color: var(--red); }
-/* Risk amber, inlined the way every other risk-medium site in the layer does
-   it — the palette block has no token for it. */
-.rc.medium { color: #d29922; }
+.rc.medium { color: var(--amber); }
 .rc.low { color: var(--green); }
 .rating-summary {
   margin: 8px 0 0;

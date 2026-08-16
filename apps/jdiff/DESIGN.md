@@ -117,7 +117,7 @@ Matte layers of blue-black graphite carve the space; one blue voice directs atte
 ### Semantic
 - **Diff Green** (#3fb950): Additions, approvals, good scores, low risk. Paired with translucent washes rgba(46,160,67,0.15) for added-line backgrounds and 0.3 for their gutters.
 - **Diff Red** (#f85149): Deletions, requested changes, bad scores, high risk, destructive hovers. Washes rgba(248,81,73,0.12) / 0.28.
-- **Risk Amber** (#d29922): Medium risk and staleness. The only voice between green and red.
+- **Risk Amber** (#d29922): Medium risk and staleness. The only voice between green and red. Its one wash is #d2992255, the rule around a stale badge.
 
 ### Named Rules
 **The One Voice Rule.** Cursor Blue is the only decorative accent, and it always means "attention" or "interactive". Green, red, and amber may appear only with their semantic meaning (diff status, risk, verdicts) — never as decoration.

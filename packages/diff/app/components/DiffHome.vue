@@ -373,7 +373,7 @@ h1 {
   align-self: center;
 }
 .dot.high { background: var(--red); }
-.dot.med { background: #d29922; }
+.dot.med { background: var(--amber); }
 .dot.low { background: var(--green); }
 .rpath2 {
   font-family: var(--mono);

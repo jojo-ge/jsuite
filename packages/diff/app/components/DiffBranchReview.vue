@@ -764,7 +764,7 @@ a.todo-link:hover { text-decoration: none; }
 }
 .todo-rdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--border); margin-right: 2px; }
 .todo-rdot.high { background: var(--red); }
-.todo-rdot.medium { background: #d29922; }
+.todo-rdot.medium { background: var(--amber); }
 .todo-rdot.low { background: var(--green); }
 
 /* tour bar */
