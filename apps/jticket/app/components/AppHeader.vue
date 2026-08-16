@@ -93,10 +93,12 @@ const libraries = [
 
           <span class="mx-1 h-5 w-px shrink-0 bg-accented" />
 
-          <!-- Libraries stay lit while you're inside one (a reader, a
-               workbench), so the nav keeps telling you where you are — hence
-               the prefix match rather than the exact one above. The label is
-               dropped before the icon on a narrow header. -->
+          <!-- Prefix match, not the exact one above, so the entry stays lit on
+               any page under it. Today only the library indexes render this
+               header — a reader and a workbench are full-screen and carry
+               their own back arrow — so it behaves the same as an exact match;
+               it is the prefix that stops being true if that ever changes.
+               The label is dropped before the icon on a narrow header. -->
           <UTooltip v-for="l in libraries" :key="l.to" :text="l.label">
             <UButton
               :icon="l.icon"

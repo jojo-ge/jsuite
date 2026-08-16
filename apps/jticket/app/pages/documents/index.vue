@@ -11,16 +11,26 @@
 // for — this document belongs to that project — is an attachment now.
 useHead({ title: 'Documents' })
 
-const { documents, projects, refresh } = useTracker()
+const { documents, projects, tickets, refresh } = useTracker()
 
 const grouped = computed(() => {
   const claimed = new Set<string>()
   const sections = projects.value
     .map((project) => {
-      const keys = project.attachments.filter((a) => a.type === 'document').map((a) => a.id)
-      const docs = keys
-        .map((key) => documents.value.find((d) => d.key === key))
-        .filter((d): d is NonNullable<typeof d> => !!d)
+      // A document belongs to a project by being attached to it *or* to one of
+      // its tickets — a spec attached to the ticket that implements it is still
+      // that project's document, and filing it under "Not attached" would be
+      // the wrong answer to "what has this project written down?".
+      const keys = new Set(
+        project.attachments.filter((a) => a.type === 'document').map((a) => a.id),
+      )
+      for (const t of tickets.value) {
+        if (t.projectId !== project.id) continue
+        for (const a of t.attachments ?? []) if (a.type === 'document') keys.add(a.id)
+      }
+      // Ordered by the pool, not by attachment order, so a document appears in
+      // the same place in every section it lands in.
+      const docs = documents.value.filter((d) => keys.has(d.key))
       for (const d of docs) claimed.add(d.key)
       return { project, docs }
     })

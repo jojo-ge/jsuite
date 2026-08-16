@@ -49,8 +49,25 @@ function matches(...fields: string[]) {
   return fields.some((f) => f.toLowerCase().includes(q))
 }
 
-const docResults = computed(() => (documents.value ?? []).filter((d) => matches(d.key, d.title)))
-const chartResults = computed(() => (charts.value ?? []).filter((c) => matches(c.key, c.title ?? '')))
+// Both pools reduce to the same three fields the list needs, so the list is
+// written once. The pools genuinely differ — a document knows how many blocks
+// it has, a chart knows nothing of the sort — and `note` is where that goes.
+interface Candidate {
+  id: string
+  title: string
+  note: string
+}
+
+const pool = computed<Candidate[]>(() =>
+  tab.value === 'document'
+    ? (documents.value ?? []).map((d) => ({
+        id: d.key,
+        title: d.title || d.key,
+        note: `${d.blockCount} blocks`,
+      }))
+    : (charts.value ?? []).map((c) => ({ id: c.key, title: c.title || c.key, note: '' })),
+)
+const results = computed(() => pool.value.filter((c) => matches(c.id, c.title)))
 
 function pick(type: AttachmentType, id: string) {
   if (isAttached(type, id)) return
@@ -78,11 +95,9 @@ const diffLabel = computed(() => {
     : `PR #${diffId.value}`
 })
 
-const TABS = [
-  { value: 'document', label: 'Document', icon: 'i-lucide-file-text' },
-  { value: 'chart', label: 'Chart', icon: 'i-lucide-shapes' },
-  { value: 'diff', label: 'Diff', icon: 'i-lucide-git-pull-request' },
-] as const
+// Label and icon come from the one per-type map, so a tab can't drift from the
+// row it produces.
+const TABS: AttachmentType[] = ['document', 'chart', 'diff']
 </script>
 
 <template>
@@ -98,14 +113,14 @@ const TABS = [
         <UFieldGroup size="sm" class="w-full">
           <UButton
             v-for="t in TABS"
-            :key="t.value"
-            :icon="t.icon"
+            :key="t"
+            :icon="ATTACHMENT_META[t].icon"
             class="flex-1 justify-center"
-            :color="tab === t.value ? 'primary' : 'neutral'"
-            :variant="tab === t.value ? 'solid' : 'outline'"
-            @click="tab = t.value"
+            :color="tab === t ? 'primary' : 'neutral'"
+            :variant="tab === t ? 'solid' : 'outline'"
+            @click="tab = t"
           >
-            {{ t.label }}
+            {{ ATTACHMENT_META[t].label }}
           </UButton>
         </UFieldGroup>
 
@@ -119,52 +134,27 @@ const TABS = [
           />
 
           <div class="scroll-thin max-h-96 overflow-y-auto rounded-lg border border-default">
-            <template v-if="tab === 'document'">
-              <p v-if="!docResults.length" class="px-3 py-8 text-center text-sm text-muted">
-                {{ documents?.length ? 'Nothing matches that.' : 'The document pool is empty.' }}
-              </p>
-              <button
-                v-for="d in docResults"
-                :key="d.key"
-                type="button"
-                :disabled="isAttached('document', d.key)"
-                class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-2 text-left text-sm last:border-0 enabled:hover:bg-elevated/40 disabled:opacity-50"
-                @click="pick('document', d.key)"
-              >
-                <UIcon name="i-lucide-file-text" class="size-3.5 shrink-0 text-muted" />
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate font-medium">{{ d.title }}</span>
-                  <span class="block truncate font-mono text-xs text-dimmed">{{ d.key }}</span>
-                </span>
-                <UBadge v-if="isAttached('document', d.key)" color="neutral" variant="subtle" size="sm">
-                  Attached
-                </UBadge>
-                <span v-else class="shrink-0 text-xs text-dimmed">{{ d.blockCount }} blocks</span>
-              </button>
-            </template>
-
-            <template v-else>
-              <p v-if="!chartResults.length" class="px-3 py-8 text-center text-sm text-muted">
-                {{ charts?.length ? 'Nothing matches that.' : 'The chart pool is empty.' }}
-              </p>
-              <button
-                v-for="c in chartResults"
-                :key="c.key"
-                type="button"
-                :disabled="isAttached('chart', c.key)"
-                class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-2 text-left text-sm last:border-0 enabled:hover:bg-elevated/40 disabled:opacity-50"
-                @click="pick('chart', c.key)"
-              >
-                <UIcon name="i-lucide-shapes" class="size-3.5 shrink-0 text-muted" />
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate font-medium">{{ c.title || c.key }}</span>
-                  <span class="block truncate font-mono text-xs text-dimmed">{{ c.key }}</span>
-                </span>
-                <UBadge v-if="isAttached('chart', c.key)" color="neutral" variant="subtle" size="sm">
-                  Attached
-                </UBadge>
-              </button>
-            </template>
+            <p v-if="!results.length" class="px-3 py-8 text-center text-sm text-muted">
+              {{ pool.length ? 'Nothing matches that.' : `The ${tab} pool is empty.` }}
+            </p>
+            <button
+              v-for="c in results"
+              :key="c.id"
+              type="button"
+              :disabled="isAttached(tab, c.id)"
+              class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-2 text-left text-sm last:border-0 enabled:hover:bg-elevated/40 disabled:opacity-50"
+              @click="pick(tab, c.id)"
+            >
+              <UIcon :name="ATTACHMENT_META[tab].icon" class="size-3.5 shrink-0 text-muted" />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-medium">{{ c.title }}</span>
+                <span class="block truncate font-mono text-xs text-dimmed">{{ c.id }}</span>
+              </span>
+              <UBadge v-if="isAttached(tab, c.id)" color="neutral" variant="subtle" size="sm">
+                Attached
+              </UBadge>
+              <span v-else-if="c.note" class="shrink-0 text-xs text-dimmed">{{ c.note }}</span>
+            </button>
           </div>
         </template>
 

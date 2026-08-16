@@ -33,30 +33,34 @@ const {
 
 const refs = computed<Attachment[]>(() => (attachments.value ?? []).map((a) => ({ type: a.type, id: a.id })))
 
+// `keyOf` is the shared `type:id` identity — the key for lists, for which row
+// is open, and for which row is mid-request.
+const keyOf = attachmentKey
+
 const pickerOpen = ref(false)
 const busy = ref('')
 
 async function attach(a: Attachment) {
-  busy.value = `${a.type}:${a.id}`
-  try {
-    await $fetch(`/api/${props.owner}/${props.ownerId}/attachments`, { method: 'POST', body: a })
-    await refresh()
-    // Newly attached artifacts open straight away — you attached it to look at it.
-    expanded.value = `${a.type}:${a.id}`
-  } finally {
-    busy.value = ''
-  }
+  await $fetch(`/api/${props.owner}/${props.ownerId}/attachments`, { method: 'POST', body: a })
+  await refresh()
+  // Newly attached artifacts open straight away — you attached it to look at it.
+  expanded.value = keyOf(a)
 }
 
+// Nothing else in this component loads a document body: `expanded` is the only
+// input, and the watcher below is the only loader. Setting `expanded` from two
+// places (a click, and attaching) with the fetch hung off just one of them is
+// exactly how a freshly attached document ends up showing the *previous* one.
+
 async function detach(a: ResolvedAttachment) {
-  busy.value = `${a.type}:${a.id}`
+  busy.value = keyOf(a)
   try {
     // The id travels as a query param, not a path segment: a diff id contains a slash.
     await $fetch(`/api/${props.owner}/${props.ownerId}/attachments`, {
       method: 'DELETE',
       query: { type: a.type, id: a.id },
     })
-    if (expanded.value === `${a.type}:${a.id}`) expanded.value = ''
+    if (expanded.value === keyOf(a)) expanded.value = ''
     await refresh()
   } finally {
     busy.value = ''
@@ -70,31 +74,11 @@ const expanded = ref('')
 const docContent = ref<Explainer | null>(null)
 const docLoading = ref(false)
 
-function keyOf(a: ResolvedAttachment) {
-  return `${a.type}:${a.id}`
-}
-
-async function toggle(a: ResolvedAttachment) {
+function toggle(a: ResolvedAttachment) {
   if (a.missing) return
-  // A diff lives in jDiff and has nothing to render here.
-  if (a.type === 'diff') return void window.open(a.url, '_blank')
-
-  if (expanded.value === keyOf(a)) {
-    expanded.value = ''
-    return
-  }
-  expanded.value = keyOf(a)
-  if (a.type !== 'document') return
-
-  docContent.value = null
-  docLoading.value = true
-  try {
-    docContent.value = await $fetch<Explainer>(`/api/documents/${a.id}`)
-  } catch {
-    docContent.value = null
-  } finally {
-    docLoading.value = false
-  }
+  // Nothing to embed (a diff) — follow the resolved url out to its own app.
+  if (!ATTACHMENT_META[a.type].page) return void window.open(a.url, '_blank')
+  expanded.value = expanded.value === keyOf(a) ? '' : keyOf(a)
 }
 
 // The one artifact currently open, if it is still in the list — a detach or a
@@ -103,18 +87,33 @@ const openAttachment = computed(
   () => (attachments.value ?? []).find((a) => keyOf(a) === expanded.value && !a.missing) ?? null,
 )
 
-// Where an open artifact's own full-page view lives — both inside jTicket now.
-function fullPage(a: ResolvedAttachment) {
-  return a.type === 'document' ? `/documents/${a.id}` : `/charts/${a.id}`
-}
+// A chart embeds its own fetch (<BlockChart> reads the pool itself); a document
+// needs its blocks here, so whatever opens one, the body follows it.
+watch(
+  openAttachment,
+  async (a) => {
+    if (a?.type !== 'document') {
+      docContent.value = null
+      return
+    }
+    docContent.value = null
+    docLoading.value = true
+    try {
+      docContent.value = await $fetch<Explainer>(`/api/documents/${a.id}`)
+    } catch {
+      docContent.value = null
+    } finally {
+      docLoading.value = false
+    }
+  },
+  { immediate: true },
+)
 
 // Rows or a pill strip, per visitor and in memory. Only on a page — in the
 // ticket modal there is no room for a view toggle over a handful of refs.
 // Either way the open artifact renders underneath the list, so the choice is
 // about scanning the refs, not about what opening one does.
 const view = ref<'rows' | 'chips'>('rows')
-
-defineExpose({ refresh })
 </script>
 
 <template>
@@ -177,8 +176,8 @@ defineExpose({ refresh })
           @click="toggle(a)"
         >
           <UIcon
-            v-if="a.missing || a.type === 'diff'"
-            :name="a.type === 'diff' ? 'i-lucide-external-link' : ATTACHMENT_META[a.type].icon"
+            v-if="a.missing || !ATTACHMENT_META[a.type].page"
+            :name="ATTACHMENT_META[a.type].page ? ATTACHMENT_META[a.type].icon : 'i-lucide-external-link'"
             class="size-3.5 shrink-0 text-dimmed"
           />
           <UIcon
@@ -249,7 +248,7 @@ defineExpose({ refresh })
         <UIcon :name="ATTACHMENT_META[openAttachment.type].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="min-w-0 truncate text-xs font-medium text-muted">{{ openAttachment.title }}</span>
         <UButton
-          :to="fullPage(openAttachment)"
+          :to="ATTACHMENT_META[openAttachment.type].page?.(openAttachment.id)"
           icon="i-lucide-maximize-2"
           size="xs"
           color="neutral"
