@@ -6,7 +6,7 @@ export type TicketStatus = 'todo' | 'in_progress' | 'done'
 export type ProjectMode = 'standard' | 'wayfinder'
 
 // An artifact reference — jTicket owns the ticket↔artifact link; the shared
-// pools stay ticket-ignorant. `id` is a document or chart pool key, or a jDiff
+// pools stay ticket-ignorant. `id` is a document or chart pool key, or a diff
 // review target ('123' / 'branch/<name>'). See server/utils/store.ts.
 export type AttachmentType = 'document' | 'chart' | 'diff'
 
@@ -25,6 +25,8 @@ export interface ResolvedAttachment extends Attachment {
   updatedAt: string
   missing: boolean
   reason?: string
+  /** Diffs only: the repo the review target is read against. */
+  repo?: string
 }
 
 /**
@@ -32,22 +34,22 @@ export interface ResolvedAttachment extends Attachment {
  * row here rather than a fresh `if (a.type === …)` in every component that
  * touches attachments.
  *
- * `page` is where the artifact's own full view lives *inside jTicket*; it is
- * null for a diff, which is the one artifact no layer renders — jDiff computes
- * it from git on demand, so the only thing to do with a diff is follow the
- * absolute `url` the server resolved out to jDiff. That same null is what
- * `embeds` would be telling us, which is why there is no second flag.
+ * There is no `page` builder here any more. Every artifact now has a full view
+ * *inside* jTicket — documents and charts through @jsuite/documents and
+ * @jsuite/charting, and, since TICK-142, a diff through @jsuite/diff — and a
+ * diff's page needs the repo as well as the id, which only the server knows.
+ * So the one place a full view is addressed from is `ResolvedAttachment.url`,
+ * which the server resolves per ref, and all that is left to vary by type here
+ * is how a row is labelled. What *renders* an opened artifact stays in
+ * <AttachmentsPanel>: three embeds that share no shape worth tabulating.
  */
-export const ATTACHMENT_META: Record<
-  AttachmentType,
-  { label: string; icon: string; page: ((id: string) => string) | null }
-> = {
-  document: { label: 'Document', icon: 'i-lucide-file-text', page: (id) => `/documents/${id}` },
+export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: string }> = {
+  document: { label: 'Document', icon: 'i-lucide-file-text' },
   // The same mark <BlockChart> puts on an embedded chart, so a chart looks like
   // a chart wherever it turns up. (It was the git-branch icon, which reads as a
   // diff — the one thing a chart is not.)
-  chart: { label: 'Chart', icon: 'i-lucide-shapes', page: (id) => `/charts/${id}` },
-  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request', page: null },
+  chart: { label: 'Chart', icon: 'i-lucide-shapes' },
+  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request' },
 }
 
 /** The stable identity of a ref — `type:id`, the key every list and map uses. */
@@ -62,7 +64,7 @@ export interface Project {
   description: string
   mode: ProjectMode
   // GitHub link — '' when the project isn't wired to a repo. `repo` is a path
-  // to a local clone (what jDiff takes as ?repo=); `integrationBranch` is the
+  // to a local clone (what a review takes as ?repo=); `integrationBranch` is the
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string

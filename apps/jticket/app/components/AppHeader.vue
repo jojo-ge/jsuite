@@ -57,14 +57,20 @@ const links = computed(() => [
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
 ])
 
-// The shared pools, served here by @jsuite/documents and @jsuite/charting —
-// every document and every chart in the suite, not jTicket's own subset. They
-// sit behind a divider because they are a different kind of destination: the
-// links above are the flow, these are the libraries the flow points into.
-// Deliberately unbadged — a pool's size doesn't change what you'd do next.
+// The shared pools, served here by @jsuite/documents, @jsuite/charting and
+// @jsuite/diff — every document, chart and review in the suite, not jTicket's
+// own subset. They sit behind a divider because they are a different kind of
+// destination: the links above are the flow, these are the libraries the flow
+// points into. Deliberately unbadged — a pool's size doesn't change what you'd
+// do next.
+//
+// Diffs is the odd one: there is no pool to list, so it lands on the repo
+// picker, and everything under it is computed from a local checkout. The path
+// is the layer's default, which jTicket keeps — see nuxt.config.
 const libraries = [
   { label: 'Docs', icon: 'i-lucide-file-text', to: '/documents' },
   { label: 'Charts', icon: 'i-lucide-shapes', to: '/charts' },
+  { label: 'Diffs', icon: 'i-lucide-git-compare', to: '/diffs' },
 ]
 </script>
 

@@ -10,7 +10,12 @@
    `.diff-overlay` is the same palette for the bits that can't sit inside that
    subtree: the review's `<Teleport to="body">` panels and the fixed scroll-top
    button, which the browser reparents out of the surface and which would
-   otherwise resolve every `var(--…)` to nothing. */
+   otherwise resolve every `var(--…)` to nothing.
+
+   `.diff-embed` is the surface without the full-page assumption: same palette,
+   same reset, but it takes the height of its content instead of the viewport's.
+   That is what a review rendered *inside* a host app's page needs — a card in
+   jTicket's attachments list is a box on someone else's page, not a screen. */
 
 /* The one token that escapes the surface: a consumer painting its own page to
    match an embedded review needs it, and it is namespaced enough to sit on
@@ -19,7 +24,7 @@
   --diff-bg: #0d1117;
 }
 
-:is(.diff-surface, .diff-overlay) {
+:is(.diff-surface, .diff-overlay, .diff-embed) {
   --bg: var(--diff-bg);
   --panel: #161b22;
   --panel-2: #1c2129;
@@ -42,26 +47,29 @@
 
 /* The screen paints its own ground: a consumer's page background may be
    anything, and the diff colours are only legible against this one. */
-.diff-surface {
-  min-height: 100vh;
+.diff-surface,
+.diff-embed {
   background: var(--bg);
 }
+.diff-surface {
+  min-height: 100vh;
+}
 
-:is(.diff-surface, .diff-overlay),
-:is(.diff-surface, .diff-overlay) * { box-sizing: border-box; }
+:is(.diff-surface, .diff-overlay, .diff-embed),
+:is(.diff-surface, .diff-overlay, .diff-embed) * { box-sizing: border-box; }
 
-:is(.diff-surface, .diff-overlay) a { color: var(--accent); text-decoration: none; }
-:is(.diff-surface, .diff-overlay) a:hover { text-decoration: underline; }
+:is(.diff-surface, .diff-overlay, .diff-embed) a { color: var(--accent); text-decoration: none; }
+:is(.diff-surface, .diff-overlay, .diff-embed) a:hover { text-decoration: underline; }
 
 /* Deliberately just button+input, as the global reset this replaces was: the
    review's textareas carry their own font, and widening the reset here would
    silently restyle the two that don't. */
-:is(.diff-surface, .diff-overlay) :is(button, input) {
+:is(.diff-surface, .diff-overlay, .diff-embed) :is(button, input) {
   font: inherit;
   color: inherit;
 }
 
-:is(.diff-surface, .diff-overlay) .spinner {
+:is(.diff-surface, .diff-overlay, .diff-embed) .spinner {
   width: 18px;
   height: 18px;
   border: 2px solid var(--border);
@@ -71,7 +79,7 @@
 }
 @keyframes diff-spin { to { transform: rotate(360deg); } }
 
-:is(.diff-surface, .diff-overlay) .error-box {
+:is(.diff-surface, .diff-overlay, .diff-embed) .error-box {
   margin: 16px 0;
   padding: 12px 16px;
   border: 1px solid var(--red);

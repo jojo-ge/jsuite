@@ -1,4 +1,12 @@
+import { DIFF_BASE_PATH, diffRouteUrl, diffRoutes } from '@jsuite/diff/routes'
 import type { Attachment, Project, Store, Ticket } from './store'
+
+// The review routes as jTicket mounts them. jTicket sets no `diff.basePath` of
+// its own, so it gets the layer's namespaced default — and this is the constant
+// that default is written from, which is as close as server code can get to
+// reading app config. Give jTicket its own `diff.basePath` and this has to be
+// pointed at it too.
+const review = diffRoutes(DIFF_BASE_PATH)
 
 // Reading and writing the far end of an attachment. A ref is just {type, id};
 // everything a caller wants to *show* — a title, somewhere to open it, when it
@@ -16,9 +24,9 @@ export interface ResolvedAttachment extends Attachment {
   /** The artifact's own title, or a readable stand-in when there's nothing to read. */
   title: string
   /**
-   * Where to open it. In-app for documents and charts — jTicket serves both
-   * pools' UI through @jsuite/documents and @jsuite/charting — and out to jDiff
-   * for a diff, which is the one artifact no layer renders. '' if missing.
+   * Where to open it, in-app: jTicket serves all three pools' UI itself,
+   * through @jsuite/documents, @jsuite/charting and @jsuite/diff. '' if
+   * missing.
    */
   url: string
   /** The artifact's last write, when the pool records one. '' for a diff, which has no file. */
@@ -29,14 +37,21 @@ export interface ResolvedAttachment extends Attachment {
    *   - the artifact is gone — deleted out from under the ref, or never created
    *   - a diff ref has no repo to be read against (its project has none, or the
    *     ticket is in the backlog and so has no project at all)
-   * Note a diff's target is *not* verified: jDiff resolves a PR number or branch
-   * lazily against git and gh, which is far too expensive to do per ref on a
-   * page load. `missing: false` on a diff therefore means "we know where to send
-   * you", not "the branch still exists".
+   * Note a diff's target is *not* verified: the review engine resolves a PR
+   * number or branch lazily against git and gh, which is far too expensive to
+   * do per ref on a page load. `missing: false` on a diff therefore means "we
+   * know where to send you", not "the branch still exists" — whatever renders
+   * one has to cope with a target that turns out not to be there.
    */
   missing: boolean
   /** Why it's missing, for a UI that wants to say more than "missing". */
   reason?: string
+  /**
+   * The repo a `diff` was resolved against, as the project stores it — what the
+   * review engine takes as `?repo=`. Only diffs have one, and only a renderer
+   * that mounts the review itself (rather than following `url`) needs it.
+   */
+  repo?: string
 }
 
 async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttachment> {
@@ -75,17 +90,26 @@ async function resolveOne(att: Attachment, repo: string): Promise<ResolvedAttach
       }
     }
     case 'diff': {
-      // A diff has no pool file to look for: it is a review target jDiff
-      // computes from a repo. Without a repo there is nowhere to send anyone.
+      // A diff has no pool file to look for: it is a review target computed
+      // from a repo on demand. Without a repo there is nowhere to send anyone.
       if (!repo.trim()) return gone('no repo to review this against')
-      const path = expandHome(repo.trim())
+      // As stored, '~' and all, rather than expanded — the review engine
+      // expands it server-side, and spelling it the same way everywhere in
+      // jTicket is what keeps the review UI's client-side state (keyed on this
+      // string) from splitting in two.
+      const repoRef = repo.trim()
       const branch = att.id.startsWith('branch/') ? att.id.slice('branch/'.length) : null
       return {
         ...att,
         title: branch ? `branch ${branch}` : `#${att.id}`,
-        url: branch ? jdiffBranchUrl(path, branch) : jdiffPrUrl(path, att.id),
+        // In-app, like a document or a chart: jTicket extends @jsuite/diff, so
+        // the review renders here rather than bouncing the reader over to jDiff.
+        url: diffRouteUrl(
+          branch ? review.branch({ repo: repoRef, branch }) : review.pr(repoRef, att.id),
+        ),
         updatedAt: '',
         missing: false,
+        repo: repoRef,
       }
     }
   }

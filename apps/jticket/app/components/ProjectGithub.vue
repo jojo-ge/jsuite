@@ -1,7 +1,18 @@
 <script setup lang="ts">
 // The project's GitHub side, on the project page: which repo it points at, the
 // state of its integration branch, and every open PR that belongs to it — each
-// row linking into jDiff (local diff review) and github.com.
+// row opening the review here in jTicket, and github.com for the PR itself.
+//
+// The review links are built with useDiffRoutes() rather than written out:
+// jTicket serves @jsuite/diff's screens at /diffs, jDiff serves the same
+// components at the root, and a hardcoded path only works in one of them.
+//
+// They carry the repo *as the project stores it*, not the expanded `data.repo`
+// this panel displays. The engine expands either one server-side, but the
+// review UI keys its client state (the live analysis tasks, `${repo} ${id}`)
+// on the string it was given — so a review reached from here and the same
+// review reached from a ticket's attachment have to be spelled the same way or
+// they are two reviews as far as the browser is concerned.
 //
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
@@ -25,7 +36,6 @@ interface ProjectPr {
   deletions?: number
   matchedBy: ('integration' | 'base' | 'key')[]
   keys: string[]
-  jdiffUrl: string
   githubUrl: string
 }
 interface GithubInfo {
@@ -33,7 +43,6 @@ interface GithubInfo {
   repo: string
   slug: string | null
   repoUrl?: string | null
-  jdiffRepoUrl?: string | null
   defaultBranch: string
   integrationBranch: string
   suggestedBranch: string
@@ -41,7 +50,6 @@ interface GithubInfo {
     name: string
     local: boolean
     remote: boolean
-    jdiffUrl: string
     githubUrl: string | null
     comparePrUrl: string | null
   } | null
@@ -50,6 +58,7 @@ interface GithubInfo {
 }
 
 const toast = useToast()
+const routes = useDiffRoutes()
 const { refresh: refreshTracker } = useTracker()
 // Cutting the branch is shared with the project header's button — same action,
 // same in-flight state, and `revision` tells us when the other one changed it.
@@ -232,17 +241,14 @@ const prs = computed(() => data.value?.prs ?? [])
           <span v-else class="font-medium">{{ data.slug ?? 'local repo' }}</span>
           <span class="truncate font-mono text-xs text-muted">{{ data.repo }}</span>
           <UButton
-            v-if="data.jdiffRepoUrl"
-            :to="data.jdiffRepoUrl"
-            target="_blank"
-            external
+            :to="routes.prs(project.repo)"
             icon="i-lucide-git-compare"
             size="xs"
             color="neutral"
             variant="ghost"
             class="ml-auto"
           >
-            jDiff
+            All reviews
           </UButton>
         </div>
 
@@ -275,9 +281,7 @@ const prs = computed(() => data.value?.prs ?? [])
               />
             </UTooltip>
             <UButton
-              :to="data.branch.jdiffUrl"
-              target="_blank"
-              external
+              :to="routes.branch({ repo: project.repo, branch: data.branch.name })"
               icon="i-lucide-git-compare"
               size="xs"
               color="neutral"
@@ -361,16 +365,14 @@ const prs = computed(() => data.value?.prs ?? [])
             </div>
           </div>
           <div class="flex shrink-0 gap-1">
-            <UTooltip text="Review in jDiff">
+            <UTooltip text="Review this PR here">
               <UButton
-                :to="pr.jdiffUrl"
-                target="_blank"
-                external
+                :to="routes.pr(project.repo, pr.number)"
                 icon="i-lucide-git-compare"
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                aria-label="Review in jDiff"
+                aria-label="Review this PR"
               />
             </UTooltip>
             <UTooltip text="Open on GitHub">

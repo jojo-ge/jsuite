@@ -21,10 +21,13 @@ import { fileURLToPath } from 'node:url'
 //     and the parts they are built from: <DiffFile> <DiffFileNav>
 //     <DiffFileGraph> <DiffCommentList> <DiffAuthorAvatar>
 //     <DiffNotificationBell> <DiffScrollTopButton>
+//     plus <DiffReviewCard>, one target small enough to embed in a host app's
+//     page — what jTicket puts on a ticket that has a diff attached
 //
 //   composables — useDiffRoutes (where this app mounts the UI — see
-//     app/app.config.ts), usePrArtifacts, useDiffAiTasks/useDiffAiTasksHub,
-//     useDiffNotifications, useDiffJump
+//     app/app.config.ts; the table itself is diffRoutes() in app/utils, so
+//     server code can build the same links), usePrArtifacts,
+//     useDiffAiTasks/useDiffAiTasksHub, useDiffNotifications, useDiffJump
 //
 //   /api/diff, /api/file, /api/graph, /api/prs, /api/pr, /api/branches,
 //     /api/repo, /api/open, /api/pick-folder — the diff/target routes
@@ -37,15 +40,16 @@ import { fileURLToPath } from 'node:url'
 //     run/resolveRepoPath, buildDiff, highlight, and the artifact stores
 //   the review vocabulary shared by server and UI, auto-imported as app utils
 //     and importable explicitly: '@jsuite/diff/rating', '/risk', '/tour',
-//     '/askQuestions', '/askYourself', '/fileCategories', '/comments'
+//     '/askQuestions', '/askYourself', '/fileCategories', '/comments', '/routes'
 //
 // All state stays in the shared pool at <root>/.data/jdiff (via @jsuite/data),
 // so a review created through one consumer reads back identically in another.
 // A target is always addressed by query params — ?repo= plus ?number= (a PR) or
 // ?branch=&base= (a local branch) — so the layer holds no per-app repo config.
 export default defineNuxtConfig({
-  // The review palette, scoped to `.diff-surface` / `.diff-overlay` so a
-  // consumer that only embeds the UI keeps its own theme elsewhere on the page.
+  // The review palette, scoped to `.diff-surface` / `.diff-overlay` (and
+  // `.diff-embed`, the same thing sized to its content) so a consumer that only
+  // embeds the UI keeps its own theme elsewhere on the page.
   css: [fileURLToPath(new URL('./app/assets/css/diff.css', import.meta.url))],
   // shiki and parse-diff are used only from Nitro, so no client prebundling
   // hints are needed (unlike @jsuite/charting's react/excalidraw).

@@ -2,8 +2,8 @@
 // Choosing an artifact to attach. The three types are picked in genuinely
 // different ways, which is why this is a tabbed dialog rather than one list:
 // a document or a chart is *chosen from a pool that already exists*, while a
-// diff is *named* — jDiff computes it from a repo on demand, so there is no
-// list to pick from and never will be.
+// diff is *named* — it is computed from a repo on demand, so there is no list
+// to pick from and never will be.
 import type { ExplainerMeta } from '@jsuite/documents/types'
 import type { Attachment, AttachmentType } from '~/composables/useTracker'
 
@@ -75,7 +75,7 @@ function pick(type: AttachmentType, id: string) {
   emit('update:open', false)
 }
 
-// A diff ref is a jDiff review target, not a pool key: a bare number is a PR,
+// A diff ref is a review target, not a pool key: a bare number is a PR,
 // `branch/<name>` is a branch. Accept a pasted PR URL or a `#123` too, since
 // that is what a human actually has on the clipboard.
 const diffRef = ref('')
@@ -167,7 +167,7 @@ const TABS: AttachmentType[] = ['document', 'chart', 'diff']
             class="font-mono"
           />
           <p class="text-sm text-muted">
-            A diff is a jDiff review target rather than a stored artifact: a number is a pull request,
+            A diff is a review target rather than a stored artifact: a number is a pull request,
             anything else is a branch. It's read against the owning project's repo, so a ticket in
             the backlog will show it as missing until it has a project.
           </p>

@@ -72,8 +72,13 @@ line clamp stays honest.
     `GET /api/documents?label=` filters (AND across labels);
     `PATCH /api/documents/:key` `{ labels }` refiles one without republishing it.
   - `chart` — a key in the shared jChart pool (root `.data/jchart/`).
-  - `diff` — a jDiff review target: `"123"` for a PR, `"branch/<name>"` for a branch,
-    read against the owning project's `repo`.
+  - `diff` — a review target: `"123"` for a PR, `"branch/<name>"` for a branch,
+    read against the owning project's `repo`. jTicket extends `@jsuite/diff`, so
+    it resolves to jTicket's own `/diffs/…` page and opens as a review card on
+    the ticket — the verdict, the counts, and the way through to the full diff.
+    A ref is a *locator*, not a promise the target still exists: it is never
+    verified on resolve (that would mean git and `gh` per ref, per page load),
+    so `missing: false` means "we know where to send you".
   - A ref is allowed to **dangle**. `GET /api/{projects,tickets}/:id/attachments`
     resolves each one to its title and url, flagging any whose artifact is gone as
     `missing` rather than erroring — so deleting an artifact never breaks a page.
@@ -142,8 +147,8 @@ raise a toast; the header dot says whether the stream is actually connected.
 
 ## GitHub
 
-A project can point at a **local clone** (`repo` — a path, `~` allowed: the same
-path jDiff takes as `?repo=`) and own an **integration branch**: an *empty*
+A project can point at a **local clone** (`repo` — a path, `~` allowed: what a
+review is computed against, `?repo=`) and own an **integration branch**: an *empty*
 branch cut from the repo's default branch that the project's PRs target, and
 which lands as one roll-up PR when the project is done. Both are edited on the
 project form; nothing here needs a GitHub token — it shells out to the `git` and
@@ -166,7 +171,7 @@ untouched).
 
 The project header carries the branch: a **Branch** button while the project has
 a repo but no integration branch (one click — same call as below), which becomes
-a chip naming the branch and linking to its jDiff review once it exists.
+a chip naming the branch and opening its review once it exists.
 
 The project page then shows a **Pull requests** section:
 
@@ -191,11 +196,32 @@ The project page then shows a **Pull requests** section:
   | `base` | the PR **targets** the integration branch |
   | `key` | the PR's head branch or title names one of the project's keys (`PROJ-3`, `TICK-12`) — so work that went straight to the default branch still shows up |
 
-  Every row links to **jDiff** (`https://jdiff.local/pr/N?repo=…`, overridable
-  with `JDIFF_URL`) for the local diff review, and to **github.com**.
+  Every row opens the review **here** (`/diffs/pr/N?repo=…` — see Reviews
+  below), and links out to **github.com** for the PR itself.
 
 `gh` is best-effort: without it (offline, not logged in, no GitHub remote) the
 branch side still works and the PR list reports why it's empty.
+
+## Reviews
+
+jTicket extends `@jsuite/diff`, so the whole review product runs here: the
+screens at `/diffs` (repo picker), `/diffs/prs`, `/diffs/pr/<n>`,
+`/diffs/branches`, `/diffs/branch`, plus the guidance pages — and the engine
+behind them, `/api/diff`, `/api/prs`, the artifact stores and the claude
+analysis runs. It is the same code jDiff serves at its own shorter routes, over
+the same `.data/jdiff` pool: a review created here reads back identically there.
+
+Two rules for anything that links to a review:
+
+- **Never write a review path out.** Build it with `useDiffRoutes()` on the
+  client or `diffRoutes(DIFF_BASE_PATH)` (`@jsuite/diff/routes`) on the server.
+  A hardcoded `/pr/<n>` only works in jDiff, and a hardcoded `/diffs/pr/<n>`
+  only works here.
+- **The review surface brings its own palette.** `.diff-surface` is dark and
+  scoped, so extending the layer doesn't repaint jTicket; `/diffs` is the one
+  page that wears both (jTicket's header over the layer's ground), and
+  `.diff-embed` is the same palette sized to its content, which is what the
+  review card on a ticket uses.
 
 ## Wayfinder mode
 

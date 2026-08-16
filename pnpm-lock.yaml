@@ -182,6 +182,9 @@ importers:
       '@jsuite/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@jsuite/diff':
+        specifier: workspace:*
+        version: link:../../packages/diff
       '@jsuite/documents':
         specifier: workspace:*
         version: link:../../packages/documents

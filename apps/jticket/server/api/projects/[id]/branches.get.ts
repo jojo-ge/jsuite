@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
-  const path = resolveRepoDir(project.repo)
+  const path = projectRepoDir(project.repo)
   const branches = await listBranches(path, {
     q: query.q == null ? '' : String(query.q),
     fetch: !!query.fetch,

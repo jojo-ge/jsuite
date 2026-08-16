@@ -81,7 +81,9 @@ export default defineAppConfig({
 ```
 
 `useDiffRoutes()` reads that, and every link between review screens goes through
-it.
+it. The table it returns is `diffRoutes(basePath)` from
+`@jsuite/diff/routes` — a pure function, so a consumer's server code can build
+the same links without app config (jTicket resolves attached diffs that way).
 
 - `packages/diff/server/api/prs.get.ts` — `gh pr list` in the repo's directory
 - `packages/diff/server/api/diff.get.ts` — `git fetch origin +refs/pull/N/head:refs/jdiff/pr-N`
@@ -99,6 +101,8 @@ it.
   (`<DiffFile>`, `<DiffFileNav>`, `<DiffFileGraph>`, `<DiffCommentList>`)
 - `packages/diff/app/composables/` — `useDiffRoutes` (where the UI is mounted),
   `usePrArtifacts`, `useDiffAiTasks`, `useDiffNotifications`, `useDiffJump`
+- `packages/diff/app/components/DiffReviewCard.vue` — one target at a glance,
+  sized to embed in a host app's page rather than to be a screen
 - `packages/diff/app/utils/` — the review vocabulary the server and the UI share
   (the rating shape, risk levels, tour shape, ask questions, file categories,
   the comment entry), auto-imported and importable as `@jsuite/diff/rating`,

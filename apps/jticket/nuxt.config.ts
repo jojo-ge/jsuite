@@ -4,15 +4,14 @@ export default defineNuxtConfig({
   // The documents layer brings the shared block-document system (renderers,
   // <DocumentArticle>, /api/documents over .data/jexplain/) plus, transitively,
   // @jsuite/charting — docs here are the same objects jExplain renders.
-  extends: ['@jsuite/documents'],
+  //
+  // The diff layer brings the whole review product — the engine (/api/diff,
+  // /api/prs, the claude analysis runs, the artifact stores over .data/jdiff/)
+  // and the review screens, served here at /diffs/… — so a PR is reviewed
+  // inside jTicket rather than over in jDiff. `diff.basePath` keeps the layer's
+  // namespaced default; never hardcode a review path, use useDiffRoutes().
+  extends: ['@jsuite/documents', '@jsuite/diff'],
   modules: ['@nuxt/ui'],
-  // Where jDiff lives, so the client can link a project's branch straight into
-  // a review. Same override the server side and the jdiff CLI use.
-  runtimeConfig: {
-    public: {
-      jdiffUrl: process.env.JDIFF_URL ?? 'https://jdiff.local',
-    },
-  },
   css: ['~/assets/css/main.css'],
   devtools: { enabled: true },
   // /docs was jTicket's own docs area back when a document had a DOC-n wrapper

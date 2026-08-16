@@ -1,6 +1,8 @@
 // Everything the project view needs about a project's GitHub side: the repo it
 // points at, the state of its integration branch, and the open PRs that belong
-// to it — each already carrying a jDiff link and a github.com link.
+// to it, each with its github.com link. The *review* links are the panel's to
+// build: jTicket serves the review UI itself, so they are in-app routes off
+// `repo` — see useDiffRoutes() in <ProjectGithub>.
 //
 // Degrades in layers rather than failing whole: an unconfigured project answers
 // { configured: false } with a suggested branch name, and a `gh` that can't
@@ -30,7 +32,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const path = resolveRepoDir(project.repo)
+  const path = projectRepoDir(project.repo)
   const ctx = await repoContext(path)
   const branchName = project.integrationBranch.trim()
 
@@ -46,7 +48,6 @@ export default defineEventHandler(async (event) => {
         name: branchName,
         local: await localBranchExists(path, branchName),
         remote: await remoteBranchExists(path, branchName),
-        jdiffUrl: jdiffBranchUrl(path, branchName),
         githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branchName)}` : null,
         // "Open the roll-up PR" — the integration branch against the default branch.
         comparePrUrl: ctx.slug
@@ -59,7 +60,6 @@ export default defineEventHandler(async (event) => {
   let prsError: string | null = null
   try {
     prs = matchProjectPrs(await listOpenPrs(path, force), {
-      repoPath: path,
       integrationBranch: branchName,
       keys: projectKeys(store, project),
     })
@@ -72,7 +72,6 @@ export default defineEventHandler(async (event) => {
     repo: path,
     slug: ctx.slug,
     repoUrl: ctx.slug ? `https://github.com/${ctx.slug}` : null,
-    jdiffRepoUrl: jdiffPrsUrl(path),
     defaultBranch: ctx.defaultBranch,
     integrationBranch: branchName,
     suggestedBranch,

@@ -9,8 +9,9 @@
 // replaces. A document renders through the same <DocumentArticle> jExplain
 // uses; a chart renders through <BlockChart>, which is the live, editable
 // canvas — an edit here autosaves to the shared pool, same as anywhere else.
-// A diff is the exception and stays a link: jDiff computes it from git on
-// demand, so there is nothing to embed.
+// A diff renders through <DiffReviewCard>, the review at a glance: the full
+// review screens are screens, and what belongs on a ticket is the verdict plus
+// the way through to them (`url`, which now points at jTicket's own /diffs).
 import type { Explainer } from '@jsuite/documents/types'
 import type { Attachment, ResolvedAttachment } from '~/composables/useTracker'
 
@@ -76,8 +77,6 @@ const docLoading = ref(false)
 
 function toggle(a: ResolvedAttachment) {
   if (a.missing) return
-  // Nothing to embed (a diff) — follow the resolved url out to its own app.
-  if (!ATTACHMENT_META[a.type].page) return void window.open(a.url, '_blank')
   expanded.value = expanded.value === keyOf(a) ? '' : keyOf(a)
 }
 
@@ -176,8 +175,8 @@ const view = ref<'rows' | 'chips'>('rows')
           @click="toggle(a)"
         >
           <UIcon
-            v-if="a.missing || !ATTACHMENT_META[a.type].page"
-            :name="ATTACHMENT_META[a.type].page ? ATTACHMENT_META[a.type].icon : 'i-lucide-external-link'"
+            v-if="a.missing"
+            :name="ATTACHMENT_META[a.type].icon"
             class="size-3.5 shrink-0 text-dimmed"
           />
           <UIcon
@@ -248,7 +247,7 @@ const view = ref<'rows' | 'chips'>('rows')
         <UIcon :name="ATTACHMENT_META[openAttachment.type].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="min-w-0 truncate text-xs font-medium text-muted">{{ openAttachment.title }}</span>
         <UButton
-          :to="ATTACHMENT_META[openAttachment.type].page?.(openAttachment.id)"
+          :to="openAttachment.url"
           icon="i-lucide-maximize-2"
           size="xs"
           color="neutral"
@@ -276,6 +275,12 @@ const view = ref<'rows' | 'chips'>('rows')
         <p v-else class="flex-1 py-16 text-center text-sm text-muted">
           This document has no content yet.
         </p>
+      </div>
+
+      <!-- A diff: the review at a glance, read against the owning record's
+           repo. `repo` is only ever set on a diff the server could resolve. -->
+      <div v-else-if="openAttachment.type === 'diff'" class="p-3">
+        <DiffReviewCard :repo="openAttachment.repo ?? ''" :id="openAttachment.id" />
       </div>
 
       <!-- A chart: the live canvas, autosaving to the shared pool -->

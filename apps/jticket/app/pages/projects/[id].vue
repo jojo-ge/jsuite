@@ -30,13 +30,17 @@ const stats = computed(() => ({
 
 // The integration branch, from the header: cut it in one click when the project
 // has a repo but no branch yet, and once it exists show it as a chip that opens
-// the branch review in jDiff. The GitHub panel below refetches on its own (the
-// composable bumps a shared revision).
+// the branch review — here in jTicket, which serves @jsuite/diff's screens. The
+// GitHub panel below refetches on its own (the composable bumps a shared
+// revision).
+//
+// The repo travels as stored, '~' and all: the review engine expands it exactly
+// as the project's own endpoints do.
 const { creating: creatingBranch, createBranch } = useIntegrationBranch()
-const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
+const diffRoutes = useDiffRoutes()
 const branchReviewUrl = computed(() =>
   project.value?.repo && project.value.integrationBranch
-    ? jdiffBranchLink(jdiffBase, project.value.repo, project.value.integrationBranch)
+    ? diffRoutes.branch({ repo: project.value.repo, branch: project.value.integrationBranch })
     : null,
 )
 
@@ -112,11 +116,9 @@ async function removeProject() {
                 Branch
               </UButton>
             </UTooltip>
-            <UTooltip v-else-if="branchReviewUrl" :text="`Review ${project.integrationBranch} in jDiff`">
+            <UTooltip v-else-if="branchReviewUrl" :text="`Review ${project.integrationBranch}`">
               <UButton
                 :to="branchReviewUrl"
-                target="_blank"
-                external
                 icon="i-lucide-git-branch"
                 size="sm"
                 color="neutral"
