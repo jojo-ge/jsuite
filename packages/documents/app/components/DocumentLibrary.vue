@@ -10,6 +10,7 @@
 // library's, and <DocumentReader> has the same prop for the same reason. See
 // "who may delete out of the pool" in the root README for the rule itself.
 import type { ExplainerMeta } from '../../types'
+import { DOCUMENTS_READER_BASE, documentPath } from '../../routes'
 
 const props = withDefaults(
   defineProps<{
@@ -25,7 +26,7 @@ const props = withDefaults(
   {
     title: 'Documents',
     subtitle: 'Every document in the shared pool — explainers, specs and debriefs alike.',
-    readerBase: '/documents',
+    readerBase: DOCUMENTS_READER_BASE,
     deletable: true,
   },
 )
@@ -108,7 +109,7 @@ async function remove(key: string, title: string) {
       <ul v-else class="space-y-3">
         <li v-for="d in shown" :key="d.key">
           <NuxtLink
-            :to="`${props.readerBase}/${d.key}`"
+            :to="documentPath(d.key, props.readerBase)"
             class="group block rounded-xl border border-default p-5 transition hover:border-primary/50 hover:bg-elevated/40"
           >
             <p v-if="d.kicker" class="mb-1 text-[11px] font-semibold uppercase tracking-widest text-primary">
