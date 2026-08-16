@@ -217,7 +217,7 @@ runs `vue-tsc` over the app's project references — so `.vue` files are checked
 `--no-bail`, so one failing app doesn't hide the others; it exits non-zero if
 any app fails.
 
-Two constraints keep this working, both easy to undo by accident:
+Three constraints keep this working, all easy to undo by accident:
 
 - **TypeScript is pinned to 5.9 workspace-wide** (`overrides` in
   `pnpm-workspace.yaml`, plus an explicit `typescript` devDependency in each
@@ -227,11 +227,16 @@ Two constraints keep this working, both easy to undo by accident:
 - **`vue-router` must be v5** — Nuxt 4.5's generated tsconfig loads
   `vue-router/volar/sfc-route-blocks`, which only v5 exports. On v4 the Vue
   language plugin fails to load and typing quietly degrades.
-
-Known gap: components that live in a `packages/*` layer (`@jsuite/charting`,
-`@jsuite/documents`) still get `any` for their `defineProps` result, so their
-props are unchecked. Components under `apps/*/app/` are typed correctly.
-Tracked as TICK-152.
+- **Every `packages/*` layer that ships `.vue` files must declare `vue` as a
+  devDependency** (`@jsuite/charting`, `@jsuite/documents`). `vue-tsc` compiles
+  an SFC to virtual TS that reaches for `vue` from the SFC's *own* directory,
+  and under pnpm's strict layout a layer with no `vue` dependency cannot
+  resolve it — an `@ts-ignore` in the generated code swallows the resolution
+  failure, so `defineProps` silently returns `any` and every prop goes
+  unchecked, in script and template alike, while the rest of the file still
+  type-checks normally. It must stay a *dev*Dependency: the host app owns the
+  runtime copy, and promoting it to `dependencies` would ship a second Vue
+  instance into the bundle.
 
 ## Design
 

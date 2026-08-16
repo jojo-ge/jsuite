@@ -22,7 +22,7 @@ const emit = defineEmits<{
 function setAttachments(noteId: string, attachments: NoteAttachment[]) {
   emit(
     'update:notes',
-    props.notes.map((n: DocNote) => (n.id === noteId ? { ...n, attachments } : n)),
+    props.notes.map((n) => (n.id === noteId ? { ...n, attachments } : n)),
   )
 }
 
@@ -37,14 +37,14 @@ function isOrphan(n: DocNote): boolean {
 function setText(noteId: string, text: string) {
   emit(
     'update:notes',
-    props.notes.map((n: DocNote) => (n.id === noteId ? { ...n, text } : n)),
+    props.notes.map((n) => (n.id === noteId ? { ...n, text } : n)),
   )
 }
 
 function remove(noteId: string) {
   emit(
     'update:notes',
-    props.notes.filter((n: DocNote) => n.id !== noteId),
+    props.notes.filter((n) => n.id !== noteId),
   )
 }
 
@@ -55,7 +55,7 @@ const noteAtt = reactive<Record<string, AttachmentsApi>>({})
 const generalAtt = ref<AttachmentsApi>(null)
 
 const written = computed(() =>
-  props.notes.filter((n: DocNote) => n.text.trim() || (n.attachments?.length ?? 0)).length,
+  props.notes.filter((n) => n.text.trim() || (n.attachments?.length ?? 0)).length,
 )
 
 function focusTextarea(noteId: string) {
@@ -137,7 +137,7 @@ defineExpose({ focusTextarea })
               @update:model-value="setText(n.id, String($event))"
             />
             <NoteAttachments
-              :ref="(el: unknown) => (noteAtt[n.id] = el as AttachmentsApi)"
+              :ref="(el) => (noteAtt[n.id] = el as AttachmentsApi)"
               :doc-key="docKey"
               :attachments="n.attachments ?? []"
               @update="setAttachments(n.id, $event)"

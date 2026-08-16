@@ -48,8 +48,10 @@ that app's own skill rather than improvising one app's job in another.
 - **`pnpm typecheck` at the root is the typecheck entry point** — every app,
   `.vue` files included (`nuxt typecheck` → `vue-tsc` per app). Don't reach for
   a bare `tsc`: it skips `.vue` entirely. TypeScript is pinned to 5.9 and
-  `vue-router` to v5 workspace-wide because `vue-tsc` breaks on either bump; see
-  "Typechecking" in `README.md` before changing those versions.
+  `vue-router` to v5 workspace-wide because `vue-tsc` breaks on either bump, and
+  a `packages/*` layer shipping `.vue` files must depend on `vue` itself or its
+  props silently go unchecked; see "Typechecking" in `README.md` before changing
+  those versions or adding a layer with components in it.
 - **Don't restart apps blindly.** `./jsuite status` first; `./jsuite start` is
   idempotent for already-running apps but refuses ports held by processes it
   didn't start. Logs are at `logs/<app>.log` (`./jsuite logs <app>`).

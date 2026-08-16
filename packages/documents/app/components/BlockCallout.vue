@@ -34,9 +34,7 @@ const UNKNOWN_TONE = {
   accent: 'text-muted',
 }
 
-// `as CalloutTone` because props in a layer component still widen to `any`.
-// Drop the cast when TICK-152 lands.
-const tone = computed(() => TONES[props.block.tone as CalloutTone] ?? UNKNOWN_TONE)
+const tone = computed(() => TONES[props.block.tone] ?? UNKNOWN_TONE)
 </script>
 
 <template>

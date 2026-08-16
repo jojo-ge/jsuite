@@ -104,7 +104,7 @@ onMounted(async () => {
         theme: props.theme ?? 'dark',
         excalidrawAPI: (a: unknown) => {
           api = a
-          savedVersion = getSceneVersionSafe((props.initialScene?.elements ?? []) as SceneElement[])
+          savedVersion = getSceneVersionSafe(props.initialScene?.elements ?? [])
           emit('ready')
         },
         onChange: handleChange,

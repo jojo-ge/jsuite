@@ -12,7 +12,6 @@ const props = defineProps<{ block: ChartBlock }>()
 
 const { data: chart, error } = await useFetch<Chart>(() => `/api/charts/${props.block.chartKey}`)
 
-const __probeProps: number = props
 const canvas = ref<{ setScene: (s: Scene, o?: { scrollToContent?: boolean }) => void } | null>(null)
 const importing = ref(false)
 const canvasError = ref('')
