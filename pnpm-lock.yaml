@@ -49,24 +49,15 @@ importers:
 
   apps/jdiff:
     dependencies:
-      '@jsuite/claude':
+      '@jsuite/diff':
         specifier: workspace:*
-        version: link:../../packages/claude
-      '@jsuite/data':
-        specifier: workspace:*
-        version: link:../../packages/data
+        version: link:../../packages/diff
       marked:
         specifier: ^18.0.6
         version: 18.0.7
       nuxt:
         specifier: ^4.4.8
         version: 4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@types/node@26.1.2)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.3)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.1)(rollup@4.62.3))(rollup@4.62.3)(srvx@0.12.5)(terser@5.49.0)(typescript@5.9.3)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@5.9.3))(yaml@2.9.0)
-      parse-diff:
-        specifier: ^0.12.0
-        version: 0.12.0
-      shiki:
-        specifier: ^4.3.1
-        version: 4.3.1
       vue:
         specifier: ^3.5.39
         version: 3.5.40(typescript@5.9.3)
@@ -245,6 +236,21 @@ importers:
   packages/claude: {}
 
   packages/data: {}
+
+  packages/diff:
+    dependencies:
+      '@jsuite/claude':
+        specifier: workspace:*
+        version: link:../claude
+      '@jsuite/data':
+        specifier: workspace:*
+        version: link:../data
+      parse-diff:
+        specifier: ^0.12.0
+        version: 0.12.0
+      shiki:
+        specifier: ^4.3.1
+        version: 4.3.1
 
   packages/documents:
     dependencies:
@@ -3679,7 +3685,6 @@ packages:
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
-    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
     hasBin: true
 
   glob@13.0.6:
@@ -5089,7 +5094,6 @@ packages:
 
   sliced@1.0.1:
     resolution: {integrity: sha512-VZBmZP8WU3sMOZm1bdgTadsQbcscK0UM8oKxKVBs4XAhUo2Xxzm/OFMGBkPusxw9xL3Uy8LrzEqGqJhclsr0yA==}
-    deprecated: Unsupported
 
   smob@1.6.2:
     resolution: {integrity: sha512-RQsvleCbF8cVHEv+xuDGaA4pOizFqJ0GgjtMSRo6oP8pnN7WsigHgVGey6aILRBKv4W2YOMHLqbKdnB6hpB9fw==}

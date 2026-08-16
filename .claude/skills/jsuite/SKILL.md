@@ -88,14 +88,20 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   `~/code/anyway/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
   place to read, back up, or wipe.
 - **One chart pool**: the `@jsuite/charting` Nuxt layer carries the Excalidraw
-  canvas AND `server/api/charts/**` over `.data/jchart/`, so a chart embedded in
-  a jExplain article is the same object opened in jChart; edits and notes flow
-  both ways.
+  canvas, `server/api/charts/**` over `.data/jchart/`, AND the chart UI — the
+  library at `/charts` and the full workbench at `/charts/<key>` — so every
+  consumer serves the same charts. A chart embedded in a jExplain article is
+  the same object opened in jChart; edits and notes flow both ways. jChart is
+  the branded shell aliasing that UI onto `/` and `/c/<key>`.
 - **One document pool**: the `@jsuite/documents` Nuxt layer (which extends
   charting) carries the block model, the renderers (`<DocumentArticle>`), and
   `server/api/documents/**` over `.data/jexplain/`, so a jTicket doc is the
   same object jExplain renders — one document system serving both apps, notes
   included.
+- **One review engine**: the `@jsuite/diff` Nuxt layer carries target
+  resolution, the diff/graph/file/PR routes, the claude analysis runs and every
+  review artifact store over `.data/jdiff/`, so any app extending it serves the
+  whole review API on its own port. jDiff is the specialised review UI on top.
 - **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
   `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
   cancellation. jDiff's review tools and jGrilling's interviewer both run on it.

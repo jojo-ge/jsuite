@@ -59,7 +59,11 @@ async function onCanvasReady() {
   }
 }
 
-const jchartUrl = computed(() => `https://jchart.local/c/${props.block.chartKey}`)
+// The workbench ships with the charting layer now, so every app that renders a
+// document also serves it — open the chart where the reader already is instead
+// of bouncing them across to jChart.
+const routes = useChartRoutes()
+const workbenchUrl = computed(() => routes.chart(props.block.chartKey))
 const statusLabel = computed(
   () => ({ idle: '', saving: 'Saving…', saved: 'Saved', error: 'Save failed' })[status.value],
 )
@@ -74,13 +78,12 @@ const statusLabel = computed(
         {{ statusLabel }}
       </span>
       <UButton
-        :to="jchartUrl"
-        target="_blank"
-        icon="i-lucide-external-link"
+        :to="workbenchUrl"
+        icon="i-lucide-pencil-ruler"
         color="neutral"
         variant="ghost"
         size="xs"
-        label="Open in jChart"
+        label="Open in workbench"
       />
     </figcaption>
 

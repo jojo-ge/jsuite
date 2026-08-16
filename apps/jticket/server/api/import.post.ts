@@ -20,6 +20,7 @@ interface ImportProject {
   mode?: ProjectMode // 'wayfinder' turns the whole project into a wayfinder effort
   repo?: string // path to a local clone — wires the project to GitHub
   integrationBranch?: string // branch this project's PRs target
+  attachments?: Attachment[] // artifact refs — { type: document|chart|diff, id }
 }
 interface ImportTicket {
   title: string
@@ -33,6 +34,7 @@ interface ImportTicket {
   wayfinderType?: string // shorthand → adds a 'wayfinder:<type>' label
   resolution?: string
   blockedBy?: string[]
+  attachments?: Attachment[] // artifact refs — { type: document|chart|diff, id }
 }
 
 export default defineEventHandler(async (event) => {
@@ -57,6 +59,7 @@ export default defineEventHandler(async (event) => {
       mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard',
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
+      attachments: cleanAttachments(p.attachments),
       createdAt: ts,
       updatedAt: ts,
     }
@@ -86,6 +89,7 @@ export default defineEventHandler(async (event) => {
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
       comments: [],
+      attachments: cleanAttachments(t.attachments),
       // A breakdown imported with work already done finishes as of the import.
       completedAt: status === 'done' ? ts : null,
       createdAt: ts,

@@ -69,7 +69,8 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/jso
   description conflict, the newer comment wins (raise it if that's ambiguous).
 - The `resolution` of every ticket in its `blockedBy` — that's where the decisions this
   ticket rests on were recorded.
-- Any doc the description links (`GET /api/docs/DOC-n` → `.body`).
+- Any artifact the ticket attaches (`GET /api/tickets/TICK-7/attachments` → each ref
+  resolved to its title and url; a `missing` one means the artifact is gone).
 
 ```bash
 curl -s "$JTICKET/api/tickets/TICK-7" | jq '{title, description, acceptanceCriteria, blockedBy, comments}'
@@ -183,8 +184,8 @@ invocation rather than draining the project unasked.
 - **`blocked` / `claimed` / `frontier` are derived on read.** Writing them does nothing.
 - **Comments are append-only** — `POST /api/tickets/:id/comments` with
   `{ author, body }`; PATCHing `comments` does nothing. Discussion goes in comments, the
-  final answer in `resolution`; anything longer becomes a doc (`POST /api/docs`) linked
-  from it.
+  final answer in `resolution`; anything longer becomes a document
+  (`POST /api/documents`) attached to the ticket and linked from it.
 - **Deletes are unrecoverable** — the store is one JSON file. Never delete a ticket unless
   the user asks for that ticket by key.
 - Other sessions may be working the same project in parallel. Re-read a ticket before

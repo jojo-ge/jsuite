@@ -138,8 +138,9 @@ that answers its own questions has broken this). This is the ticket's `type` fie
 
 - **Research** (AFK) — `wayfinder:research`. Reading documentation, third-party APIs, or
   local resources like knowledge bases. Creates a markdown summary as a linked asset —
-  in jTicket that's a **doc** (`POST /api/docs`, labelled `wayfinder:asset`), linked from
-  the resolution. Use when knowledge outside the current working directory is required.
+  in jTicket that's a **document** (`POST /api/documents`), attached to the ticket
+  (`POST /api/tickets/<key>/attachments` with `{ type: 'document', id: <key> }`) and
+  linked from the resolution. Use when knowledge outside the current working directory is required.
 - **Prototype** (HITL) — `wayfinder:prototype`. Raise the fidelity of the discussion by
   making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub,
   or UI/logic code via the `/prototype` skill. Links the prototype as an asset. Use when

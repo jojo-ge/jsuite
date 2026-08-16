@@ -2,7 +2,7 @@
 // factors behind it and a suggested reading order through the diff.
 export interface ReviewRating {
   score: number
-  effort: string
+  effort: 'quick' | 'moderate' | 'involved' | 'heavy'
   summary: string
   factors: { label: string; impact: 'good' | 'neutral' | 'bad'; detail: string }[]
   readingOrder: { path: string; note: string }[]
