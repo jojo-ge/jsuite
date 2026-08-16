@@ -208,6 +208,7 @@ State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
 ```sh
 pnpm typecheck                    # every app, including .vue files
 pnpm --filter jticket typecheck   # one app
+pnpm typecheck:constraints        # just the guard below, no vue-tsc
 ```
 
 `pnpm typecheck` is **the** typecheck entry point for the workspace. Each app's
@@ -217,7 +218,11 @@ runs `vue-tsc` over the app's project references — so `.vue` files are checked
 `--no-bail`, so one failing app doesn't hide the others; it exits non-zero if
 any app fails.
 
-Three constraints keep this working, all easy to undo by accident:
+Three constraints keep this working, all easy to undo by accident — and all
+three fail *quietly*, which is why they are enforced by
+`scripts/check-typecheck-constraints.mjs` rather than by this section. It runs
+first inside `pnpm typecheck`, so a broken constraint stops the run and names
+the fix. Treat the list below as the reasoning; the script is the rule.
 
 - **TypeScript is pinned to 5.9 workspace-wide** (`overrides` in
   `pnpm-workspace.yaml`, plus an explicit `typescript` devDependency in each
@@ -237,6 +242,13 @@ Three constraints keep this working, all easy to undo by accident:
   type-checks normally. It must stay a *dev*Dependency: the host app owns the
   runtime copy, and promoting it to `dependencies` would ship a second Vue
   instance into the bundle.
+
+The guard checks each layer both ways: that the manifest declares `vue` as a
+devDependency, and — once installed — that `vue` genuinely resolves from a
+component's own directory, which is the property `vue-tsc` depends on and the
+one a manifest line only stands in for. It exits 0 with a `skipped` line for the
+resolution probe before `pnpm install`, rather than reporting a pass it hasn't
+earned. Adding a fourth constraint means adding a check there.
 
 ## Design
 
