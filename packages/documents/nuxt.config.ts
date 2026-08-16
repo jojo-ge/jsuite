@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 //     /documents/<key>. An app that wants them under its own routes (jExplain's
 //     / and /e/<key>) mounts the components itself rather than copying them.
 //   - useMarkdown() (glossary-aware markdown, block + inline) and useShiki()
-//   - labelForBlock() and markdownPreview() app utils
+//   - labelForBlock(), markdownPreview() and labelPool() app utils
 //   - the /api/documents/** routes over the shared .data/jexplain pool, plus
 //     the document store as Nitro server auto-imports
 //   - types via `@jsuite/documents/types` (client-safe) and

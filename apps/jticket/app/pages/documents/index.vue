@@ -24,7 +24,7 @@ const { documents, projects, tickets, refresh } = useTracker()
 // not from the projects, and filtering by one narrows every section at once.
 const selected = ref<string[]>([])
 
-const allLabels = computed(() => [...new Set(documents.value.flatMap((d) => d.labels))].sort())
+const allLabels = computed(() => labelPool(documents.value))
 
 const filtered = computed(() =>
   documents.value.filter((d) => selected.value.every((label) => d.labels.includes(label))),
