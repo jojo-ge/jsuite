@@ -9,6 +9,12 @@
 // This replaces the old /docs pages. Those listed the five DOC-n wrapper
 // records; there are no wrappers any more (TICK-138), and the thing they stood
 // for — this document belongs to that project — is an attachment now.
+//
+// It creates and it groups, but it does not delete (TICK-151): jTicket never
+// destroys a document out of the shared pool. Being jTicket's own page, it has
+// no delete affordance to withhold — where the layer's <DocumentLibrary> would
+// need :deletable="false" to reach the same place. /documents/<key> holds the
+// same line. See "who may delete out of the pool" in the root README for why.
 useHead({ title: 'Documents' })
 
 const { documents, projects, tickets, refresh } = useTracker()

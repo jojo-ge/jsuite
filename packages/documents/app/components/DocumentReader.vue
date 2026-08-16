@@ -14,7 +14,7 @@ const props = withDefaults(
     backLabel?: string
     /** Send the back arrow through history instead of to `backTo`. */
     backInHistory?: boolean
-    /** Offer the delete button. */
+    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
     deletable?: boolean
   }>(),
   { backTo: '/documents', backLabel: 'Back to all documents', backInHistory: false, deletable: true },
