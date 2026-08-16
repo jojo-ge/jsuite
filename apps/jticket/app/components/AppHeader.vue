@@ -63,13 +63,23 @@ const links = [
           {{ stats.projects }} projects · {{ stats.epics }} epics · {{ stats.done }}/{{ stats.tickets }} done · {{ stats.docs }} docs
         </span>
         <UButton icon="i-lucide-book-open" color="neutral" variant="ghost" to="/api-guide" aria-label="API guide" />
-        <UButton
-          :icon="colorMode.value === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon'"
-          color="neutral"
-          variant="ghost"
-          aria-label="Toggle theme"
-          @click="toggleTheme"
-        />
+        <!-- The icon depends on the resolved color mode, which only exists on the
+             client (localStorage/system pref) — rendering it during SSR guarantees a
+             sun/moon hydration class mismatch. ClientOnly renders the fallback on the
+             server and defers the real toggle to the client, so there's nothing to
+             mismatch. -->
+        <ClientOnly>
+          <UButton
+            :icon="colorMode.value === 'dark' ? 'i-lucide-sun' : 'i-lucide-moon'"
+            color="neutral"
+            variant="ghost"
+            aria-label="Toggle theme"
+            @click="toggleTheme"
+          />
+          <template #fallback>
+            <UButton icon="i-lucide-sun" color="neutral" variant="ghost" aria-label="Toggle theme" disabled />
+          </template>
+        </ClientOnly>
         <UButton icon="i-lucide-folder-tree" color="neutral" variant="soft" @click="openNewProject">Project</UButton>
         <UButton icon="i-lucide-folder-plus" color="neutral" variant="soft" @click="openNewEpic(props.defaultProjectId ?? null)">Epic</UButton>
         <UButton icon="i-lucide-file-plus" color="neutral" variant="soft" :to="newDocTo">Doc</UButton>
