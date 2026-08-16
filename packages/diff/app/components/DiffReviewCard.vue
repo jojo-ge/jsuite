@@ -19,6 +19,13 @@ const props = defineProps<{
   repo: string
   /** Review target: '123' (a PR) or 'branch/<name>'. */
   id: string
+  /**
+   * Where the review screens should offer to send the reader back to. The card
+   * sits on a host's page, so unlike a review screen it cannot read this off
+   * the current route — the host knows which of its records is showing the
+   * card, and passes it on to the links that leave for the full review.
+   */
+  from?: DiffFrom | null
 }>()
 
 const routes = useDiffRoutes()
@@ -130,14 +137,20 @@ const riskCounts = computed(() => {
 const title = computed(() => (isPr.value ? pr.value?.title : branch.value?.subject) ?? '')
 const label = computed(() => (isPr.value ? `#${prNumber.value}` : branchName.value))
 const reviewLink = computed(() =>
-  isPr.value
-    ? routes.pr(props.repo, prNumber.value)
-    : routes.branch({ repo: props.repo, branch: branchName.value }),
+  withFrom(
+    isPr.value
+      ? routes.pr(props.repo, prNumber.value)
+      : routes.branch({ repo: props.repo, branch: branchName.value }),
+    props.from,
+  ),
 )
 const summaryLink = computed(() =>
-  isPr.value
-    ? routes.prSummary(props.repo, prNumber.value)
-    : routes.branchSummary({ repo: props.repo, branch: branchName.value }),
+  withFrom(
+    isPr.value
+      ? routes.prSummary(props.repo, prNumber.value)
+      : routes.branchSummary({ repo: props.repo, branch: branchName.value }),
+    props.from,
+  ),
 )
 </script>
 

@@ -34,6 +34,7 @@ function linkTo(b: BranchInfo) {
   <main class="diff-surface branches">
     <header class="bar">
       <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <DiffHostBackLink />
       <span class="slug">{{ info?.slug ?? repo }}</span>
       <NuxtLink :to="routes.prs(repo)" class="tab">pull requests</NuxtLink>
       <span class="tab on">local branches</span>

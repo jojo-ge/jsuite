@@ -20,6 +20,13 @@ const mode = ref<'view' | 'edit'>('view')
 // live record from state so inline status changes and saves show immediately.
 const live = computed(() => props.tickets.find((t) => t.id === props.ticket?.id) ?? props.ticket ?? null)
 
+// Opening an attached diff leaves jTicket's chrome behind — the review screens
+// take the whole viewport — so the review is handed a way back to this ticket.
+// The modal is global, so "here" is whichever page it is open over, plus the
+// `?ticket=` deep link app.vue reads to reopen this ticket on arrival.
+const route = useRoute()
+const reviewBackLink = computed(() => (live.value ? ticketBackLink(live.value, route.fullPath) : null))
+
 // The fields themselves live in TicketForm, shared with the tabbed create
 // modal; this modal keeps the read view, the footer and the delete.
 const form = useTemplateRef('form')
@@ -201,7 +208,13 @@ const statusOptions = [
              diagram of what it changes, the PR that carries it — openable
              without leaving the ticket. Keyed on the ticket id so switching
              tickets refetches instead of showing the last one's list. -->
-        <AttachmentsPanel :key="live.id" owner="tickets" :owner-id="live.id" compact />
+        <AttachmentsPanel
+          :key="live.id"
+          owner="tickets"
+          :owner-id="live.id"
+          compact
+          :from="reviewBackLink"
+        />
 
         <section v-if="blockers.length || blocks.length" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div v-if="blockers.length">

@@ -159,6 +159,7 @@ async function postAnswer(i: number) {
   <main class="diff-surface summary-page">
     <header class="bar">
       <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <DiffHostBackLink />
       <NuxtLink :to="routes.prs(repo)" class="back">← PRs</NuxtLink>
       <NuxtLink :to="reviewRoute" class="back">← diff</NuxtLink>
       <span class="bar-end"><DiffNotificationBell :repo="repo" /></span>

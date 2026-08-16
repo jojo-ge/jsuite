@@ -443,6 +443,7 @@ function openSelfCard() {
   <main class="diff-surface pr-page">
     <header class="bar">
       <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <DiffHostBackLink />
       <NuxtLink :to="routes.prs(repo)" class="back">← PRs</NuxtLink>
       <span class="bar-end"><DiffNotificationBell :repo="repo" /></span>
     </header>
