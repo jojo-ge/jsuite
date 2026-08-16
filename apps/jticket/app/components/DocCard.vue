@@ -12,7 +12,7 @@ defineProps<{ doc: ExplainerMeta; project?: Project }>()
   <UCard
     :ui="{ body: 'p-4 sm:p-4' }"
     class="cursor-pointer transition hover:ring-2 hover:ring-primary/40"
-    @click="navigateTo(`/docs/${doc.key}`)"
+    @click="navigateTo(`/documents/${doc.key}`)"
   >
     <div class="flex items-center gap-2">
       <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />

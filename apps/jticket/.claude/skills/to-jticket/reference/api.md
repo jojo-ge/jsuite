@@ -18,8 +18,10 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / POST | `/api/documents` | The shared document pool (also served by jExplain) |
 | GET / PATCH / DELETE | `/api/documents/:key` | One shared document (PATCH refiles its labels) |
 | GET | `/api/charts` | The shared chart pool (also served by jChart) |
-| GET / POST | `/api/attachments` | List / upload FILES for markdown — *not* artifact refs |
-| GET | `/attachments/:name` | Serve an uploaded file |
+| GET / POST | `/api/uploads` | List / upload FILES for markdown — *not* artifact refs |
+| GET | `/uploads/:name` | Serve an uploaded file |
+| GET / POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
+| GET | `/attachments/:name` | Legacy alias — redirects to `/uploads/:name` |
 
 `:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`).
 
@@ -141,7 +143,7 @@ id contains a slash, so it travels as a query param. The artifact itself is neve
 ```jsonc
 [ { "type": "document", "id": "checkout-revamp-spec",
     "title": "Checkout revamp — spec",          // the artifact's own title
-    "url": "/docs/checkout-revamp-spec",
+    "url": "/documents/checkout-revamp-spec",
     "updatedAt": "2026-08-16T…",
     "missing": false },
   { "type": "chart", "id": "deleted-chart",
@@ -160,7 +162,7 @@ against.
 to add or drop one ref without a read-modify-write.
 
 Writing the document itself is `POST /api/documents` (see **to-jdoc**); the document then
-renders at `$JTICKET/docs/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
+renders at `$JTICKET/documents/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
 
 A document's **labels** are its own — they live on the document in the shared pool, not on
 the attachment, so the same filing shows in jTicket and jExplain. Set them at creation, or
@@ -181,21 +183,25 @@ PATCH replaces it, so read-append-write to add one. There is no separate documen
 Unrelated to the artifact attachments above: these are image files for use inside markdown.
 
 ```jsonc
-POST /api/attachments
+POST /api/uploads
 { "name": "checkout-flow.png",
   "base64": "iVBORw0KGgo…" }            // bare base64 or a full data: URL
-→ 201 { "name": "checkout-flow.png", "url": "/attachments/checkout-flow.png", "size": 20480 }
+→ 201 { "name": "checkout-flow.png", "url": "/uploads/checkout-flow.png", "size": 20480 }
 ```
 
-Reference it from a doc body as `![Checkout flow](/attachments/checkout-flow.png)`.
+Reference it from a doc body as `![Checkout flow](/uploads/checkout-flow.png)`.
 **Same name overwrites** — no versioning, no warning.
 
 ```bash
 # upload a local file
-curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
+curl -s "$JTICKET/api/uploads" -H 'content-type: application/json' \
   -d "$(jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" \
         '{name:$n, base64:$b}')"
 ```
+
+`/api/attachments` and `/attachments/:name` still work — they redirect (308) to
+the `/uploads` equivalents, which is what keeps markdown written before the
+rename resolving. Prefer `/uploads` in anything you author now.
 
 ## Bulk import
 

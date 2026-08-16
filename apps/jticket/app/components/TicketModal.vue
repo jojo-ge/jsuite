@@ -197,6 +197,12 @@ const statusOptions = [
           <div class="jx-prose jx-prose-sm rounded-lg border border-success/30 bg-success/5 px-4 py-3" v-html="renderedResolution" />
         </section>
 
+        <!-- The artifacts this ticket links — the spec it implements, the
+             diagram of what it changes, the PR that carries it — openable
+             without leaving the ticket. Keyed on the ticket id so switching
+             tickets refetches instead of showing the last one's list. -->
+        <AttachmentsPanel :key="live.id" owner="tickets" :owner-id="live.id" compact />
+
         <section v-if="blockers.length || blocks.length" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div v-if="blockers.length">
             <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">

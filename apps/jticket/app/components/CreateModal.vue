@@ -21,9 +21,22 @@ const tab = ref('ticket')
 
 // Every panel stays mounted (v-show, not v-if) so switching tabs doesn't throw
 // away what you already typed in another one.
-const ticketForm = useTemplateRef('ticketForm')
-const projectForm = useTemplateRef('projectForm')
-const active = computed(() => (tab.value === 'project' ? projectForm.value : ticketForm.value))
+// Both forms expose the same save surface, so the footer can drive either.
+// Stated explicitly rather than inferred: the footer reads `active`, which reads
+// the refs, which infer from the template that contains the footer — a cycle
+// TypeScript resolves to `any`.
+interface FormHandle {
+  save: () => Promise<void>
+  reset: () => void
+  saving: boolean
+  canSave: boolean
+}
+
+const ticketForm = useTemplateRef<FormHandle>('ticketForm')
+const projectForm = useTemplateRef<FormHandle>('projectForm')
+const active = computed<FormHandle | null>(() =>
+  tab.value === 'project' ? projectForm.value : ticketForm.value,
+)
 
 // A new ticket only offers the wayfinder fields when it lands in a wayfinder
 // project — same rule the ticket modal uses.
@@ -68,7 +81,7 @@ const saveLabel = { ticket: 'Create ticket', project: 'Create project' } as cons
             Documents live in the shared pool, not in the tracker — create one from the documents
             page, then attach it to a project or ticket.
           </p>
-          <UButton icon="i-lucide-file-plus" to="/docs" @click="emit('update:open', false)">
+          <UButton icon="i-lucide-file-plus" to="/documents" @click="emit('update:open', false)">
             All documents
           </UButton>
         </div>

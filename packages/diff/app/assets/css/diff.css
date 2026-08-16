@@ -1,0 +1,84 @@
+/* @jsuite/diff — the review surface's palette and the few helper classes its
+   screens share. Plain CSS; the layer brings no Tailwind or Nuxt UI of its own.
+
+   Everything hangs off `.diff-surface` rather than `:root` on purpose. Custom
+   properties inherit, so a single class on each screen's root element feeds the
+   whole subtree — including the `<style scoped>` blocks inside every child
+   component — while an app that only *embeds* the review UI (jTicket) keeps its
+   own theme everywhere else on the page.
+
+   `.diff-overlay` is the same palette for the bits that can't sit inside that
+   subtree: the review's `<Teleport to="body">` panels and the fixed scroll-top
+   button, which the browser reparents out of the surface and which would
+   otherwise resolve every `var(--…)` to nothing. */
+
+/* The one token that escapes the surface: a consumer painting its own page to
+   match an embedded review needs it, and it is namespaced enough to sit on
+   :root without colliding with the host app's theme. */
+:root {
+  --diff-bg: #0d1117;
+}
+
+:is(.diff-surface, .diff-overlay) {
+  --bg: var(--diff-bg);
+  --panel: #161b22;
+  --panel-2: #1c2129;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --green: #3fb950;
+  --red: #f85149;
+  --accent: #58a6ff;
+  --add-bg: rgba(46, 160, 67, 0.15);
+  --add-num-bg: rgba(46, 160, 67, 0.3);
+  --del-bg: rgba(248, 81, 73, 0.12);
+  --del-num-bg: rgba(248, 81, 73, 0.28);
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-size: 14px;
+}
+
+/* The screen paints its own ground: a consumer's page background may be
+   anything, and the diff colours are only legible against this one. */
+.diff-surface {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+:is(.diff-surface, .diff-overlay),
+:is(.diff-surface, .diff-overlay) * { box-sizing: border-box; }
+
+:is(.diff-surface, .diff-overlay) a { color: var(--accent); text-decoration: none; }
+:is(.diff-surface, .diff-overlay) a:hover { text-decoration: underline; }
+
+/* Deliberately just button+input, as the global reset this replaces was: the
+   review's textareas carry their own font, and widening the reset here would
+   silently restyle the two that don't. */
+:is(.diff-surface, .diff-overlay) :is(button, input) {
+  font: inherit;
+  color: inherit;
+}
+
+:is(.diff-surface, .diff-overlay) .spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: diff-spin 0.8s linear infinite;
+}
+@keyframes diff-spin { to { transform: rotate(360deg); } }
+
+:is(.diff-surface, .diff-overlay) .error-box {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  background: rgba(248, 81, 73, 0.08);
+  color: var(--red);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}

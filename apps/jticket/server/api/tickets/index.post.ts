@@ -41,6 +41,6 @@ export default defineEventHandler(async (event) => {
   }
   store.tickets.push(ticket)
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return ticket
 })

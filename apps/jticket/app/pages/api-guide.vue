@@ -62,8 +62,9 @@ const endpoints = [
   { m: 'PATCH', p: '/api/documents/:key', d: 'Refile a document { labels } — the whole list, without republishing the body' },
   { m: 'DELETE', p: '/api/documents/:key', d: 'Delete a shared document (refs to it then read as missing)' },
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
-  { m: 'GET', p: '/api/attachments', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
-  { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
+  { m: 'GET', p: '/api/uploads', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
+  { m: 'POST', p: '/api/uploads', d: 'Upload { name, base64 } → served at /uploads/:name' },
+  { m: 'GET', p: '/api/attachments', d: 'Legacy alias — redirects to /api/uploads (as does /attachments/:name)' },
 ]
 
 const docExample = `# 1. write the document into the shared pool
@@ -218,7 +219,7 @@ const methodColor: Record<string, string> = {
           into the pool with <code>title</code> and <code>blocks</code>; there is no tracker record
           in front of it. It belongs to a project or ticket by being <em>attached</em> to one — the
           second call below. Nothing is ever posted anywhere external — docs render at
-          <code>/docs/&lt;key&gt;</code> (and in jExplain, which reads the same pool). Re-POST with
+          <code>/documents/&lt;key&gt;</code> (and in jExplain, which reads the same pool). Re-POST with
           <code>replace: true</code> to revise; notes and unchanged charts survive, and attachments
           point at the key so nothing needs re-attaching.
         </p>

@@ -65,7 +65,7 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 - **Attachment** `{ type: 'document' | 'chart' | 'diff', id }` — an artifact ref. Both
   projects and tickets carry an `attachments` array; jTicket owns the link, and the
   shared pools stay ticket-ignorant. `id` is a **document** key (the pool jExplain also
-  reads, rendered at `/docs/<key>`), a **chart** key (the jChart pool), or a jDiff review
+  reads, rendered at `/documents/<key>`), a **chart** key (the jChart pool), or a jDiff review
   target (`'123'` for a PR, `'branch/<name>'`), read against the owning project's `repo`.
   There is no `DOC-n` wrapper record any more — a document belongs to a project by being
   attached to it. Attach and detach with `POST` / `DELETE

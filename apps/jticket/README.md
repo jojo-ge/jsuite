@@ -28,7 +28,8 @@ pnpm dev          # http://localhost:43000
 | `/running` | **Running now** — every in-progress ticket grouped by its project, with a link through to the project |
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
-| `/docs` · `/docs/<key>` | The shared document pool, grouped by which project attaches each, and one document |
+| `/documents` · `/documents/<key>` | **Docs** — the shared document pool, grouped by which project attaches each, and one document. (`/docs` redirects here.) |
+| `/charts` · `/charts/<key>` | **Charts** — the shared chart pool and the workbench, served by `@jsuite/charting` |
 | `/api-guide` | Full HTTP API reference, live in the app |
 
 ## Data model
@@ -64,7 +65,7 @@ line clamp stays honest.
     files in the root `.data/jexplain/` pool, which jExplain lists and renders too).
     Content is authored as **blocks** (prose, callout, code, diff, chart, steps,
     compare, timeline, takeaway + glossary). `POST /api/documents` writes one;
-    `replace: true` rewrites it in place (notes survive). Rendered at `/docs/<key>`.
+    `replace: true` rewrites it in place (notes survive). Rendered at `/documents/<key>`.
     A document carries its own `labels` — lowercase tags in the shared pool, not on
     the attachment, so the filing reads the same here and in jExplain. There is no
     document status field: `draft` / `ready` are labels, as is `wayfinder:asset`.
@@ -76,9 +77,11 @@ line clamp stays honest.
   - A ref is allowed to **dangle**. `GET /api/{projects,tickets}/:id/attachments`
     resolves each one to its title and url, flagging any whose artifact is gone as
     `missing` rather than erroring — so deleting an artifact never breaks a page.
-  - Images inside prose are a different thing: `POST /api/attachments` with
-    `{ name, base64 }` → serve from `/attachments/<name>`, reference as
-    `![alt](/attachments/<name>)`.
+  - Images inside prose are a different thing: `POST /api/uploads` with
+    `{ name, base64 }` → serve from `/uploads/<name>`, reference as
+    `![alt](/uploads/<name>)`. The old `/api/attachments` and
+    `/attachments/<name>` paths redirect here, so prose written before the
+    rename still resolves.
 
 ## HTTP API
 
@@ -95,7 +98,8 @@ See **/api-guide** in the running app. Summary:
 | GET/POST/DELETE | `/api/projects/:id/attachments` | Same, for a project |
 | GET/POST | `/api/documents` | The shared document pool (also served by jExplain); `?label=` filters |
 | GET/PATCH/DELETE | `/api/documents/:key` | Read / refile (`{ labels }`) / delete one shared document |
-| GET/POST | `/api/attachments` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/uploads` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)
@@ -233,5 +237,5 @@ draft docs here via `POST /api/documents`, including the block-document format a
 attach the result to a project. It pairs
 with Matt Pocock's `/to-spec`, which decides what the document says — `to-jspec` covers how
 it is written and where it lands. Documents are drafts only — review them at
-`http://localhost:43000/docs`, then copy into Confluence by hand if and when you want them
+`http://localhost:43000/documents`, then copy into Confluence by hand if and when you want them
 there.

@@ -1,0 +1,346 @@
+<script setup lang="ts">
+// The full guidance artifacts (rating / risk / tour / ask-yourself) for a
+// local branch. Mirrors the PR tool-summary page, minus PR-only bits: there
+// is no GitHub metadata and answers only save locally (there is no PR to post
+// them to until the branch is opened as one).
+const route = useRoute()
+const routes = useDiffRoutes()
+const repo = computed(() => String(route.query.repo ?? ''))
+const branch = computed(() => String(route.query.branch ?? ''))
+const base = computed(() => String(route.query.base ?? ''))
+useHead(() => ({ title: branch.value ? `${branch.value} — guidance` : 'branch guidance' }))
+
+const target = computed<ReviewTarget>(() => ({ branch: branch.value, base: base.value || undefined }))
+const diffQuery = computed(() => ({ repo: repo.value, branch: branch.value, base: base.value || undefined }))
+
+const { data: info } = useFetch<{ slug: string }>('/api/repo', { query: { repo } })
+const { data: diff } = useFetch<{ files: any[] }>('/api/diff', { query: diffQuery })
+const diffPaths = computed(() => new Set((diff.value?.files ?? []).map((f) => f.path)))
+
+const {
+  tasks: aiTasks,
+  anyPending,
+  startAll: runAllTools,
+  cancelAll: cancelAllTools,
+  resume: resumeAiTasks,
+  rating,
+  ratedAt,
+  risks,
+  riskAt,
+  sortedRisks,
+  riskCounts,
+  tour,
+  tourAt,
+  selfQs,
+  selfAt,
+  answeredCount,
+} = usePrArtifacts(repo, target, computed(() => null))
+onMounted(() => { resumeAiTasks() })
+
+const reviewRoute = computed(() =>
+  routes.branch({ repo: repo.value, branch: branch.value, base: base.value }))
+function reviewAnchor(path: string): string {
+  return '#f-' + path.replace(/[^a-zA-Z0-9]/g, '-')
+}
+
+const ratingOpen = ref(true)
+const riskOpen = ref(true)
+const tourOpen = ref(true)
+const selfOpen = ref(true)
+
+const ratingPending = computed(() => aiTasks.value.rating.pending)
+const ratingError = computed(() => aiTasks.value.rating.error)
+const riskPending = computed(() => aiTasks.value.risk.pending)
+const riskError = computed(() => aiTasks.value.risk.error)
+const tourPending = computed(() => aiTasks.value.tour.pending)
+const tourError = computed(() => aiTasks.value.tour.error)
+const selfPending = computed(() => aiTasks.value.self.pending)
+const selfError = computed(() => aiTasks.value.self.error)
+
+const showLowRisk = ref(false)
+const visibleRisks = computed(() => {
+  const all = sortedRisks.value
+  if (showLowRisk.value || riskCounts.value.high + riskCounts.value.medium === 0) return all
+  return all.filter((r) => r.level !== 'low')
+})
+
+// Answers persist locally (keyed by the branch target); there is no PR to post
+// them to yet.
+function saveAnswer(i: number) {
+  const q = selfQs.value?.[i]
+  if (!q) return
+  $fetch('/api/ask-yourself-answer', {
+    method: 'POST',
+    body: { repo: repo.value, branch: branch.value, index: i, answer: q.answer },
+  }).catch(() => { /* best-effort draft save */ })
+}
+</script>
+
+<template>
+  <main class="diff-surface summary-page">
+    <header class="bar">
+      <NuxtLink :to="routes.home" class="brand">{{ routes.brand }}</NuxtLink>
+      <NuxtLink :to="routes.branches(repo)" class="back">← branches</NuxtLink>
+      <NuxtLink :to="reviewRoute" class="back">← diff</NuxtLink>
+      <span class="slug">{{ info?.slug }}</span>
+    </header>
+
+    <div class="pr-head">
+      <h1>
+        <span class="local-badge">local branch</span>
+        {{ branch }}
+        <span class="badge">tool summary</span>
+      </h1>
+      <div class="meta">
+        <span class="branch-ref">{{ branch }} → {{ base }}</span>
+      </div>
+
+      <div class="actions">
+        <NuxtLink :to="reviewRoute" class="rate-btn">← back to the diff</NuxtLink>
+        <button
+          class="rate-btn run-all"
+          :title="anyPending ? 'stop the run' : 'one claude run generates reviewability, risk heatmap, guided tour, and ask yourself together'"
+          @click="anyPending ? cancelAllTools() : runAllTools()"
+        >
+          <span v-if="anyPending" class="spinner small" />
+          {{ anyPending ? 'cancel run' : '✦ run all tools' }}
+        </button>
+      </div>
+    </div>
+
+    <div class="pr-head">
+      <div class="rating-card">
+        <div class="rating-head" :class="{ clickable: rating && !ratingPending }" @click="rating && !ratingPending && (ratingOpen = !ratingOpen)">
+          <span v-if="rating && !ratingPending" class="rating-chevron">{{ ratingOpen ? '▾' : '▸' }}</span>
+          <template v-if="rating">
+            <span class="rating-score" :class="rating.score >= 7 ? 'good' : rating.score >= 4 ? 'mid' : 'bad'">{{ rating.score }}/10</span>
+            <span class="rating-effort">{{ rating.effort }} review</span>
+            <span v-if="ratedAt" class="rating-effort">rated {{ timeAgo(ratedAt) }}</span>
+          </template>
+          <span v-else class="card-title">✦ reviewability</span>
+          <span class="head-actions"><span v-if="ratingPending" class="spinner small" /></span>
+        </div>
+        <div v-if="ratingError" class="error-box in-card">{{ ratingError }}</div>
+        <template v-if="rating && !ratingPending && ratingOpen">
+          <p class="rating-summary">{{ rating.summary }}</p>
+          <ul class="rating-factors">
+            <li v-for="f in rating.factors" :key="f.label">
+              <span class="factor-dot" :class="f.impact" />
+              <div class="risk-item"><strong>{{ f.label }}</strong><div class="item-note">{{ f.detail }}</div></div>
+            </li>
+          </ul>
+          <template v-if="rating.readingOrder?.length">
+            <div class="reading-title">suggested reading order</div>
+            <ol class="reading-order">
+              <li v-for="e in rating.readingOrder" :key="e.path">
+                <NuxtLink v-if="diffPaths.has(e.path)" :to="{ ...reviewRoute, hash: reviewAnchor(e.path) }" class="reading-path">{{ e.path }}</NuxtLink>
+                <span v-else class="reading-path">{{ e.path }}</span>
+                <div class="item-note">{{ e.note }}</div>
+              </li>
+            </ol>
+          </template>
+        </template>
+        <div v-if="!rating && !ratingPending && !ratingError" class="item-note empty-note">
+          not generated yet — run all tools to rate how reviewable this branch is
+        </div>
+      </div>
+
+      <div class="rating-card">
+        <div class="rating-head" :class="{ clickable: risks && !riskPending }" @click="risks && !riskPending && (riskOpen = !riskOpen)">
+          <span v-if="risks && !riskPending" class="rating-chevron">{{ riskOpen ? '▾' : '▸' }}</span>
+          <span class="card-title" :class="{ 'risk-title': risks }">{{ risks ? 'risk heatmap' : '✦ risk heatmap' }}</span>
+          <template v-if="risks">
+            <span class="risk-counts">
+              <span class="rc high">{{ riskCounts.high }} high</span>
+              <span class="rc medium">{{ riskCounts.medium }} medium</span>
+              <span class="rc low">{{ riskCounts.low }} low</span>
+            </span>
+            <span v-if="riskAt" class="rating-effort">mapped {{ timeAgo(riskAt) }}</span>
+          </template>
+          <span class="head-actions"><span v-if="riskPending" class="spinner small" /></span>
+        </div>
+        <div v-if="riskError" class="error-box in-card">{{ riskError }}</div>
+        <template v-if="risks && !riskPending && riskOpen">
+          <ul class="risk-list">
+            <li v-for="r in visibleRisks" :key="r.path">
+              <span class="factor-dot" :class="'risk-' + r.level" />
+              <div class="risk-item">
+                <NuxtLink v-if="diffPaths.has(r.path)" :to="{ ...reviewRoute, hash: reviewAnchor(r.path) }" class="reading-path">{{ r.path }}</NuxtLink>
+                <span v-else class="reading-path">{{ r.path }}</span>
+                <div class="item-note">{{ r.note }}</div>
+              </div>
+            </li>
+          </ul>
+          <button v-if="riskCounts.low && riskCounts.high + riskCounts.medium > 0" class="show-low" @click="showLowRisk = !showLowRisk">
+            {{ showLowRisk ? 'hide' : 'show' }} {{ riskCounts.low }} low-risk file{{ riskCounts.low === 1 ? '' : 's' }}
+          </button>
+        </template>
+        <div v-if="!risks && !riskPending && !riskError" class="item-note empty-note">
+          not generated yet — run all tools to rate each changed file low / medium / high
+        </div>
+      </div>
+
+      <div class="rating-card">
+        <div class="rating-head" :class="{ clickable: tour && !tourPending }" @click="tour && !tourPending && (tourOpen = !tourOpen)">
+          <span v-if="tour && !tourPending" class="rating-chevron">{{ tourOpen ? '▾' : '▸' }}</span>
+          <span class="card-title">{{ tour ? 'guided tour' : '✦ guided tour' }}</span>
+          <template v-if="tour">
+            <span class="rating-effort">{{ tour.stops.length }} stops</span>
+            <span v-if="tourAt" class="rating-effort">written {{ timeAgo(tourAt) }}</span>
+          </template>
+          <span class="head-actions"><span v-if="tourPending" class="spinner small" /></span>
+        </div>
+        <div v-if="tourError" class="error-box in-card">{{ tourError }}</div>
+        <template v-if="tour && !tourPending && tourOpen">
+          <div class="summary-md tour-overview" v-html="renderMarkdown(tour.overview)" />
+          <div class="reading-title">stops — each opens the diff at that stop</div>
+          <ol class="reading-order">
+            <li v-for="(s, i) in tour.stops" :key="i">
+              <strong class="stop-title">{{ s.title }}</strong>
+              <div>
+                <NuxtLink v-if="diffPaths.has(s.path)" :to="{ path: reviewRoute.path, query: { repo, branch, base, stop: i } }" class="reading-path">{{ s.path }}:{{ s.line }}</NuxtLink>
+                <span v-else class="reading-path">{{ s.path }}:{{ s.line }}</span>
+              </div>
+              <div class="item-note">{{ s.note }}</div>
+            </li>
+          </ol>
+        </template>
+        <div v-if="!tour && !tourPending && !tourError" class="item-note empty-note">
+          not generated yet — run all tools to get an ordered walkthrough of the change
+        </div>
+      </div>
+
+      <div id="self-card" class="rating-card">
+        <div class="rating-head" :class="{ clickable: selfQs && !selfPending }" @click="selfQs && !selfPending && (selfOpen = !selfOpen)">
+          <span v-if="selfQs && !selfPending" class="rating-chevron">{{ selfOpen ? '▾' : '▸' }}</span>
+          <span class="card-title">{{ selfQs ? 'ask yourself' : '✦ ask yourself' }}</span>
+          <template v-if="selfQs">
+            <span class="rating-effort">{{ answeredCount }}/{{ selfQs.length }} answered</span>
+            <span v-if="selfAt" class="rating-effort">asked {{ timeAgo(selfAt) }}</span>
+          </template>
+          <span class="head-actions"><span v-if="selfPending" class="spinner small" /></span>
+        </div>
+        <div v-if="selfError" class="error-box in-card">{{ selfError }}</div>
+        <template v-if="selfQs && !selfPending && selfOpen">
+          <ol class="reading-order self-list">
+            <li v-for="(q, i) in selfQs" :key="i">
+              <strong class="stop-title">{{ q.topic }}</strong>
+              <div class="self-question">{{ q.question }}</div>
+              <div class="item-note">{{ q.why }}</div>
+              <textarea
+                v-model="q.answer"
+                class="self-answer"
+                rows="3"
+                placeholder="your answer — saved locally as you go"
+                @blur="saveAnswer(i)"
+              />
+            </li>
+          </ol>
+        </template>
+        <div v-if="!selfQs && !selfPending && !selfError" class="item-note empty-note">
+          not generated yet — run all tools to get three big-picture questions to answer in your own words
+        </div>
+      </div>
+    </div>
+
+    <DiffScrollTopButton />
+  </main>
+</template>
+
+<style scoped>
+.summary-page { padding: 20px 24px; max-width: 748px; margin: 0 auto; }
+.bar { display: flex; gap: 16px; align-items: baseline; margin-bottom: 12px; }
+.brand { font-family: var(--mono); font-weight: 700; color: var(--text); }
+.slug { margin-left: auto; color: var(--muted); }
+.pr-head h1 { font-size: 20px; margin: 0 0 6px; text-wrap: balance; font-family: var(--mono); }
+.local-badge {
+  font-size: 11px; font-family: var(--mono); vertical-align: middle;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: 10px; padding: 1px 8px; margin-right: 6px;
+}
+.badge {
+  font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border);
+  color: var(--muted); vertical-align: middle; font-family: var(--mono);
+}
+.meta { display: flex; align-items: center; column-gap: 16px; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.branch-ref { font-family: var(--mono); font-size: 12px; }
+.actions { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.actions .run-all { margin-left: auto; }
+a.rate-btn, a.rate-btn:hover { text-decoration: none; }
+.rate-btn {
+  display: inline-flex; gap: 6px; align-items: center;
+  border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+  border-radius: 6px; padding: 2px 10px; cursor: pointer; font-size: 12px;
+}
+.rate-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.spinner.small { width: 10px; height: 10px; border-width: 2px; }
+.rating-card {
+  margin-top: 8px; padding: 10px 14px; font-size: 13px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+}
+.rating-card:has(.rating-head.clickable):hover { border-color: var(--accent); }
+.rating-head { display: flex; gap: 10px; align-items: baseline; min-height: 22px; }
+.rating-head.clickable { cursor: pointer; user-select: none; }
+.rating-head.clickable:hover .card-title { color: var(--text); }
+.rating-head.clickable:hover .rating-chevron { color: var(--accent); }
+.rating-chevron { color: var(--muted); font-size: 11px; }
+.card-title { font-family: var(--mono); font-size: 13px; font-weight: 400; color: var(--muted); }
+.head-actions { margin-left: auto; display: inline-flex; gap: 8px; align-items: baseline; }
+.rating-card > :not(.rating-head) { margin-left: 21px; }
+.error-box.in-card { margin: 10px 0 2px; }
+.rating-score { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+.rating-score.good { color: var(--green); }
+.rating-score.mid { color: var(--accent); }
+.rating-score.bad { color: var(--red); }
+.rating-effort { color: var(--muted); font-size: 12px; }
+.rating-summary { margin: 10px 0 12px; font-size: 13px; font-weight: 600; line-height: 1.5; }
+.rating-factors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.rating-factors li { display: flex; gap: 8px; }
+.rating-factors strong { color: var(--text); font-weight: 600; }
+.factor-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; background: var(--border); }
+.factor-dot.good { background: var(--green); }
+.factor-dot.bad { background: var(--red); }
+.risk-item { min-width: 0; }
+.item-note { color: var(--muted); line-height: 1.5; margin-top: 2px; }
+.empty-note { margin-top: 8px; font-size: 12px; }
+.risk-title { font-weight: 600; }
+.risk-counts { display: flex; gap: 10px; font-family: var(--mono); font-size: 12px; }
+.rc.high { color: var(--red); }
+.rc.medium { color: #d29922; }
+.rc.low { color: var(--green); }
+.risk-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.risk-list li { display: flex; gap: 8px; }
+.factor-dot.risk-high { background: var(--red); }
+.factor-dot.risk-medium { background: #d29922; }
+.factor-dot.risk-low { background: var(--green); }
+.show-low {
+  margin-top: 10px; border: 1px solid var(--border); background: transparent; color: var(--muted);
+  border-radius: 6px; padding: 3px 10px; cursor: pointer; font-size: 12px;
+}
+.show-low:hover { color: var(--text); border-color: var(--accent); }
+.tour-overview { margin: 10px 0 4px; font-size: 13px; line-height: 1.55; }
+.stop-title { font-size: 12px; }
+.self-list { margin-top: 12px; }
+.self-question { margin-top: 2px; line-height: 1.5; }
+.self-answer {
+  display: block; width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text);
+  font: inherit; font-size: 12px; line-height: 1.5; resize: vertical; outline: none;
+}
+.self-answer:focus { border-color: var(--accent); }
+.reading-title {
+  margin: 12px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+}
+.reading-order { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; font-size: 12px; }
+.reading-order li::marker { color: var(--muted); }
+.reading-path { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+span.reading-path { color: var(--text); }
+.summary-md :deep(> :first-child) { margin-top: 0; }
+.summary-md :deep(> :last-child) { margin-bottom: 0; }
+.summary-md :deep(p) { margin: 6px 0; }
+.summary-md :deep(ul), .summary-md :deep(ol) { margin: 6px 0; padding-left: 22px; }
+.summary-md :deep(li) { margin: 2px 0; }
+.summary-md :deep(code) {
+  font-family: var(--mono); font-size: 12px; background: var(--panel-2); border-radius: 4px; padding: 1px 4px;
+}
+</style>

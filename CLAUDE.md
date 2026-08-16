@@ -11,14 +11,15 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 
 | Request smells like… | App | How to drive it |
 | --- | --- | --- |
-| tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement` |
-| PR review, branch diff, review comments | `apps/jdiff` | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`) |
+| tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement`. Also the **shell**: it serves the whole-pool Docs (`/documents`) and Charts (`/charts`) libraries, and renders a ticket's or project's attached documents and charts in place |
+| PR review, branch diff, review comments | `apps/jdiff` | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`); the UI itself is `packages/diff` |
 | diagrams the human edits/annotates | `apps/jchart` | skill `j-chart`; API on :43003; state in `.data/jchart/` |
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
 | grill/stress-test a plan with the human answering in a UI | `apps/jgrilling` | skill `j-grilling`; API on :43005; state in `.data/jgrilling/` |
 | avatar characters — draw, rig, keyframe 2D avatars | `apps/jrig` | studio at https://jrig.local; character/clip JSON in `.data/jrig/` (documents API on :43006); see `apps/jrig/docs/PLAN.md` |
-| charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
-| block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
+| charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` **and the chart UI** — library at `/charts`, workbench at `/charts/<key>` — in every consumer; jExplain charts ARE jChart charts |
+| block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` **and a whole-pool library at `/documents`** (reader at `/documents/<key>`) over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
+| diff review computed from a local checkout | shared pool | `packages/diff` serves the whole review API (`/api/diff`, `/api/prs`, `/api/analyze-generate`, the artifact stores) over `.data/jdiff/` **and the whole review UI** at `/diffs/…` in every consumer — jDiff just aliases it onto short routes |
 | running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff and jGrilling both drive claude through it |
 
 When a request spans apps (e.g. "spec this, then diagram it"), do each part with
@@ -45,6 +46,13 @@ that app's own skill rather than improvising one app's job in another.
   ones).
 - **One git repo covers the whole workspace.** Apps no longer carry their own
   `.git`; commit everything (apps, packages, skills) from this root.
+- **`pnpm typecheck` at the root is the typecheck entry point** — every app,
+  `.vue` files included (`nuxt typecheck` → `vue-tsc` per app). Don't reach for
+  a bare `tsc`: it skips `.vue` entirely. TypeScript is pinned to 5.9 and
+  `vue-router` to v5 workspace-wide because `vue-tsc` breaks on either bump, and
+  a `packages/*` layer shipping `.vue` files must depend on `vue` itself or its
+  props silently go unchecked; see "Typechecking" in `README.md` before changing
+  those versions or adding a layer with components in it.
 - **Don't restart apps blindly.** `./jsuite status` first; `./jsuite start` is
   idempotent for already-running apps but refuses ports held by processes it
   didn't start. Logs are at `logs/<app>.log` (`./jsuite logs <app>`).
@@ -58,6 +66,6 @@ Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
 apps/             # jticket jdiff jchart jexplain jgrilling jrig
-packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner)
+packages/         # @jsuite/charting + @jsuite/documents + @jsuite/diff (Nuxt layers: pages, components, server routes), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner)
 .data/<app>/      # ALL app state, gitignored
 ```

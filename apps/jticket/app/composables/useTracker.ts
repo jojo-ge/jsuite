@@ -27,10 +27,32 @@ export interface ResolvedAttachment extends Attachment {
   reason?: string
 }
 
-export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: string }> = {
-  document: { label: 'Document', icon: 'i-lucide-file-text' },
-  chart: { label: 'Chart', icon: 'i-lucide-git-branch' },
-  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request' },
+/**
+ * Everything that differs by artifact type, in one place — so a new type is a
+ * row here rather than a fresh `if (a.type === …)` in every component that
+ * touches attachments.
+ *
+ * `page` is where the artifact's own full view lives *inside jTicket*; it is
+ * null for a diff, which is the one artifact no layer renders — jDiff computes
+ * it from git on demand, so the only thing to do with a diff is follow the
+ * absolute `url` the server resolved out to jDiff. That same null is what
+ * `embeds` would be telling us, which is why there is no second flag.
+ */
+export const ATTACHMENT_META: Record<
+  AttachmentType,
+  { label: string; icon: string; page: ((id: string) => string) | null }
+> = {
+  document: { label: 'Document', icon: 'i-lucide-file-text', page: (id) => `/documents/${id}` },
+  // The same mark <BlockChart> puts on an embedded chart, so a chart looks like
+  // a chart wherever it turns up. (It was the git-branch icon, which reads as a
+  // diff — the one thing a chart is not.)
+  chart: { label: 'Chart', icon: 'i-lucide-shapes', page: (id) => `/charts/${id}` },
+  diff: { label: 'Diff', icon: 'i-lucide-git-pull-request', page: null },
+}
+
+/** The stable identity of a ref — `type:id`, the key every list and map uses. */
+export function attachmentKey(a: Attachment): string {
+  return `${a.type}:${a.id}`
 }
 
 export interface Project {
@@ -171,11 +193,9 @@ export function useTracker() {
     await refresh()
   }
 
-  // ── Attachments ──
-  /** The artifacts behind a record's refs, dangling ones flagged `missing`. */
-  function resolvedAttachments(owner: 'tickets' | 'projects', id: string) {
-    return $fetch<ResolvedAttachment[]>(`/api/${owner}/${id}/attachments`)
-  }
+  // Attachments are not mirrored into this state: <AttachmentsPanel> fetches
+  // and refreshes a record's own list, because resolving a ref reads the pools
+  // on every call and the board has no use for the result.
 
   return {
     projects,
@@ -192,7 +212,6 @@ export function useTracker() {
     deleteTicket,
     addComment,
     deleteComment,
-    resolvedAttachments,
   }
 }
 
