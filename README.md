@@ -179,6 +179,29 @@ knows something about these documents the pool does not: which project attaches
 each. Same pool, grouped. (Its old `/docs` paths redirect there; the DOC-n
 wrapper records they listed are gone.)
 
+### Who may delete out of the pool
+
+The host app's call, not the layer's — one shared file backs every consumer, so
+`<DocumentLibrary>` and `<DocumentReader>` both take a `deletable` prop (default
+`true`) rather than deciding for everyone. jExplain owns the pool's lifecycle
+and leaves both on.
+
+**jTicket never destroys a pool document from its UI** (TICK-151). Deleting the
+shared file would dangle every attachment ref pointing at it while jExplain goes
+on reading the same object; the tracker's job is to link artifacts, not to end
+them. In practice its reader passes `:deletable="false"` and its library is
+jTicket's own page with no delete affordance at all — so **nothing in the tree
+passes `deletable: false` to `<DocumentLibrary>` today**. The prop exists so the
+rule is expressible in the layer instead of resting on the accident that jTicket
+shadows the layer's `/documents` page: unshadow it and the button returns, which
+is exactly what happened between TICK-136 and TICK-139.
+
+This binds jTicket's **UI only**, deliberately. The layer's
+`DELETE /api/documents/<key>` stays mounted in every consumer, jTicket included,
+so agents keep `:43000` as one API surface (TICK-143). jGrilling withholds
+delete on its reader but still serves the layer's `/documents` inherited and
+unconfigured — the same hole, tracked as TICK-154.
+
 ## @jsuite/claude
 
 The local-claude runner born in jDiff — `runClaude()` drives the `claude` CLI

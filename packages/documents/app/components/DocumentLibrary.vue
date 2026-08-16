@@ -2,7 +2,13 @@
 // The shared document pool, as a list. Every document in .data/jexplain/ shows
 // up here whatever wrote it — a jExplain explainer, a jTicket spec, a jGrilling
 // debrief — because the pool is one pool. A host page supplies only the framing:
-// what to call the library, and where its reader lives.
+// what to call the library, where its reader lives, and whether deleting out of
+// the pool is offered at all.
+//
+// That last one is `deletable`, and it is a prop rather than a constant because
+// the pool is shared: destroying a document is the host's call, not the
+// library's, and <DocumentReader> has the same prop for the same reason. See
+// "who may delete out of the pool" in the root README for the rule itself.
 import type { ExplainerMeta } from '../../types'
 
 const props = withDefaults(
@@ -13,11 +19,14 @@ const props = withDefaults(
     subtitle?: string
     /** Reader route prefix — a document links to `${readerBase}/${key}`. */
     readerBase?: string
+    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
+    deletable?: boolean
   }>(),
   {
     title: 'Documents',
     subtitle: 'Every document in the shared pool — explainers, specs and debriefs alike.',
     readerBase: '/documents',
+    deletable: true,
   },
 )
 
@@ -70,6 +79,7 @@ async function remove(key: string, title: string) {
             <div class="flex items-start justify-between gap-3">
               <h2 class="text-lg font-semibold leading-snug group-hover:text-primary">{{ d.title }}</h2>
               <UButton
+                v-if="props.deletable"
                 icon="i-lucide-trash-2"
                 color="neutral"
                 variant="ghost"
