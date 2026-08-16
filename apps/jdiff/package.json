@@ -10,7 +10,8 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck"
   },
   "dependencies": {
     "@jsuite/claude": "workspace:*",
@@ -21,5 +22,9 @@
     "shiki": "^4.3.1",
     "vue": "^3.5.39",
     "vue-router": "^5.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.9"
   }
 }

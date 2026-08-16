@@ -203,6 +203,36 @@ Always include the scheme: `https://jticket.local`.
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
 
+### Typechecking
+
+```sh
+pnpm typecheck                    # every app, including .vue files
+pnpm --filter jticket typecheck   # one app
+```
+
+`pnpm typecheck` is **the** typecheck entry point for the workspace. Each app's
+`typecheck` script is `nuxt typecheck`, which regenerates `.nuxt` types and then
+runs `vue-tsc` over the app's project references — so `.vue` files are checked
+(script *and* template), not just the `.ts` ones. The root script fans out with
+`--no-bail`, so one failing app doesn't hide the others; it exits non-zero if
+any app fails.
+
+Two constraints keep this working, both easy to undo by accident:
+
+- **TypeScript is pinned to 5.9 workspace-wide** (`overrides` in
+  `pnpm-workspace.yaml`, plus an explicit `typescript` devDependency in each
+  app). `vue-tsc` 3.x loads `typescript/lib/tsc`, which TypeScript 7 dropped
+  from its exports; apps that take `typescript` only as an auto-installed peer
+  silently resolve 7 and die with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+- **`vue-router` must be v5** — Nuxt 4.5's generated tsconfig loads
+  `vue-router/volar/sfc-route-blocks`, which only v5 exports. On v4 the Vue
+  language plugin fails to load and typing quietly degrades.
+
+Known gap: components that live in a `packages/*` layer (`@jsuite/charting`,
+`@jsuite/documents`) still get `any` for their `defineProps` result, so their
+props are unchecked. Components under `apps/*/app/` are typed correctly.
+Tracked as TICK-152.
+
 ## Design
 
 The apps run **natively on the host**; only Caddy is containerised. That is
