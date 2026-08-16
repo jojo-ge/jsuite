@@ -79,6 +79,6 @@ scratch prototypes.
   store/list/delete draft comments, and create a PR from a branch flushing its
   comments
 - `packages/diff/app/utils/` — the review vocabulary the server and the UI share
-  (risk levels, tour shape, ask questions, file categories), auto-imported and
-  importable as `@jsuite/diff/risk`, `@jsuite/diff/tour`, …
+  (the rating shape, risk levels, tour shape, ask questions, file categories),
+  auto-imported and importable as `@jsuite/diff/rating`, `@jsuite/diff/risk`, …
 - `bin/jdiff.mjs` — the CLI

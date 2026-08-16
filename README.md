@@ -144,10 +144,10 @@ the artifact routes (`/api/comment(s)`, `/api/branch-comment(s)`, `/api/rating`,
 `/api/ai-jobs`, `/api/ai-job-cancel`). The server utils come as Nitro
 auto-imports (`resolveTarget`/`prepareTarget`, `run`/`resolveRepoPath`,
 `buildDiff`, `highlight`, the stores), and the review vocabulary the UI shares
-with the server — risk levels, tour shape, ask questions, file categories — is
-auto-imported as app utils and also importable explicitly from
-`'@jsuite/diff/risk'`, `'/tour'`, `'/askQuestions'`, `'/askYourself'`,
-`'/fileCategories'`.
+with the server — the rating shape, risk levels, tour shape, ask questions,
+file categories — is auto-imported as app utils and also importable explicitly
+from `'@jsuite/diff/rating'`, `'/risk'`, `'/tour'`, `'/askQuestions'`,
+`'/askYourself'`, `'/fileCategories'`.
 
 **One review pool serves every consumer**: all state stays in `.data/jdiff/`
 via `@jsuite/data`, so a rating, tour or draft comment created through one

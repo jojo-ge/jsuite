@@ -1,5 +1,5 @@
 import type { SelfQuestion } from '@jsuite/diff/askYourself'
-import type { ReviewRating } from '~/utils/rating'
+import type { ReviewRating } from '@jsuite/diff/rating'
 import type { FileRisk } from '@jsuite/diff/risk'
 import type { Tour } from '@jsuite/diff/tour'
 

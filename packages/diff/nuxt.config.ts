@@ -13,7 +13,7 @@
 //   - every server util as a Nitro auto-import: resolveTarget/prepareTarget,
 //     run/resolveRepoPath, buildDiff, highlight, and the artifact stores
 //   - the review vocabulary shared by server and UI, auto-imported as app
-//     utils and importable explicitly: '@jsuite/diff/risk', '/tour',
+//     utils and importable explicitly: '@jsuite/diff/rating', '/risk', '/tour',
 //     '/askQuestions', '/askYourself', '/fileCategories'
 //
 // All state stays in the shared pool at <root>/.data/jdiff (via @jsuite/data),
