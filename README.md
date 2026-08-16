@@ -71,7 +71,7 @@ jsuite/
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
 │   └── jrig/           # avatar studio — draw, rig and keyframe 2D characters
 └── packages/
-    ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
+    ├── charting/       # @jsuite/charting — shared chart module + UI (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
@@ -110,21 +110,31 @@ overrides the search when set.
 
 ## @jsuite/charting
 
-The Excalidraw canvas, Mermaid→scene conversion, and scene utilities live in
-`packages/charting` as a Nuxt layer so any app can embed charts. A consumer
-needs three things:
+The whole chart experience — Excalidraw canvas, Mermaid→scene conversion, scene
+utilities, the store **and the UI** — lives in `packages/charting` as a Nuxt
+layer, so an app can serve charts rather than merely embed them. A consumer
+needs four things:
 
 1. `"@jsuite/charting": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/charting']` in `nuxt.config.ts`
 3. a postinstall step to copy the Excalidraw fonts into its `public/`:
    `node ../../packages/charting/scripts/copy-excalidraw-assets.mjs`
+4. one line in its Tailwind entry css so the layer components' utility classes
+   are generated: `@source "../../../../../packages/charting/app";`
 
 That provides `<ExcalidrawCanvas>`, `mermaidToScene()`, the scene utils
-(auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'` —
-**and the shared chart store**: the layer carries `server/api/charts/**` over
-`.data/jchart/`, so every consumer serves the same chart pool. A chart embedded
-in jExplain is the same object opened in jChart; edits and notes flow both ways.
-jChart stays the specialised workbench UI on top.
+(auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'`,
+**the shared chart store** — `server/api/charts/**` over `.data/jchart/` — and
+**the pages**: `/charts` (the library) and `/charts/<key>` (the full workbench:
+canvas, notes, Mermaid source editor), rendered by `<ChartLibrary>` and
+`<ChartWorkbench>`. Every consumer serves the same chart pool, so a chart
+embedded in jExplain is the same object opened in jChart; edits and notes flow
+both ways.
+
+An app that wants that UI on different paths overrides `charting.indexPath` and
+`charting.chartPath` in its `app.config.ts` and mounts the components itself —
+which is all jChart is now: `/` and `/c/<key>` are aliases over the same
+components the layer serves at `/charts`.
 
 ## @jsuite/documents
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SceneElement } from '@jsuite/charting/scene'
+import type { SceneElement } from '../utils/scene'
 
 export interface ChartNote {
   id: string
