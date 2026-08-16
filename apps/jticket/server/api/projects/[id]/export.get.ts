@@ -53,9 +53,10 @@ export default defineEventHandler(async (event) => {
   }
 
   // Sweep every markdown surface (descriptions, resolutions, comments, doc
-  // bodies) for /attachments/<name> references and inline the files.
-  for (const name of attachmentRefs(JSON.stringify(bundle))) {
-    const p = join(ATTACHMENTS_DIR, name)
+  // bodies) for /uploads/<name> — and pre-rename /attachments/<name> —
+  // references, and inline the files.
+  for (const name of uploadRefs(JSON.stringify(bundle))) {
+    const p = join(UPLOADS_DIR, name)
     if (existsSync(p)) bundle.attachments.push({ name, base64: readFileSync(p).toString('base64') })
   }
 

@@ -66,6 +66,11 @@ line clamp stays honest.
     Content is authored as **blocks** (prose, callout, code, diff, chart, steps,
     compare, timeline, takeaway + glossary). `POST /api/documents` writes one;
     `replace: true` rewrites it in place (notes survive). Rendered at `/documents/<key>`.
+    A document carries its own `labels` — lowercase tags in the shared pool, not on
+    the attachment, so the filing reads the same here and in jExplain. There is no
+    document status field: `draft` / `ready` are labels, as is `wayfinder:asset`.
+    `GET /api/documents?label=` filters (AND across labels);
+    `PATCH /api/documents/:key` `{ labels }` refiles one without republishing it.
   - `chart` — a key in the shared jChart pool (root `.data/jchart/`).
   - `diff` — a review target: `"123"` for a PR, `"branch/<name>"` for a branch,
     read against the owning project's `repo`. jTicket extends `@jsuite/diff`, so
@@ -77,9 +82,11 @@ line clamp stays honest.
   - A ref is allowed to **dangle**. `GET /api/{projects,tickets}/:id/attachments`
     resolves each one to its title and url, flagging any whose artifact is gone as
     `missing` rather than erroring — so deleting an artifact never breaks a page.
-  - Images inside prose are a different thing: `POST /api/attachments` with
-    `{ name, base64 }` → serve from `/attachments/<name>`, reference as
-    `![alt](/attachments/<name>)`.
+  - Images inside prose are a different thing: `POST /api/uploads` with
+    `{ name, base64 }` → serve from `/uploads/<name>`, reference as
+    `![alt](/uploads/<name>)`. The old `/api/attachments` and
+    `/attachments/<name>` paths redirect here, so prose written before the
+    rename still resolves.
 
 ## HTTP API
 
@@ -94,9 +101,10 @@ See **/api-guide** in the running app. Summary:
 | POST | `/api/import` | Bulk-create a whole breakdown at once |
 | GET/POST/DELETE | `/api/tickets/:id/attachments` | Resolve / attach / detach a ticket's artifacts |
 | GET/POST/DELETE | `/api/projects/:id/attachments` | Same, for a project |
-| GET/POST | `/api/documents` | The shared document pool (also served by jExplain) |
-| GET/DELETE | `/api/documents/:key` | Read / delete one shared document |
-| GET/POST | `/api/attachments` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/documents` | The shared document pool (also served by jExplain); `?label=` filters |
+| GET/PATCH/DELETE | `/api/documents/:key` | Read / refile (`{ labels }`) / delete one shared document |
+| GET/POST | `/api/uploads` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)

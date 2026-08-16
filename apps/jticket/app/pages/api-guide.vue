@@ -56,13 +56,15 @@ const endpoints = [
   { m: 'POST', p: '/api/tickets/:id/attachments', d: 'Attach an artifact { type: document|chart|diff, id } — idempotent' },
   { m: 'DELETE', p: '/api/tickets/:id/attachments?type=&id=', d: 'Detach one artifact (the artifact itself is untouched)' },
   { m: 'POST', p: '/api/import', d: 'Bulk-create a whole breakdown at once' },
-  { m: 'GET', p: '/api/documents', d: 'List the shared document pool (from @jsuite/documents)' },
-  { m: 'POST', p: '/api/documents', d: 'Create/replace a shared document { title, blocks, key?, replace? }' },
+  { m: 'GET', p: '/api/documents', d: 'List the shared document pool (from @jsuite/documents); ?label= filters, AND' },
+  { m: 'POST', p: '/api/documents', d: 'Create/replace a shared document { title, blocks, labels?, key?, replace? }' },
   { m: 'GET', p: '/api/documents/:key', d: 'Get a shared document / :key/notes for its notes' },
+  { m: 'PATCH', p: '/api/documents/:key', d: 'Refile a document { labels } — the whole list, without republishing the body' },
   { m: 'DELETE', p: '/api/documents/:key', d: 'Delete a shared document (refs to it then read as missing)' },
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
-  { m: 'GET', p: '/api/attachments', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
-  { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
+  { m: 'GET', p: '/api/uploads', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
+  { m: 'POST', p: '/api/uploads', d: 'Upload { name, base64 } → served at /uploads/:name' },
+  { m: 'GET', p: '/api/attachments', d: 'Legacy alias — redirects to /api/uploads (as does /attachments/:name)' },
 ]
 
 const docExample = `# 1. write the document into the shared pool
@@ -74,6 +76,7 @@ curl -s http://localhost:43000/api/documents \\
   "replace": true,
   "kicker": "DESIGN NOTES",
   "subtitle": "Why the legacy flow is being rebuilt.",
+  "labels": ["design", "draft"],
   "blocks": [
     { "type": "prose", "md": "## Why now\\n\\nLegacy flow drops **12%** of carts." },
     { "type": "callout", "tone": "warning", "title": "The trap", "md": "PCI scope is unconfirmed." },

@@ -9,9 +9,32 @@
 // This replaces the old /docs pages. Those listed the five DOC-n wrapper
 // records; there are no wrappers any more (TICK-138), and the thing they stood
 // for — this document belongs to that project — is an attachment now.
+//
+// It creates and it groups, but it does not delete (TICK-151): jTicket never
+// destroys a document out of the shared pool. Being jTicket's own page, it has
+// no delete affordance to withhold — where the layer's <DocumentLibrary> would
+// need :deletable="false" to reach the same place. /documents/<key> holds the
+// same line. See "who may delete out of the pool" in the root README for why.
 useHead({ title: 'Documents' })
 
 const { documents, projects, tickets, refresh } = useTracker()
+
+// A document's labels are its own filing, carried in the shared pool rather
+// than on the attachment — so the chip bar is built from every document here,
+// not from the projects, and filtering by one narrows every section at once.
+const selected = ref<string[]>([])
+
+const allLabels = computed(() => [...new Set(documents.value.flatMap((d) => d.labels))].sort())
+
+const filtered = computed(() =>
+  documents.value.filter((d) => selected.value.every((label) => d.labels.includes(label))),
+)
+
+function toggle(label: string) {
+  selected.value = selected.value.includes(label)
+    ? selected.value.filter((l) => l !== label)
+    : [...selected.value, label]
+}
 
 const grouped = computed(() => {
   const claimed = new Set<string>()
@@ -30,12 +53,12 @@ const grouped = computed(() => {
       }
       // Ordered by the pool, not by attachment order, so a document appears in
       // the same place in every section it lands in.
-      const docs = documents.value.filter((d) => keys.has(d.key))
+      const docs = filtered.value.filter((d) => keys.has(d.key))
       for (const d of docs) claimed.add(d.key)
       return { project, docs }
     })
     .filter((s) => s.docs.length)
-  return { sections, loose: documents.value.filter((d) => !claimed.has(d.key)) }
+  return { sections, loose: filtered.value.filter((d) => !claimed.has(d.key)) }
 })
 
 const creating = ref(false)
@@ -84,12 +107,33 @@ async function create() {
         <p v-if="createError" class="mt-2 text-sm text-error">{{ createError }}</p>
       </form>
 
+      <div v-if="allLabels.length" class="mb-6 flex flex-wrap items-center gap-2">
+        <DocLabels :labels="allLabels" :active="selected" interactive size="sm" @select="toggle" />
+        <UButton
+          v-if="selected.length"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          label="Clear"
+          @click="selected = []"
+        />
+      </div>
+
       <div v-if="!documents.length" class="flex flex-col items-center gap-4 py-24 text-center">
         <UIcon name="i-lucide-file-text" class="size-12 text-muted" />
         <div>
           <p class="text-lg font-medium">No documents yet</p>
           <p class="text-sm text-muted">Write one here, or let a skill post to /api/documents.</p>
         </div>
+      </div>
+
+      <div v-else-if="!filtered.length" class="flex flex-col items-center gap-4 py-24 text-center">
+        <UIcon name="i-lucide-tag" class="size-12 text-muted" />
+        <div>
+          <p class="text-lg font-medium">Nothing filed under that</p>
+          <p class="text-sm text-muted">No document carries all of: {{ selected.join(', ') }}.</p>
+        </div>
+        <UButton color="neutral" variant="subtle" @click="selected = []">Clear filter</UButton>
       </div>
 
       <div v-else class="space-y-10">

@@ -113,6 +113,6 @@ export default defineEventHandler(async (event) => {
   }
 
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return { projects: createdProjects, tickets: createdTickets }
 })

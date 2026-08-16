@@ -5,8 +5,8 @@
 const props = defineProps<{ background?: string }>()
 const emit = defineEmits<{ (e: 'save', dataUrl: string): void; (e: 'close'): void }>()
 
-const COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ffffff', '#111827']
-const color = ref(COLORS[0])
+const COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ffffff', '#111827'] as const
+const color = ref<string>(COLORS[0])
 const width = ref(4)
 
 const canvas = ref<HTMLCanvasElement | null>(null)

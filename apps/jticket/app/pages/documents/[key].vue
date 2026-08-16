@@ -3,11 +3,12 @@
 // surface is the layer's — the same one jExplain gives it — with two jTicket
 // choices layered on:
 //
-//   - no delete. The old /docs/<id> page deleted a *wrapper record* and left
-//     the document alone. There is no wrapper any more, so the only thing left
-//     to delete is the shared document itself, which jExplain reads too and
-//     which every attachment ref would be left dangling on. Not a button this
-//     page should grow without someone asking for it — the library has it.
+//   - no delete — and since TICK-151 by decision rather than by omission:
+//     jTicket never destroys a document out of the shared pool. The old
+//     /docs/<id> page deleted a *wrapper record* and left the document alone;
+//     there is no wrapper any more, so the only thing left to delete is the
+//     shared document itself. See "who may delete out of the pool" in the root
+//     README for why. /documents holds the same line.
 //   - the projects it's attached to, as chips into the board. That link lives
 //     on the project's attachments, so only jTicket can draw it.
 const route = useRoute()

@@ -167,18 +167,24 @@ function migrateEpics(parsed: LegacyStore): void {
 // Stores written before attachments carried a Doc wrapper record in front of
 // every shared document: a tracker row with its own DOC-n key, title, labels
 // and status, whose only real content was the documentKey it pointed at. The
-// wrapper is gone. What it actually carried — "this document belongs to that
-// project" — becomes a `document` attachment on the project; the document
-// itself was always in the shared pool and stays there, listed by the document
-// library whether or not anything links it, so a wrapper with no project had
-// no link to lose. Runs only while `docs` is present — the first save drops
-// the array, so the fold-in never applies twice.
+// wrapper is gone, and each of the two things it really carried goes to
+// whichever side owns it now. "This document belongs to that project" becomes
+// a `document` attachment on the project. The filing — labels, and the
+// draft/ready status, which is a label like any other now that documents have
+// no lifecycle field of their own — follows the *document*, into the shared
+// pool where jExplain reads it too. The document itself was always in that
+// pool and stays there, listed by the document library whether or not anything
+// links it, so a wrapper with no project had no link to lose but still had
+// labels worth keeping. Runs only while `docs` is present — the first save
+// drops the array, so the fold-in never applies twice.
 function migrateDocs(parsed: LegacyStore): void {
   if (!parsed.docs) return
   const byId = new Map((parsed.projects ?? []).map((p) => [p.id, p]))
   for (const d of parsed.docs) {
+    if (!d.documentKey) continue
+    addDocLabelsSync(d.documentKey, [...(d.labels ?? []), ...(d.status ? [d.status] : [])])
     const project = d.projectId ? byId.get(d.projectId) : undefined
-    if (!project || !d.documentKey) continue
+    if (!project) continue
     project.attachments = addAttachment(project.attachments ?? [], {
       type: 'document',
       id: d.documentKey,

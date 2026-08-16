@@ -5,11 +5,12 @@
  * and "Open in jChart" opens the same doc in the full workbench.
  */
 import type { ChartBlock } from '../../types'
+import type { Chart } from '@jsuite/charting/store'
 import type { Scene, SceneElement } from '@jsuite/charting/scene'
 
 const props = defineProps<{ block: ChartBlock }>()
 
-const { data: chart, error } = await useFetch(() => `/api/charts/${props.block.chartKey}`)
+const { data: chart, error } = await useFetch<Chart>(() => `/api/charts/${props.block.chartKey}`)
 
 const canvas = ref<{ setScene: (s: Scene, o?: { scrollToContent?: boolean }) => void } | null>(null)
 const importing = ref(false)

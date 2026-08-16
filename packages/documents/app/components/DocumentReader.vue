@@ -14,7 +14,7 @@ const props = withDefaults(
     backLabel?: string
     /** Send the back arrow through history instead of to `backTo`. */
     backInHistory?: boolean
-    /** Offer the delete button. */
+    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
     deletable?: boolean
   }>(),
   { backTo: '/documents', backLabel: 'Back to all documents', backInHistory: false, deletable: true },
@@ -63,6 +63,13 @@ useHead(() => ({ title: doc.value?.title ?? key.value }))
         :aria-label="props.backLabel"
       />
       <span class="min-w-0 truncate text-sm font-medium text-muted">{{ doc?.title }}</span>
+      <DocLabelEditor
+        v-if="doc"
+        :doc-key="key"
+        :labels="doc.labels ?? []"
+        class="min-w-0"
+        @update:labels="doc.labels = $event"
+      />
       <!-- Whatever the host app knows about this document that the pool
            doesn't — jTicket puts the projects it's attached to here. -->
       <slot name="chrome" :doc="doc" />

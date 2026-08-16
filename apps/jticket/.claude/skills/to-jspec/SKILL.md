@@ -86,6 +86,7 @@ curl -sk "$JTICKET/api/documents" -H 'content-type: application/json' -d @- <<'J
   "title": "Checkout revamp — spec",
   "key": "checkout-revamp-spec",
   "kicker": "SPEC",
+  "labels": ["spec", "draft"],
   "blocks": [
     { "id": "problem", "type": "prose", "md": "## Problem Statement\n\n…" },
     { "id": "solution", "type": "prose", "md": "## Solution\n\n…" },
@@ -116,6 +117,12 @@ Prefer a heredoc or `-d @spec.json` over hand-escaping JSON into a shell string.
   the key, so nothing needs re-attaching.
 - Attaching is idempotent, and a spec can hang off both a project and the tickets that
   implement it.
+- **`labels` is the document's own filing** — lowercase tags in the shared pool, not on
+  the attachment, so a spec is findable whether or not anything links it
+  (`GET /api/documents?label=spec`). A spec is worth labelling `spec`, plus `draft` until
+  the user has read it and `ready` after; there is no separate status field. Refile with
+  `PATCH /api/documents/<key>` `{ labels }` — the whole list, no need to resend the body.
+  A `replace` that doesn't mention `labels` leaves them alone.
 
 Next step, if the user wants it: `/to-jticket tickets` to slice the spec into a breakdown,
 pointing it at the document key you just created.

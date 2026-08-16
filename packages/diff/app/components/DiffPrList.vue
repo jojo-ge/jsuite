@@ -200,7 +200,7 @@ const filtered = computed(() => [
     </div>
 
     <div v-if="pending" class="center"><span class="spinner" /></div>
-    <div v-else-if="error" class="error-box">{{ error.data?.message ?? error.message }}</div>
+    <div v-else-if="error" class="error-box">{{ fetchErrorMessage(error) }}</div>
     <div v-else-if="!prs?.length" class="center muted">no open pull requests</div>
     <div v-else-if="!filtered.length" class="center muted">no pull requests match the filters</div>
 

@@ -248,13 +248,59 @@ Every consumer therefore gets a documents library at `/documents` for free —
 the whole pool, explainers and specs and grilling debriefs alike. An app that
 wants it under its own routes mounts the components instead of copying them:
 jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
-jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket
+jExplain's framing, and jGrilling's `/e/<key>` is the same reader — as is its
+`/documents`, which mounts `<DocumentLibrary>` over the layer's own page to
+withhold delete and point the list at `/e/<key>`. jTicket
 mounts `<DocumentReader>` at `/documents/<key>` with delete withheld and the
 projects a document is attached to in its `#chrome` slot — and it is the one
 consumer that *replaces* the library page rather than mounting it, because it
 knows something about these documents the pool does not: which project attaches
 each. Same pool, grouped. (Its old `/docs` paths redirect there; the DOC-n
 wrapper records they listed are gone.)
+
+### Who may delete out of the pool
+
+The host app's call, not the layer's — one shared file backs every consumer, so
+`<DocumentLibrary>` and `<DocumentReader>` both take a `deletable` prop (default
+`true`) rather than deciding for everyone. jExplain owns the pool's lifecycle
+and leaves both on.
+
+**jTicket never destroys a pool document from its UI** (TICK-151). Deleting the
+shared file would dangle every attachment ref pointing at it while jExplain goes
+on reading the same object; the tracker's job is to link artifacts, not to end
+them. In practice its reader passes `:deletable="false"` and its library is
+jTicket's own page with no delete affordance at all. The prop exists so the
+rule is expressible in the layer instead of resting on the accident that jTicket
+shadows the layer's `/documents` page: unshadow it and the button returns, which
+is exactly what happened between TICK-136 and TICK-139.
+
+**jGrilling never destroys a pool document either** (TICK-154). It writes
+debriefs into the pool and reads them back; ending one is jExplain's call, which
+is the line its `/e/<key>` reader always held. Until TICK-154 it held that line
+on the reader alone while serving the layer's `/documents` **inherited and
+unconfigured** — a delete button on every document in the pool, on a page nobody
+there chose to put up, and a second one on the inherited reader at
+`/documents/<key>`.
+
+TICK-154 asked whether to configure that library or route it away, and jGrilling
+answers differently for each of the two routes. The **library stays,
+configured**: `:deletable="false"` removes the harm, and a pool this app writes
+into is worth being able to look through from here, where the session list only
+reaches debriefs a session produced. The **reader goes**: `/documents/<key>`
+redirects to `/e/<key>`, since a second reader is only a second thing to keep
+honest. The list points at that surviving reader via `reader-base`, so the
+library and the reader cannot drift apart — they are one reader. This is the
+first call site of the prop TICK-151 added.
+
+Both rules bind the **UI only**, deliberately. The layer's
+`DELETE /api/documents/<key>` stays mounted in every consumer, jTicket and
+jGrilling included, so agents keep `:43000` as one API surface (TICK-143).
+
+Both were also closed app by app. The layer still *defaults* `deletable` to
+`true` and still ships a bare `<DocumentLibrary />` at `/documents`, so the next
+consumer inherits delete unless someone remembers to shadow the page — which is
+how jGrilling got it. Flipping that default and having jExplain opt in is
+TICK-178; the same hole, untouched, on the **chart** pool is TICK-179.
 
 ## @jsuite/claude
 
@@ -308,6 +354,53 @@ Always include the scheme: `https://jticket.local`.
 ```
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
+
+### Typechecking
+
+```sh
+pnpm typecheck                    # every app, including .vue files
+pnpm --filter jticket typecheck   # one app
+pnpm typecheck:constraints        # just the guard below, no vue-tsc
+```
+
+`pnpm typecheck` is **the** typecheck entry point for the workspace. Each app's
+`typecheck` script is `nuxt typecheck`, which regenerates `.nuxt` types and then
+runs `vue-tsc` over the app's project references — so `.vue` files are checked
+(script *and* template), not just the `.ts` ones. The root script fans out with
+`--no-bail`, so one failing app doesn't hide the others; it exits non-zero if
+any app fails.
+
+Three constraints keep this working, all easy to undo by accident — and all
+three fail *quietly*, which is why they are enforced by
+`scripts/check-typecheck-constraints.mjs` rather than by this section. It runs
+first inside `pnpm typecheck`, so a broken constraint stops the run and names
+the fix. Treat the list below as the reasoning; the script is the rule.
+
+- **TypeScript is pinned to 5.9 workspace-wide** (`overrides` in
+  `pnpm-workspace.yaml`, plus an explicit `typescript` devDependency in each
+  app). `vue-tsc` 3.x loads `typescript/lib/tsc`, which TypeScript 7 dropped
+  from its exports; apps that take `typescript` only as an auto-installed peer
+  silently resolve 7 and die with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+- **`vue-router` must be v5** — Nuxt 4.5's generated tsconfig loads
+  `vue-router/volar/sfc-route-blocks`, which only v5 exports. On v4 the Vue
+  language plugin fails to load and typing quietly degrades.
+- **Every `packages/*` layer that ships `.vue` files must declare `vue` as a
+  devDependency** (`@jsuite/charting`, `@jsuite/documents`). `vue-tsc` compiles
+  an SFC to virtual TS that reaches for `vue` from the SFC's *own* directory,
+  and under pnpm's strict layout a layer with no `vue` dependency cannot
+  resolve it — an `@ts-ignore` in the generated code swallows the resolution
+  failure, so `defineProps` silently returns `any` and every prop goes
+  unchecked, in script and template alike, while the rest of the file still
+  type-checks normally. It must stay a *dev*Dependency: the host app owns the
+  runtime copy, and promoting it to `dependencies` would ship a second Vue
+  instance into the bundle.
+
+The guard checks each layer both ways: that the manifest declares `vue` as a
+devDependency, and — once installed — that `vue` genuinely resolves from a
+component's own directory, which is the property `vue-tsc` depends on and the
+one a manifest line only stands in for. It exits 0 with a `skipped` line for the
+resolution probe before `pnpm install`, rather than reporting a pass it hasn't
+earned. Adding a fourth constraint means adding a check there.
 
 ## Design
 

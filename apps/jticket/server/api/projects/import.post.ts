@@ -20,26 +20,30 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const ts = now()
 
-  // 1. Attachments — suffix names that collide with different bytes.
-  const attachmentRenames = new Map<string, string>()
-  if (bundle.attachments?.length) mkdirSync(ATTACHMENTS_DIR, { recursive: true })
+  // 1. Uploaded files — suffix names that collide with different bytes. The
+  // bundle field is still called `attachments` (see BundleAttachment).
+  const uploadRenames = new Map<string, string>()
+  if (bundle.attachments?.length) mkdirSync(UPLOADS_DIR, { recursive: true })
   for (const att of bundle.attachments ?? []) {
-    const name = safeAttachmentName(att.name)
+    const name = safeUploadName(att.name)
     const buf = Buffer.from(String(att.base64 ?? ''), 'base64')
     if (!buf.length) continue
-    const path = join(ATTACHMENTS_DIR, name)
+    const path = join(UPLOADS_DIR, name)
     if (!existsSync(path)) {
       writeFileSync(path, buf)
     } else if (!readFileSync(path).equals(buf)) {
-      const renamed = uniqueAttachmentName(name)
-      writeFileSync(join(ATTACHMENTS_DIR, renamed), buf)
-      attachmentRenames.set(name, renamed)
+      const renamed = uniqueUploadName(name)
+      writeFileSync(join(UPLOADS_DIR, renamed), buf)
+      uploadRenames.set(name, renamed)
     }
   }
-  const fixAttachments = (text: string): string =>
-    attachmentRenames.size
-      ? text.replace(/\/attachments\/([\w.-]+)/g, (whole, n: string) =>
-          attachmentRenames.has(n) ? `/attachments/${attachmentRenames.get(n)}` : whole,
+  // Only the renamed files are rewritten, and each keeps whichever prefix the
+  // markdown already used — a bundle authored before the rename stays on
+  // /attachments/<name>, which the legacy redirect resolves.
+  const fixUploads = (text: string): string =>
+    uploadRenames.size
+      ? text.replace(uploadRefPattern(), (whole, prefix: string, n: string) =>
+          uploadRenames.has(n) ? `/${prefix}/${uploadRenames.get(n)}` : whole,
         )
       : text
 
@@ -83,7 +87,11 @@ export default defineEventHandler(async (event) => {
       if (await readDoc(key)) landedDocumentKeys.add(key)
       continue
     }
-    const document = JSON.parse(fixAttachments(JSON.stringify(entry.document))) as Explainer
+    const document = JSON.parse(fixUploads(JSON.stringify(entry.document))) as Explainer
+    // A bundle is an arbitrary file the user hands us; its labels go through the
+    // same normalisation a write does, so an import can't put anything in the
+    // pool that `?label=` would then fail to match.
+    document.labels = cleanDocLabels(document.labels)
     for (const b of document.blocks ?? []) {
       if (b.type === 'chart' && chartRenames.has(b.chartKey)) b.chartKey = chartRenames.get(b.chartKey)!
     }
@@ -118,7 +126,7 @@ export default defineEventHandler(async (event) => {
     id: newId('proj'),
     key: nextKey(store, 'project'),
     title: bundle.project.title.trim(),
-    description: fixAttachments(description),
+    description: fixUploads(description),
     mode: bundle.project.mode === 'wayfinder' ? 'wayfinder' : 'standard',
     // The integration branch travels with the bundle (it names a branch on the
     // shared remote); the repo path does not — it's local to the machine that
@@ -149,14 +157,14 @@ export default defineEventHandler(async (event) => {
       id: newId('tick'),
       key: nextKey(store, 'ticket'),
       title: t.title.trim(),
-      description: fixAttachments(String(t.description ?? '')),
+      description: fixUploads(String(t.description ?? '')),
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s)).filter(Boolean),
       type: t.type === 'HITL' ? 'HITL' : 'AFK',
       status: isStatus(t.status) ? t.status : 'todo',
       projectId: project.id,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
       labels: cleanLabels(t.labels),
-      resolution: fixAttachments(String(t.resolution ?? '')),
+      resolution: fixUploads(String(t.resolution ?? '')),
       blockedBy: [],
       attachments: remapAttachments(t.attachments),
       comments: (t.comments ?? [])
@@ -164,7 +172,7 @@ export default defineEventHandler(async (event) => {
         .map((c) => ({
           id: newId('cmt'),
           author: c.author?.trim() || 'anonymous',
-          body: fixAttachments(String(c.body)),
+          body: fixUploads(String(c.body)),
           createdAt: c.createdAt || ts,
         })),
       // The bundle carries the original completion stamp; bundles exported
@@ -187,19 +195,19 @@ export default defineEventHandler(async (event) => {
   }
 
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return {
     project,
     imported: { tickets: pairs.length, documents: landedDocumentKeys.size, charts: bundle.charts?.length ?? 0 },
   }
 })
 
-function uniqueAttachmentName(name: string): string {
+function uniqueUploadName(name: string): string {
   const ext = extname(name)
   const base = name.slice(0, name.length - ext.length)
   for (let i = 2; i < 500; i++) {
     const candidate = `${base}-${i}${ext}`
-    if (!existsSync(join(ATTACHMENTS_DIR, candidate))) return candidate
+    if (!existsSync(join(UPLOADS_DIR, candidate))) return candidate
   }
   return `${base}-${Date.now()}${ext}`
 }
