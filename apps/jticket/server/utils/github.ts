@@ -244,8 +244,24 @@ export async function listBranches(
 }
 
 // ── PR listing ──────────────────────────────────────────────────────────────
-// The fields asked for here are the fields GhPr declares — keep the two in step.
-const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,additions,deletions,reviewDecision,url'
+// What we ask `gh` for is exactly what GhPr declares, and the compiler holds the
+// two together: `satisfies Record<keyof GhPr, true>` fails if a field is added
+// to GhPr and not asked for here, and fails again if we ask for one GhPr doesn't
+// declare. That pairing was the last hand-kept thing in this family — the client
+// half of it is a shared declaration now, and this half is checked.
+const PR_FIELDS = Object.keys({
+  number: true,
+  title: true,
+  author: true,
+  headRefName: true,
+  baseRefName: true,
+  isDraft: true,
+  url: true,
+  updatedAt: true,
+  additions: true,
+  deletions: true,
+  reviewDecision: true,
+} satisfies Record<keyof GhPr, true>).join(',')
 
 // `gh pr list` is a network round-trip and the project page refetches on every
 // live tracker change, so hold the answer briefly per repo. ?force=1 busts it.

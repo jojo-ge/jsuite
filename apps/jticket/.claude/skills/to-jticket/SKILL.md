@@ -173,7 +173,9 @@ These are the ways a write silently does the wrong thing. All of them are real.
 3. **Unresolvable refs vanish without error.** After any import or edge write, GET the
    tickets back and confirm `blockedBy` is populated as intended.
 4. **`wayfinderType` shorthand exists only on import.** Elsewhere, set the
-   `wayfinder:<type>` label explicitly in `labels`.
+   `wayfinder:<type>` label explicitly in `labels`. Either way the sub-type is a
+   closed set — `research` / `prototype` / `grilling` / `task` — and import 400s
+   on one it doesn't know rather than writing a label no screen can render.
 5. **Ticket POST/PATCH take `projectId`** (id or key) — not `project`. Docs take either
    `project` (id, key, **or** title) or `projectId`; import tickets take `project`.
 6. **A ticket cannot block itself** — the API drops that edge.

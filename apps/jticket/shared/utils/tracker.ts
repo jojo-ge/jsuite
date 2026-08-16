@@ -4,9 +4,9 @@
 // it server-side for agents. Two copies of that rule is two answers to "what
 // can I take next?", so there is one, here, and both sides call it.
 //
-// Everything here is a pure function of the records — no store, no fetch, no
-// view meta. Auto-imported on both sides (`shared/utils/`), so call sites just
-// use the names.
+// Everything here is a pure function of the records — plus the closed sets they
+// range over. No store, no fetch, no view meta. Auto-imported on both sides
+// (`shared/utils/`), so call sites just use the names.
 import type { Attachment, Ticket, TicketDerived, WayfinderType } from '#shared/types/tracker'
 
 // ── Derived ticket state (wayfinder) ────────────────────────────────────────
@@ -58,7 +58,10 @@ export function byKeyNumber(a: { key: string }, b: { key: string }): number {
 // wayfinderLabel(), every reader parses one back with wayfinderTypeOfLabel(),
 // and /api/import validates what it was handed with isWayfinderType() rather
 // than writing a label no screen can render.
-export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
+export const WAYFINDER_TYPES: readonly WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
+
+/** The one spelling of the encoding. Read a sub-type back with wayfinderTypeOfLabel(). */
+export const WAYFINDER_PREFIX = 'wayfinder:'
 
 export function isWayfinderType(v: unknown): v is WayfinderType {
   return WAYFINDER_TYPES.includes(v as WayfinderType)
@@ -66,12 +69,17 @@ export function isWayfinderType(v: unknown): v is WayfinderType {
 
 /** 'research' → 'wayfinder:research' — the label a ticket actually carries. */
 export function wayfinderLabel(type: WayfinderType): string {
-  return `wayfinder:${type}`
+  return `${WAYFINDER_PREFIX}${type}`
+}
+
+/** Is this label claiming to be a sub-type at all? True even when the sub-type is one we don't know. */
+export function isWayfinderLabel(label: string): boolean {
+  return label.startsWith(WAYFINDER_PREFIX)
 }
 
 /** 'wayfinder:research' → 'research'; anything else (including an unknown sub-type) → null. */
 export function wayfinderTypeOfLabel(label: string): WayfinderType | null {
-  const rest = label.startsWith('wayfinder:') ? label.slice('wayfinder:'.length) : null
+  const rest = isWayfinderLabel(label) ? label.slice(WAYFINDER_PREFIX.length) : null
   return isWayfinderType(rest) ? rest : null
 }
 

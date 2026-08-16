@@ -316,7 +316,9 @@ appended a decision since you loaded it.
 - Import **always creates, never upserts**. To add tickets to an existing map, send only
   `tickets` and reference the project by key. Passing the project again duplicates it.
 - `wayfinderType` shorthand only exists on import. Elsewhere set the
-  `wayfinder:<type>` label explicitly in `labels`.
+  `wayfinder:<type>` label explicitly in `labels`. The sub-type is a closed set —
+  `research` / `prototype` / `grilling` / `task` — and import 400s on any other,
+  whether it came through the shorthand or straight into `labels`.
 - Every array field — `blockedBy`, `labels`, `acceptanceCriteria` — is **replaced
   wholesale** by PATCH. Read, append, write back.
 - `blocked` / `claimed` / `frontier` are derived on read; writing them does nothing.
