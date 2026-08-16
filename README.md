@@ -143,15 +143,21 @@ code, diff, chart, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
 experience with margin notes), `useMarkdown()`/`useShiki()`, and the
 `server/api/documents/**` routes over `.data/jexplain/` — lives in
-`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself,
-so chart blocks and `/api/charts/**` ride in transitively. A consumer needs:
+`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself, so
+chart blocks, `/api/charts/**` **and the `/charts` chart UI** ride in
+transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/documents']` in `nuxt.config.ts`
 3. the charting postinstall step (chart blocks render Excalidraw):
    `node ../../packages/charting/scripts/copy-excalidraw-assets.mjs`
-4. one line in its Tailwind entry css so the layer components' utility
-   classes are generated: `@source "../../../../../packages/documents/app";`
+4. two lines in its Tailwind entry css so both layers' component utility
+   classes are generated — charting rides in transitively, so it needs its
+   own `@source` too:
+   ```css
+   @source "../../../../../packages/documents/app";
+   @source "../../../../../packages/charting/app";
+   ```
 
 Types come from `'@jsuite/documents/types'` (client-safe) and
 `'@jsuite/documents/store'` (server). **One document pool serves every

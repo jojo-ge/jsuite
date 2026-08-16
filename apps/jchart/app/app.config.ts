@@ -3,8 +3,8 @@ export default defineAppConfig({
   // shorter routes than the namespaced /charts default every other consumer
   // uses. These are what <ChartLibrary>/<ChartWorkbench> link through.
   charting: {
-    indexPath: '/',
-    chartPath: '/c',
+    libraryPath: '/',
+    chartBasePath: '/c',
   },
   ui: {
     colors: {

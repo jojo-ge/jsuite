@@ -142,8 +142,10 @@ function buildMarkdown(): string {
   const els = elements.value
   const byId = new Map(els.map((e) => [e.id, e]))
   let out = `## Chart notes: ${title.value}\n\n`
-  out += `Chart file: \`~/code/anyway/jsuite/.data/jchart/${key.value}.json\`\n`
-  out += `Notes file: \`~/code/anyway/jsuite/.data/jchart/${key.value}.notes.json\`\n\n`
+  // Relative to the jSuite root: this component runs in every consumer of the
+  // layer, so it can't know which checkout the reader's .data pool sits under.
+  out += `Chart file: \`.data/jchart/${key.value}.json\`\n`
+  out += `Notes file: \`.data/jchart/${key.value}.notes.json\`\n\n`
 
   const g = general.value.trim()
   if (g) out += `### General notes\n${g}\n\n`

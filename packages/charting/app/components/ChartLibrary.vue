@@ -10,17 +10,8 @@ const { data: charts, refresh } = await useFetch('/api/charts')
 const router = useRouter()
 const routes = useChartRoutes()
 
-withDefaults(
-  defineProps<{
-    /** Heading above the list — jChart brands it, other consumers name it. */
-    heading?: string
-    lede?: string
-  }>(),
-  {
-    heading: 'Charts',
-    lede: 'Editable, annotatable diagrams. Claude drafts them; you redraw and mark them up.',
-  },
-)
+/** Heading above the list — jChart brands it, other consumers take the default. */
+withDefaults(defineProps<{ heading?: string }>(), { heading: 'Charts' })
 
 const newOpen = ref(false)
 const newTitle = ref('')
@@ -31,8 +22,8 @@ async function create() {
   if (!newTitle.value.trim()) return
   creating.value = true
   try {
-    // Route from the key through this app's own paths — the chart's canonical
-    // `path` is jChart's, and this list is served by every consumer.
+    // Route from the key through this app's own paths: the store can't know
+    // where its consumer mounted the workbench.
     const res = await $fetch<{ key: string }>('/api/charts', {
       method: 'POST',
       body: { title: newTitle.value.trim(), mermaid: newMermaid.value.trim() },
@@ -86,7 +77,9 @@ function ago(iso: string): string {
     <div class="mb-8 flex items-end gap-4">
       <div class="flex-1">
         <h1 class="text-2xl font-semibold tracking-tight">{{ heading }}</h1>
-        <p class="text-sm text-muted">{{ lede }}</p>
+        <p class="text-sm text-muted">
+          Editable, annotatable diagrams. Claude drafts them; you redraw and mark them up.
+        </p>
       </div>
       <UButton icon="i-lucide-plus" label="New chart" @click="openNew" />
     </div>

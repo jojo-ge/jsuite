@@ -17,7 +17,7 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
 | grill/stress-test a plan with the human answering in a UI | `apps/jgrilling` | skill `j-grilling`; API on :43005; state in `.data/jgrilling/` |
 | avatar characters — draw, rig, keyframe 2D avatars | `apps/jrig` | studio at https://jrig.local; character/clip JSON in `.data/jrig/` (documents API on :43006); see `apps/jrig/docs/PLAN.md` |
-| charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
+| charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` **and the chart UI** — library at `/charts`, workbench at `/charts/<key>` — in every consumer; jExplain charts ARE jChart charts |
 | block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
 | running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff and jGrilling both drive claude through it |
 

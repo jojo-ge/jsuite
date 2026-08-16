@@ -3,17 +3,16 @@
  *
  * <ChartLibrary> and <ChartWorkbench> are mounted at /charts in every consumer
  * of the layer, but jChart also aliases them onto `/` and `/c/<key>`. Rather
- * than hardcoding either scheme, the components link through here and each app
- * declares its own paths in `app.config.ts` (see the layer's defaults).
+ * than hardcoding either scheme, everything that links to a chart goes through
+ * here and each app declares its own paths in `app.config.ts` — the layer's own
+ * `app/app.config.ts` holds the defaults.
  */
 export function useChartRoutes() {
   const { charting } = useAppConfig()
-  const index = charting?.indexPath || '/charts'
-  const base = (charting?.chartPath || '/charts').replace(/\/+$/, '')
   return {
     /** The chart library. */
-    index,
+    index: charting.libraryPath,
     /** The workbench for one chart. */
-    chart: (key: string) => `${base}/${key}`,
+    chart: (key: string) => `${charting.chartBasePath.replace(/\/+$/, '')}/${key}`,
   }
 }
