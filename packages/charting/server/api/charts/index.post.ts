@@ -23,5 +23,7 @@ export default defineEventHandler(async (event) => {
   })
   await writeChart(key, chart)
 
-  return { key, title, path: `/c/${key}` }
+  // The layer's own route, so `path` is openable in every consumer of it —
+  // jChart's shorter /c/<key> is an alias over the same component.
+  return { key, title, path: `/charts/${key}` }
 })

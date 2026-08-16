@@ -2,7 +2,7 @@
 
 Explain a concept, a PR, a system, or a decision as a **blog-style article** in the jExplain app — rich typed blocks instead of a wall of text, with **live editable charts** (shared with jChart) and per-block notes that come back to you.
 
-The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving jExplain articles and jTicket docs. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/docs` when a document belongs on the board.
+The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving jExplain articles and jTicket docs. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/documents`, then attach the result to a project or ticket when a document belongs on the board.
 
 Use this when the user asks you to *explain* something and deserves better than terminal markdown: a PR walkthrough, an architecture tour, a "how does X actually work", a post-mortem, a comparison of options.
 

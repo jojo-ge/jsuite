@@ -1,7 +1,7 @@
 <script setup lang="ts">
 useHead({ title: 'Board' })
 
-const { projects, tickets, docs } = useTracker()
+const { projects, tickets, documents } = useTracker()
 const {
   openNewTicket,
   openEditTicket,
@@ -24,7 +24,7 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
 
     <UContainer class="py-8">
       <!-- Empty state -->
-      <div v-if="!projects.length && !tickets.length && !docs.length" class="flex flex-col items-center gap-4 py-24 text-center">
+      <div v-if="!projects.length && !tickets.length && !documents.length" class="flex flex-col items-center gap-4 py-24 text-center">
         <UIcon name="i-lucide-inbox" class="size-12 text-muted" />
         <div>
           <p class="text-lg font-medium">Nothing here yet</p>
@@ -37,18 +37,18 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
       </div>
 
       <div v-else class="space-y-12">
-        <!-- Documents — draft Confluence-style pages, pinned to the top -->
-        <section v-if="docs.length">
+        <!-- Documents — the shared pool, most recently touched first -->
+        <section v-if="documents.length">
           <div class="mb-3 flex items-center gap-2">
             <UIcon name="i-lucide-file-text" class="size-4 text-muted" />
             <h2 class="text-xl font-semibold">Documents</h2>
-            <span class="text-xs text-muted">{{ docs.length }} docs · drafts, never posted anywhere</span>
-            <UButton icon="i-lucide-file-plus" size="xs" color="neutral" variant="ghost" to="/docs/new" class="ml-auto">
-              New doc
+            <span class="text-xs text-muted">{{ documents.length }} in the shared pool</span>
+            <UButton icon="i-lucide-file-text" size="xs" color="neutral" variant="ghost" to="/docs" class="ml-auto">
+              All documents
             </UButton>
           </div>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <DocCard v-for="d in docs" :key="d.id" :doc="d" />
+            <DocCard v-for="d in documents.slice(0, 4)" :key="d.key" :doc="d" />
           </div>
         </section>
 

@@ -28,11 +28,14 @@ const importExample =`curl -s http://localhost:43000/api/import \\
 
 const endpoints = [
   { m: 'GET', p: '/api/projects', d: 'List all projects' },
-  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch? }' },
+  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch?, attachments? }' },
   { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its tickets' },
   { m: 'PATCH', p: '/api/projects/:id', d: 'Update a project' },
   { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (tickets → backlog)' },
-  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, uploads)' },
+  { m: 'GET', p: '/api/projects/:id/attachments', d: 'The project\'s attached artifacts, resolved (dangling refs flagged `missing`)' },
+  { m: 'POST', p: '/api/projects/:id/attachments', d: 'Attach an artifact { type: document|chart|diff, id } — idempotent' },
+  { m: 'DELETE', p: '/api/projects/:id/attachments?type=&id=', d: 'Detach one artifact (the artifact itself is untouched)' },
+  { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, attached documents + charts, uploads)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
   { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch and matching open PRs (?force=1 skips the 30s cache)" },
   { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
@@ -49,28 +52,27 @@ const endpoints = [
   { m: 'DELETE', p: '/api/tickets/:id', d: 'Delete a ticket (cleans blocked-by edges)' },
   { m: 'POST', p: '/api/tickets/:id/comments', d: 'Add a comment { author, body }' },
   { m: 'DELETE', p: '/api/tickets/:id/comments/:cid', d: 'Delete one comment' },
+  { m: 'GET', p: '/api/tickets/:id/attachments', d: 'The ticket\'s attached artifacts, resolved (dangling refs flagged `missing`)' },
+  { m: 'POST', p: '/api/tickets/:id/attachments', d: 'Attach an artifact { type: document|chart|diff, id } — idempotent' },
+  { m: 'DELETE', p: '/api/tickets/:id/attachments?type=&id=', d: 'Detach one artifact (the artifact itself is untouched)' },
   { m: 'POST', p: '/api/import', d: 'Bulk-create a whole breakdown at once' },
-  { m: 'GET', p: '/api/docs', d: 'List docs (?projectId= &status= &label=)' },
-  { m: 'POST', p: '/api/docs', d: 'Create a doc { title, blocks?|documentKey?, project?, labels?, status? }' },
-  { m: 'GET', p: '/api/docs/:id', d: 'Get one doc (id or key)' },
-  { m: 'PATCH', p: '/api/docs/:id', d: 'Update a doc' },
-  { m: 'DELETE', p: '/api/docs/:id', d: 'Delete a doc' },
   { m: 'GET', p: '/api/documents', d: 'List the shared document pool (from @jsuite/documents)' },
   { m: 'POST', p: '/api/documents', d: 'Create/replace a shared document { title, blocks, key?, replace? }' },
   { m: 'GET', p: '/api/documents/:key', d: 'Get a shared document / :key/notes for its notes' },
+  { m: 'DELETE', p: '/api/documents/:key', d: 'Delete a shared document (refs to it then read as missing)' },
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
-  { m: 'GET', p: '/api/uploads', d: 'List uploaded files' },
+  { m: 'GET', p: '/api/uploads', d: 'List uploaded FILES (images for markdown) — unrelated to artifact attachments above' },
   { m: 'POST', p: '/api/uploads', d: 'Upload { name, base64 } → served at /uploads/:name' },
   { m: 'GET', p: '/api/attachments', d: 'Legacy alias — redirects to /api/uploads (as does /attachments/:name)' },
 ]
 
-const docExample = `curl -s http://localhost:43000/api/docs \\
+const docExample = `# 1. write the document into the shared pool
+curl -s http://localhost:43000/api/documents \\
   -H 'content-type: application/json' \\
   -d '{
   "title": "Checkout revamp — design notes",
-  "project": "Checkout",
-  "labels": ["design", "payments"],
-  "status": "draft",
+  "key": "checkout-revamp-design-notes",
+  "replace": true,
   "kicker": "DESIGN NOTES",
   "subtitle": "Why the legacy flow is being rebuilt.",
   "blocks": [
@@ -79,7 +81,12 @@ const docExample = `curl -s http://localhost:43000/api/docs \\
     { "type": "compare", "columns": ["", "Rebuild", "Patch"], "rows": [["Effort", "High", "Low"]] },
     { "type": "takeaway", "points": ["Rebuild, but stage it."] }
   ]
-}'`
+}'
+
+# 2. attach it to the project (or a ticket) — jTicket owns the link
+curl -s http://localhost:43000/api/projects/PROJ-1/attachments \\
+  -H 'content-type: application/json' \\
+  -d '{ "type": "document", "id": "checkout-revamp-design-notes" }'`
 
 const blockTypes = [
   { s: 'prose', d: 'Markdown backbone — headings, lists, links, tables, code' },
@@ -206,12 +213,13 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Docs — draft Confluence-style pages</h2>
         <p class="mb-3 text-sm text-muted">
-          A doc is a tracker record wrapping a <strong>shared block document</strong> (the jExplain
-          format): <code>title</code>, <code>blocks</code> (or <code>documentKey</code> to link an
-          existing document), optional <code>project</code> (by title, key, or id), <code>labels</code>,
-          and <code>status</code> (<code>draft</code> · <code>ready</code>). Nothing is ever posted
-          anywhere external — docs render at <code>/docs/DOC-n</code> (and in jExplain, which reads the
-          same pool). PATCH with <code>blocks</code> rewrites the content; notes survive.
+          A doc is a <strong>shared block document</strong> (the jExplain format), written straight
+          into the pool with <code>title</code> and <code>blocks</code>; there is no tracker record
+          in front of it. It belongs to a project or ticket by being <em>attached</em> to one — the
+          second call below. Nothing is ever posted anywhere external — docs render at
+          <code>/docs/&lt;key&gt;</code> (and in jExplain, which reads the same pool). Re-POST with
+          <code>replace: true</code> to revise; notes and unchanged charts survive, and attachments
+          point at the key so nothing needs re-attaching.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ docExample }}</code></pre>
       </section>
@@ -219,7 +227,7 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Document blocks</h2>
         <p class="mb-3 text-sm text-muted">
-          One shared block vocabulary serves jTicket docs and jExplain articles (the
+          One shared block vocabulary serves jTicket documents and jExplain articles (the
           <code>j-explain</code> format — see the to-jdoc / j-explain skills for payload shapes).
           Ticket / project descriptions and resolutions are plain GFM markdown:
         </p>

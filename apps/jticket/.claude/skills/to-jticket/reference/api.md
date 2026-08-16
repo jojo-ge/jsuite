@@ -13,14 +13,17 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | POST | `/api/tickets/:id/comments` | Add a comment to a ticket |
 | DELETE | `/api/tickets/:id/comments/:commentId` | Delete one comment |
 | POST | `/api/import` | Bulk-author a whole breakdown |
-| GET / POST | `/api/docs` | List / create docs |
-| GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
-| GET / POST | `/api/uploads` | List / upload files |
+| GET / POST / DELETE | `/api/tickets/:id/attachments` | A ticket's artifact refs — resolve / attach / detach |
+| GET / POST / DELETE | `/api/projects/:id/attachments` | Same, for a project |
+| GET / POST | `/api/documents` | The shared document pool (also served by jExplain) |
+| GET / DELETE | `/api/documents/:key` | One shared document |
+| GET | `/api/charts` | The shared chart pool (also served by jChart) |
+| GET / POST | `/api/uploads` | List / upload FILES for markdown — *not* artifact refs |
 | GET | `/uploads/:name` | Serve an uploaded file |
 | GET / POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/attachments/:name` | Legacy alias — redirects to `/uploads/:name` |
 
-`:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`, `DOC-3`).
+`:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`).
 
 ## Query params
 
@@ -32,7 +35,6 @@ GET /api/tickets?projectId=PROJ-2   # project id or key
                 &frontier=true      # todo + unblocked + unassigned, key-ordered
                 &finished=true      # done tickets, newest completedAt first
                 &since=<ISO>        # completedAt >= this (pairs with finished=true)
-GET /api/docs?projectId=PROJ-1&status=draft|ready&label=<label>
 ```
 
 Filters combine with AND. `frontier=true` is applied last and sorts by key number
@@ -57,7 +59,10 @@ doesn't reorder `?finished=true`.
 POST /api/projects
 { "title": "Checkout",                  // required
   "description": "Everything payments-related",
-  "mode": "standard" }                  // or "wayfinder"; anything else → "standard"
+  "mode": "standard",                   // or "wayfinder"; anything else → "standard"
+  "attachments": [                      // artifact refs — see "Attached artifacts"
+    { "type": "document", "id": "checkout-revamp-spec" }
+  ] }
 ```
 
 `PATCH /api/projects/:id` accepts the same fields; omitted fields are untouched.
@@ -75,13 +80,17 @@ POST /api/tickets
   "assignee": "",                       // free-form name; "" = unassigned
   "labels": ["wayfinder:research"],
   "resolution": "",                     // the answer, GFM markdown
-  "blockedBy": ["TICK-3"] }             // ids or KEYS only — unknown refs DROPPED silently
+  "blockedBy": ["TICK-3"],              // ids or KEYS only — unknown refs DROPPED silently
+  "attachments": [                      // artifact refs — see "Attached artifacts"
+    { "type": "diff", "id": "branch/tick-7-persist-cart" }
+  ] }
 ```
 
 `PATCH /api/tickets/:id` — same fields, all optional.
 
-- Array fields (`acceptanceCriteria`, `labels`, `blockedBy`) are **replaced wholesale**.
-  Read-modify-write to append.
+- Array fields (`acceptanceCriteria`, `labels`, `blockedBy`, `attachments`) are
+  **replaced wholesale**. Read-modify-write to append — except `attachments`, which has
+  its own add/drop endpoints.
 - `assignee: ""` unassigns. `resolution: ""` clears.
 - `projectId: null` detaches (→ backlog). A self-blocking edge is dropped.
 - Labels are trimmed, emptied-out, and de-duplicated on the way in.
@@ -105,36 +114,56 @@ POST /api/tickets/:id/comments
 `DELETE /api/tickets/:id/comments/:commentId` removes one comment (`:commentId` is the
 comment's `id`, not an index). There is no comment edit — delete and re-post.
 
-### Doc
+### Attached artifacts
+
+Both tickets and projects carry `attachments: { type, id }[]` — refs into the shared
+pools. jTicket owns the link; the pools stay ticket-ignorant.
+
+| `type` | `id` is | Resolved against |
+| --- | --- | --- |
+| `document` | a key in the shared document pool | `.data/jexplain/<id>.json` |
+| `chart` | a key in the shared chart pool | `.data/jchart/<id>.json` |
+| `diff` | a jDiff review target — `"123"` (a PR) or `"branch/<name>"` | the owning project's `repo` |
 
 ```jsonc
-POST /api/docs
-{ "title": "Checkout spec",             // required
-  "blocks": [                           // block document (jExplain format) — see to-jdoc / j-explain
-    { "type": "prose", "md": "## Problem Statement\n…" }
-  ],
-  "subtitle": "One-line standfirst.",   // optional document header extras
-  "kicker": "SPEC",
-  "glossary": { "TTL": "time-to-live" },
-  "documentKey": "existing-key",        // OR link an existing shared document instead of blocks
-  "project": "Checkout",                // id, KEY, or exact TITLE — 400 if unknown
-  "labels": ["spec"],
-  "status": "draft" }                   // draft | ready; anything else → "draft"
+POST /api/tickets/TICK-7/attachments
+{ "type": "document", "id": "checkout-revamp-spec" }
+→ 201 [ { "type": "document", "id": "checkout-revamp-spec" }, … ]   // the whole list back
 ```
 
-`PATCH /api/docs/:id` — same fields. Metadata updates the record; `blocks` /
-`glossary` / `subtitle` / `kicker` rewrite the backing shared document wholesale
-(notes and unchanged charts survive). `project: null` or `""` detaches.
-`projectId` is accepted as a synonym for `project` and resolves the same three ways.
-DELETE removes the record but leaves the shared document in the pool.
+Attaching is **idempotent**, and the artifact need not exist yet. Detach with
+`DELETE /api/tickets/TICK-7/attachments?type=document&id=checkout-revamp-spec` — a diff
+id contains a slash, so it travels as a query param. The artifact itself is never touched.
 
-Docs render at `$JTICKET/docs/DOC-n` and are listed at the top of the board. The
-shared pool itself is at `GET /api/documents` (also served by jExplain — one
-document system, two apps).
+`GET /api/tickets/:id/attachments` **resolves** every ref against its pool:
 
-### Uploads
+```jsonc
+[ { "type": "document", "id": "checkout-revamp-spec",
+    "title": "Checkout revamp — spec",          // the artifact's own title
+    "url": "/docs/checkout-revamp-spec",
+    "updatedAt": "2026-08-16T…",
+    "missing": false },
+  { "type": "chart", "id": "deleted-chart",
+    "title": "deleted-chart", "url": "", "updatedAt": "",
+    "missing": true,                             // the artifact is gone …
+    "reason": "no chart with that key in the shared pool" } ]   // … and why
+```
 
-Uploads are **files** — the images you embed in markdown. Write to `/api/uploads`.
+A ref is **allowed to dangle** — it reads as `missing` rather than erroring, so a link the
+human made shows as broken instead of silently disappearing. A `diff` on a ticket with no
+project (or a project with no `repo`) is `missing` for the same reason: nothing to read it
+against.
+
+`attachments` is also accepted on `POST`/`PATCH` of a ticket or project, and on
+`/api/import` — but PATCH **replaces the array wholesale**, so prefer the endpoints above
+to add or drop one ref without a read-modify-write.
+
+Writing the document itself is `POST /api/documents` (see **to-jdoc**); the document then
+renders at `$JTICKET/docs/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
+
+### Uploaded files
+
+Unrelated to the artifact attachments above: these are image files for use inside markdown.
 
 ```jsonc
 POST /api/uploads
@@ -182,6 +211,7 @@ that resolves references by **title**, which is what makes it usable before any 
   ticket may block-reference one declared later in the same array.
 - `wayfinderType: "research"` on a ticket is shorthand that adds the label
   `wayfinder:research`. Only valid here.
+- `attachments` is accepted on both projects and tickets, exactly as on POST.
 - **It always creates.** There is no upsert. Re-running the same import duplicates
   everything. To extend an existing project, send only `tickets` and reference the
   project by key.
@@ -196,3 +226,8 @@ curl -s "$JTICKET/api/tickets?projectId=PROJ-2" | jq '.[] | {key, title, blocked
 
 One human-editable JSON file at `<jSuite root>/.data/jticket/jticket.json`. Deletes are
 immediate and unrecoverable — there is no trash and no undo.
+
+Attached artifacts do **not** live in that file — only the `{ type, id }` refs do. The
+artifacts themselves are in the shared pools (`.data/jexplain/`, `.data/jchart/`) or, for
+a diff, computed by jDiff from a repo. Deleting an artifact leaves every ref to it in
+place, reading as `missing`.

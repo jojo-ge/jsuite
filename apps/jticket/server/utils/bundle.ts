@@ -1,19 +1,20 @@
 import type { Explainer, DocNotes } from '@jsuite/documents/store'
 import type { Chart, ChartNotes } from '@jsuite/charting/store'
-import type { Project, Ticket, Doc } from './store'
+import type { Project, Ticket, LegacyDoc } from './store'
 
 // A project bundle is the portable form of one project — everything needed to
-// recreate it on another jSuite install: the tracker records, the doc bodies
-// from the shared document pool, the charts those docs embed, and any
-// uploaded files the markdown references. Produced by GET /api/projects/:id/export,
-// consumed by POST /api/projects/import.
+// recreate it on another jSuite install: the tracker records, the bodies of
+// every artifact they attach (and every chart those documents embed) from the
+// shared pools, and any uploaded files the markdown references. Produced by
+// GET /api/projects/:id/export, consumed by POST /api/projects/import.
 export const BUNDLE_FORMAT = 'jticket-project-bundle'
 
-export interface BundleDoc {
-  record: Doc
-  /** The shared-pool document body; null if the documentKey dangled at export time. */
+export interface BundleDocument {
+  /** Key in the shared document pool, as referenced by the attachments. */
+  key: string
+  /** The document body; null if the key dangled at export time. */
   document: Explainer | null
-  documentNotes: DocNotes | null
+  notes: DocNotes | null
 }
 
 export interface BundleChart {
@@ -37,15 +38,23 @@ export interface ProjectBundle {
   exportedAt: string
   project: Project
   tickets: Ticket[]
-  docs: BundleDoc[]
+  documents: BundleDocument[]
   charts: BundleChart[]
   attachments: BundleAttachment[]
 }
 
-// Bundles exported before the epic layer was removed carry it between project
-// and tickets; the importer folds it away (see projects/import.post.ts).
+// Shapes older bundles may still carry, both folded away by the importer
+// (see projects/import.post.ts): an epic layer between project and tickets,
+// and a Doc wrapper record per document, which becomes a document attachment
+// on the imported project.
 export interface LegacyBundleEpic {
   description?: string
+}
+
+export interface LegacyBundleDoc {
+  record: LegacyDoc
+  document: Explainer | null
+  documentNotes: DocNotes | null
 }
 
 /**

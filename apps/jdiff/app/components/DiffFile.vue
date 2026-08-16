@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ASK_QUESTIONS, type AskQuestion, type SavedAsk } from '~/utils/askQuestions'
+import { ASK_QUESTIONS, type AskQuestion, type SavedAsk } from '@jsuite/diff/askQuestions'
 
 interface Cell {
   num: number | null

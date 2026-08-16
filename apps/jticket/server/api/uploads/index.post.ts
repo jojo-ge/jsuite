@@ -1,7 +1,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// Upload a file (images etc.) for use in docs: { name, base64 }.
+// Upload a FILE (images etc.) for use in markdown: { name, base64 }. Unrelated
+// to the artifact attachments on tickets and projects, which are refs into the
+// shared pools and live at /api/{tickets,projects}/:id/attachments.
 // `base64` may be a bare base64 string or a data: URL. Same name overwrites.
 // The file becomes available at /uploads/<name>, ready for markdown:
 // ![alt](/uploads/<name>)

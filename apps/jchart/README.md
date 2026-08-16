@@ -9,6 +9,25 @@ https://jchart.local        # via the jSuite edge (jsuite start)
 http://localhost:43003            # bare dev server
 ```
 
+## Where the code lives
+
+Almost none of it is here. The chart library, the workbench (canvas + notes +
+Mermaid source editor) and the `/api/charts` store are all in
+**`packages/charting`** (`@jsuite/charting`), which serves them as pages at
+`/charts` and `/charts/<key>` in every app that extends the layer — jTicket and
+jExplain included.
+
+This app is the shell that brands them and gives them shorter URLs:
+
+| route | renders | |
+|---|---|---|
+| `/` | `<ChartLibrary heading="jChart">` | also at `/charts` |
+| `/c/<key>` | `<ChartWorkbench>` | also at `/charts/<key>` |
+
+The aliasing is one entry in `app/app.config.ts` (`charting.indexPath` /
+`charting.chartPath`); the layer's components link through `useChartRoutes()`,
+so they never hardcode either scheme.
+
 ## How it fits together
 
 ```
@@ -51,14 +70,14 @@ Notes are pinned by Excalidraw `elementId`, so they survive moving and relabelli
 the shape. Delete the shape and the note stays, flagged as orphaned.
 
 A shape's caption is a *separate* `text` element whose `containerId` points back at
-the shape — that's why `app/utils/scene.ts` has `labelForElement()`.
+the shape — that's why the layer's `app/utils/scene.ts` has `labelForElement()`.
 
 ## API
 
 | | |
 |---|---|
 | `GET /api/charts` | list (key, title, counts, timestamps) |
-| `POST /api/charts` | `{ title, mermaid?, key?, replace? }` → `{ key, path }` |
+| `POST /api/charts` | `{ title, mermaid?, key?, replace? }` → `{ key, title, path }` (`path` is `/charts/<key>`, which every consumer serves) |
 | `GET/PUT/DELETE /api/charts/:key` | PUT patches any of `{ title, source, scene }` |
 | `GET/PUT /api/charts/:key/notes` | `{ general, notes[] }` |
 
@@ -68,9 +87,9 @@ then reads the two files directly.
 ## Stack notes
 
 - Nuxt 4 + Nuxt UI for the shell; **Excalidraw is React**, mounted with
-  `createRoot` in `app/components/ExcalidrawCanvas.vue`. That is the only React in
-  the app, and it uses `React.createElement` rather than JSX so the Vite pipeline
-  stays Vue-only.
+  `createRoot` in the layer's `app/components/ExcalidrawCanvas.vue`. That is the
+  only React in the suite, and it uses `React.createElement` rather than JSX so
+  the Vite pipeline stays Vue-only.
 - **React is pinned to 18.** Excalidraw's bundle leaves `@radix-ui/*` 1.0.x
   external, and those predate React 19.
 - Excalidraw is uncontrolled after mount. Vue never re-renders it — programmatic
