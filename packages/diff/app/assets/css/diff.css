@@ -34,6 +34,19 @@
   --green: #3fb950;
   --red: #f85149;
   --accent: #58a6ff;
+
+  /* The file-graph's categorical scale: seven hues that only have to be
+     distinguishable from one another. Three of them equal a semantic colour by
+     value, and stay their own tokens anyway — a file category is not medium
+     risk because it happens to be amber, and retuning the semantic colour must
+     not recolour the graph. */
+  --cat-source: #58a6ff;
+  --cat-tests: #3fb950;
+  --cat-config: #d29922;
+  --cat-docs: #bc8cff;
+  --cat-data: #39c5cf;
+  --cat-assets: #f778ba;
+  --cat-generated: #6e7681;
   --add-bg: rgba(46, 160, 67, 0.15);
   --add-num-bg: rgba(46, 160, 67, 0.3);
   --del-bg: rgba(248, 81, 73, 0.12);
