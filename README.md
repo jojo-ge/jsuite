@@ -141,11 +141,12 @@ components the layer serves at `/charts`.
 The block-based document system born in jExplain — the model (prose, callout,
 code, diff, chart, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
-experience with margin notes), `useMarkdown()`/`useShiki()`, and the
-`server/api/documents/**` routes over `.data/jexplain/` — lives in
-`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself, so
-chart blocks, `/api/charts/**` **and the `/charts` chart UI** ride in
-transitively. A consumer needs:
+experience with margin notes), `useMarkdown()`/`useShiki()`, the whole-pool
+library and reader (`<DocumentLibrary>`, `<DocumentReader>`, mounted at
+`/documents` and `/documents/<key>`), and the `server/api/documents/**` routes
+over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It
+`extends` `@jsuite/charting` itself, so chart blocks, `/api/charts/**` **and the
+`/charts` chart UI** ride in transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/documents']` in `nuxt.config.ts`
@@ -163,8 +164,13 @@ Types come from `'@jsuite/documents/types'` (client-safe) and
 `'@jsuite/documents/store'` (server). **One document pool serves every
 consumer**: a jTicket doc (tracker record + `documentKey`) is the same object
 jExplain lists and renders; review notes and chart edits flow both ways.
-jExplain stays the canonical reading shell; jTicket wraps documents in
-project/status/label metadata.
+Every consumer therefore gets a documents library at `/documents` for free —
+the whole pool, explainers and specs and grilling debriefs alike. An app that
+wants it under its own routes mounts the components instead of copying them:
+jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
+jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket's
+own `/docs` stays a *subset* view — the documents its tracker knows about,
+wrapped in project/status/label metadata.
 
 ## @jsuite/claude
 
