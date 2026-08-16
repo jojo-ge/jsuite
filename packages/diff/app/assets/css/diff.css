@@ -12,8 +12,15 @@
    button, which the browser reparents out of the surface and which would
    otherwise resolve every `var(--…)` to nothing. */
 
+/* The one token that escapes the surface: a consumer painting its own page to
+   match an embedded review needs it, and it is namespaced enough to sit on
+   :root without colliding with the host app's theme. */
+:root {
+  --diff-bg: #0d1117;
+}
+
 :is(.diff-surface, .diff-overlay) {
-  --bg: #0d1117;
+  --bg: var(--diff-bg);
   --panel: #161b22;
   --panel-2: #1c2129;
   --border: #30363d;
@@ -40,12 +47,16 @@
   background: var(--bg);
 }
 
+:is(.diff-surface, .diff-overlay),
 :is(.diff-surface, .diff-overlay) * { box-sizing: border-box; }
 
 :is(.diff-surface, .diff-overlay) a { color: var(--accent); text-decoration: none; }
 :is(.diff-surface, .diff-overlay) a:hover { text-decoration: underline; }
 
-:is(.diff-surface, .diff-overlay) :is(button, input, textarea, select) {
+/* Deliberately just button+input, as the global reset this replaces was: the
+   review's textareas carry their own font, and widening the reset here would
+   silently restyle the two that don't. */
+:is(.diff-surface, .diff-overlay) :is(button, input) {
   font: inherit;
   color: inherit;
 }

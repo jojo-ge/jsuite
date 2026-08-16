@@ -34,7 +34,7 @@ export function useDiffRoutes() {
   const { diff } = useAppConfig()
   // '' for jDiff (the review routes sit at the root), '/diffs' everywhere else.
   const base = diff.basePath.replace(/\/+$/, '')
-  const at = (p: string) => base + p || '/'
+  const at = (p: string) => (base + p) || '/'
 
   return {
     /** The product name the review screens brand themselves with. */

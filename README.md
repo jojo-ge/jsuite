@@ -167,9 +167,14 @@ exports — `<DiffHome>`, `<DiffPrList>`, `<DiffPrReview>`, `<DiffPrSummary>`,
 can mount the same screen anywhere else instead. Links *between* screens go
 through `useDiffRoutes()`, which reads `diff.basePath` and `diff.brand` from the
 app's `app.config.ts`; that is how jDiff keeps serving the same components on
-its own short URLs (`/prs`, `/pr/<n>`, `/branch`) with no duplicated code. The
-palette is scoped to `.diff-surface` / `.diff-overlay` rather than `:root`, so
-an app that only embeds a review screen keeps its own theme everywhere else.
+its own short URLs (`/prs`, `/pr/<n>`, `/branch`) with no duplicated code — and
+why no screen in the layer may hardcode a review path.
+
+The palette is scoped to `.diff-surface` / `.diff-overlay` rather than `:root`,
+so an app that only embeds a review screen keeps its own theme everywhere else;
+`--diff-bg` is the single token that does sit on `:root`, for a consumer
+painting its own page to match. Each screen mounts its own
+`<DiffScrollTopButton>`, so it follows the UI into whatever app hosts it.
 
 **One review pool serves every consumer**: all state stays in `.data/jdiff/`
 via `@jsuite/data`, so a rating, tour or draft comment created through one

@@ -64,6 +64,8 @@ function linkTo(b: BranchInfo) {
         </NuxtLink>
       </li>
     </ul>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 

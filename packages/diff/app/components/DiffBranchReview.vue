@@ -579,6 +579,8 @@ async function createPr() {
         </button>
       </div>
     </div>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 

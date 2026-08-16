@@ -439,6 +439,8 @@ async function postAnswer(i: number) {
         </div>
       </div>
     </div>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 

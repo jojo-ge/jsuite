@@ -12,6 +12,7 @@
     "./comments": "./app/utils/comments.ts",
     "./fileCategories": "./app/utils/fileCategories.ts",
     "./markdown": "./app/utils/markdown.ts",
+    "./notifications": "./app/composables/useDiffNotifications.ts",
     "./package.json": "./package.json",
     "./rating": "./app/utils/rating.ts",
     "./risk": "./app/utils/risk.ts",

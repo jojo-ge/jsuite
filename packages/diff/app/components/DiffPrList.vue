@@ -251,6 +251,8 @@ const filtered = computed(() => [
         </li>
       </template>
     </ul>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 

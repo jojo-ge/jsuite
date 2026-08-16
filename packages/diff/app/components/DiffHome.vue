@@ -1,12 +1,7 @@
 <script setup lang="ts">
 const routes = useDiffRoutes()
 
-const props = withDefaults(defineProps<{
-  /** The name over the picker. jDiff passes its own; the layer's namespaced
-      /diffs page falls back to whatever the app configured as its diff brand. */
-  heading?: string
-}>(), { heading: '' })
-const heading = computed(() => props.heading || routes.brand)
+useHead({ title: 'open a repo' })
 
 const path = ref('')
 const busy = ref(false)
@@ -57,7 +52,7 @@ async function open(target?: string) {
 
 <template>
   <main class="diff-surface home">
-    <h1>{{ heading }}</h1>
+    <h1>{{ routes.brand }}</h1>
     <p class="sub">point at a local clone; PRs come from github, diffs come from your git</p>
 
     <form class="picker" @submit.prevent="open()">
@@ -182,6 +177,8 @@ async function open(target?: string) {
         </p>
       </div>
     </section>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 

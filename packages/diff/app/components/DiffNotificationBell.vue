@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import type { AppNotification } from '../composables/useDiffNotifications'
+import type { AppNotification } from '@jsuite/diff/notifications'
 
 const props = defineProps<{ repo: string }>()
+
+const routes = useDiffRoutes()
 
 const { notifications, unreadCount, isUnread, markAllRead, refresh } = useDiffNotifications(
   toRef(props, 'repo'),
@@ -37,7 +39,7 @@ function labelFor(n: AppNotification): string {
 
 function go(n: AppNotification) {
   close()
-  navigateTo({ path: `/pr/${n.prNumber}`, query: { repo: props.repo } })
+  navigateTo(routes.pr(props.repo, n.prNumber))
 }
 </script>
 

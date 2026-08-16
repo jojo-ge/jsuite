@@ -2,8 +2,8 @@
    scoped so a consumer that only embeds the review UI keeps its own theme. jDiff
    *is* the review UI, so all that's left here is making the page itself match the
    surface — otherwise a short screen shows white below the fold, and overscroll
-   flashes it. */
+   flashes it. `--diff-bg` is the layer's one :root token, for exactly this. */
 html, body {
   margin: 0;
-  background: #0d1117;
+  background: var(--diff-bg);
 }

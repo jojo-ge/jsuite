@@ -733,6 +733,8 @@ function openSelfCard() {
         </button>
       </div>
     </div>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 

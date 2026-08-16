@@ -242,6 +242,8 @@ function saveAnswer(i: number) {
         </div>
       </div>
     </div>
+
+    <DiffScrollTopButton />
   </main>
 </template>
 
