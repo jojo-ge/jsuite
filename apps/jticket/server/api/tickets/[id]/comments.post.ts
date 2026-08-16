@@ -15,6 +15,6 @@ export default defineEventHandler(async (event) => {
   ticket.comments.push(comment)
   ticket.updatedAt = comment.createdAt
   saveStore(store)
-  setResponseStatus(event, 201)
+  setCreated(event)
   return comment
 })

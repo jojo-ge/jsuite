@@ -2,7 +2,7 @@
 
 Explain a concept, a PR, a system, or a decision as a **blog-style article** in the jExplain app — rich typed blocks instead of a wall of text, with **live editable charts** (shared with jChart) and per-block notes that come back to you.
 
-The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving jExplain articles and jTicket docs. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/docs` when a document belongs on the board.
+The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving jExplain articles and jTicket docs. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/documents`, then attach the result to a project or ticket when a document belongs on the board.
 
 Use this when the user asks you to *explain* something and deserves better than terminal markdown: a PR walkthrough, an architecture tour, a "how does X actually work", a post-mortem, a comparison of options.
 
@@ -40,6 +40,7 @@ Use this when the user asks you to *explain* something and deserves better than 
   "kicker": "PR #4821",
   "key": "cache-invalidation-pr-4821",
   "glossary": { "TTL": "time-to-live — how long a cache entry survives" },
+  "labels": ["post-mortem", "draft"],
   "blocks": [ ... ]
 }
 ```
@@ -47,6 +48,7 @@ Use this when the user asks you to *explain* something and deserves better than 
 - `key` — stable slug; always set it so `--replace` republishes the same URL.
 - `kicker` — small uppercase context line (PR number, subsystem, "post-mortem").
 - `glossary` — term → definition; first occurrence per prose block gets a dotted-underline hover definition. Use for jargon, not for words the user knows.
+- `labels` — lowercase tags for the library's filter bar, deduped on write. Lifecycle is a label like any other (`draft`, `ready`); there is no status field. The same pool is jTicket's document library, so these show up there too. Omit on a `--replace` and the existing labels survive; edit them in the reader header, or `PATCH /api/documents/<key>` with `{ "labels": [...] }`.
 
 ## Block vocabulary
 

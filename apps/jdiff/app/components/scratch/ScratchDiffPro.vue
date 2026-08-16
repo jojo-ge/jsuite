@@ -6,7 +6,7 @@ import type { ScratchFile, TourRange, ScratchThread, ScratchComment } from '~/ut
 import {
   pairRows, highlightCode, scratchThreads, scratchSavedAsks, scratchAskAnswers,
 } from '~/utils/scratchpadFixture'
-import { ASK_QUESTIONS, type AskQuestion } from '~/utils/askQuestions'
+import { ASK_QUESTIONS, type AskQuestion } from '@jsuite/diff/askQuestions'
 
 const props = defineProps<{
   file: ScratchFile

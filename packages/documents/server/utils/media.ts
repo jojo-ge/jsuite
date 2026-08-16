@@ -77,11 +77,13 @@ export function notesMediaPath(docKey: string, name: string): string {
 /** Store a data: URL (a paste, an upload, or a canvas export) as a note attachment. */
 export async function storeNoteMedia(docKey: string, dataUrl: string, preferredName?: string): Promise<string> {
   const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(dataUrl.trim())
-  if (!m) throw new Error('expected a base64 image data URL')
-  const ext = Object.entries(EXT_TYPES).find(([, type]) => type === m[1].toLowerCase())?.[0] ?? '.png'
+  const mime = m?.[1]
+  const base64 = m?.[2]
+  if (!mime || !base64) throw new Error('expected a base64 image data URL')
+  const ext = Object.entries(EXT_TYPES).find(([, type]) => type === mime.toLowerCase())?.[0] ?? '.png'
   const key = sanitizeDocKey(docKey)
   const name = sanitizeMediaName((preferredName || 'note') + ext)
-  const bytes = Buffer.from(m[2], 'base64')
+  const bytes = Buffer.from(base64, 'base64')
   if (bytes.length > 12 * 1024 * 1024) throw new Error('image too large (max 12MB)')
   await mkdir(notesMediaDir(key), { recursive: true })
   await writeFile(join(notesMediaDir(key), name), bytes)

@@ -50,7 +50,7 @@ const thesis = computed(() => tabs.find((t) => t.id === tab.value)!.thesis)
 </script>
 
 <template>
-  <main class="scratchpad">
+  <main class="diff-surface scratchpad">
     <header class="bar">
       <NuxtLink to="/" class="brand">jDiff</NuxtLink>
       <span class="page-name">scratchpad</span>

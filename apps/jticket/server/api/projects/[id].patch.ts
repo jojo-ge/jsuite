@@ -22,6 +22,9 @@ export default defineEventHandler(async (event) => {
     }
     project.integrationBranch = branch
   }
+  // Replaced wholesale like every other array on a PATCH — see
+  // POST/DELETE /api/projects/:id/attachments to add or drop just one.
+  if (body.attachments !== undefined) project.attachments = cleanAttachments(body.attachments)
   project.updatedAt = now()
 
   saveStore(store)

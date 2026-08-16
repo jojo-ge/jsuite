@@ -7,7 +7,7 @@ import {
   scratchPr, scratchFiles, scratchSummary, scratchTour, scratchRisks,
   scratchThreads, scratchTotals,
 } from '~/utils/scratchpadFixture'
-import { CATEGORY_LABELS, CATEGORY_ORDER, categorize } from '~/utils/fileCategories'
+import { CATEGORY_LABELS, CATEGORY_ORDER, categorize } from '@jsuite/diff/fileCategories'
 
 const props = defineProps<{ guidance: boolean; active: boolean }>()
 

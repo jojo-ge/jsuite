@@ -65,14 +65,15 @@ jsuite/
 ├── .data/              # every app's state, gitignored (see @jsuite/data)
 ├── apps/
 │   ├── jticket/        # projects + tickets + docs (owns most jskills, has its own j-setup)
-│   ├── jdiff/          # diff / PR review workbench
+│   ├── jdiff/          # diff / PR review shell — short routes over @jsuite/diff
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
 │   └── jrig/           # avatar studio — draw, rig and keyframe 2D characters
 └── packages/
-    ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
+    ├── charting/       # @jsuite/charting — shared chart module + UI (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
+    ├── diff/           # @jsuite/diff — shared diff-review engine + UI (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     └── data/           # @jsuite/data — shared .data resolver
 ```
@@ -110,45 +111,154 @@ overrides the search when set.
 
 ## @jsuite/charting
 
-The Excalidraw canvas, Mermaid→scene conversion, and scene utilities live in
-`packages/charting` as a Nuxt layer so any app can embed charts. A consumer
-needs three things:
+The whole chart experience — Excalidraw canvas, Mermaid→scene conversion, scene
+utilities, the store **and the UI** — lives in `packages/charting` as a Nuxt
+layer, so an app can serve charts rather than merely embed them. A consumer
+needs four things:
 
 1. `"@jsuite/charting": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/charting']` in `nuxt.config.ts`
 3. a postinstall step to copy the Excalidraw fonts into its `public/`:
    `node ../../packages/charting/scripts/copy-excalidraw-assets.mjs`
+4. one line in its Tailwind entry css so the layer components' utility classes
+   are generated: `@source "../../../../../packages/charting/app";`
 
 That provides `<ExcalidrawCanvas>`, `mermaidToScene()`, the scene utils
-(auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'` —
-**and the shared chart store**: the layer carries `server/api/charts/**` over
-`.data/jchart/`, so every consumer serves the same chart pool. A chart embedded
-in jExplain is the same object opened in jChart; edits and notes flow both ways.
-jChart stays the specialised workbench UI on top.
+(auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'`,
+**the shared chart store** — `server/api/charts/**` over `.data/jchart/` — and
+**the pages**: `/charts` (the library) and `/charts/<key>` (the full workbench:
+canvas, notes, Mermaid source editor), rendered by `<ChartLibrary>` and
+`<ChartWorkbench>`. Every consumer serves the same chart pool, so a chart
+embedded in jExplain is the same object opened in jChart; edits and notes flow
+both ways.
+
+An app that wants that UI on different paths overrides `charting.indexPath` and
+`charting.chartPath` in its `app.config.ts` and mounts the components itself —
+which is all jChart is now: `/` and `/c/<key>` are aliases over the same
+components the layer serves at `/charts`. An app that wants the layer's paths
+but its own chrome mounts `<ChartLibrary>` under it: jTicket's `/charts` is the
+library under the board's header, while `/charts/<key>` is left to the layer,
+the workbench being a full-screen canvas that a nav bar only steals height from.
+
+## @jsuite/diff
+
+The diff-review engine born in jDiff — target resolution, the diff/graph/file/PR
+routes, the claude analysis runs, and every review artifact store — lives in
+`packages/diff` as a Nuxt layer. A consumer needs two things:
+
+1. `"@jsuite/diff": "workspace:*"` in `dependencies`
+2. `extends: ['@jsuite/diff']` in `nuxt.config.ts`
+
+That serves the whole review API off the consumer's own port: `/api/diff`,
+`/api/file`, `/api/graph`, `/api/prs`, `/api/pr`, `/api/branches`, `/api/repo`,
+the artifact routes (`/api/comment(s)`, `/api/branch-comment(s)`, `/api/rating`,
+`/api/risk`, `/api/tour`, `/api/ask(s)`, `/api/ask-yourself*`,
+`/api/notifications`), and the claude runs (`/api/analyze-generate`,
+`/api/ai-jobs`, `/api/ai-job-cancel`). The server utils come as Nitro
+auto-imports (`resolveTarget`/`prepareTarget`, `run`/`resolveRepoPath`,
+`buildDiff`, `highlight`, the stores), and the review vocabulary the UI shares
+with the server — the rating shape, risk levels, tour shape, ask questions,
+file categories, the comment entry — is auto-imported as app utils and also
+importable explicitly from `'@jsuite/diff/rating'`, `'/risk'`, `'/tour'`,
+`'/askQuestions'`, `'/askYourself'`, `'/fileCategories'`, `'/comments'`.
+
+**And the whole review UI**, as pages namespaced under `/diffs`:
+
+| route | screen |
+| --- | --- |
+| `/diffs` | the repo picker |
+| `/diffs/prs` | open pull requests in `?repo=` |
+| `/diffs/pr/<n>` | the PR diff — comments, tour, risk, per-line asks |
+| `/diffs/pr/<n>/summary` | that PR's guidance artifacts |
+| `/diffs/branches` | local branches in `?repo=` |
+| `/diffs/branch` | a local branch diff (`?branch=&base=`) |
+| `/diffs/branch-summary` | that branch's guidance artifacts |
+
+Each of those pages is a two-line wrapper over a component the layer also
+exports — `<DiffHome>`, `<DiffPrList>`, `<DiffPrReview>`, `<DiffPrSummary>`,
+`<DiffBranchList>`, `<DiffBranchReview>`, `<DiffBranchSummary>` — so a consumer
+can mount the same screen anywhere else instead. Links *between* screens go
+through `useDiffRoutes()`, which reads `diff.basePath` and `diff.brand` from the
+app's `app.config.ts`; that is how jDiff keeps serving the same components on
+its own short URLs (`/prs`, `/pr/<n>`, `/branch`) with no duplicated code — and
+why no screen in the layer may hardcode a review path.
+
+The palette is scoped to `.diff-surface` / `.diff-overlay` rather than `:root`,
+so an app that only embeds a review screen keeps its own theme everywhere else;
+`--diff-bg` is the single token that does sit on `:root`, for a consumer
+painting its own page to match. Each screen mounts its own
+`<DiffScrollTopButton>`, so it follows the UI into whatever app hosts it.
+
+**One review pool serves every consumer**: all state stays in `.data/jdiff/`
+via `@jsuite/data`, so a rating, tour or draft comment created through one
+consumer reads back identically in another — and, now that the UI is shared
+too, identically through either route. A target is always addressed by query
+params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local branch) —
+so the layer holds no per-app repo config. jDiff stays a thin shell over it: its
+short routes, the scratch prototypes, and the `jdiff` CLI.
 
 ## @jsuite/documents
 
 The block-based document system born in jExplain — the model (prose, callout,
 code, diff, chart, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
-experience with margin notes), `useMarkdown()`/`useShiki()`, and the
-`server/api/documents/**` routes over `.data/jexplain/` — lives in
-`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself,
-so chart blocks and `/api/charts/**` ride in transitively. A consumer needs:
+experience with margin notes), `useMarkdown()`/`useShiki()`, the whole-pool
+library and reader (`<DocumentLibrary>`, `<DocumentReader>`, mounted at
+`/documents` and `/documents/<key>`), and the `server/api/documents/**` routes
+over `.data/jexplain/` — lives in `packages/documents` as a Nuxt layer. It
+`extends` `@jsuite/charting` itself, so chart blocks, `/api/charts/**` **and the
+`/charts` chart UI** ride in transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/documents']` in `nuxt.config.ts`
 3. the charting postinstall step (chart blocks render Excalidraw):
    `node ../../packages/charting/scripts/copy-excalidraw-assets.mjs`
-4. one line in its Tailwind entry css so the layer components' utility
-   classes are generated: `@source "../../../../../packages/documents/app";`
+4. two lines in its Tailwind entry css so both layers' component utility
+   classes are generated — charting rides in transitively, so it needs its
+   own `@source` too:
+   ```css
+   @source "../../../../../packages/documents/app";
+   @source "../../../../../packages/charting/app";
+   ```
 
 Types come from `'@jsuite/documents/types'` (client-safe) and
 `'@jsuite/documents/store'` (server). **One document pool serves every
 consumer**: a jTicket doc (tracker record + `documentKey`) is the same object
 jExplain lists and renders; review notes and chart edits flow both ways.
-jExplain stays the canonical reading shell; jTicket wraps documents in
-project/status/label metadata.
+Every consumer therefore gets a documents library at `/documents` for free —
+the whole pool, explainers and specs and grilling debriefs alike. An app that
+wants it under its own routes mounts the components instead of copying them:
+jExplain's `/` and `/e/<key>` are `<DocumentLibrary>`/`<DocumentReader>` with
+jExplain's framing, and jGrilling's `/e/<key>` is the same reader. jTicket
+mounts `<DocumentReader>` at `/documents/<key>` with delete withheld and the
+projects a document is attached to in its `#chrome` slot — and it is the one
+consumer that *replaces* the library page rather than mounting it, because it
+knows something about these documents the pool does not: which project attaches
+each. Same pool, grouped. (Its old `/docs` paths redirect there; the DOC-n
+wrapper records they listed are gone.)
+
+### Who may delete out of the pool
+
+The host app's call, not the layer's — one shared file backs every consumer, so
+`<DocumentLibrary>` and `<DocumentReader>` both take a `deletable` prop (default
+`true`) rather than deciding for everyone. jExplain owns the pool's lifecycle
+and leaves both on.
+
+**jTicket never destroys a pool document from its UI** (TICK-151). Deleting the
+shared file would dangle every attachment ref pointing at it while jExplain goes
+on reading the same object; the tracker's job is to link artifacts, not to end
+them. In practice its reader passes `:deletable="false"` and its library is
+jTicket's own page with no delete affordance at all — so **nothing in the tree
+passes `deletable: false` to `<DocumentLibrary>` today**. The prop exists so the
+rule is expressible in the layer instead of resting on the accident that jTicket
+shadows the layer's `/documents` page: unshadow it and the button returns, which
+is exactly what happened between TICK-136 and TICK-139.
+
+This binds jTicket's **UI only**, deliberately. The layer's
+`DELETE /api/documents/<key>` stays mounted in every consumer, jTicket included,
+so agents keep `:43000` as one API surface (TICK-143). jGrilling withholds
+delete on its reader but still serves the layer's `/documents` inherited and
+unconfigured — the same hole, tracked as TICK-154.
 
 ## @jsuite/claude
 
@@ -202,6 +312,53 @@ Always include the scheme: `https://jticket.local`.
 ```
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
+
+### Typechecking
+
+```sh
+pnpm typecheck                    # every app, including .vue files
+pnpm --filter jticket typecheck   # one app
+pnpm typecheck:constraints        # just the guard below, no vue-tsc
+```
+
+`pnpm typecheck` is **the** typecheck entry point for the workspace. Each app's
+`typecheck` script is `nuxt typecheck`, which regenerates `.nuxt` types and then
+runs `vue-tsc` over the app's project references — so `.vue` files are checked
+(script *and* template), not just the `.ts` ones. The root script fans out with
+`--no-bail`, so one failing app doesn't hide the others; it exits non-zero if
+any app fails.
+
+Three constraints keep this working, all easy to undo by accident — and all
+three fail *quietly*, which is why they are enforced by
+`scripts/check-typecheck-constraints.mjs` rather than by this section. It runs
+first inside `pnpm typecheck`, so a broken constraint stops the run and names
+the fix. Treat the list below as the reasoning; the script is the rule.
+
+- **TypeScript is pinned to 5.9 workspace-wide** (`overrides` in
+  `pnpm-workspace.yaml`, plus an explicit `typescript` devDependency in each
+  app). `vue-tsc` 3.x loads `typescript/lib/tsc`, which TypeScript 7 dropped
+  from its exports; apps that take `typescript` only as an auto-installed peer
+  silently resolve 7 and die with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+- **`vue-router` must be v5** — Nuxt 4.5's generated tsconfig loads
+  `vue-router/volar/sfc-route-blocks`, which only v5 exports. On v4 the Vue
+  language plugin fails to load and typing quietly degrades.
+- **Every `packages/*` layer that ships `.vue` files must declare `vue` as a
+  devDependency** (`@jsuite/charting`, `@jsuite/documents`). `vue-tsc` compiles
+  an SFC to virtual TS that reaches for `vue` from the SFC's *own* directory,
+  and under pnpm's strict layout a layer with no `vue` dependency cannot
+  resolve it — an `@ts-ignore` in the generated code swallows the resolution
+  failure, so `defineProps` silently returns `any` and every prop goes
+  unchecked, in script and template alike, while the rest of the file still
+  type-checks normally. It must stay a *dev*Dependency: the host app owns the
+  runtime copy, and promoting it to `dependencies` would ship a second Vue
+  instance into the bundle.
+
+The guard checks each layer both ways: that the manifest declares `vue` as a
+devDependency, and — once installed — that `vue` genuinely resolves from a
+component's own directory, which is the property `vue-tsc` depends on and the
+one a manifest line only stands in for. It exits 0 with a `skipped` line for the
+resolution probe before `pnpm install`, rather than reporting a pass it hasn't
+earned. Adding a fourth constraint means adding a check there.
 
 ## Design
 

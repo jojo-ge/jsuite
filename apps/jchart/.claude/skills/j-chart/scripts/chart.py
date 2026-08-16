@@ -133,7 +133,10 @@ def main():
     except urllib.error.URLError:
         return not_running()
 
-    url = f"{EDGE_BASE}{res['path']}" if base == EDGE_BASE else f"{base}{res['path']}"
+    # This skill always targets jChart, so use jChart's own short route rather
+    # than the `path` the shared store returns (the layer's /charts/<key>,
+    # which is what every *other* consumer serves it at).
+    url = f"{base}/c/{res['key']}"
     if not args.no_open:
         open_in_browser(url, args.browser)
 

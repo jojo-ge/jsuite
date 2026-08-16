@@ -23,20 +23,21 @@ pnpm dev          # http://localhost:43000
 
 | Route | What it shows |
 | --- | --- |
-| `/` | Board — every project and its tickets, plus docs and the backlog |
+| `/` | Board — every project and its tickets, plus the document pool and the backlog |
 | `/next` | **Up next** — the frontier across every project: open, unblocked, unclaimed tickets, each with its `/jimplement` hand-off command |
 | `/running` | **Running now** — every in-progress ticket grouped by its project, with a link through to the project |
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
-| `/docs` · `/docs/DOC-1` | Docs list and a doc's block document |
+| `/documents` · `/documents/<key>` | **Docs** — the shared document pool, grouped by which project attaches each, and one document. (`/docs` redirects here.) |
+| `/charts` · `/charts/<key>` | **Charts** — the shared chart pool and the workbench, served by `@jsuite/charting` |
 | `/api-guide` | Full HTTP API reference, live in the app |
 
 ## Data model
 
-- **Project** — `{ key: "PROJ-1", title, description, mode, repo, integrationBranch }`. Top-level grouping; contains tickets.
+- **Project** — `{ key: "PROJ-1", title, description, mode, repo, integrationBranch, attachments[] }`. Top-level grouping; contains tickets.
   - `mode`: `standard` (plain tracker) or `wayfinder` (see **Wayfinder mode** below). In a wayfinder project the `description` *is* the map body.
   - `repo` / `integrationBranch`: the optional GitHub link — see **GitHub** below. Both `""` when unset.
-- **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], completedAt }`
+- **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], attachments[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
   - `type`: `AFK` (agent-runnable) or `HITL` (needs a human)
   - `status`: `todo` · `in_progress` · `done`
@@ -55,19 +56,32 @@ line clamp stays honest.
   record: the list of clones jTicket has been pointed at, so setting up the next
   project is a click. See **GitHub** below.
 
-- **Doc** — `{ key: "DOC-1", title, documentKey, projectId, labels[], status }`.
-  A tracker record wrapping a **block document** in the shared jSuite document
-  system (`@jsuite/documents`; files in the root `.data/jexplain/` pool, which
-  jExplain lists and renders too). Shown at the top of the board and at
-  `/docs/DOC-1`.
-  - Content is authored as **blocks** (prose, callout, code, diff, chart,
-    steps, compare, timeline, takeaway + glossary — the jExplain format).
-    `POST /api/docs` with `blocks` creates the document; `documentKey` links an
-    existing one; `PATCH` with `blocks` rewrites it (notes survive). Full
-    reference at **/api-guide** in the running app.
-  - `status`: `draft` · `ready`
-  - Images: `POST /api/attachments` with `{ name, base64 }` → serve from
-    `/attachments/<name>`, reference as `![alt](/attachments/<name>)` in prose.
+- **Attachment** — `{ type: "document" | "chart" | "diff", id }`. jTicket owns the
+  ticket↔artifact link, and both projects and tickets carry an `attachments` array
+  of these refs; the shared pools stay completely ignorant of tickets. There is no
+  tracker record wrapping an artifact — a document belongs to a project by being
+  attached to it.
+  - `document` — a key in the shared jSuite document pool (`@jsuite/documents`;
+    files in the root `.data/jexplain/` pool, which jExplain lists and renders too).
+    Content is authored as **blocks** (prose, callout, code, diff, chart, steps,
+    compare, timeline, takeaway + glossary). `POST /api/documents` writes one;
+    `replace: true` rewrites it in place (notes survive). Rendered at `/documents/<key>`.
+    A document carries its own `labels` — lowercase tags in the shared pool, not on
+    the attachment, so the filing reads the same here and in jExplain. There is no
+    document status field: `draft` / `ready` are labels, as is `wayfinder:asset`.
+    `GET /api/documents?label=` filters (AND across labels);
+    `PATCH /api/documents/:key` `{ labels }` refiles one without republishing it.
+  - `chart` — a key in the shared jChart pool (root `.data/jchart/`).
+  - `diff` — a jDiff review target: `"123"` for a PR, `"branch/<name>"` for a branch,
+    read against the owning project's `repo`.
+  - A ref is allowed to **dangle**. `GET /api/{projects,tickets}/:id/attachments`
+    resolves each one to its title and url, flagging any whose artifact is gone as
+    `missing` rather than erroring — so deleting an artifact never breaks a page.
+  - Images inside prose are a different thing: `POST /api/uploads` with
+    `{ name, base64 }` → serve from `/uploads/<name>`, reference as
+    `![alt](/uploads/<name>)`. The old `/api/attachments` and
+    `/attachments/<name>` paths redirect here, so prose written before the
+    rename still resolves.
 
 ## HTTP API
 
@@ -80,9 +94,12 @@ See **/api-guide** in the running app. Summary:
 | GET/POST | `/api/tickets` | List (`?projectId=`, `?status=`, `?finished=true`, `?since=`) / create tickets |
 | GET/PATCH/DELETE | `/api/tickets/:id` | Read / update / delete a ticket (id or key) |
 | POST | `/api/import` | Bulk-create a whole breakdown at once |
-| GET/POST | `/api/docs` | List (`?projectId=`, `?status=`, `?label=`) / create docs |
-| GET/PATCH/DELETE | `/api/docs/:id` | Read / update / delete a doc (id or key) |
-| GET/POST | `/api/attachments` | List / upload attachments for docs |
+| GET/POST/DELETE | `/api/tickets/:id/attachments` | Resolve / attach / detach a ticket's artifacts |
+| GET/POST/DELETE | `/api/projects/:id/attachments` | Same, for a project |
+| GET/POST | `/api/documents` | The shared document pool (also served by jExplain); `?label=` filters |
+| GET/PATCH/DELETE | `/api/documents/:key` | Read / refile (`{ labels }`) / delete one shared document |
+| GET/POST | `/api/uploads` | List / upload image FILES for markdown (not artifact refs) |
+| GET/POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)
@@ -216,8 +233,9 @@ parent → `project`.
 ## The `to-jspec` skill
 
 The companion `/to-jspec` skill (bundled at `.claude/skills/to-jspec`) teaches an LLM to
-draft docs here via `POST /api/docs`, including the block-document format. It pairs
+draft docs here via `POST /api/documents`, including the block-document format and how to
+attach the result to a project. It pairs
 with Matt Pocock's `/to-spec`, which decides what the document says — `to-jspec` covers how
 it is written and where it lands. Documents are drafts only — review them at
-`http://localhost:43000/docs`, then copy into Confluence by hand if and when you want them
+`http://localhost:43000/documents`, then copy into Confluence by hand if and when you want them
 there.

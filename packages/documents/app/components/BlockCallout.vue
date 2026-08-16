@@ -1,39 +1,40 @@
 <script setup lang="ts">
-import type { CalloutBlock } from '../../types'
+import type { CalloutBlock, CalloutTone } from '../../types'
 
 const props = defineProps<{ block: CalloutBlock }>()
 const { render } = useMarkdown()
 const html = computed(() => render(props.block.md))
 
-const tone = computed(
-  () =>
-    ({
-      insight: {
-        icon: 'i-lucide-lightbulb',
-        box: 'border-primary/30 bg-primary/5',
-        accent: 'text-primary',
-      },
-      warning: {
-        icon: 'i-lucide-triangle-alert',
-        box: 'border-warning/40 bg-warning/5',
-        accent: 'text-warning',
-      },
-      success: {
-        icon: 'i-lucide-circle-check',
-        box: 'border-success/40 bg-success/5',
-        accent: 'text-success',
-      },
-      aside: {
-        icon: 'i-lucide-message-circle',
-        box: 'border-default bg-elevated/40',
-        accent: 'text-muted',
-      },
-    })[props.block.tone] ?? {
-      icon: 'i-lucide-info',
-      box: 'border-default bg-elevated/40',
-      accent: 'text-muted',
-    },
-)
+const TONES: Record<CalloutTone, { icon: string; box: string; accent: string }> = {
+  insight: {
+    icon: 'i-lucide-lightbulb',
+    box: 'border-primary/30 bg-primary/5',
+    accent: 'text-primary',
+  },
+  warning: {
+    icon: 'i-lucide-triangle-alert',
+    box: 'border-warning/40 bg-warning/5',
+    accent: 'text-warning',
+  },
+  success: {
+    icon: 'i-lucide-circle-check',
+    box: 'border-success/40 bg-success/5',
+    accent: 'text-success',
+  },
+  aside: {
+    icon: 'i-lucide-message-circle',
+    box: 'border-default bg-elevated/40',
+    accent: 'text-muted',
+  },
+}
+
+const UNKNOWN_TONE = {
+  icon: 'i-lucide-info',
+  box: 'border-default bg-elevated/40',
+  accent: 'text-muted',
+}
+
+const tone = computed(() => TONES[props.block.tone] ?? UNKNOWN_TONE)
 </script>
 
 <template>
