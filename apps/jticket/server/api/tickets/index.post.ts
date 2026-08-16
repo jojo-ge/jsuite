@@ -32,6 +32,7 @@ export default defineEventHandler(async (event) => {
     resolution: typeof body.resolution === 'string' ? body.resolution.trim() : '',
     blockedBy,
     comments: [],
+    attachments: cleanAttachments(body.attachments),
     // Created straight into 'done' (an already-finished ticket being recorded)
     // counts as finishing now.
     completedAt: status === 'done' ? ts : null,

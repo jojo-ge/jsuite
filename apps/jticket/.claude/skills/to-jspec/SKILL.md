@@ -10,8 +10,8 @@ it lands.** Do not duplicate the spec process here — run `/to-spec` for the te
 (Problem Statement → Solution → User Stories → Implementation Decisions → Testing
 Decisions → Out of Scope → Further Notes), the seams check, and the no-interview rule.
 
-What you get here: **which format each jTicket field takes**, and the `POST /api/docs`
-call that publishes a spec.
+What you get here: **which format each jTicket field takes**, and the `POST /api/documents`
+call that publishes a spec (plus the attach call that hangs it off a project).
 
 A jTicket doc is explicitly a **local draft**. Nothing is connected to Confluence — the
 user reviews and edits locally, then hand-copies if needed. Since the document-system
@@ -29,9 +29,9 @@ here also shows up in jExplain's article list; that is by design.
    things a reader must not miss; `compare` for options tables; `chart` for the shape of
    the system; `takeaway` for the decisions summary. Give blocks stable `id`s — the
    user's review notes pin to them.
-3. **Publish** as `status: "draft"` (see [Publish](#publish)).
-4. **Report** the key, title and both links (`$JTICKET/docs/DOC-n`,
-   `https://jexplain.local/e/<documentKey>`), and say plainly that it is a local
+3. **Publish** the document, then **attach** it to its project (see [Publish](#publish)).
+4. **Report** the key, title and both links (`$JTICKET/docs/<key>`,
+   `https://jexplain.local/e/<key>`), and say plainly that it is a local
    draft — nothing has been posted to Confluence.
 
 Connect first, as always — if jTicket is down, say so and stop rather than writing a file
@@ -81,12 +81,10 @@ curl -sk "$JTICKET/api/projects" | jq '.[] | {key, title, mode}'
 ```
 
 ```bash
-curl -sk "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
+curl -sk "$JTICKET/api/documents" -H 'content-type: application/json' -d @- <<'JSON'
 {
   "title": "Checkout revamp — spec",
-  "project": "PROJ-1",
-  "labels": ["spec"],
-  "status": "draft",
+  "key": "checkout-revamp-spec",
   "kicker": "SPEC",
   "blocks": [
     { "id": "problem", "type": "prose", "md": "## Problem Statement\n\n…" },
@@ -99,20 +97,28 @@ curl -sk "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
 JSON
 ```
 
+Then attach it to the project it specs — that link is what puts it on the project page:
+
+```bash
+curl -sk "$JTICKET/api/projects/PROJ-1/attachments" -H 'content-type: application/json' \
+  -d '{ "type": "document", "id": "checkout-revamp-spec" }'
+```
+
 Prefer a heredoc or `-d @spec.json` over hand-escaping JSON into a shell string.
 
-- `project` accepts an id, key, **or exact title** — and 400s on an unknown one, so this is
-  the rare jTicket ref that fails loudly rather than silently. `projectId` is a synonym.
-- `status: "draft"` — a spec stays a draft until the user says otherwise. Promote to
-  `"ready"` only when they ask.
-- `labels: ["spec"]` makes it findable: `GET /api/docs?label=spec`.
-- **Updating is `PATCH /api/docs/DOC-n` with the new `blocks`, replaced wholesale.** Send
-  the complete blocks array, never a fragment. Notes and unchanged charts survive the
-  rewrite. To revise one section, GET the document first
-  (`/api/documents/<documentKey>`), edit, and PATCH the whole thing back.
+- Set `key` explicitly. It is the document's identity in the pool *and* the id every
+  attachment ref carries, so you want to know it rather than have one slugged for you.
+  A key that's already taken gets suffixed unless you pass `replace: true`.
+- **Updating is the same `POST /api/documents` with `replace: true`, blocks replaced
+  wholesale.** Send the complete blocks array, never a fragment. Notes and unchanged
+  charts survive the rewrite. To revise one section, GET the document first
+  (`/api/documents/<key>`), edit, and POST the whole thing back. Attachments point at
+  the key, so nothing needs re-attaching.
+- Attaching is idempotent, and a spec can hang off both a project and the tickets that
+  implement it.
 
 Next step, if the user wants it: `/to-jticket tickets` to slice the spec into a breakdown,
-pointing it at the `DOC-n` you just created.
+pointing it at the document key you just created.
 
 ## Related
 

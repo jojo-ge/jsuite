@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
     mode: body.mode === 'wayfinder' ? 'wayfinder' : 'standard',
     repo: body.repo?.trim() ?? '',
     integrationBranch: body.integrationBranch?.trim() ?? '',
+    attachments: cleanAttachments(body.attachments),
     createdAt: ts,
     updatedAt: ts,
   }
