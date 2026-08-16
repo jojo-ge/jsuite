@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url'
 // A consumer that `extends: ['@jsuite/documents']` gets:
 //   - the Block*.vue renderers, <NotesRail>, and <DocumentArticle> (the whole
 //     reading experience: blocks + margin note buttons + notes rail)
+//   - <DocumentLibrary> and <DocumentReader> — the whole-pool library list and
+//     the reading page — plus the pages that mount them at /documents and
+//     /documents/<key>. An app that wants them under its own routes (jExplain's
+//     / and /e/<key>) mounts the components itself rather than copying them.
 //   - useMarkdown() (glossary-aware markdown, block + inline) and useShiki()
 //   - labelForBlock() and markdownPreview() app utils
 //   - the /api/documents/** routes over the shared .data/jexplain pool, plus
