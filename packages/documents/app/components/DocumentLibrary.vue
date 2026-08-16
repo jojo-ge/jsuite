@@ -5,10 +5,14 @@
 // what to call the library, where its reader lives, and whether deleting out of
 // the pool is offered at all.
 //
-// That last one is `deletable`, and it is a prop rather than a constant because
-// the pool is shared: destroying a document is the host's call, not the
-// library's, and <DocumentReader> has the same prop for the same reason. See
-// "who may delete out of the pool" in the root README for the rule itself.
+// That last one is `deletable`, and it **defaults off**: one shared file backs
+// every consumer, so a host that never said whether it owns the pool's
+// lifecycle has not earned a delete button. Destroying a document is the host's
+// call, not the library's, and a host that hasn't made the call isn't offered
+// the affordance — a new app extending this layer inherits a read-only library,
+// and only jExplain, which owns the pool's lifecycle, opts back in.
+// <DocumentReader> holds the same default for the same reason. See "who may
+// delete out of the pool" in the root README for the rule itself.
 import type { ExplainerMeta } from '../../types'
 
 const props = withDefaults(
@@ -19,14 +23,14 @@ const props = withDefaults(
     subtitle?: string
     /** Reader route prefix — a document links to `${readerBase}/${key}`. */
     readerBase?: string
-    /** Offer the delete button — withheld by hosts that don't own the pool's lifecycle. */
+    /** Offer the delete button — off unless the host declares it owns the pool's lifecycle. */
     deletable?: boolean
   }>(),
   {
     title: 'Documents',
     subtitle: 'Every document in the shared pool — explainers, specs and debriefs alike.',
     readerBase: '/documents',
-    deletable: true,
+    deletable: false,
   },
 )
 
