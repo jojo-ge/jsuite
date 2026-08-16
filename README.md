@@ -334,6 +334,13 @@ differently depending on which app you were in. The order is the point:
   that boilerplate hides real messages.
 - **`fallback`** — what the call site would rather say than nothing.
 
+There is no top-level `error.statusMessage` arm: it can only win when the body
+didn't parse, and `error.message` already spells that case out
+(`[GET] "/api/x": 502 Bad Gateway`). Nor a terminal `String(error)` — that's
+what `fallback` is for. One consequence worth knowing: on an *unhandled* 500 the
+error boxes now show the raw exception rather than "Server Error". For a local
+engineering tool that's the better half of the trade.
+
 Everything is read structurally, so callers pass `unknown` and catch blocks
 don't need `catch (e: any)`. Like `@jsuite/data` it's plain ESM with no layer to
 extend — add `"@jsuite/http": "workspace:*"` and import. Being a package rather

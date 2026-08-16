@@ -23,6 +23,14 @@
 //     `statusMessage`-first chain did to any error raised by a route that throws
 //     `message`, the diff layer's included.
 //
+// Two arms jTicket's old chain had are deliberately gone. The top-level
+// `error.statusMessage` is ofetch's copy of the HTTP reason phrase, and it can
+// only win when the body didn't parse — at which point `error.message` already
+// spells the same thing out (`[GET] "/api/x": 502 Bad Gateway`). And the
+// terminal `String(error)`, which existed to catch a non-`Error` throw, renders
+// `[object Object]` about as often as anything useful; that is what `fallback`
+// is for.
+//
 // Ofetch's `data` is typed `{}` unless the call site declares an error type, so
 // `error.data.message` doesn't typecheck even though it's there at runtime.
 // Everything below is read structurally, which is why callers can pass a plain
