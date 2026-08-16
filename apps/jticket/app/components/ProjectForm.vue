@@ -146,7 +146,7 @@ defineExpose({ save, reset, saving, canSave })
         <span class="text-xs font-semibold uppercase tracking-wide text-muted">GitHub</span>
         <span class="text-xs text-muted">optional</span>
       </div>
-      <UFormField label="Repo" help="Path to a local clone — the same path jDiff takes. '~' is fine.">
+      <UFormField label="Repo" help="Path to a local clone — what a review is computed against. '~' is fine.">
         <div class="flex gap-2">
           <UInput v-model="form.repo" placeholder="~/code/my-repo" class="flex-1 font-mono text-sm" />
           <UButton

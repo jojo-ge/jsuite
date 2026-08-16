@@ -13,6 +13,7 @@
   "dependencies": {
     "@iconify-json/lucide": "^1.2.120",
     "@jsuite/data": "workspace:*",
+    "@jsuite/diff": "workspace:*",
     "@jsuite/documents": "workspace:*",
     "@nuxt/ui": "^4.10.0",
     "nuxt": "^4.5.0",

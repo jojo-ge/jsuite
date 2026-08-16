@@ -103,8 +103,10 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   every review artifact store over `.data/jdiff/`, *plus* the whole review
   surface as pages under `/diffs` (`/diffs/prs`, `/diffs/pr/<n>`,
   `/diffs/branch`, …). Any app extending it serves both on its own port. jDiff
-  aliases the same components onto its short routes (`/prs`, `/pr/<n>`) — a
-  review opened either way is the same screen over the same pool.
+  aliases the same components onto its short routes (`/prs`, `/pr/<n>`);
+  **jTicket mounts them as-is**, so a project's PRs are reviewed on the board's
+  own port and a review can hang off a ticket as an attachment. A review opened
+  any of those ways is the same screen over the same pool.
 - **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
   `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
   cancellation. jDiff's review tools and jGrilling's interviewer both run on it.

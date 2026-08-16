@@ -21,11 +21,14 @@ import type { Project, Store } from './store'
 
 const pExecFile = promisify(execFile)
 
-// jDiff's base URL, so a PR row can deep-link into the local diff viewer.
-// Matches the jdiff CLI's own JDIFF_URL override.
-const JDIFF_BASE = (process.env.JDIFF_URL ?? 'https://jdiff.local').replace(/\/+$/, '')
-
-export async function run(cmd: string, args: string[], cwd: string): Promise<string> {
+// Prefixed because jTicket extends @jsuite/diff, whose server utils
+// auto-import into this same Nitro scope under the bare names `run` and
+// `resolveRepoDir`. Two same-named auto-imports resolve silently, and the two
+// implementations are not interchangeable — the layer's `run` reports failures
+// in `message` where every caller here reads `statusMessage`, and its repo
+// resolver has no idea a project is the thing missing a repo. Keeping jTicket's
+// distinct makes which one you get a decision rather than a load order.
+export async function gitRun(cmd: string, args: string[], cwd: string): Promise<string> {
   try {
     const { stdout } = await pExecFile(cmd, args, { cwd, maxBuffer: 16 * 1024 * 1024 })
     return stdout
@@ -53,8 +56,8 @@ export function expandHome(repo: string): string {
   return (repo ?? '').trim().replace(/^~(?=\/|$)/, process.env.HOME ?? '~')
 }
 
-/** Expand '~' and verify the path is a directory; throws 400 otherwise. */
-export function resolveRepoDir(repo: string): string {
+/** Expand '~' and verify a project's repo is a directory; throws 400 otherwise. */
+export function projectRepoDir(repo: string): string {
   const raw = (repo ?? '').trim()
   if (!raw) throw createError({ statusCode: 400, statusMessage: 'this project has no repo — set one on the project first' })
   const path = expandHome(raw)
@@ -185,11 +188,11 @@ export async function listBranches(
 ): Promise<BranchCandidate[]> {
   if (opts.fetch) {
     try {
-      await run('git', ['fetch', '--prune', '--quiet', 'origin'], path)
+      await gitRun('git', ['fetch', '--prune', '--quiet', 'origin'], path)
     } catch { /* offline / no origin — list what we have */ }
   }
 
-  const raw = await run(
+  const raw = await gitRun(
     'git',
     [
       'for-each-ref',
@@ -272,7 +275,7 @@ const prCache = new Map<string, { at: number; prs: GhPr[] }>()
 export async function listOpenPrs(path: string, force = false): Promise<GhPr[]> {
   const hit = prCache.get(path)
   if (!force && hit && Date.now() - hit.at < PR_TTL_MS) return hit.prs
-  const out = await run('gh', ['pr', 'list', '--limit', '100', '--json', PR_FIELDS], path)
+  const out = await gitRun('gh', ['pr', 'list', '--limit', '100', '--json', PR_FIELDS], path)
   const prs = JSON.parse(out) as GhPr[]
   prCache.set(path, { at: Date.now(), prs })
   return prs
@@ -296,26 +299,16 @@ export interface ProjectPr extends GhPr {
   matchedBy: PrMatch[]
   /** Project keys named by the PR's head branch or title. */
   keys: string[]
-  jdiffUrl: string
   githubUrl: string
 }
 
-export function jdiffPrUrl(repoPath: string, number: number | string): string {
-  return `${JDIFF_BASE}/pr/${number}?repo=${encodeURIComponent(repoPath)}`
-}
-
-/** jDiff's PR list for the whole repo. */
-export function jdiffPrsUrl(repoPath: string): string {
-  return `${JDIFF_BASE}/prs?repo=${encodeURIComponent(repoPath)}`
-}
-
-export function jdiffBranchUrl(repoPath: string, branch: string): string {
-  return `${JDIFF_BASE}/branch?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}`
-}
-
+// No review link is built here any more. jTicket serves the review UI itself
+// (it extends @jsuite/diff), so a PR row links to jTicket's own /diffs page —
+// a client-side route the panel builds with useDiffRoutes() off `repo` and the
+// PR number, both already on this payload.
 export function matchProjectPrs(
   prs: GhPr[],
-  opts: { repoPath: string; integrationBranch: string; keys: string[] },
+  opts: { integrationBranch: string; keys: string[] },
 ): ProjectPr[] {
   const branch = opts.integrationBranch.trim()
   // \b either side so TICK-4 doesn't match inside TICK-42, and so a branch like
@@ -334,7 +327,7 @@ export function matchProjectPrs(
     if (keys.length) matchedBy.push('key')
 
     if (!matchedBy.length) continue
-    matched.push({ ...pr, matchedBy, keys, jdiffUrl: jdiffPrUrl(opts.repoPath, pr.number), githubUrl: pr.url })
+    matched.push({ ...pr, matchedBy, keys, githubUrl: pr.url })
   }
 
   // The roll-up PR first, then most recently touched.

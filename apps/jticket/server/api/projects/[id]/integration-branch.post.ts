@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
-  const path = resolveRepoDir(project.repo)
+  const path = projectRepoDir(project.repo)
   const branch = (body?.branch ?? '').trim() || project.integrationBranch.trim() || suggestBranchName(project)
   if (!isSafeRef(branch)) throw createError({ statusCode: 400, statusMessage: `not a usable branch name: ${branch}` })
 
@@ -35,10 +35,10 @@ export default defineEventHandler(async (event) => {
     // local base ref below.
     await tryFetch(path, base)
     const startPoint = (await remoteRefExists(path, base)) ? `refs/remotes/origin/${base}` : base
-    await run('git', ['branch', branch, startPoint], path)
+    await gitRun('git', ['branch', branch, startPoint], path)
   }
   if (!hadRemote) {
-    await run('git', ['push', '--set-upstream', 'origin', `${branch}:${branch}`], path)
+    await gitRun('git', ['push', '--set-upstream', 'origin', `${branch}:${branch}`], path)
   }
 
   project.integrationBranch = branch
@@ -52,20 +52,19 @@ export default defineEventHandler(async (event) => {
     created: !hadLocal && !hadRemote,
     pushed: !hadRemote,
     adopted: hadLocal || hadRemote,
-    jdiffUrl: jdiffBranchUrl(path, branch),
     githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branch)}` : null,
   }
 })
 
 async function tryFetch(path: string, base: string): Promise<void> {
   try {
-    await run('git', ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], path)
+    await gitRun('git', ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`], path)
   } catch { /* offline or no origin — the local base ref will have to do */ }
 }
 
 async function remoteRefExists(path: string, base: string): Promise<boolean> {
   try {
-    const out = await run('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], path)
+    const out = await gitRun('git', ['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], path)
     return !!out.trim()
   } catch {
     return false

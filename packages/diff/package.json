@@ -16,6 +16,7 @@
     "./package.json": "./package.json",
     "./rating": "./app/utils/rating.ts",
     "./risk": "./app/utils/risk.ts",
+    "./routes": "./app/utils/diffRoutes.ts",
     "./target": "./server/utils/target.ts",
     "./time": "./app/utils/time.ts",
     "./tour": "./app/utils/tour.ts"

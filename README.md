@@ -181,10 +181,22 @@ can mount the same screen anywhere else instead. Links *between* screens go
 through `useDiffRoutes()`, which reads `diff.basePath` and `diff.brand` from the
 app's `app.config.ts`; that is how jDiff keeps serving the same components on
 its own short URLs (`/prs`, `/pr/<n>`, `/branch`) with no duplicated code — and
-why no screen in the layer may hardcode a review path.
+why no screen in the layer may hardcode a review path. The table itself is a
+pure function, `diffRoutes(basePath)` from `'@jsuite/diff/routes'`, so a
+consumer's *server* code — which has no app config to read — can build the same
+links: that is how jTicket resolves an attached diff to a URL on its own review
+page rather than jDiff's.
+
+Those seven are screens, and they behave like it — full height, teleported
+panels, they take the page title and the body's scroll. `<DiffReviewCard>` is
+the small one, for hosts that want a review *inside* a page: one target, what
+the change is and what the analysis made of it, with the way through to the
+real screen. jTicket renders it for a `diff` attachment on a ticket.
 
 The palette is scoped to `.diff-surface` / `.diff-overlay` rather than `:root`,
 so an app that only embeds a review screen keeps its own theme everywhere else;
+`.diff-embed` is the same palette without the full-page assumption (it takes the
+height of its content), which is what `<DiffReviewCard>` sits on, and
 `--diff-bg` is the single token that does sit on `:root`, for a consumer
 painting its own page to match. Each screen mounts its own
 `<DiffScrollTopButton>`, so it follows the UI into whatever app hosts it.
@@ -195,7 +207,14 @@ consumer reads back identically in another — and, now that the UI is shared
 too, identically through either route. A target is always addressed by query
 params — `?repo=` plus `?number=` (a PR) or `?branch=&base=` (a local branch) —
 so the layer holds no per-app repo config. jDiff stays a thin shell over it: its
-short routes, the scratch prototypes, and the `jdiff` CLI.
+short routes, the scratch prototypes, and the `jdiff` CLI. jTicket is the other
+consumer: it serves the same screens at `/diffs`, opens its projects' PRs there
+rather than at jdiff.local, and attaches reviews to tickets.
+
+One thing to watch when extending the layer alongside server code of your own:
+`run` and `resolveRepoDir` are Nitro auto-imports here, and a consumer that
+already has helpers by those names will have the collision resolved for it,
+silently. jTicket's are `gitRun`/`projectRepoDir` for exactly that reason.
 
 ## @jsuite/documents
 
