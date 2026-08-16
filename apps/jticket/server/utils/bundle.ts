@@ -1,6 +1,7 @@
 import type { Explainer, DocNotes } from '@jsuite/documents/store'
 import type { Chart, ChartNotes } from '@jsuite/charting/store'
-import type { Project, Ticket, LegacyDoc } from './store'
+import type { Project, Ticket } from '#shared/types/tracker'
+import type { LegacyDoc } from './store'
 
 // A project bundle is the portable form of one project — everything needed to
 // recreate it on another jSuite install: the tracker records, the bodies of

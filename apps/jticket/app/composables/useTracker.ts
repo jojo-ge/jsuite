@@ -1,33 +1,11 @@
+// The board's client half: the reactive state every screen reads, the calls
+// that move it, and the view meta (labels, icons, colours, date formatting)
+// that only a screen cares about. The records themselves are declared in
+// shared/types/tracker.ts and the rules read off them in shared/utils/tracker.ts
+// (auto-imported) — both sides of the app share those.
+
 import type { ExplainerMeta } from '@jsuite/documents/types'
-
-// Client-side mirror of the server types (see server/utils/store.ts).
-export type TicketType = 'AFK' | 'HITL'
-export type TicketStatus = 'todo' | 'in_progress' | 'done'
-export type ProjectMode = 'standard' | 'wayfinder'
-
-// An artifact reference — jTicket owns the ticket↔artifact link; the shared
-// pools stay ticket-ignorant. `id` is a document or chart pool key, or a diff
-// review target ('123' / 'branch/<name>'). See server/utils/store.ts.
-export type AttachmentType = 'document' | 'chart' | 'diff'
-
-export interface Attachment {
-  type: AttachmentType
-  id: string
-}
-
-// What GET /api/{tickets,projects}/:id/attachments returns: the ref plus what
-// the artifact says about itself, read fresh from its pool. `missing` means the
-// artifact is gone (or, for a diff, that there's no repo to read it against) —
-// a state to render, not an error.
-export interface ResolvedAttachment extends Attachment {
-  title: string
-  url: string
-  updatedAt: string
-  missing: boolean
-  reason?: string
-  /** Diffs only: the repo the review target is read against. */
-  repo?: string
-}
+import type { AttachmentType, Project, Ticket, TicketStatus } from '#shared/types/tracker'
 
 /**
  * Everything that differs by artifact type, in one place — so a new type is a
@@ -50,63 +28,6 @@ export const ATTACHMENT_META: Record<AttachmentType, { label: string; icon: stri
   // diff — the one thing a chart is not.)
   chart: { label: 'Chart', icon: 'i-lucide-shapes' },
   diff: { label: 'Diff', icon: 'i-lucide-git-pull-request' },
-}
-
-/** The stable identity of a ref — `type:id`, the key every list and map uses. */
-export function attachmentKey(a: Attachment): string {
-  return `${a.type}:${a.id}`
-}
-
-export interface Project {
-  id: string
-  key: string
-  title: string
-  description: string
-  mode: ProjectMode
-  // GitHub link — '' when the project isn't wired to a repo. `repo` is a path
-  // to a local clone (what a review takes as ?repo=); `integrationBranch` is the
-  // empty branch this project's PRs target. See <ProjectGithub>.
-  repo: string
-  integrationBranch: string
-  attachments: Attachment[]
-  createdAt: string
-  updatedAt: string
-}
-
-// The human leaves direction here before handing the ticket to an LLM; LLMs
-// post progress notes and questions under their own name.
-export interface TicketComment {
-  id: string
-  author: string
-  body: string
-  createdAt: string
-}
-
-export interface Ticket {
-  id: string
-  key: string
-  title: string
-  description: string
-  acceptanceCriteria: string[]
-  type: TicketType
-  status: TicketStatus
-  projectId: string | null
-  assignee: string
-  labels: string[]
-  resolution: string
-  blockedBy: string[]
-  comments: TicketComment[]
-  attachments: Attachment[]
-  // When the ticket last became done; null while unfinished. Stamped by the
-  // server on the status change, not by callers — see /finished.
-  completedAt: string | null
-  createdAt: string
-  updatedAt: string
-  // Derived flags the GET endpoints attach (never persisted). Optional so a
-  // locally-constructed Ticket (e.g. form state) still satisfies the type.
-  blocked?: boolean
-  claimed?: boolean
-  frontier?: boolean
 }
 
 // How long a ticket stays ringed after it moves under you.
@@ -147,10 +68,14 @@ export function useTracker() {
     }
   }
 
+  // No <T> on the tracker's own two calls: Nuxt types $fetch from the route
+  // handler, so `p` and `t` are what /api/projects and /api/tickets actually
+  // return, and assigning them into state is a check rather than an assertion.
+  // A handler that stopped returning Projects would fail here, at build time.
   async function refresh() {
     const [p, t, d] = await Promise.all([
-      $fetch<Project[]>('/api/projects'),
-      $fetch<Ticket[]>('/api/tickets'),
+      $fetch('/api/projects'),
+      $fetch('/api/tickets'),
       // The shared pool can be unreachable without the board being broken.
       $fetch<ExplainerMeta[]>('/api/documents').catch(() => [] as ExplainerMeta[]),
     ])
@@ -224,18 +149,6 @@ export const STATUS_META: Record<TicketStatus, { label: string; color: 'neutral'
   done: { label: 'Done', color: 'success' },
 }
 
-export function isBlocked(ticket: Ticket, all: Ticket[]): boolean {
-  return ticket.blockedBy.some((id) => {
-    const dep = all.find((t) => t.id === id)
-    return dep ? dep.status !== 'done' : false
-  })
-}
-
-// The frontier: takeable edge of a map — open, unblocked, unclaimed.
-export function isFrontier(ticket: Ticket, all: Ticket[]): boolean {
-  return ticket.status === 'todo' && !ticket.assignee && !isBlocked(ticket, all)
-}
-
 // ── Wayfinder labels ──
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task'
 export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
@@ -257,11 +170,6 @@ export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | n
 }
 
 // ── Completion times ──
-// Newest completion first; unstamped tickets sort last.
-export function byCompletedAtDesc(a: Ticket, b: Ticket): number {
-  return (b.completedAt ?? '').localeCompare(a.completedAt ?? '')
-}
-
 const DAY_FMT = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 const TIME_FMT = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit' })
 

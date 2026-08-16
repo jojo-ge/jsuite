@@ -17,7 +17,8 @@
 import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
-import type { Project, Store } from './store'
+import type { Project } from '#shared/types/tracker'
+import type { Store } from './store'
 
 const pExecFile = promisify(execFile)
 

@@ -17,7 +17,7 @@
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
 // the rest of the project page never waits on GitHub.
-import type { Project } from '~/composables/useTracker'
+import type { Project } from '#shared/types/tracker'
 
 const props = defineProps<{ project: Project }>()
 // Nothing to configure inline — "connect a repo" opens the project edit modal

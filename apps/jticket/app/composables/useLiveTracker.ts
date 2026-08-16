@@ -7,7 +7,7 @@
 // just fetched. That split is deliberate: the stream stays a dumb notification
 // channel, and the interesting part (what counts as a move worth announcing)
 // lives here, next to the UI that shows it.
-import type { Ticket, TicketStatus } from '~/composables/useTracker'
+import type { Ticket, TicketStatus } from '#shared/types/tracker'
 
 export type LiveStatus = 'connecting' | 'live' | 'offline'
 

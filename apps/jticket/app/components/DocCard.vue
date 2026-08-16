@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ExplainerMeta } from '@jsuite/documents/types'
-import type { Project } from '~/composables/useTracker'
+import type { Project } from '#shared/types/tracker'
 
 // A document in the shared pool. `project` is passed in by whoever grouped it —
 // the document itself knows nothing about projects; the link lives on the

@@ -2,7 +2,7 @@
 // One project as a card on the projects grid: key, title, description preview,
 // ticket count and the four-state progress bar. Finished projects (every
 // ticket done) render dimmed — the grid sinks them to the bottom.
-import type { Project, Ticket } from '~/composables/useTracker'
+import type { Project, Ticket } from '#shared/types/tracker'
 
 defineProps<{
   project: Project

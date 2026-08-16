@@ -1,7 +1,7 @@
 // Shared modal state for creating/editing projects and tickets.
 // State lives in useState so any page (board, projects hub, project detail) can
 // open the same modals, which are rendered once globally in app.vue.
-import type { Project, Ticket } from '~/composables/useTracker'
+import type { Project, Ticket } from '#shared/types/tracker'
 
 export function useTrackerModals() {
   const { deleteProject, deleteTicket } = useTracker()

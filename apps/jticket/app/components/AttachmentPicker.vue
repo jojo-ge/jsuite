@@ -5,7 +5,7 @@
 // diff is *named* — it is computed from a repo on demand, so there is no list
 // to pick from and never will be.
 import type { ExplainerMeta } from '@jsuite/documents/types'
-import type { Attachment, AttachmentType } from '~/composables/useTracker'
+import type { Attachment, AttachmentType } from '#shared/types/tracker'
 
 const props = defineProps<{
   open: boolean

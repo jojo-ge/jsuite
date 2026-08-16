@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Ticket, TicketStatus } from '~/composables/useTracker'
+import type { Ticket, TicketStatus } from '#shared/types/tracker'
 
 const props = defineProps<{
   open: boolean

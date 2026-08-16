@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Ticket } from '~/composables/useTracker'
+import type { Ticket } from '#shared/types/tracker'
 
 const props = defineProps<{ ticket: Ticket; tickets: Ticket[]; wayfinder?: boolean }>()
 const emit = defineEmits<{ edit: [Ticket]; delete: [Ticket] }>()

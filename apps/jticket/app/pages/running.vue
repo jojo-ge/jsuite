@@ -3,19 +3,14 @@
 // project it belongs to so a glance answers "what am I in the middle of, and
 // where does it live?". Each group links through to the project page, where
 // the rest of that project's tickets are.
-import type { Project, Ticket } from '~/composables/useTracker'
+import type { Project, Ticket } from '#shared/types/tracker'
 
 useHead({ title: 'Running now' })
 
 const { projects, tickets } = useTracker()
 const { openEditTicket, onDeleteTicket } = useTrackerModals()
 
-function byKey(a: Ticket, b: Ticket) {
-  const n = (k: string) => Number(k.split('-').pop()) || 0
-  return n(a.key) - n(b.key)
-}
-
-const running = computed(() => tickets.value.filter((t) => t.status === 'in_progress').sort(byKey))
+const running = computed(() => tickets.value.filter((t) => t.status === 'in_progress').sort(byKeyNumber))
 
 interface RunGroup {
   project: Project | null

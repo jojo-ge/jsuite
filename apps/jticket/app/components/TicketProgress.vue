@@ -3,7 +3,7 @@
 // The four states are mutually exclusive and blocked wins over the ticket's own
 // status — something waiting on a blocker isn't moving, whatever it says. Same
 // precedence TicketBoard uses to bucket a board.
-import type { Ticket } from '~/composables/useTracker'
+import type { Ticket } from '#shared/types/tracker'
 
 const props = defineProps<{
   // The tickets being summarised…
