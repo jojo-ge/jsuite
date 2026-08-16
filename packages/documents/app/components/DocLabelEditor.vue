@@ -13,6 +13,10 @@ const draft = ref('')
 const busy = ref(false)
 const error = ref('')
 
+// The editor's own bounds, so blur can tell "focus left" from "focus moved to
+// the chip next door". See `onBlur`.
+const root = ref<HTMLElement | null>(null)
+
 // Every label already in use anywhere in the pool, offered as suggestions so a
 // typo joins `wayfinder:asset` instead of silently founding `wayfinder:aset`.
 // A label's whole job is to be matched by `?label=`, and a misspelt one is
@@ -83,11 +87,31 @@ async function add() {
   await save([...props.labels, label])
 }
 
+// Blur commits, but only when focus really left the editor. `relatedTarget`
+// names where focus went, and two of the three answers aren't "done typing":
+// null means focus went nowhere — the stray click on the page behind while
+// aiming at a suggestion — and a node inside `root` means it only moved to a
+// chip's remove button. Committing on either saves half-typed text as a real
+// label, the same silent-typo failure the suggestions exist to close, so a
+// miss leaves the input open with what was typed still in it and costs a click
+// instead of a bogus label. Focus is deliberately not stolen back: the click
+// went somewhere on purpose. Enter still commits, Esc still discards.
+//
+// `document.body` is checked alongside null because "focus went nowhere" is
+// spelt both ways across browsers, and this one can't be tried in all of them
+// from here. Nothing is lost by the extra clause: nobody tabs to the body to
+// mean "save my label".
+function onBlur(event: FocusEvent) {
+  const next = event.relatedTarget as Node | null
+  if (!next || next === document.body || root.value?.contains(next)) return
+  add()
+}
+
 const remove = (label: string) => save(props.labels.filter((l: string) => l !== label))
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-1">
+  <div ref="root" class="flex flex-wrap items-center gap-1">
     <UBadge
       v-for="label in props.labels"
       :key="label"
@@ -119,7 +143,7 @@ const remove = (label: string) => save(props.labels.filter((l: string) => l !== 
         :list="listId"
         @keyup.enter="add"
         @keyup.esc="((adding = false), (draft = ''))"
-        @blur="add"
+        @blur="onBlur"
       />
       <!-- Native suggestion, deliberately: it filters as you type, it is
            keyboard-reachable, and it never refuses a value that isn't in it. -->
