@@ -21,8 +21,9 @@ ticket-ignorant.
 ## Before you start
 
 1. Confirm the app is running. The base URL is always
-   `https://jticket.local` — the jSuite Caddy edge serves it there. Never
-   guess a localhost port. Quick check:
+   `https://jticket.local` (`:43000` on the bare host) — the one agent-facing
+   API in the suite, documents and charts included. Never guess another port.
+   Quick check:
    ```bash
    curl -sk https://jticket.local/api/documents >/dev/null && echo up \
      || echo "not up — run: ./jsuite start"
@@ -78,9 +79,10 @@ Fields:
 - `replace: true` — overwrite the named key in place instead of minting a new
   one. See "Revise" below.
 
-The response returns `{ key, title, path, blocks }`. The document is readable
-at `https://jticket.local/documents/<key>` and, same document and same notes, at
-`https://jexplain.local/e/<key>`.
+The response returns `{ key, title, path, blocks }`. Read the document at
+`https://jticket.local/documents/<key>` — that is the link to hand the user.
+(Ignore the returned `path`: it is jExplain's own `/e/<key>` route, which
+jTicket does not serve. Same document either way — one pool.)
 
 ## 2. Attach it where it belongs
 

@@ -16,11 +16,11 @@ Use this when the user asks you to *explain* something and deserves better than 
    ```
    python3 ~/.claude/skills/j-explain/scripts/explain.py <payload.json>
    ```
-   This creates the explainer, opens it in the browser, and prints the URL plus data file paths. Re-publish a revision with `--replace` (keep the same `key` in the payload): notes survive, and charts whose mermaid didn't change keep the user's hand edits.
+   This creates the explainer, opens it in the browser at `https://jticket.local/documents/<key>`, and prints the URL plus data file paths. Re-publish a revision with `--replace` (keep the same `key` in the payload): notes survive, and charts whose mermaid didn't change keep the user's hand edits.
 
 3. **Tell the user how to use it.** In the browser they can:
    - Read it as an article — glossary terms show definitions on hover.
-   - **Edit any chart directly on its canvas** (full Excalidraw) — it's the same chart object jChart opens; "Open in jChart" jumps to the full workbench with shape-level notes.
+   - **Edit any chart directly on its canvas** (full Excalidraw) — it's the same chart object jChart opens; "Open in workbench" jumps to `/charts/<chartKey>` on the same app, for shape-level notes.
    - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail.
    - Click **Copy notes for Claude** when done.
 
@@ -108,8 +108,8 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 
 ## Notes
 
-- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The app's home page is <https://jexplain.local>.
-- The app is jExplain in the jSuite (`~/code/anyway/jsuite/apps/jexplain`, port 43004). Start everything with `jsuite start`.
+- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket, which are the same objects. The library is at <https://jticket.local/documents>; jExplain reads the same pool at <https://jexplain.local>, where a document renders at `/e/<key>`.
+- Publishing goes through jTicket, the suite's single agent-facing API on :43000. jExplain (port 43004) is the pool's branded reading shell, not a second place to publish to. Start everything with `jsuite start`.
 - Charts live in the shared chart pool — deleting an explainer never deletes its charts.
-- Publishing goes to `POST /api/documents` (explain.py handles this). For a document that should sit on the jTicket board with project/status/labels, use `/to-jdoc` instead — same format, plus a tracker record.
+- Publishing goes to `POST /api/documents` on :43000 (explain.py handles this). For a document that should be *attached* to a jTicket project or ticket, use `/to-jdoc` instead — same pool, same call, plus the attachment.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JEXPLAIN_BROWSER`.

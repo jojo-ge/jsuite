@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a j-explain document into the jExplain app and open it for reading.
+"""Publish a j-explain document into the shared jSuite pool and open it for reading.
 
 Usage:
     explain.py <doc.json> [--replace] [--no-open] [--browser "Google Chrome"]
@@ -22,10 +22,12 @@ import sys
 import urllib.error
 import urllib.request
 
-# The jSuite edge (https) is the address the user sees; the bare dev port is the
+# Every domain API in the suite is served on jTicket's port, so an agent has one
+# surface to talk to and one place a published document opens (TICK-143). The
+# jSuite edge (https) is the address the user sees; the bare dev port is the
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
-EDGE_BASE = "https://jexplain.local"
-DIRECT_BASE = "http://localhost:43004"
+EDGE_BASE = "https://jticket.local"
+DIRECT_BASE = "http://localhost:43000"
 DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jexplain")
 CHART_DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
 
@@ -61,7 +63,7 @@ def pick_base():
 
 def not_running():
     print(
-        "error: jExplain isn't reachable.\n"
+        "error: the shared document API isn't reachable (jTicket serves it).\n"
         "  Start the suite with:  jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
@@ -138,7 +140,10 @@ def main():
     except urllib.error.URLError:
         return not_running()
 
-    url = f"{EDGE_BASE}{res['path']}" if base == EDGE_BASE else f"{base}{res['path']}"
+    # Not the `path` the shared store returns: that is jExplain's own `/e/<key>`
+    # reader route, and this publishes through jTicket, whose reader is
+    # `/documents/<key>`. Same document either way — the pool is one pool.
+    url = f"{base}/documents/{res['key']}"
     if not args.no_open:
         open_in_browser(url, args.browser)
 

@@ -12,9 +12,9 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | Request smells like… | App | How to drive it |
 | --- | --- | --- |
 | tickets, epics, breakdowns, boards, specs, draft docs | `apps/jticket` | HTTP API on :43000 — skills `to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement`. Also the **shell**: it serves the whole-pool Docs (`/documents`), Charts (`/charts`) and Diffs (`/diffs`) libraries, and renders a ticket's or project's attached documents, charts and diff reviews in place |
-| PR review, branch diff, review comments | `apps/jdiff` | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`); the UI itself is `packages/diff`, and jTicket serves it too at `/diffs` |
-| diagrams the human edits/annotates | `apps/jchart` | skill `j-chart`; API on :43003; state in `.data/jchart/` |
-| explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
+| PR review, branch diff, review comments | `apps/jdiff` | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`) — it opens `jticket.local/diffs/…`; the UI itself is `packages/diff`, and jDiff serves the same screens on its own short routes (`JDIFF_URL` re-points the CLI) |
+| diagrams the human edits/annotates | `apps/jchart` | skill `j-chart` — `chart.py` posts to :43000 and opens `jticket.local/charts/<key>`; jChart is the branded workbench on :43003 over the same pool; state in `.data/jchart/` |
+| explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` — `explain.py` posts to :43000 and opens `jticket.local/documents/<key>`; jExplain is the branded reader on :43004 over the same pool |
 | grill/stress-test a plan with the human answering in a UI | `apps/jgrilling` | skill `j-grilling`; API on :43005; state in `.data/jgrilling/` |
 | avatar characters — draw, rig, keyframe 2D avatars | `apps/jrig` | studio at https://jrig.local; character/clip JSON in `.data/jrig/` (documents API on :43006); see `apps/jrig/docs/PLAN.md` |
 | charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` **and the chart UI** — library at `/charts`, workbench at `/charts/<key>` — in every consumer; jExplain charts ARE jChart charts |
@@ -30,10 +30,17 @@ that app's own skill rather than improvising one app's job in another.
 - **State lives in `.data/<app>/` at this root, never inside an app.** Use
   `@jsuite/data` (`appDataDir`/`appDataFile`) to resolve paths. jTicket's state
   is API-only — go through :43000, don't hand-edit `.data/jticket/jticket.json`.
+- **:43000 is the one agent-facing surface.** jTicket extends the document,
+  chart and diff layers, so every domain API answers there and every artifact
+  opens there. Skills, `explain.py`, `chart.py` and the `jdiff` CLI all point at
+  it; the other apps are branded shells over the same pools, for when the user
+  wants *that* app rather than its data.
 - **URLs always carry the scheme**: `https://<app>.local`. Bare host ports
   (43000–43006) work too but the `.local` names are what tooling hardcodes.
 - **Ports are fixed.** The `APPS` table in `./jsuite`, the `Caddyfile`, and
-  skills that hardcode ports (to-jticket → :43000) must stay in sync.
+  tooling that hardcodes ports (every jskill and publish script → :43000;
+  `j-grilling` also → :43005, the one API jTicket doesn't mount) must stay in
+  sync.
 - **Adding an app**: follow "Adding an app" in `README.md` — `apps/<id>`, `APPS`
   row, `Caddyfile` block, `DOMAINS` entry + the `dev.orbstack.domains` label in
   `docker-compose.yml`, allowlist the `.local` name in

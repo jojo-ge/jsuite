@@ -1,8 +1,10 @@
 # jTicket HTTP API
 
-Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is JSON:
-`-H 'content-type: application/json'`. The running app also serves a live reference at
-`$JTICKET/api-guide`.
+Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}` (`https://jticket.local`
+through the edge). This is **the** agent-facing surface of the suite: jTicket extends the
+document, chart and diff-review layers, so their APIs answer on this base too — there is no
+second port to POST to. Every write is JSON: `-H 'content-type: application/json'`. The
+running app also serves a live reference at `$JTICKET/api-guide`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -17,13 +19,20 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / POST / DELETE | `/api/projects/:id/attachments` | Same, for a project |
 | GET / POST | `/api/documents` | The shared document pool (also served by jExplain) |
 | GET / PATCH / DELETE | `/api/documents/:key` | One shared document (PATCH refiles its labels) |
-| GET | `/api/charts` | The shared chart pool (also served by jChart) |
+| GET / POST | `/api/charts` | The shared chart pool (also served by jChart) |
+| GET / PUT / DELETE | `/api/charts/:key` | One shared chart |
+| GET / PUT | `/api/documents/:key/notes`, `/api/charts/:key/notes` | The human's review notes on one artifact |
 | GET / POST | `/api/uploads` | List / upload FILES for markdown — *not* artifact refs |
 | GET | `/uploads/:name` | Serve an uploaded file |
 | GET / POST | `/api/attachments` | Legacy alias — redirects to `/api/uploads` |
 | GET | `/attachments/:name` | Legacy alias — redirects to `/uploads/:name` |
 
 `:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`).
+
+The `@jsuite/diff` review engine answers here as well — `/api/diff`, `/api/prs`, `/api/pr`,
+`/api/branches`, `/api/rating`, `/api/risk`, `/api/analyze-generate` and the artifact stores,
+all addressed by `?repo=` plus `?number=` or `?branch=`. The screens over them are at
+`$JTICKET/diffs/…`; the `jdiff` CLI opens those URLs (`jdiff pr 42 --print`).
 
 ## Query params
 
@@ -161,8 +170,9 @@ against.
 `/api/import` — but PATCH **replaces the array wholesale**, so prefer the endpoints above
 to add or drop one ref without a read-modify-write.
 
-Writing the document itself is `POST /api/documents` (see **to-jdoc**); the document then
-renders at `$JTICKET/documents/<key>` and in jExplain at `https://jexplain.local/e/<key>`.
+Writing the document itself is `POST /api/documents` on this same base (see **to-jdoc**);
+the document then renders at `$JTICKET/documents/<key>`, which is the link to give out. The
+pool is shared, so it also reads in jExplain at `/e/<key>`.
 
 A document's **labels** are its own — they live on the document in the shared pool, not on
 the attachment, so the same filing shows in jTicket and jExplain. Set them at creation, or
