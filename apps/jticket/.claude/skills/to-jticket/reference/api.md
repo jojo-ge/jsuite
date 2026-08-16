@@ -8,8 +8,6 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | --- | --- | --- |
 | GET / POST | `/api/projects` | List / create projects |
 | GET / PATCH / DELETE | `/api/projects/:id` | One project (id **or** key) |
-| GET / POST | `/api/epics` | List / create epics |
-| GET / PATCH / DELETE | `/api/epics/:id` | One epic (id or key) |
 | GET / POST | `/api/tickets` | List / create tickets |
 | GET / PATCH / DELETE | `/api/tickets/:id` | One ticket (id or key) |
 | POST | `/api/tickets/:id/comments` | Add a comment to a ticket |
@@ -20,12 +18,12 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / POST | `/api/attachments` | List / upload attachments |
 | GET | `/attachments/:name` | Serve an uploaded file |
 
-`:id` accepts the internal id or the human key (`PROJ-1`, `EPIC-2`, `TICK-7`, `DOC-3`).
+`:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`, `DOC-3`).
 
 ## Query params
 
 ```
-GET /api/tickets?epicId=EPIC-2      # epic id or key
+GET /api/tickets?projectId=PROJ-2   # project id or key
                 &status=todo|in_progress|done
                 &assignee=<exact name>
                 &label=<exact label>
@@ -62,19 +60,6 @@ POST /api/projects
 
 `PATCH /api/projects/:id` accepts the same fields; omitted fields are untouched.
 
-### Epic
-
-```jsonc
-POST /api/epics
-{ "title": "Checkout revamp",           // required
-  "description": "New payment flow",
-  "projectId": "PROJ-1",                // id or KEY only — 400 if unknown
-  "labels": ["wayfinder:map"] }
-```
-
-`PATCH /api/epics/:id` — same fields. `projectId: null` or `""` detaches it.
-**There is no `project` (by-title) field here** — that only exists on docs and import.
-
 ### Ticket
 
 ```jsonc
@@ -84,7 +69,7 @@ POST /api/tickets
   "acceptanceCriteria": ["Survives refresh"],
   "type": "AFK",                        // or "HITL"; anything else → "AFK"
   "status": "todo",                     // todo | in_progress | done
-  "epicId": "EPIC-2",                   // id or KEY only — 400 if unknown
+  "projectId": "PROJ-2",                // id or KEY only — 400 if unknown
   "assignee": "",                       // free-form name; "" = unassigned
   "labels": ["wayfinder:research"],
   "resolution": "",                     // the answer, GFM markdown
@@ -96,7 +81,7 @@ POST /api/tickets
 - Array fields (`acceptanceCriteria`, `labels`, `blockedBy`) are **replaced wholesale**.
   Read-modify-write to append.
 - `assignee: ""` unassigns. `resolution: ""` clears.
-- `epicId: null` detaches. A self-blocking edge is dropped.
+- `projectId: null` detaches (→ backlog). A self-blocking edge is dropped.
 - Labels are trimmed, emptied-out, and de-duplicated on the way in.
 - `comments` is **not PATCHable** — use the comments endpoint below.
 
@@ -172,34 +157,31 @@ that resolves references by **title**, which is what makes it usable before any 
 ```jsonc
 {
   "projects": [{ "title": "Checkout", "description": "…", "mode": "standard" }],
-  "epics":    [{ "title": "Checkout revamp", "description": "…",
-                 "project": "Checkout",           // project title or key
-                 "labels": [] }],
   "tickets":  [
     { "title": "Add cart schema", "description": "Persist a cart.", "type": "AFK",
-      "epic": "Checkout revamp",                  // epic title or key
+      "project": "Checkout",                      // project title or key
       "acceptanceCriteria": ["Survives refresh"] },
     { "title": "Cart UI", "description": "Edit quantities.", "type": "AFK",
-      "epic": "Checkout revamp",
+      "project": "Checkout",
       "blockedBy": ["Add cart schema"] }          // ticket TITLES or keys
   ]
 }
-→ 201 { "projects": [...], "epics": [...], "tickets": [...] }   // with generated keys
+→ 201 { "projects": [...], "tickets": [...] }   // with generated keys
 ```
 
-- All three arrays are optional. Order within the call does not matter: projects are
-  created, then epics, then tickets, then `blockedBy` edges are wired in a second pass —
-  so a ticket may block-reference one declared later in the same array.
+- Both arrays are optional. Order within the call does not matter: projects are
+  created, then tickets, then `blockedBy` edges are wired in a second pass — so a
+  ticket may block-reference one declared later in the same array.
 - `wayfinderType: "research"` on a ticket is shorthand that adds the label
   `wayfinder:research`. Only valid here.
 - **It always creates.** There is no upsert. Re-running the same import duplicates
-  everything. To extend an existing epic, send only `tickets` and reference the epic by
-  key.
-- Unresolvable `epic` / `project` / `blockedBy` refs are **dropped silently** — the
+  everything. To extend an existing project, send only `tickets` and reference the
+  project by key.
+- Unresolvable `project` / `blockedBy` refs are **dropped silently** — the
   ticket is still created, just unparented or unblocked. Always verify:
 
 ```bash
-curl -s "$JTICKET/api/tickets?epicId=EPIC-2" | jq '.[] | {key, title, blockedBy, blocked}'
+curl -s "$JTICKET/api/tickets?projectId=PROJ-2" | jq '.[] | {key, title, blockedBy, blocked}'
 ```
 
 ## Storage

@@ -5,12 +5,12 @@ export default defineEventHandler(async (event) => {
   }
   const store = loadStore()
 
-  // Resolve epic ref (id or key) if provided.
-  let epicId: string | null = null
-  if (body.epicId) {
-    const epic = store.epics.find((e) => e.id === body.epicId || e.key === body.epicId)
-    if (!epic) throw createError({ statusCode: 400, statusMessage: `unknown epic: ${body.epicId}` })
-    epicId = epic.id
+  // Resolve project ref (id or key) if provided.
+  let projectId: string | null = null
+  if (body.projectId) {
+    const project = store.projects.find((p) => p.id === body.projectId || p.key === body.projectId)
+    if (!project) throw createError({ statusCode: 400, statusMessage: `unknown project: ${body.projectId}` })
+    projectId = project.id
   }
 
   // Resolve blockedBy refs (ids or keys) to ticket ids.
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
     acceptanceCriteria: (body.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
     type: body.type === 'HITL' ? 'HITL' : 'AFK',
     status,
-    epicId,
+    projectId,
     assignee: typeof body.assignee === 'string' ? body.assignee.trim() : '',
     labels: cleanLabels(body.labels),
     resolution: typeof body.resolution === 'string' ? body.resolution.trim() : '',

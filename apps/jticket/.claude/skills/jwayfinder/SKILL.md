@@ -54,25 +54,25 @@ stand in for it:
 | Wayfinder concept | jTicket |
 | --- | --- |
 | The effort | a **project** with `"mode": "wayfinder"` |
-| Map | an **epic** in that project labelled `wayfinder:map`; its `description` **is** the map body |
-| Ticket | a **ticket** whose `epicId` is that map; its `description` is the question |
+| Map | the project's `description` **is** the map body |
+| Ticket | a **ticket** whose `projectId` is that project; its `description` is the question |
 | Ticket sub-type | a `wayfinder:research\|prototype\|grilling\|task` **label** |
 | HITL / AFK | the ticket's **`type`** |
 | Blocking | **`blockedBy`** (ticket keys) — rendered natively in the UI |
 | Claim | set **`assignee`** — an assigned ticket leaves the frontier |
-| Frontier | `GET /api/tickets?epicId=<map key>&frontier=true` — key-ordered |
+| Frontier | `GET /api/tickets?projectId=<project key>&frontier=true` — key-ordered |
 | Close | `status: "done"` |
 | Resolution comment | the ticket's **`resolution`** field — comments are for discussion, not the answer |
 
-A wayfinder project renders each map's tickets grouped into **Frontier · In progress ·
-Blocked · Resolved**, frontier ring-highlighted, map body collapsible above them.
+A wayfinder project renders its tickets grouped into **Frontier · In progress ·
+Blocked · Resolved**, frontier ring-highlighted, map body one click away above them.
 
-One project may hold several maps — one epic each — when an effort splits into
-independent territories. Default to one.
+One project holds one map. When an effort splits into independent territories,
+give each its own wayfinder project.
 
 ## The map body
 
-The whole map at low resolution, loaded once per session, stored as the epic's
+The whole map at low resolution, loaded once per session, stored as the project's
 `description`:
 
 ```markdown
@@ -109,7 +109,7 @@ are found by query.
 
 ## Tickets
 
-Each ticket belongs to the map epic. Its `description` is the question, sized to one
+Each ticket belongs to the project. Its `description` is the question, sized to one
 100K-token agent session:
 
 ```markdown
@@ -217,10 +217,10 @@ The user invokes with a loose idea.
    first steps takeable now. **If this surfaces no fog** — the way to the destination is
    already clear, the whole journey small enough for one session — you don't need a map.
    Stop and ask the user how they'd like to proceed.
-3. **Create the project, the map, and the tickets you can specify now** — one
-   `POST /api/import`. Import resolves `project`, `epic`, and `blockedBy` by **title or
-   key**, and wires edges in a second pass after every ticket exists, so a single call is
-   enough — no create-then-wire dance.
+3. **Create the project (its description is the map) and the tickets you can specify
+   now** — one `POST /api/import`. Import resolves `project` and `blockedBy` by **title
+   or key**, and wires edges in a second pass after every ticket exists, so a single
+   call is enough — no create-then-wire dance.
 4. Everything you can't yet specify stays in the fog — the **Not yet specified** section
    of the map body.
 5. **Verify** the edges landed (import drops unresolvable refs silently), then report the
@@ -230,15 +230,12 @@ The user invokes with a loose idea.
 ```bash
 curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
   "projects": [{ "title": "Rive Story Assets", "mode": "wayfinder",
-                 "description": "Getting animated story assets into the app." }],
-  "epics":    [{ "title": "Rive — Map", "project": "Rive Story Assets",
-                 "labels": ["wayfinder:map"],
                  "description": "## Destination\n\n…\n\n## Notes\n\n…\n\n## Decisions so far\n\n## Not yet specified\n\n- …\n\n## Out of scope\n\n" }],
   "tickets":  [
-    { "title": "Choose the Rive runtime", "epic": "Rive — Map", "type": "AFK",
+    { "title": "Choose the Rive runtime", "project": "Rive Story Assets", "type": "AFK",
       "wayfinderType": "research",
       "description": "## Question\n\nWhich Rive runtime fits a Nuxt app — web, or the canvas build?" },
-    { "title": "Decide the asset hand-off format", "epic": "Rive — Map", "type": "HITL",
+    { "title": "Decide the asset hand-off format", "project": "Rive Story Assets", "type": "HITL",
       "wayfinderType": "grilling", "blockedBy": ["Choose the Rive runtime"],
       "description": "## Question\n\nWhat does a designer hand over, and where does it live?" }
   ]
@@ -247,7 +244,7 @@ curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
 
 ```bash
 # verify: every ticket, its edges, and what the frontier actually is
-curl -s "$JTICKET/api/tickets?epicId=EPIC-3" \
+curl -s "$JTICKET/api/tickets?projectId=PROJ-3" \
   | jq '.[] | {key, title, type, labels, blockedBy, blocked, frontier}'
 ```
 
@@ -256,21 +253,21 @@ hand-escaping `\n` into a shell string will mangle it.
 
 ### Work through the map
 
-The user invokes with a map (a project or epic key, or a name). A ticket is **optional** —
+The user invokes with a map (a project key, or a name). A ticket is **optional** —
 without one, you pick the next decision, not the user.
 
 1. **Load the map** — the low-res view, not every ticket body:
 
    ```bash
-   curl -s "$JTICKET/api/epics" | jq '.[] | select(.labels | index("wayfinder:map"))'
-   curl -s "$JTICKET/api/epics/EPIC-3" | jq -r .description
+   curl -s "$JTICKET/api/projects" | jq '.[] | select(.mode == "wayfinder")'
+   curl -s "$JTICKET/api/projects/PROJ-3" | jq -r .description
    ```
 
 2. **Choose the ticket.** If the user named one, use it. Otherwise take the first frontier
    ticket in key order:
 
    ```bash
-   curl -s "$JTICKET/api/tickets?epicId=EPIC-3&frontier=true" | jq '.[0]'
+   curl -s "$JTICKET/api/tickets?projectId=PROJ-3&frontier=true" | jq '.[0]'
    ```
 
    **Claim it before any work** — assignee first, then read the question:
@@ -294,8 +291,8 @@ without one, you pick the next decision, not the user.
      -d "$(jq -n --arg r "$(cat answer.md)" '{status:"done", resolution:$r}')"
    ```
 
-   The map body is a whole-field replace: GET the epic's `description`, insert the line
-   under **Decisions so far**, PATCH the complete body back. Never PATCH a fragment.
+   The map body is a whole-field replace: GET the project's `description`, insert the
+   line under **Decisions so far**, PATCH the complete body back. Never PATCH a fragment.
 
 5. **Advance the frontier.** Add newly-surfaced tickets (one import call, edges and all);
    graduate any fog the answer has made specifiable, **clearing each graduated patch from
@@ -311,9 +308,9 @@ appended a decision since you loaded it.
 ## Gotchas
 
 - Outside `POST /api/import`, refs resolve by **id or key only** — a title in `blockedBy`
-  or `epicId` on `POST`/`PATCH /api/tickets` is silently dropped. Use keys.
+  or `projectId` on `POST`/`PATCH /api/tickets` is silently dropped. Use keys.
 - Import **always creates, never upserts**. To add tickets to an existing map, send only
-  `tickets` and reference the epic by key. Passing the project or epic again duplicates it.
+  `tickets` and reference the project by key. Passing the project again duplicates it.
 - `wayfinderType` shorthand only exists on import. Elsewhere set the
   `wayfinder:<type>` label explicitly in `labels`.
 - Every array field — `blockedBy`, `labels`, `acceptanceCriteria` — is **replaced

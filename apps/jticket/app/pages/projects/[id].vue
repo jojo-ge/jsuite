@@ -3,16 +3,12 @@ import type { Doc } from '~/composables/useTracker'
 import type { Explainer } from '@jsuite/documents/types'
 
 const route = useRoute()
-const { projects, epics, tickets, docs } = useTracker()
-const { render: renderMd } = useMarkdown()
+const { projects, tickets, docs } = useTracker()
 const {
   openNewTicket,
   openEditTicket,
-  openNewEpic,
-  openEditEpic,
   openEditProject,
   onDeleteTicket,
-  onDeleteEpic,
   onDeleteProject,
 } = useTrackerModals()
 
@@ -25,23 +21,15 @@ useHead(() => ({
   title: project.value ? `${project.value.key} ${project.value.title}` : projectRef.value,
 }))
 
-const projectEpics = computed(() =>
-  project.value ? epics.value.filter((e) => e.projectId === project.value!.id) : [],
-)
 const projectDocs = computed(() =>
   project.value ? docs.value.filter((d) => d.projectId === project.value!.id) : [],
 )
-function ticketsForEpic(epicId: string) {
-  return tickets.value.filter((t) => t.epicId === epicId)
-}
-// Every ticket under this project, via its epics — the header's rollup line and
-// its done / in progress / blocked / not started bar.
-const projectTickets = computed(() => {
-  const epicIds = new Set(projectEpics.value.map((e) => e.id))
-  return tickets.value.filter((x) => x.epicId && epicIds.has(x.epicId))
-})
+// Every ticket under this project — the header's rollup line and its
+// done / in progress / blocked / not started bar.
+const projectTickets = computed(() =>
+  project.value ? tickets.value.filter((t) => t.projectId === project.value!.id) : [],
+)
 const stats = computed(() => ({
-  epics: projectEpics.value.length,
   tickets: projectTickets.value.length,
   done: projectTickets.value.filter((x) => x.status === 'done').length,
 }))
@@ -69,6 +57,18 @@ async function openDocPreview(d: Doc) {
     previewLoading.value = false
   }
 }
+
+// The integration branch, from the header: cut it in one click when the project
+// has a repo but no branch yet, and once it exists show it as a chip that opens
+// the branch review in jDiff. The GitHub panel below refetches on its own (the
+// composable bumps a shared revision).
+const { creating: creatingBranch, createBranch } = useIntegrationBranch()
+const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
+const branchReviewUrl = computed(() =>
+  project.value?.repo && project.value.integrationBranch
+    ? jdiffBranchLink(jdiffBase, project.value.repo, project.value.integrationBranch)
+    : null,
+)
 
 async function removeProject() {
   if (!project.value) return
@@ -113,9 +113,7 @@ async function removeProject() {
                 Wayfinder
               </UBadge>
               <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
-              <span class="text-xs text-muted">
-                {{ stats.epics }} epics · {{ stats.done }}/{{ stats.tickets }} tickets done
-              </span>
+              <span class="text-xs text-muted">{{ stats.done }}/{{ stats.tickets }} tickets done</span>
             </div>
             <h1 class="mt-1 text-3xl font-bold">{{ project.title }}</h1>
             <TicketProgress
@@ -125,10 +123,39 @@ async function removeProject() {
               legend
               class="mt-3 max-w-md"
             />
-            <div v-if="project.description" class="jx-prose jx-prose-sm mt-2 max-w-3xl" v-html="renderMd(project.description)" />
+            <p v-if="project.description" class="mt-2 line-clamp-3 max-w-3xl text-sm text-muted">
+              {{ markdownPreview(project.description) }}
+            </p>
           </div>
           <div class="flex shrink-0 gap-1">
-            <UButton icon="i-lucide-folder-plus" size="sm" variant="soft" @click="openNewEpic(project.id)">Epic</UButton>
+            <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="openNewTicket(project.id)">Ticket</UButton>
+            <!-- Integration branch: cut it, or jump to reviewing it -->
+            <UTooltip v-if="project.repo && !project.integrationBranch" text="Cut an empty branch off the default branch and push it">
+              <UButton
+                icon="i-lucide-git-branch-plus"
+                size="sm"
+                variant="soft"
+                color="neutral"
+                :loading="creatingBranch === project.id"
+                @click="createBranch(project.id)"
+              >
+                Branch
+              </UButton>
+            </UTooltip>
+            <UTooltip v-else-if="branchReviewUrl" :text="`Review ${project.integrationBranch} in jDiff`">
+              <UButton
+                :to="branchReviewUrl"
+                target="_blank"
+                external
+                icon="i-lucide-git-branch"
+                size="sm"
+                color="neutral"
+                variant="ghost"
+                class="max-w-52"
+              >
+                <span class="truncate font-mono text-xs">{{ project.integrationBranch }}</span>
+              </UButton>
+            </UTooltip>
             <UButton
               icon="i-lucide-download"
               size="sm"
@@ -216,27 +243,19 @@ async function removeProject() {
           </div>
         </section>
 
-        <!-- Epics -->
-        <div v-if="projectEpics.length" class="space-y-8">
-          <EpicBlock
-            v-for="epic in projectEpics"
-            :key="epic.id"
-            :epic="epic"
-            :tickets="ticketsForEpic(epic.id)"
-            :all-tickets="tickets"
-            :wayfinder="project.mode === 'wayfinder'"
-            @new-ticket="openNewTicket"
-            @edit-epic="openEditEpic"
-            @delete-epic="onDeleteEpic"
-            @edit-ticket="openEditTicket"
-            @delete-ticket="onDeleteTicket"
-          />
-        </div>
-        <div v-else class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-default py-16 text-center">
-          <UIcon name="i-lucide-folder-plus" class="size-8 text-muted" />
-          <p class="text-sm text-muted">No epics in this project yet.</p>
-          <UButton icon="i-lucide-folder-plus" size="sm" @click="openNewEpic(project.id)">Add an epic</UButton>
-        </div>
+        <!-- GitHub — the project's integration branch and its open PRs -->
+        <ProjectGithub :project="project" @configure="openEditProject(project)" />
+
+        <!-- Tickets -->
+        <TicketBoard
+          :tickets="projectTickets"
+          :all-tickets="tickets"
+          :wayfinder="project.mode === 'wayfinder'"
+          :body="project.description"
+          @new-ticket="openNewTicket(project.id)"
+          @edit-ticket="openEditTicket"
+          @delete-ticket="onDeleteTicket"
+        />
       </template>
     </UContainer>
 

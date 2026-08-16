@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import type { Epic, Ticket, TicketStatus } from '~/composables/useTracker'
+import type { Ticket, TicketStatus } from '~/composables/useTracker'
 
 const props = defineProps<{
   open: boolean
   ticket?: Ticket | null
-  epics: Epic[]
   tickets: Ticket[]
-  defaultEpicId?: string | null
+  defaultProjectId?: string | null
 }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
@@ -47,11 +46,8 @@ function onSaved() {
 // ── View-mode derived state ──
 const status = computed(() => (live.value ? STATUS_META[live.value.status] : null))
 const blocked = computed(() => (live.value ? isBlocked(live.value, props.tickets) : false))
-const epic = computed(() =>
-  live.value?.epicId ? props.epics.find((e) => e.id === live.value!.epicId) : undefined,
-)
 const project = computed(() =>
-  epic.value?.projectId ? projects.value.find((p) => p.id === epic.value!.projectId) : undefined,
+  live.value?.projectId ? projects.value.find((p) => p.id === live.value!.projectId) : undefined,
 )
 // A ticket is "in wayfinder mode" when its project is a wayfinder effort — then
 // the sub-type and resolution controls appear.
@@ -159,17 +155,13 @@ const statusOptions = [
           </div>
           <h2 class="mt-2 text-2xl font-bold leading-snug">{{ live.title }}</h2>
           <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-            <template v-if="epic">
-              <UIcon name="i-lucide-folder" class="size-3.5" />
-              <span><span class="font-mono">{{ epic.key }}</span> · {{ epic.title }}</span>
-            </template>
-            <span v-else class="italic">Backlog — no epic</span>
             <template v-if="project">
-              <span>·</span>
+              <UIcon name="i-lucide-folder-tree" class="size-3.5" />
               <NuxtLink :to="`/projects/${project.key}`" class="hover:text-primary">
                 <span class="font-mono">{{ project.key }}</span> · {{ project.title }}
               </NuxtLink>
             </template>
+            <span v-else class="italic">Backlog — no project</span>
           </div>
         </div>
 
@@ -294,9 +286,9 @@ const statusOptions = [
         v-else
         ref="form"
         :ticket="ticket"
-        :epics="epics"
+        :projects="projects"
         :tickets="tickets"
-        :default-epic-id="defaultEpicId"
+        :default-project-id="defaultProjectId"
         :wayfinder="isWayfinder"
         @saved="onSaved"
       />

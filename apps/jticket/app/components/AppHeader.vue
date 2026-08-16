@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Optional default project for the create modal (set on a project detail page
-// so a new epic lands in the project you're looking at).
+// so a new ticket lands in the project you're looking at).
 const props = defineProps<{ defaultProjectId?: string | null }>()
 
 const { tickets } = useTracker()

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { Epic, Ticket, WayfinderType } from '~/composables/useTracker'
+import type { Ticket, WayfinderType } from '~/composables/useTracker'
 
-// Map mode for a wayfinder epic: tickets as nodes in dependency layers flowing
-// left → right toward the destination, blocking edges drawn between them, and
-// the un-ticketable parts of the journey — fog and destination — read straight
-// out of the map body so the picture matches what the epic description says.
-const props = defineProps<{ epic: Epic; tickets: Ticket[]; allTickets: Ticket[] }>()
+// Map mode for a wayfinder project: tickets as nodes in dependency layers
+// flowing left → right toward the destination, blocking edges drawn between
+// them, and the un-ticketable parts of the journey — fog and destination —
+// read straight out of the map body (the project description) so the picture
+// matches what the body says.
+const props = defineProps<{ body: string; tickets: Ticket[]; allTickets: Ticket[] }>()
 const emit = defineEmits<{ 'edit-ticket': [Ticket] }>()
 
 type NodeState = 'frontier' | 'claimed' | 'blocked' | 'done'
@@ -37,8 +38,8 @@ function mapDeps(t: Ticket): Ticket[] {
     .filter((d): d is Ticket => !!d && here.has(d.id))
 }
 
-// ── Map body sections ── The epic description is the map: Destination, Not yet
-// specified (fog) and Out of scope render as first-class parts of the picture.
+// ── Map body sections ── The project description is the map: Destination, Not
+// yet specified (fog) and Out of scope render as first-class parts of the picture.
 function stripMd(s: string): string {
   return s
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
@@ -52,7 +53,7 @@ function stripMd(s: string): string {
 const sections = computed(() => {
   const out: Record<string, string[]> = {}
   let cur = ''
-  for (const line of props.epic.description.replace(/<!--[\s\S]*?-->/g, '').split('\n')) {
+  for (const line of props.body.replace(/<!--[\s\S]*?-->/g, '').split('\n')) {
     const h = /^##\s+(.+)/.exec(line)
     if (h) { cur = h[1]!.trim().toLowerCase(); out[cur] = []; continue }
     if (cur) out[cur]!.push(line)

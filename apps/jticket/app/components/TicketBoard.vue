@@ -1,27 +1,32 @@
 <script setup lang="ts">
-// An epic and its tickets, in one of three switchable views:
+// A project's tickets, in one of three switchable views:
 //   Board  — frontier-first: Frontier + In progress as cards, Blocked + Resolved
 //            folded into condensed rows. The default.
 //   Digest — every ticket as one dense table row; frontier pinned + tinted.
-//   Graph  — the wayfinder dependency graph (maps only; see WayfinderMap).
+//   Graph  — the wayfinder dependency graph (wayfinder projects only; see
+//            WayfinderMap).
 // A recap banner (flow-state counts) sits above all three and carries a badge
-// that opens the epic's body — the map (destination / decisions / fog) or a plain
-// description — in a modal, so it never buries the tickets.
-import type { Epic, Ticket } from '~/composables/useTracker'
+// that opens the project's body — the map (destination / decisions / fog) or a
+// plain description — in a modal, so it never buries the tickets. The page
+// around this component owns the project header; this is just the tickets.
+import type { Ticket } from '~/composables/useTracker'
 
-const props = defineProps<{ epic: Epic; tickets: Ticket[]; allTickets: Ticket[]; wayfinder?: boolean }>()
+const props = defineProps<{
+  tickets: Ticket[]
+  allTickets: Ticket[]
+  wayfinder?: boolean
+  // The project description — the map body on a wayfinder project.
+  body?: string
+}>()
 const emit = defineEmits<{
-  'new-ticket': [epicId: string]
-  'edit-epic': [epic: Epic]
-  'delete-epic': [epic: Epic]
+  'new-ticket': []
   'edit-ticket': [ticket: Ticket]
   'delete-ticket': [ticket: Ticket]
 }>()
 
-const isMap = computed(() => props.wayfinder && isMapEpic(props.epic))
 const { render: renderMd } = useMarkdown()
-const body = computed(() => (props.epic.description.trim() ? renderMd(props.epic.description) : ''))
-const bodyLabel = computed(() => (isMap.value ? 'Map — destination, decisions & fog' : 'Description'))
+const renderedBody = computed(() => (props.body?.trim() ? renderMd(props.body) : ''))
+const bodyLabel = computed(() => (props.wayfinder ? 'Map — destination, decisions & fog' : 'Description'))
 const bodyModalOpen = ref(false)
 
 type ViewMode = 'board' | 'digest' | 'map'
@@ -29,9 +34,9 @@ const view = ref<ViewMode>('board')
 const viewOptions = computed(() => [
   { key: 'board' as const, label: 'Board', icon: 'i-lucide-layout-list' },
   { key: 'digest' as const, label: 'Digest', icon: 'i-lucide-table-2' },
-  // The graph rendering of the map's tickets. Labelled "Graph" (not "Map") so the
-  // only thing called "Map" is the identity badge in the header.
-  ...(isMap.value ? [{ key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' }] : []),
+  // The graph rendering of the map's tickets. Labelled "Graph" (not "Map") so
+  // "Map" only ever means the body text.
+  ...(props.wayfinder ? [{ key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' }] : []),
 ])
 
 function byKey(a: Ticket, b: Ticket) {
@@ -98,41 +103,9 @@ function stateOf(t: Ticket): BucketKey {
 
 <template>
   <section>
-    <div class="mb-3 flex items-start justify-between gap-3">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="font-mono text-xs text-muted">{{ epic.key }}</span>
-          <UBadge v-if="isMap" color="primary" variant="solid" size="sm" icon="i-lucide-map">Map</UBadge>
-          <UBadge v-else color="primary" variant="subtle" size="sm">Epic</UBadge>
-          <span class="text-xs text-muted">{{ tickets.length }} tickets</span>
-        </div>
-        <h3 class="mt-0.5 text-xl font-semibold">{{ epic.title }}</h3>
-      </div>
-      <div class="flex shrink-0 items-center gap-2">
-        <UFieldGroup v-if="tickets.length" size="sm">
-          <UButton
-            v-for="o in viewOptions"
-            :key="o.key"
-            :icon="o.icon"
-            :color="view === o.key ? 'primary' : 'neutral'"
-            :variant="view === o.key ? 'solid' : 'outline'"
-            @click="view = o.key"
-          >
-            {{ o.label }}
-          </UButton>
-        </UFieldGroup>
-        <div class="flex gap-1">
-          <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="emit('new-ticket', epic.id)">Ticket</UButton>
-          <UButton icon="i-lucide-pencil" size="sm" color="neutral" variant="ghost" @click="emit('edit-epic', epic)" />
-          <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="emit('delete-epic', epic)" />
-        </div>
-      </div>
-    </div>
-
-    <!-- Recap banner — shown above every view; badge opens the map/description modal -->
+    <!-- Recap banner — counts, the map/description modal, views and create -->
     <div
-      v-if="tickets.length || body"
-      class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-default bg-elevated/30 px-4 py-2.5 text-sm"
+      class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 rounded-lg border border-default bg-elevated/30 px-4 py-2.5 text-sm"
     >
       <template v-if="tickets.length">
         <span class="text-base font-bold text-primary">{{ counts.frontier }} takeable</span>
@@ -146,27 +119,41 @@ function stateOf(t: Ticket): BucketKey {
       </template>
       <span v-else class="text-muted">No tickets yet</span>
 
-      <UButton
-        v-if="body"
-        :icon="isMap ? 'i-lucide-book-open' : 'i-lucide-align-left'"
-        trailing-icon="i-lucide-maximize-2"
-        size="xs"
-        color="primary"
-        variant="soft"
-        class="ml-auto"
-        @click="bodyModalOpen = true"
-      >
-        {{ isMap ? 'Brief' : 'Description' }}
-      </UButton>
+      <div class="ml-auto flex items-center gap-2">
+        <UButton
+          v-if="renderedBody"
+          :icon="wayfinder ? 'i-lucide-book-open' : 'i-lucide-align-left'"
+          trailing-icon="i-lucide-maximize-2"
+          size="xs"
+          color="primary"
+          variant="soft"
+          @click="bodyModalOpen = true"
+        >
+          {{ wayfinder ? 'Brief' : 'Description' }}
+        </UButton>
+        <UFieldGroup v-if="tickets.length" size="xs">
+          <UButton
+            v-for="o in viewOptions"
+            :key="o.key"
+            :icon="o.icon"
+            :color="view === o.key ? 'primary' : 'neutral'"
+            :variant="view === o.key ? 'solid' : 'outline'"
+            @click="view = o.key"
+          >
+            {{ o.label }}
+          </UButton>
+        </UFieldGroup>
+        <UButton icon="i-lucide-plus" size="xs" variant="soft" @click="emit('new-ticket')">Ticket</UButton>
+      </div>
     </div>
 
     <p v-if="!tickets.length" class="rounded-md border border-dashed border-default px-4 py-6 text-center text-sm text-muted">
-      No tickets in this epic yet.
+      No tickets in this project yet.
     </p>
 
     <WayfinderMap
       v-else-if="view === 'map'"
-      :epic="epic"
+      :body="props.body ?? ''"
       :tickets="tickets"
       :all-tickets="allTickets"
       @edit-ticket="emit('edit-ticket', $event)"
@@ -271,7 +258,7 @@ function stateOf(t: Ticket): BucketKey {
 
     <UModal v-model:open="bodyModalOpen" :title="bodyLabel" :ui="{ content: 'sm:max-w-3xl' }">
       <template #body>
-        <div class="jx-prose jx-prose-sm max-h-[70vh] overflow-y-auto" v-html="body" />
+        <div class="jx-prose jx-prose-sm max-h-[70vh] overflow-y-auto" v-html="renderedBody" />
       </template>
     </UModal>
   </section>

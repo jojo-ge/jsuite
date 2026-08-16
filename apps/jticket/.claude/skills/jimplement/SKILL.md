@@ -32,17 +32,17 @@ skill, [SKILL.md](../to-jspec/SKILL.md).
 
 ## 1. Choose the ticket
 
-The user invokes with a ticket key, an epic or project key, a name, or nothing at all.
+The user invokes with a ticket key, a project key, a name, or nothing at all.
 
 ```bash
 # they named a ticket
 curl -s "$JTICKET/api/tickets/TICK-7"
 
-# they named an epic or project — take the first frontier ticket, in key order
-curl -s "$JTICKET/api/tickets?epicId=EPIC-2&frontier=true" | jq '.[0]'
+# they named a project — take the first frontier ticket, in key order
+curl -s "$JTICKET/api/tickets?projectId=PROJ-2&frontier=true" | jq '.[0]'
 
-# they named nothing — show the board and ask which epic
-curl -s "$JTICKET/api/projects"; curl -s "$JTICKET/api/epics"
+# they named nothing — show the board and ask which project
+curl -s "$JTICKET/api/projects"
 ```
 
 The **frontier** is `todo` + unblocked + unclaimed, and jTicket computes it for you.
@@ -99,14 +99,14 @@ readable from `git log`, from the PR list, and from a squashed merge subject:
 
 - **A ticket branch** — one ticket's work — takes the **ticket** key:
   `TICK-7 feat(cart): persist across refresh`.
-- **An integration branch** — the shared branch several tickets in an epic land on before
-  a final integrate-and-verify — takes the **epic** key, or the **project** key when the
-  branch spans epics: `EPIC-2 feat(cart): migrate the checkout call sites`.
+- **An integration branch** — the shared branch several tickets in a project land on
+  before a final integrate-and-verify — takes the **project** key:
+  `PROJ-2 feat(cart): migrate the checkout call sites`.
 
 The same prefix goes in the PR title, and it is the branch's prefix, not the prefix of
 whichever ticket you happen to be on: opening a PR from an integration branch titled
-`TICK-9 …` hides the fact that it carries the whole epic. Name the branch to match
-(`tick-7-persist-cart`, `epic-2-cart-migration`).
+`TICK-9 …` hides the fact that it carries the whole project. Name the branch to match
+(`tick-7-persist-cart`, `proj-2-cart-migration`).
 
 Only open a PR when the user asks for one. When you do, list every ticket the branch
 closes in the body, by key and title with its jTicket URL, and check that each of those
@@ -159,27 +159,27 @@ they aren't, leave it `in_progress`, record what's left in the resolution, and s
 
 Building always turns up more than the ticket held. Before reporting:
 
-- **Work you deferred or discovered** → a new ticket in the same epic, with `blockedBy`
+- **Work you deferred or discovered** → a new ticket in the same project, with `blockedBy`
   set to this one where it depends on it. Send only `tickets` in the import call and
-  reference the epic by key — import never upserts, so passing the epic again duplicates it.
+  reference the project by key — import never upserts, so passing the project again duplicates it.
 - **A ticket this work invalidated** → update its description, or close it and say why.
 - Then confirm the frontier moved:
 
 ```bash
-curl -s "$JTICKET/api/tickets?epicId=EPIC-2" \
+curl -s "$JTICKET/api/tickets?projectId=PROJ-2" \
   | jq '.[] | {key, title, status, blockedBy, blocked, frontier}'
 ```
 
 Report back by **key and title** with the URL — `TICK-7 — Persist the cart` — plus what
 the frontier is now. Then ask whether to take the next ticket; default to one ticket per
-invocation rather than draining the epic unasked.
+invocation rather than draining the project unasked.
 
 ## Gotchas
 
 - **PATCH replaces arrays wholesale** — `blockedBy`, `labels`, `acceptanceCriteria`. Read,
   append, write back.
 - **Refs resolve by id or key only** outside `/api/import` — a title in `blockedBy` or
-  `epicId` is silently dropped, no error. GET it back and check.
+  `projectId` is silently dropped, no error. GET it back and check.
 - **`blocked` / `claimed` / `frontier` are derived on read.** Writing them does nothing.
 - **Comments are append-only** — `POST /api/tickets/:id/comments` with
   `{ author, body }`; PATCHing `comments` does nothing. Discussion goes in comments, the
@@ -187,5 +187,5 @@ invocation rather than draining the epic unasked.
   from it.
 - **Deletes are unrecoverable** — the store is one JSON file. Never delete a ticket unless
   the user asks for that ticket by key.
-- Other sessions may be working the same epic in parallel. Re-read a ticket before
+- Other sessions may be working the same project in parallel. Re-read a ticket before
   patching it if time has passed since you loaded it.

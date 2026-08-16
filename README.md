@@ -64,7 +64,7 @@ jsuite/
 ├── .claude/skills/     # suite-level skills (jsuite — the ecosystem map)
 ├── .data/              # every app's state, gitignored (see @jsuite/data)
 ├── apps/
-│   ├── jticket/        # epics + tickets + docs (owns most jskills, has its own j-setup)
+│   ├── jticket/        # projects + tickets + docs (owns most jskills, has its own j-setup)
 │   ├── jdiff/          # diff / PR review workbench
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts

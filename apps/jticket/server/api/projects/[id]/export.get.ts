@@ -2,18 +2,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // Export one project (id or key) as a self-contained bundle for sharing:
-// project + epics + tickets (comments included) + docs with their shared-pool
-// bodies inlined + the charts those docs embed + attachments referenced from
-// any markdown. Round-trips through POST /api/projects/import.
+// project + tickets (comments included) + docs with their shared-pool bodies
+// inlined + the charts those docs embed + attachments referenced from any
+// markdown. Round-trips through POST /api/projects/import.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
-  const epics = store.epics.filter((e) => e.projectId === project.id)
-  const epicIds = new Set(epics.map((e) => e.id))
-  const tickets = store.tickets.filter((t) => t.epicId && epicIds.has(t.epicId))
+  const tickets = store.tickets.filter((t) => t.projectId === project.id)
 
   const docs: BundleDoc[] = []
   for (const record of store.docs.filter((d) => d.projectId === project.id)) {
@@ -41,8 +39,9 @@ export default defineEventHandler(async (event) => {
     format: BUNDLE_FORMAT,
     version: 1,
     exportedAt: now(),
-    project,
-    epics,
+    // The repo path is local to this machine, so it doesn't travel; the
+    // integration branch (a branch on the shared remote) does.
+    project: { ...project, repo: '' },
     tickets,
     docs,
     charts,

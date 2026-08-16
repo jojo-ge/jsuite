@@ -5,11 +5,11 @@ export default defineEventHandler((event) => {
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   store.projects = store.projects.filter((p) => p.id !== project.id)
-  // Orphan the project's epics and docs rather than deleting them.
-  for (const e of store.epics) {
-    if (e.projectId === project.id) {
-      e.projectId = null
-      e.updatedAt = now()
+  // Orphan the project's tickets and docs rather than deleting them.
+  for (const t of store.tickets) {
+    if (t.projectId === project.id) {
+      t.projectId = null
+      t.updatedAt = now()
     }
   }
   for (const d of store.docs) {

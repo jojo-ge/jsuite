@@ -3,7 +3,7 @@ import type { Project } from '~/composables/useTracker'
 
 useHead({ title: 'Projects' })
 
-const { projects, epics, tickets, refresh } = useTracker()
+const { projects, tickets, refresh } = useTracker()
 const { openNewProject, openEditProject, onDeleteProject } = useTrackerModals()
 
 // ── Import a project bundle (produced by the project page's Export button) ──
@@ -31,20 +31,15 @@ async function importBundle(e: Event) {
   }
 }
 
-function epicsFor(projectId: string | null) {
-  return epics.value.filter((e) => e.projectId === projectId)
-}
-
-// Every ticket under a project, via its epics. TicketProgress turns these into
-// the done / in progress / blocked / not started bar on each card.
+// Every ticket under a project. TicketProgress turns these into the
+// done / in progress / blocked / not started bar on each card.
 function ticketsFor(projectId: string | null) {
-  const epicIds = new Set(epicsFor(projectId).map((e) => e.id))
-  return tickets.value.filter((t) => t.epicId && epicIds.has(t.epicId))
+  return tickets.value.filter((t) => t.projectId === projectId)
 }
 
 // A project is finished once it has tickets and none of them are outstanding.
-// An empty project (or one whose epics carry no tickets) counts as in progress —
-// there's nothing done about it, it just hasn't been broken down yet.
+// An empty project counts as in progress — there's nothing done about it, it
+// just hasn't been broken down yet.
 function isDone(projectId: string) {
   const ts = ticketsFor(projectId)
   return ts.length > 0 && ts.every((t) => t.status === 'done')
@@ -56,8 +51,7 @@ const activeProjects = computed(() => projects.value.filter((p) => !isDone(p.id)
 const doneProjects = computed(() => projects.value.filter((p) => isDone(p.id)))
 const showDone = ref(false)
 
-const unassignedEpics = computed(() => epicsFor(null).length)
-const backlogCount = computed(() => tickets.value.filter((t) => !t.epicId).length)
+const backlogCount = computed(() => tickets.value.filter((t) => !t.projectId).length)
 </script>
 
 <template>
@@ -92,7 +86,7 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.epicId).lengt
         <UIcon name="i-lucide-folder-tree" class="size-10 text-muted" />
         <div>
           <p class="font-medium">No projects yet</p>
-          <p class="text-sm text-muted">Create a project to group your epics.</p>
+          <p class="text-sm text-muted">Create a project to group your tickets.</p>
         </div>
         <div class="flex gap-2">
           <UButton icon="i-lucide-upload" variant="soft" color="neutral" :loading="importing" @click="bundleInput?.click()">
@@ -108,7 +102,6 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.epicId).lengt
             v-for="project in activeProjects"
             :key="project.id"
             :project="project"
-            :epics="epicsFor(project.id)"
             :tickets="ticketsFor(project.id)"
             :all-tickets="tickets"
             @edit="openEditProject"
@@ -139,7 +132,6 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.epicId).lengt
               v-for="project in doneProjects"
               :key="project.id"
               :project="project"
-              :epics="epicsFor(project.id)"
               :tickets="ticketsFor(project.id)"
               :all-tickets="tickets"
               done
@@ -151,15 +143,7 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.epicId).lengt
       </template>
 
       <!-- Loose items -->
-      <div v-if="unassignedEpics || backlogCount" class="mt-8 flex flex-wrap gap-3">
-        <NuxtLink
-          v-if="unassignedEpics"
-          to="/"
-          class="inline-flex items-center gap-2 rounded-md border border-dashed border-default px-3 py-2 text-sm text-muted hover:border-primary hover:text-default"
-        >
-          <UIcon name="i-lucide-folder-x" class="size-4" />
-          {{ unassignedEpics }} epics with no project
-        </NuxtLink>
+      <div v-if="backlogCount" class="mt-8 flex flex-wrap gap-3">
         <NuxtLink
           v-if="backlogCount"
           to="/"

@@ -7,8 +7,8 @@ export type TicketType = 'AFK' | 'HITL'
 export type TicketStatus = 'todo' | 'in_progress' | 'done'
 export type DocStatus = 'draft' | 'ready'
 // A project is either a plain tracker or a wayfinder effort. In 'wayfinder'
-// mode each epic is treated as a wayfinder *map* (its description is the map
-// body) and its tickets are grouped into frontier / blocked / done.
+// mode the project description is the wayfinder *map* body and its tickets are
+// grouped into frontier / blocked / done.
 export type ProjectMode = 'standard' | 'wayfinder'
 
 export interface Project {
@@ -17,17 +17,14 @@ export interface Project {
   title: string
   description: string
   mode: ProjectMode
-  createdAt: string
-  updatedAt: string
-}
-
-export interface Epic {
-  id: string
-  key: string // EPIC-1
-  title: string
-  description: string
-  projectId: string | null // parent project
-  labels: string[] // e.g. 'wayfinder:map'
+  // GitHub integration (both '' when the project isn't wired to a repo).
+  // `repo` is a path to a LOCAL clone ('~' allowed) — the same thing jDiff
+  // takes as ?repo=, so a PR row can link straight into it.
+  repo: string
+  // The project's integration branch: an empty branch cut from the default
+  // branch that the project's PRs target, and which lands as one PR when the
+  // project is done. See server/utils/github.ts.
+  integrationBranch: string
   createdAt: string
   updatedAt: string
 }
@@ -50,7 +47,7 @@ export interface Ticket {
   acceptanceCriteria: string[]
   type: TicketType
   status: TicketStatus
-  epicId: string | null // parent epic
+  projectId: string | null // parent project; null = backlog
   assignee: string // who is working on it — free-form name (e.g. an agent id); '' = unassigned
   labels: string[] // e.g. 'wayfinder:research' — the wayfinder sub-type
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved
@@ -82,12 +79,23 @@ export interface Doc {
   updatedAt: string
 }
 
+// A repo jTicket has been pointed at before. Kept so setting up the next
+// project is a click rather than a retyped path — the list is server-side (not
+// per-browser) so agents driving the HTTP API see it too. `slug` and
+// `defaultBranch` are best-effort: '' until a `gh` call has filled them in.
+export interface KnownRepo {
+  path: string // absolute, resolved ('~' already expanded)
+  slug: string // 'owner/name', '' when gh can't say
+  defaultBranch: string
+  lastUsedAt: string
+}
+
 export interface Store {
   projects: Project[]
-  epics: Epic[]
   tickets: Ticket[]
   docs: Doc[]
-  counters: { project: number; epic: number; ticket: number; doc: number }
+  repos: KnownRepo[] // repos used before — see rememberRepo
+  counters: { project: number; ticket: number; doc: number }
 }
 
 // ── Persistence ─────────────────────────────────────────────────────────────
@@ -99,27 +107,68 @@ export const DATA_FILE = appDataFile('jticket', 'jticket.json')
 function emptyStore(): Store {
   return {
     projects: [],
-    epics: [],
     tickets: [],
     docs: [],
-    counters: { project: 0, epic: 0, ticket: 0, doc: 0 },
+    repos: [],
+    counters: { project: 0, ticket: 0, doc: 0 },
   }
+}
+
+// The shape older files (and bundles) may still carry: an epic layer between
+// projects and tickets, folded away by loadStore — see migrateEpics.
+interface LegacyEpic {
+  id: string
+  description?: string
+  projectId?: string | null
+}
+type LegacyStore = Partial<Store> & {
+  epics?: LegacyEpic[]
+  tickets?: Array<Ticket & { epicId?: string | null }>
+  counters?: Partial<Store['counters']> & { epic?: number }
+}
+
+// Stores written before the epic layer was removed: tickets adopt their epic's
+// project, and each epic's body (the wayfinder map, or a plain description)
+// is appended to the project description so nothing written there is lost.
+// Runs only while `epics` is present — the first save drops the array, so the
+// fold-in never applies twice.
+function migrateEpics(parsed: LegacyStore): void {
+  if (!parsed.epics?.length) return
+  const byId = new Map(parsed.epics.map((e) => [e.id, e]))
+  for (const t of parsed.tickets ?? []) {
+    if (t.projectId === undefined) t.projectId = (t.epicId && byId.get(t.epicId)?.projectId) || null
+    delete t.epicId
+  }
+  for (const p of parsed.projects ?? []) {
+    for (const e of parsed.epics) {
+      const body = e.description?.trim()
+      if (e.projectId !== p.id || !body) continue
+      p.description = p.description?.trim() ? `${p.description.trim()}\n\n${body}` : body
+    }
+  }
+  delete parsed.epics
 }
 
 export function loadStore(): Store {
   if (!existsSync(DATA_FILE)) return emptyStore()
   try {
-    const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8')) as Partial<Store>
+    const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8')) as LegacyStore
+    migrateEpics(parsed)
     return {
-      // Projects predating wayfinder mode default to 'standard'.
-      projects: (parsed.projects ?? []).map((p) => ({ ...p, mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard' })),
-      // Epics predating the project/label layers get sensible defaults.
-      epics: (parsed.epics ?? []).map((e) => ({ ...e, projectId: e.projectId ?? null, labels: e.labels ?? [] })),
+      // Projects predating wayfinder mode default to 'standard'; those
+      // predating the GitHub link have no repo and no integration branch.
+      projects: (parsed.projects ?? []).map((p) => ({
+        ...p,
+        mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard',
+        repo: p.repo ?? '',
+        integrationBranch: p.integrationBranch ?? '',
+      })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
       // the closest thing on record to when they finished.
       tickets: (parsed.tickets ?? []).map((t) => ({
         ...t,
+        projectId: t.projectId ?? null,
         assignee: t.assignee ?? '',
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
@@ -129,9 +178,15 @@ export function loadStore(): Store {
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).
       docs: (parsed.docs ?? []).map((d) => ({ ...d, documentKey: d.documentKey ?? '' })),
+      // The remembered-repo list postdates everything else; absent = none yet.
+      repos: (parsed.repos ?? []).map((r) => ({
+        path: String(r.path ?? ''),
+        slug: r.slug ?? '',
+        defaultBranch: r.defaultBranch ?? '',
+        lastUsedAt: r.lastUsedAt ?? '',
+      })).filter((r) => r.path),
       counters: {
         project: parsed.counters?.project ?? 0,
-        epic: parsed.counters?.epic ?? 0,
         ticket: parsed.counters?.ticket ?? 0,
         doc: parsed.counters?.doc ?? 0,
       },
@@ -155,14 +210,13 @@ export function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
 
-const KEY_PREFIX: Record<'project' | 'epic' | 'ticket' | 'doc', string> = {
+const KEY_PREFIX: Record<'project' | 'ticket' | 'doc', string> = {
   project: 'PROJ',
-  epic: 'EPIC',
   ticket: 'TICK',
   doc: 'DOC',
 }
 
-export function nextKey(store: Store, kind: 'project' | 'epic' | 'ticket' | 'doc'): string {
+export function nextKey(store: Store, kind: 'project' | 'ticket' | 'doc'): string {
   store.counters[kind] += 1
   return `${KEY_PREFIX[kind]}-${store.counters[kind]}`
 }
@@ -189,6 +243,51 @@ export function stampCompletion(ticket: Ticket, nextStatus: TicketStatus, ts: st
 export function findProjectRef(store: Store, ref: unknown): Project | undefined {
   if (typeof ref !== 'string' || !ref) return undefined
   return store.projects.find((p) => p.id === ref || p.key === ref || p.title === ref)
+}
+
+// ── Known repos ─────────────────────────────────────────────────────────────
+/**
+ * Upsert a repo into the remembered list. Only ever *adds* information: a
+ * caller that knows nothing but the path (a bare project PATCH) won't blank a
+ * slug some earlier `gh` call resolved.
+ *
+ * Returns true when the store actually changed, so read-mostly callers can
+ * skip the write — GET endpoints that enrich a record must not rewrite the
+ * store on every page view.
+ */
+export function rememberRepo(
+  store: Store,
+  rec: { path: string; slug?: string; defaultBranch?: string },
+  opts: { touch?: boolean } = {},
+): boolean {
+  const path = rec.path.trim()
+  if (!path) return false
+  const touch = opts.touch ?? true
+  const existing = store.repos.find((r) => r.path === path)
+  if (!existing) {
+    store.repos.push({
+      path,
+      slug: rec.slug ?? '',
+      defaultBranch: rec.defaultBranch ?? '',
+      lastUsedAt: now(),
+    })
+    return true
+  }
+  let changed = false
+  if (rec.slug && rec.slug !== existing.slug) { existing.slug = rec.slug; changed = true }
+  if (rec.defaultBranch && rec.defaultBranch !== existing.defaultBranch) {
+    existing.defaultBranch = rec.defaultBranch
+    changed = true
+  }
+  if (touch) { existing.lastUsedAt = now(); changed = true }
+  return changed
+}
+
+/** Drop a repo from the remembered list. Returns true if one was there. */
+export function forgetRepo(store: Store, path: string): boolean {
+  const before = store.repos.length
+  store.repos = store.repos.filter((r) => r.path !== path.trim())
+  return store.repos.length !== before
 }
 
 export function cleanLabels(v: unknown): string[] {

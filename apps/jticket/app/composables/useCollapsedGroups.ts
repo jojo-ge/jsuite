@@ -1,12 +1,12 @@
 // Collapsed sections that survive a refresh.
 //
-// The flow pages (/next, /running) group work by epic, and once a board grows
+// The flow pages (/next, /running) group work by project, and once a board grows
 // past a screenful the groups you are not working in are pure noise. Collapsing
 // them is only worth doing if it sticks — otherwise every visit starts by
-// re-hiding the same three epics — so the set of collapsed ids is written to
+// re-hiding the same three projects — so the set of collapsed ids is written to
 // localStorage under a per-page key.
 //
-// Only ids the caller still knows about are kept when reading back: an epic that
+// Only ids the caller still knows about are kept when reading back: a project that
 // was collapsed and then finished would otherwise sit in storage forever.
 export function useCollapsedGroups(storageKey: string) {
   const collapsed = ref(new Set<string>())

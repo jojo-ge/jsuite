@@ -9,7 +9,7 @@ import type { Explainer } from '@jsuite/documents/store'
 // name collides with different content gets a suffixed copy (byte-identical
 // content is reused, and every reference is rewritten to the new key/name).
 export default defineEventHandler(async (event) => {
-  const bundle = await readBody<ProjectBundle>(event)
+  const bundle = await readBody<ProjectBundle & { epics?: LegacyBundleEpic[] }>(event)
   if (bundle?.format !== BUNDLE_FORMAT || !bundle.project?.title?.trim()) {
     throw createError({ statusCode: 400, statusMessage: 'not a jticket project bundle' })
   }
@@ -52,39 +52,32 @@ export default defineEventHandler(async (event) => {
     if (entry.notes) await writeNotes(target, entry.notes)
   }
 
-  // 3. Project.
+  // 3. Project. Bundles exported before the epic layer was removed carried the
+  // epic bodies separately — fold them into the description, as loadStore does.
+  let description = String(bundle.project.description ?? '').trim()
+  for (const e of bundle.epics ?? []) {
+    const body = String(e?.description ?? '').trim()
+    if (body) description = description ? `${description}\n\n${body}` : body
+  }
   const project: Project = {
     id: newId('proj'),
     key: nextKey(store, 'project'),
     title: bundle.project.title.trim(),
-    description: fixAttachments(String(bundle.project.description ?? '')),
+    description: fixAttachments(description),
     mode: bundle.project.mode === 'wayfinder' ? 'wayfinder' : 'standard',
+    // The integration branch travels with the bundle (it names a branch on the
+    // shared remote); the repo path does not — it's local to the machine that
+    // exported it, so the importer points the project at their own clone.
+    repo: '',
+    integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
     createdAt: bundle.project.createdAt || ts,
     updatedAt: bundle.project.updatedAt || ts,
   }
   store.projects.push(project)
 
-  // 4. Epics, keeping a bundle-id → new-id map for the tickets.
-  const epicIdMap = new Map<string, string>()
-  let epicCount = 0
-  for (const e of bundle.epics ?? []) {
-    if (!e?.title?.trim()) continue
-    const epic: Epic = {
-      id: newId('epic'),
-      key: nextKey(store, 'epic'),
-      title: e.title.trim(),
-      description: fixAttachments(String(e.description ?? '')),
-      projectId: project.id,
-      labels: cleanLabels(e.labels),
-      createdAt: e.createdAt || ts,
-      updatedAt: e.updatedAt || ts,
-    }
-    if (e.id) epicIdMap.set(e.id, epic.id)
-    store.epics.push(epic)
-    epicCount++
-  }
-
-  // 5. Tickets — comments come along; blockedBy is remapped once all exist.
+  // 4. Tickets — comments come along; blockedBy is remapped once all exist.
+  // Every bundled ticket belonged to the exported project, so they all land in
+  // the new one (legacy bundles referenced the project through an epic).
   const ticketIdMap = new Map<string, string>()
   const pairs: Array<{ ticket: Ticket; src: Ticket }> = []
   for (const t of bundle.tickets ?? []) {
@@ -97,7 +90,7 @@ export default defineEventHandler(async (event) => {
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s)).filter(Boolean),
       type: t.type === 'HITL' ? 'HITL' : 'AFK',
       status: isStatus(t.status) ? t.status : 'todo',
-      epicId: (t.epicId && epicIdMap.get(t.epicId)) || null,
+      projectId: project.id,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
       labels: cleanLabels(t.labels),
       resolution: fixAttachments(String(t.resolution ?? '')),
@@ -129,7 +122,7 @@ export default defineEventHandler(async (event) => {
     ticket.blockedBy = [...edges]
   }
 
-  // 6. Docs — bodies into the shared pool (rewriting chart keys + attachment
+  // 5. Docs — bodies into the shared pool (rewriting chart keys + attachment
   // urls), tracker records pointing at wherever the body landed.
   let docCount = 0
   for (const d of bundle.docs ?? []) {
@@ -172,7 +165,7 @@ export default defineEventHandler(async (event) => {
   setResponseStatus(event, 201)
   return {
     project,
-    imported: { epics: epicCount, tickets: pairs.length, docs: docCount },
+    imported: { tickets: pairs.length, docs: docCount },
   }
 })
 

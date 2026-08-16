@@ -5,6 +5,6 @@ export default defineEventHandler((event) => {
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   return {
     ...project,
-    epics: store.epics.filter((e) => e.projectId === project.id),
+    tickets: store.tickets.filter((t) => t.projectId === project.id),
   }
 })

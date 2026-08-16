@@ -1,29 +1,21 @@
 <script setup lang="ts">
 useHead({ title: 'Board' })
 
-const { projects, epics, tickets, docs } = useTracker()
-const { render: renderMd } = useMarkdown()
+const { projects, tickets, docs } = useTracker()
 const {
   openNewTicket,
   openEditTicket,
-  openNewEpic,
-  openEditEpic,
   openNewProject,
   openEditProject,
   onDeleteTicket,
-  onDeleteEpic,
   onDeleteProject,
 } = useTrackerModals()
 
 // ── Grouping ──
-function ticketsForEpic(epicId: string) {
-  return tickets.value.filter((t) => t.epicId === epicId)
+function ticketsForProject(projectId: string) {
+  return tickets.value.filter((t) => t.projectId === projectId)
 }
-function epicsForProject(projectId: string) {
-  return epics.value.filter((e) => e.projectId === projectId)
-}
-const unassignedEpics = computed(() => epics.value.filter((e) => !e.projectId))
-const backlog = computed(() => tickets.value.filter((t) => !t.epicId))
+const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
 </script>
 
 <template>
@@ -32,15 +24,14 @@ const backlog = computed(() => tickets.value.filter((t) => !t.epicId))
 
     <UContainer class="py-8">
       <!-- Empty state -->
-      <div v-if="!projects.length && !epics.length && !tickets.length && !docs.length" class="flex flex-col items-center gap-4 py-24 text-center">
+      <div v-if="!projects.length && !tickets.length && !docs.length" class="flex flex-col items-center gap-4 py-24 text-center">
         <UIcon name="i-lucide-inbox" class="size-12 text-muted" />
         <div>
           <p class="text-lg font-medium">Nothing here yet</p>
-          <p class="text-sm text-muted">Create a project, epic, or ticket to get started.</p>
+          <p class="text-sm text-muted">Create a project or ticket to get started.</p>
         </div>
         <div class="flex gap-2">
           <UButton icon="i-lucide-folder-tree" variant="soft" color="neutral" @click="openNewProject">New project</UButton>
-          <UButton icon="i-lucide-folder-plus" variant="soft" color="neutral" @click="openNewEpic(null)">New epic</UButton>
           <UButton icon="i-lucide-plus" @click="openNewTicket(null)">New ticket</UButton>
         </div>
       </div>
@@ -68,57 +59,28 @@ const backlog = computed(() => tickets.value.filter((t) => !t.epicId))
               <div class="flex items-center gap-2">
                 <span class="font-mono text-xs text-muted">{{ project.key }}</span>
                 <UBadge color="secondary" variant="subtle" size="sm">Project</UBadge>
-                <span class="text-xs text-muted">{{ epicsForProject(project.id).length }} epics</span>
+                <span class="text-xs text-muted">{{ ticketsForProject(project.id).length }} tickets</span>
               </div>
               <NuxtLink :to="`/projects/${project.key}`" class="group inline-flex items-center gap-1.5">
                 <h2 class="mt-0.5 text-2xl font-bold group-hover:text-primary">{{ project.title }}</h2>
                 <UIcon name="i-lucide-arrow-up-right" class="size-4 text-muted opacity-0 transition group-hover:opacity-100" />
               </NuxtLink>
-              <div v-if="project.description" class="jx-prose jx-prose-sm mt-1 max-w-2xl" v-html="renderMd(project.description)" />
+              <p v-if="project.description" class="mt-1 line-clamp-2 max-w-2xl text-sm text-muted">
+                {{ markdownPreview(project.description) }}
+              </p>
             </div>
             <div class="flex shrink-0 gap-1">
-              <UButton icon="i-lucide-folder-plus" size="sm" variant="soft" @click="openNewEpic(project.id)">Epic</UButton>
               <UButton icon="i-lucide-pencil" size="sm" color="neutral" variant="ghost" @click="openEditProject(project)" />
               <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="onDeleteProject(project)" />
             </div>
           </div>
 
-          <EpicBlock
-            v-for="epic in epicsForProject(project.id)"
-            :key="epic.id"
-            :epic="epic"
-            :tickets="ticketsForEpic(epic.id)"
+          <TicketBoard
+            :tickets="ticketsForProject(project.id)"
             :all-tickets="tickets"
-            @new-ticket="openNewTicket"
-            @edit-epic="openEditEpic"
-            @delete-epic="onDeleteEpic"
-            @edit-ticket="openEditTicket"
-            @delete-ticket="onDeleteTicket"
-          />
-          <p
-            v-if="!epicsForProject(project.id).length"
-            class="rounded-md border border-dashed border-default px-4 py-6 text-center text-sm text-muted"
-          >
-            No epics in this project yet.
-          </p>
-        </section>
-
-        <!-- Epics with no project -->
-        <section v-if="unassignedEpics.length" class="space-y-6">
-          <div class="flex items-center gap-2 border-b border-default pb-3">
-            <UIcon name="i-lucide-folder-x" class="size-4 text-muted" />
-            <h2 class="text-xl font-semibold">No project</h2>
-            <span class="text-xs text-muted">{{ unassignedEpics.length }} epics · unassigned</span>
-          </div>
-          <EpicBlock
-            v-for="epic in unassignedEpics"
-            :key="epic.id"
-            :epic="epic"
-            :tickets="ticketsForEpic(epic.id)"
-            :all-tickets="tickets"
-            @new-ticket="openNewTicket"
-            @edit-epic="openEditEpic"
-            @delete-epic="onDeleteEpic"
+            :wayfinder="project.mode === 'wayfinder'"
+            :body="project.description"
+            @new-ticket="openNewTicket(project.id)"
             @edit-ticket="openEditTicket"
             @delete-ticket="onDeleteTicket"
           />
@@ -129,7 +91,7 @@ const backlog = computed(() => tickets.value.filter((t) => !t.epicId))
           <div class="mb-3 flex items-center gap-2">
             <UIcon name="i-lucide-layers" class="size-4 text-muted" />
             <h2 class="text-xl font-semibold">Backlog</h2>
-            <span class="text-xs text-muted">{{ backlog.length }} tickets · no epic</span>
+            <span class="text-xs text-muted">{{ backlog.length }} tickets · no project</span>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             <TicketCard

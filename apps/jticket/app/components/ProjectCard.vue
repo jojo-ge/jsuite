@@ -1,20 +1,17 @@
 <script setup lang="ts">
 // One project as a card on the projects grid: key, title, description preview,
-// epic/ticket counts and the four-state progress bar. Finished projects (every
+// ticket count and the four-state progress bar. Finished projects (every
 // ticket done) render dimmed — the grid sinks them to the bottom.
-import type { Epic, Project, Ticket } from '~/composables/useTracker'
+import type { Project, Ticket } from '~/composables/useTracker'
 
-const props = defineProps<{
+defineProps<{
   project: Project
-  epics: Epic[]
   tickets: Ticket[]
-  // Every ticket in the tracker, so blocked-by edges resolve across epics.
+  // Every ticket in the tracker, so blocked-by edges resolve across projects.
   allTickets: Ticket[]
   done?: boolean
 }>()
 defineEmits<{ edit: [project: Project]; delete: [project: Project] }>()
-
-const epicCount = computed(() => props.epics.length)
 </script>
 
 <template>
@@ -57,7 +54,6 @@ const epicCount = computed(() => props.epics.length)
 
     <div class="mt-auto space-y-2 pt-2">
       <div class="flex items-center gap-3 text-xs text-muted">
-        <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-folder" class="size-3.5" />{{ epicCount }} epics</span>
         <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-ticket" class="size-3.5" />{{ tickets.length }} tickets</span>
       </div>
       <TicketProgress :tickets="tickets" :all-tickets="allTickets" legend />
