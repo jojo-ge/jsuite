@@ -21,6 +21,13 @@ export default defineEventHandler(async (event) => {
   if (body.labels !== undefined) ticket.labels = cleanLabels(body.labels)
   // The wayfinder answer. Pass '' to clear.
   if (body.resolution !== undefined) ticket.resolution = typeof body.resolution === 'string' ? body.resolution.trim() : ''
+  // The ticket's work branch — usually set by POST /api/tickets/:id/branch,
+  // but adoptable by hand. Pass '' to clear.
+  if (body.branch !== undefined) {
+    const branch = typeof body.branch === 'string' ? body.branch.trim() : ''
+    if (branch && !isSafeRef(branch)) throw createError({ statusCode: 400, statusMessage: `not a usable branch name: ${branch}` })
+    ticket.branch = branch
+  }
 
   if (body.projectId !== undefined) {
     if (body.projectId === null || body.projectId === '') {

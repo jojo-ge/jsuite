@@ -4,8 +4,13 @@ import { appDataFile } from '@jsuite/data'
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type TicketType = 'AFK' | 'HITL'
-export type TicketStatus = 'todo' | 'in_progress' | 'done'
+// 'done' = the work is built and recorded; 'merged' = its local PR has landed
+// on the integration branch. Both count as finished — see isFinishedStatus.
+export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
+// A local PR's lifecycle. 'conflicted' is a failed merge attempt — the repo was
+// left untouched; rebase the head branch and merge again.
+export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 // A project is either a plain tracker or a wayfinder effort. In 'wayfinder'
 // mode the project description is the wayfinder *map* body and its tickets are
 // grouped into frontier / blocked / done.
@@ -53,6 +58,10 @@ export interface Ticket {
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved
   blockedBy: string[] // ticket ids that gate this one
   comments: TicketComment[] // append via POST /api/tickets/:id/comments, never PATCH
+  // The ticket's work branch in the project's repo — cut locally off the
+  // integration branch (POST /api/tickets/:id/branch) and never pushed; a local
+  // PR's default head. '' until cut.
+  branch: string
   // When the ticket last became done. Stamped on the todo/in_progress → done
   // transition and cleared when it moves back out; null while unfinished. Kept
   // separate from updatedAt, which any edit bumps — this is what /finished
@@ -79,6 +88,29 @@ export interface Doc {
   updatedAt: string
 }
 
+// A local pull request: the ticket-sized unit of review, tracked entirely in
+// this store and merged by jTicket itself (a squash onto the integration
+// branch, done with git plumbing so the working tree is never touched). Git
+// holds the code; this record holds the story — title, ticket, lifecycle.
+// Exactly one ticket per PR; the merge is what moves that ticket to 'merged'.
+export interface LocalPr {
+  id: string
+  key: string // PR-1
+  title: string
+  description: string // GFM markdown — becomes the squash commit body
+  ticketId: string
+  projectId: string
+  headBranch: string // the ticket branch (kept on record after the merge deletes it)
+  baseBranch: string // the integration branch the PR targets
+  status: LocalPrStatus
+  // Files the last failed merge attempt conflicted on; [] unless 'conflicted'.
+  conflictFiles: string[]
+  mergeCommit: string // oid of the squash commit, '' until merged
+  mergedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 // A repo jTicket has been pointed at before. Kept so setting up the next
 // project is a click rather than a retyped path — the list is server-side (not
 // per-browser) so agents driving the HTTP API see it too. `slug` and
@@ -94,8 +126,9 @@ export interface Store {
   projects: Project[]
   tickets: Ticket[]
   docs: Doc[]
+  prs: LocalPr[]
   repos: KnownRepo[] // repos used before — see rememberRepo
-  counters: { project: number; ticket: number; doc: number }
+  counters: { project: number; ticket: number; doc: number; pr: number }
 }
 
 // ── Persistence ─────────────────────────────────────────────────────────────
@@ -109,8 +142,9 @@ function emptyStore(): Store {
     projects: [],
     tickets: [],
     docs: [],
+    prs: [],
     repos: [],
-    counters: { project: 0, ticket: 0, doc: 0 },
+    counters: { project: 0, ticket: 0, doc: 0, pr: 0 },
   }
 }
 
@@ -173,11 +207,19 @@ export function loadStore(): Store {
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
         comments: t.comments ?? [],
-        completedAt: t.completedAt ?? (t.status === 'done' ? t.updatedAt : null),
+        branch: t.branch ?? '',
+        completedAt: t.completedAt ?? (isFinishedStatus(t.status) ? t.updatedAt : null),
       })),
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).
       docs: (parsed.docs ?? []).map((d) => ({ ...d, documentKey: d.documentKey ?? '' })),
+      // Local PRs postdate everything else; absent = none yet.
+      prs: (parsed.prs ?? []).map((pr) => ({
+        ...pr,
+        conflictFiles: pr.conflictFiles ?? [],
+        mergeCommit: pr.mergeCommit ?? '',
+        mergedAt: pr.mergedAt ?? null,
+      })),
       // The remembered-repo list postdates everything else; absent = none yet.
       repos: (parsed.repos ?? []).map((r) => ({
         path: String(r.path ?? ''),
@@ -189,6 +231,7 @@ export function loadStore(): Store {
         project: parsed.counters?.project ?? 0,
         ticket: parsed.counters?.ticket ?? 0,
         doc: parsed.counters?.doc ?? 0,
+        pr: parsed.counters?.pr ?? 0,
       },
     }
   } catch {
@@ -210,31 +253,40 @@ export function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
 }
 
-const KEY_PREFIX: Record<'project' | 'ticket' | 'doc', string> = {
+const KEY_PREFIX: Record<'project' | 'ticket' | 'doc' | 'pr', string> = {
   project: 'PROJ',
   ticket: 'TICK',
   doc: 'DOC',
+  pr: 'PR',
 }
 
-export function nextKey(store: Store, kind: 'project' | 'ticket' | 'doc'): string {
+export function nextKey(store: Store, kind: 'project' | 'ticket' | 'doc' | 'pr'): string {
   store.counters[kind] += 1
   return `${KEY_PREFIX[kind]}-${store.counters[kind]}`
 }
 
 export function isStatus(v: unknown): v is TicketStatus {
-  return v === 'todo' || v === 'in_progress' || v === 'done'
+  return v === 'todo' || v === 'in_progress' || v === 'done' || v === 'merged'
+}
+
+// Both terminal states count as finished: 'done' answers "is the work built?"
+// and 'merged' additionally says its PR landed. Everything that used to ask
+// `status === 'done'` — blocking, the frontier's complement, /finished — asks
+// this instead.
+export function isFinishedStatus(v: unknown): v is 'done' | 'merged' {
+  return v === 'done' || v === 'merged'
 }
 
 export function isDocStatus(v: unknown): v is DocStatus {
   return v === 'draft' || v === 'ready'
 }
 
-// The single place a completion timestamp is decided. Moving into 'done'
-// stamps the moment; moving out clears it; re-saving an already-done ticket
-// keeps the original stamp, so editing a resolution doesn't shuffle it to the
-// top of "Recently finished".
+// The single place a completion timestamp is decided. Moving into a finished
+// status stamps the moment; moving out clears it; a ticket staying finished
+// (done → merged, or editing a resolution) keeps the original stamp, so nothing
+// shuffles to the top of "Recently finished".
 export function stampCompletion(ticket: Ticket, nextStatus: TicketStatus, ts: string): string | null {
-  if (nextStatus !== 'done') return null
+  if (!isFinishedStatus(nextStatus)) return null
   return ticket.completedAt ?? ts
 }
 
@@ -307,11 +359,11 @@ export function resolveTicketRefs(store: Store, refs: unknown[]): string[] {
 }
 
 // ── Derived ticket state (wayfinder) ───────────────────────────────────────
-// A ticket is blocked while any ticket it depends on is not yet done.
+// A ticket is blocked while any ticket it depends on is not yet finished.
 export function ticketIsBlocked(ticket: Ticket, all: Ticket[]): boolean {
   return ticket.blockedBy.some((id) => {
     const dep = all.find((t) => t.id === id)
-    return dep ? dep.status !== 'done' : false
+    return dep ? !isFinishedStatus(dep.status) : false
   })
 }
 

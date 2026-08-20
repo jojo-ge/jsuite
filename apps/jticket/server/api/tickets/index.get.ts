@@ -16,9 +16,9 @@ export default defineEventHandler((event) => {
   if (q.frontier === 'true' || q.frontier === '1') {
     tickets = tickets.filter((t) => ticketIsFrontier(t, all)).sort(byKeyNumber)
   }
-  // ?finished=true → what just landed: done tickets, newest completion first.
+  // ?finished=true → what just landed: done + merged tickets, newest completion first.
   if (q.finished === 'true' || q.finished === '1') {
-    tickets = tickets.filter((t) => t.status === 'done' && t.completedAt).sort(byCompletedAtDesc)
+    tickets = tickets.filter((t) => isFinishedStatus(t.status) && t.completedAt).sort(byCompletedAtDesc)
   }
   // ?since=<ISO> → completed at or after that instant. It reads completedAt, so
   // it drops unfinished tickets whether or not finished=true came with it —

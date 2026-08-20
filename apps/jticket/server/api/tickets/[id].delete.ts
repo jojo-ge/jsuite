@@ -12,6 +12,9 @@ export default defineEventHandler((event) => {
       t.updatedAt = now()
     }
   }
+  // A PR is one ticket's review — merged ones stay as history, the rest go
+  // with the ticket (branches on disk are untouched).
+  store.prs = store.prs.filter((pr) => pr.ticketId !== ticket.id || pr.status === 'merged')
   saveStore(store)
   return { ok: true }
 })

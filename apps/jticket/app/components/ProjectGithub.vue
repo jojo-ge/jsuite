@@ -28,6 +28,33 @@ interface ProjectPr {
   jdiffUrl: string
   githubUrl: string
 }
+interface PrCommit {
+  oid: string
+  shortOid: string
+  subject: string
+  author: string
+  committedAt: string
+}
+// A local PR row as GET /api/projects/:id/github returns it: the store record
+// plus derived ticket info and the commits it would merge (live from git).
+interface LocalPrRow {
+  id: string
+  key: string
+  title: string
+  description: string
+  ticketId: string
+  ticketKey: string | null
+  ticketTitle: string | null
+  headBranch: string
+  baseBranch: string
+  status: 'open' | 'conflicted' | 'merged' | 'closed'
+  conflictFiles: string[]
+  mergeCommit: string
+  mergedAt: string | null
+  updatedAt: string
+  jdiffUrl: string | null
+  commits: PrCommit[]
+}
 interface GithubInfo {
   configured: boolean
   repo: string
@@ -45,12 +72,14 @@ interface GithubInfo {
     githubUrl: string | null
     comparePrUrl: string | null
   } | null
+  localPrs: LocalPrRow[]
+  mergedPrCount: number
   prs: ProjectPr[]
   prsError: string | null
 }
 
 const toast = useToast()
-const { refresh: refreshTracker } = useTracker()
+const { refresh: refreshTracker, tickets, prs: trackerPrs } = useTracker()
 // Cutting the branch is shared with the project header's button — same action,
 // same in-flight state, and `revision` tells us when the other one changed it.
 const { creating, revision, invalidate, createBranch: cutBranch } = useIntegrationBranch()
@@ -82,6 +111,19 @@ async function createBranch() {
 
 // Somebody else changed the branch — the header button, or another tab.
 watch(revision, () => reload())
+
+// Somebody else changed a PR — an agent merging over the API, a herdr sweep
+// landing the queue. The tracker's PR list arrives live over SSE, so a change
+// in THIS project's PRs is the signal to refetch the panel (plain refresh: the
+// local-PR/git side is always read fresh; only `gh` keeps its 30s cache).
+const prFingerprint = computed(() =>
+  trackerPrs.value
+    .filter((pr) => pr.projectId === props.project.id)
+    .map((pr) => `${pr.key}:${pr.status}:${pr.updatedAt}`)
+    .sort()
+    .join('|'),
+)
+watch(prFingerprint, () => refresh())
 
 const errorText = branchErrorText
 
@@ -164,6 +206,179 @@ async function clearBranch() {
 }
 
 const prs = computed(() => data.value?.prs ?? [])
+const localPrs = computed(() => data.value?.localPrs ?? [])
+
+// ── Local PRs — created, merged and closed right here ──
+// The merge-sweep hand-off (same prompt/dispatch as /next's merge queue): the
+// PR list here is already exactly the queue — open + conflicted, this project.
+const { available: herdrAvailable, refresh: refreshHerdr } = useHerdr()
+const queueKeys = computed(() => {
+  const n = (k: string) => Number(k.split('-').pop()) || 0
+  return localPrs.value.map((pr) => pr.key).sort((a, b) => n(a) - n(b))
+})
+
+const copiedMergePrompt = ref(false)
+async function copyMergePrompt() {
+  const command = mergeSweepPrompt(props.project, queueKeys.value)
+  try {
+    await navigator.clipboard.writeText(command)
+    copiedMergePrompt.value = true
+    setTimeout(() => { copiedMergePrompt.value = false }, 1600)
+  } catch {
+    toast.add({ title: 'Could not copy', description: command, icon: 'i-lucide-clipboard-x', color: 'warning' })
+  }
+}
+
+const dispatchingMerge = ref(false)
+async function dispatchMergeSweep() {
+  dispatchingMerge.value = true
+  try {
+    const res = await $fetch<{ agent: string }>(`/api/projects/${props.project.id}/herdr-merge`, {
+      method: 'POST',
+      body: { prompt: mergeSweepPrompt(props.project, queueKeys.value) },
+    })
+    toast.add({
+      title: 'Merge sweep running in herdr',
+      description: `Agent ${res.agent} in tab "${props.project.key} · merge".`,
+      icon: 'i-lucide-git-merge',
+      color: 'success',
+    })
+    refreshHerdr()
+  } catch (err: any) {
+    toast.add({ title: 'Could not dispatch the merge', description: herdrErrorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    dispatchingMerge.value = false
+  }
+}
+
+const merging = ref('')
+async function mergePr(pr: LocalPrRow) {
+  merging.value = pr.id
+  try {
+    const res = await $fetch<{ headDeleted: boolean }>(`/api/prs/${pr.id}/merge`, { method: 'POST' })
+    toast.add({
+      title: `${pr.key} merged into ${pr.baseBranch}`,
+      description: `${pr.ticketKey ?? 'Its ticket'} is now merged${res.headDeleted ? ` · ${pr.headBranch} deleted` : ''}. Local only — sync when ready.`,
+      color: 'success',
+      icon: 'i-lucide-git-merge',
+    })
+  } catch (err: any) {
+    // A conflict comes back as a 409 naming the files; the row shows them too.
+    toast.add({ title: `Could not merge ${pr.key}`, description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    merging.value = ''
+    await refreshTracker()
+    reload()
+  }
+}
+
+const closing = ref('')
+async function closePr(pr: LocalPrRow) {
+  closing.value = pr.id
+  try {
+    await $fetch(`/api/prs/${pr.id}`, { method: 'PATCH', body: { status: 'closed' } })
+    toast.add({ title: `${pr.key} closed without merging`, color: 'neutral', icon: 'i-lucide-git-pull-request-closed' })
+  } catch (err: any) {
+    toast.add({ title: `Could not close ${pr.key}`, description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    closing.value = ''
+    reload()
+  }
+}
+
+// Per-row commit fold-out — the "commit details" a PR row carries.
+const expandedPrs = reactive(new Set<string>())
+function togglePr(id: string) {
+  if (expandedPrs.has(id)) expandedPrs.delete(id)
+  else expandedPrs.add(id)
+}
+
+// ── The only remote actions: sync the integration branch, open the roll-up ──
+const syncing = ref(false)
+async function syncBranch() {
+  syncing.value = true
+  try {
+    const res = await $fetch<{ branch: string }>(`/api/projects/${props.project.id}/sync`, { method: 'POST' })
+    toast.add({ title: `Pushed ${res.branch} to origin`, color: 'success', icon: 'i-lucide-upload' })
+  } catch (err: any) {
+    toast.add({ title: 'Could not push the integration branch', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    syncing.value = false
+    reload()
+  }
+}
+
+const rollingUp = ref(false)
+async function openRollupPr() {
+  rollingUp.value = true
+  try {
+    const res = await $fetch<{ url: string; created: boolean }>(`/api/projects/${props.project.id}/integration-pr`, { method: 'POST' })
+    toast.add({
+      title: res.created ? 'Roll-up PR opened' : 'Roll-up PR already open',
+      description: res.url,
+      color: 'success',
+      icon: 'i-lucide-git-pull-request',
+    })
+    if (res.url) window.open(res.url, '_blank')
+  } catch (err: any) {
+    toast.add({ title: 'Could not open the roll-up PR', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    rollingUp.value = false
+    reload()
+  }
+}
+
+// ── Opening a local PR by hand (agents use POST /api/prs directly) ──
+const newPrOpen = ref(false)
+const prTicketId = ref('')
+const prTitle = ref('')
+const prDescription = ref('')
+const prHead = ref('')
+const prBase = ref('')
+// Any unfinished project ticket without an open local PR can get one.
+const prTicketOptions = computed(() =>
+  tickets.value
+    .filter((t) => t.projectId === props.project.id && t.status !== 'merged')
+    .filter((t) => !localPrs.value.some((pr) => pr.ticketId === t.id))
+    .map((t) => ({ label: `${t.key} · ${t.title}`, value: t.id })),
+)
+watch(prTicketId, (id) => {
+  const t = tickets.value.find((x) => x.id === id)
+  if (!t) return
+  prTitle.value = `${t.key} ${t.title}`
+  prHead.value = t.branch
+})
+function openNewPr() {
+  prTicketId.value = ''
+  prTitle.value = ''
+  prDescription.value = ''
+  prHead.value = ''
+  prBase.value = data.value?.integrationBranch ?? ''
+  newPrOpen.value = true
+}
+const creatingPr = ref(false)
+async function createPr() {
+  creatingPr.value = true
+  try {
+    const pr = await $fetch<{ key: string }>('/api/prs', {
+      method: 'POST',
+      body: {
+        ticket: prTicketId.value,
+        title: prTitle.value.trim() || undefined,
+        description: prDescription.value.trim() || undefined,
+        headBranch: prHead.value.trim() || undefined,
+        baseBranch: prBase.value.trim() || undefined,
+      },
+    })
+    toast.add({ title: `${pr.key} opened`, color: 'success', icon: 'i-lucide-git-pull-request-arrow' })
+    newPrOpen.value = false
+    reload()
+  } catch (err: any) {
+    toast.add({ title: 'Could not open the PR', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    creatingPr.value = false
+  }
+}
 </script>
 
 <template>
@@ -285,18 +500,30 @@ const prs = computed(() => data.value?.prs ?? [])
             >
               Review
             </UButton>
-            <UButton
-              v-if="data.branch.comparePrUrl"
-              :to="data.branch.comparePrUrl"
-              target="_blank"
-              external
-              icon="i-lucide-external-link"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-            >
-              Roll-up PR
-            </UButton>
+            <UTooltip text="Push the integration branch to origin — the only remote write in the local flow">
+              <UButton
+                icon="i-lucide-upload"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :loading="syncing"
+                @click="syncBranch"
+              >
+                Sync
+              </UButton>
+            </UTooltip>
+            <UTooltip text="Push, then open (or find) the roll-up PR on GitHub">
+              <UButton
+                icon="i-lucide-external-link"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :loading="rollingUp"
+                @click="openRollupPr"
+              >
+                Roll-up PR
+              </UButton>
+            </UTooltip>
           </div>
         </div>
 
@@ -321,6 +548,127 @@ const prs = computed(() => data.value?.prs ?? [])
         </div>
       </div>
 
+      <!-- Local PRs — ticket branches merged onto the integration branch by
+           jTicket itself. Squash, no checkout, nothing leaves the machine. -->
+      <div class="overflow-hidden rounded-lg border border-default">
+        <div class="flex flex-wrap items-center gap-2 border-b border-default/60 bg-elevated/30 px-3 py-2">
+          <UIcon name="i-lucide-git-pull-request-arrow" class="size-4 text-muted" />
+          <span class="text-xs font-semibold uppercase tracking-wide text-muted">Local pull requests</span>
+          <span class="text-xs text-muted">
+            {{ localPrs.length }} open<template v-if="data.mergedPrCount"> · {{ data.mergedPrCount }} merged</template>
+          </span>
+          <div class="ml-auto flex items-center gap-1">
+            <UTooltip v-if="localPrs.length" text="Copy the prompt that merges this queue, rebasing through conflicts">
+              <UButton
+                :icon="copiedMergePrompt ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                :color="copiedMergePrompt ? 'success' : 'neutral'"
+                size="xs"
+                variant="soft"
+                @click="copyMergePrompt"
+              >
+                {{ copiedMergePrompt ? 'Copied' : 'Merge prompt' }}
+              </UButton>
+            </UTooltip>
+            <UTooltip v-if="localPrs.length && herdrAvailable" text="Run the merge sweep in a new herdr tab (background — no focus steal)">
+              <UButton
+                icon="i-lucide-terminal"
+                color="secondary"
+                size="xs"
+                variant="soft"
+                :loading="dispatchingMerge"
+                @click="dispatchMergeSweep"
+              >
+                herdr
+              </UButton>
+            </UTooltip>
+            <UButton icon="i-lucide-plus" size="xs" variant="soft" @click="openNewPr">New local PR</UButton>
+          </div>
+        </div>
+
+        <p v-if="!localPrs.length" class="px-3 py-5 text-center text-sm text-muted">
+          No local PRs open. A finished ticket branch becomes one here — merged into
+          <span class="font-mono">{{ data.branch?.name ?? 'the integration branch' }}</span> without leaving your machine.
+        </p>
+
+        <template v-else>
+        <div v-for="pr in localPrs" :key="pr.id" class="border-b border-default/60 last:border-0">
+          <div class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-elevated/40">
+            <span class="w-12 shrink-0 font-mono text-xs text-muted">{{ pr.key }}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="truncate">{{ pr.title }}</span>
+                <UBadge v-if="pr.status === 'conflicted'" color="error" variant="subtle" size="sm" icon="i-lucide-triangle-alert">
+                  Conflicted
+                </UBadge>
+                <UBadge v-if="pr.ticketKey" color="secondary" variant="outline" size="sm" class="font-mono">
+                  {{ pr.ticketKey }}
+                </UBadge>
+              </div>
+              <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                <span class="font-mono">{{ pr.headBranch }} → {{ pr.baseBranch }}</span>
+                <button type="button" class="hover:text-default hover:underline" @click="togglePr(pr.id)">
+                  {{ pr.commits.length }} commit{{ pr.commits.length === 1 ? '' : 's' }}
+                  <UIcon :name="expandedPrs.has(pr.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="size-3 align-middle" />
+                </button>
+                <span>· {{ agoLabel(pr.updatedAt, now) }}</span>
+              </div>
+              <p v-if="pr.status === 'conflicted' && pr.conflictFiles.length" class="mt-1 truncate text-xs text-error">
+                conflicts: {{ pr.conflictFiles.join(', ') }} — rebase {{ pr.headBranch }} onto {{ pr.baseBranch }}, then retry
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <UTooltip text="Review the branch in jDiff">
+                <UButton
+                  v-if="pr.jdiffUrl"
+                  :to="pr.jdiffUrl"
+                  target="_blank"
+                  external
+                  icon="i-lucide-git-compare"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  aria-label="Review in jDiff"
+                />
+              </UTooltip>
+              <UButton
+                icon="i-lucide-git-merge"
+                size="xs"
+                color="primary"
+                :variant="pr.status === 'conflicted' ? 'soft' : 'solid'"
+                :loading="merging === pr.id"
+                @click="mergePr(pr)"
+              >
+                {{ pr.status === 'conflicted' ? 'Retry merge' : 'Merge' }}
+              </UButton>
+              <UTooltip text="Close without merging">
+                <UButton
+                  icon="i-lucide-x"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  :loading="closing === pr.id"
+                  aria-label="Close without merging"
+                  @click="closePr(pr)"
+                />
+              </UTooltip>
+            </div>
+          </div>
+          <!-- Commit details — what the merge button would squash -->
+          <div v-if="expandedPrs.has(pr.id)" class="border-t border-default/60 bg-elevated/20 px-3 py-1.5">
+            <p v-if="!pr.commits.length" class="py-1 text-xs text-muted">
+              No commits on <span class="font-mono">{{ pr.headBranch }}</span> that
+              <span class="font-mono">{{ pr.baseBranch }}</span> lacks.
+            </p>
+            <div v-for="c in pr.commits" :key="c.oid" class="flex items-center gap-2 py-0.5 text-xs">
+              <span class="shrink-0 font-mono text-muted">{{ c.shortOid }}</span>
+              <span class="truncate">{{ c.subject }}</span>
+              <span class="ml-auto shrink-0 text-muted">{{ c.author }} · {{ agoLabel(c.committedAt, now) }}</span>
+            </div>
+          </div>
+        </div>
+        </template>
+      </div>
+
       <!-- gh couldn't list PRs — the branch panel above is still useful -->
       <UAlert
         v-if="data.prsError"
@@ -333,8 +681,13 @@ const prs = computed(() => data.value?.prs ?? [])
 
       <div v-if="pending && !prs.length" class="py-6 text-center text-sm text-muted">Loading pull requests…</div>
 
-      <!-- PR rows -->
+      <!-- PR rows — the open PRs on github.com (usually just the roll-up) -->
       <div v-else-if="prs.length" class="overflow-hidden rounded-lg border border-default">
+        <div class="flex items-center gap-2 border-b border-default/60 bg-elevated/30 px-3 py-2">
+          <UIcon name="i-lucide-github" class="size-4 text-muted" />
+          <span class="text-xs font-semibold uppercase tracking-wide text-muted">On GitHub</span>
+          <span class="text-xs text-muted">{{ prs.length }}</span>
+        </div>
         <div
           v-for="pr in prs"
           :key="pr.number"
@@ -398,6 +751,55 @@ const prs = computed(() => data.value?.prs ?? [])
     </div>
 
     <div v-else class="py-6 text-center text-sm text-muted">Loading…</div>
+
+    <!-- New local PR — the manual fallback; agents POST /api/prs directly -->
+    <UModal
+      v-model:open="newPrOpen"
+      title="New local PR"
+      description="One ticket's branch, merged onto the integration branch by jTicket. Nothing touches GitHub."
+      :ui="{ content: 'sm:max-w-xl' }"
+    >
+      <template #body>
+        <div class="space-y-3">
+          <UFormField label="Ticket" required>
+            <USelect
+              v-model="prTicketId"
+              :items="prTicketOptions"
+              value-key="value"
+              placeholder="Which ticket does this PR land?"
+              class="w-full"
+            />
+          </UFormField>
+          <UFormField label="Title">
+            <UInput v-model="prTitle" class="w-full" placeholder="Defaults to '<TICK-n> <ticket title>'" />
+          </UFormField>
+          <UFormField label="Description" hint="becomes the squash commit body">
+            <UTextarea v-model="prDescription" :rows="3" class="w-full" />
+          </UFormField>
+          <div class="flex gap-3">
+            <UFormField label="Head branch" class="flex-1" hint="the ticket's branch">
+              <UInput v-model="prHead" class="w-full font-mono" placeholder="tick/TICK-n-…" />
+            </UFormField>
+            <UFormField label="Base branch" class="flex-1">
+              <UInput v-model="prBase" class="w-full font-mono" :placeholder="data?.integrationBranch || 'integration branch'" />
+            </UFormField>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="newPrOpen = false">Cancel</UButton>
+          <UButton
+            icon="i-lucide-git-pull-request-arrow"
+            :loading="creatingPr"
+            :disabled="!prTicketId"
+            @click="createPr"
+          >
+            Open PR
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- Branch picker — every branch in the repo, local and on origin -->
     <UModal

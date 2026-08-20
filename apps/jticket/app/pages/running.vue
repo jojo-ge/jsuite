@@ -49,7 +49,7 @@ const groups = computed<RunGroup[]>(() => {
       project,
       running: inFlight,
       total: projectTickets.length,
-      done: projectTickets.filter((t) => t.status === 'done').length,
+      done: projectTickets.filter((t) => isFinished(t.status)).length,
     })
   }
   if (loose.length) {
@@ -78,6 +78,37 @@ function toggleAll() {
 
 const hitl = computed(() => running.value.filter((t) => t.type === 'HITL').length)
 const unassigned = computed(() => running.value.filter((t) => !t.assignee).length)
+
+// ── Go to herdr ──
+// A running ticket usually has an agent working it in herdr (dispatched from
+// /next). Jumping there tries the most specific target first and falls through
+// server-side: the ticket's agent by name ('tick-191'), then its own tab if it
+// got one (HITL: 'PROJ-n · TICK-m'), then the project's workspace — and brings
+// the terminal window to the front.
+const toast = useToast()
+const { available: herdrUp, workspaceByLabel, focus: herdrFocus } = useHerdr()
+
+function herdrWorkspaceFor(project: Project | null) {
+  return project ? workspaceByLabel(project.title) : null
+}
+
+const focusing = ref<string | null>(null)
+async function goToHerdr(t: Ticket, project: Project | null) {
+  const ws = herdrWorkspaceFor(project)
+  if (!ws) return
+  focusing.value = t.id
+  try {
+    await herdrFocus({
+      agent: t.key.toLowerCase(),
+      tab: ws.tabs.find((x) => x.label.endsWith(t.key))?.tabId,
+      workspace: ws.workspaceId,
+    })
+  } catch (err: any) {
+    toast.add({ title: 'Could not focus herdr', description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
+  } finally {
+    focusing.value = null
+  }
+}
 </script>
 
 <template>
@@ -172,15 +203,29 @@ const unassigned = computed(() => running.value.filter((t) => !t.assignee).lengt
           </div>
 
           <div v-show="!isCollapsed(groupKey(g))" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            <TicketCard
-              v-for="t in g.running"
-              :key="t.id"
-              :ticket="t"
-              :tickets="tickets"
-              :wayfinder="g.project?.mode === 'wayfinder'"
-              @edit="openEditTicket"
-              @delete="onDeleteTicket"
-            />
+            <div v-for="t in g.running" :key="t.id" class="flex flex-col gap-1.5">
+              <TicketCard
+                :ticket="t"
+                :tickets="tickets"
+                :wayfinder="g.project?.mode === 'wayfinder'"
+                class="flex-1"
+                @edit="openEditTicket"
+                @delete="onDeleteTicket"
+              />
+              <UButton
+                v-if="herdrUp && herdrWorkspaceFor(g.project)"
+                icon="i-lucide-terminal"
+                size="xs"
+                variant="soft"
+                color="neutral"
+                block
+                :loading="focusing === t.id"
+                :aria-label="`Go to ${t.key} in herdr`"
+                @click="goToHerdr(t, g.project)"
+              >
+                Go to herdr
+              </UButton>
+            </div>
           </div>
         </section>
       </div>

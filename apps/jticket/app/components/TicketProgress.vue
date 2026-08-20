@@ -26,7 +26,7 @@ const STATES: { key: StateKey; label: string; class: string }[] = [
 const counts = computed<Record<StateKey, number>>(() => {
   const c: Record<StateKey, number> = { done: 0, running: 0, blocked: 0, todo: 0 }
   for (const t of props.tickets) {
-    if (t.status === 'done') c.done++
+    if (isFinished(t.status)) c.done++
     else if (isBlocked(t, props.allTickets)) c.blocked++
     else if (t.status === 'in_progress') c.running++
     else c.todo++

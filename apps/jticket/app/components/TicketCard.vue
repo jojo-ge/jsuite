@@ -95,7 +95,7 @@ const ring = computed(() => {
         <UBadge
           v-for="b in blockers"
           :key="b.id"
-          :color="b.status === 'done' ? 'success' : 'error'"
+          :color="isFinished(b.status) ? 'success' : 'error'"
           variant="outline"
           size="sm"
           class="font-mono"

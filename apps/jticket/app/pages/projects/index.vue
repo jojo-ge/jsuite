@@ -42,7 +42,7 @@ function ticketsFor(projectId: string | null) {
 // just hasn't been broken down yet.
 function isDone(projectId: string) {
   const ts = ticketsFor(projectId)
-  return ts.length > 0 && ts.every((t) => t.status === 'done')
+  return ts.length > 0 && ts.every((t) => isFinished(t.status))
 }
 
 // The grid shows what's still moving; finished projects sink into a collapsed

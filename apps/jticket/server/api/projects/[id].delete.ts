@@ -18,6 +18,9 @@ export default defineEventHandler((event) => {
       d.updatedAt = now()
     }
   }
+  // Local PRs are meaningless without their project's repo — drop the records
+  // (branches on disk are untouched).
+  store.prs = store.prs.filter((pr) => pr.projectId !== project.id)
   saveStore(store)
   return { ok: true }
 })

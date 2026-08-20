@@ -108,9 +108,34 @@ whichever ticket you happen to be on: opening a PR from an integration branch ti
 `TICK-9 …` hides the fact that it carries the whole project. Name the branch to match
 (`tick-7-persist-cart`, `proj-2-cart-migration`).
 
-Only open a PR when the user asks for one. When you do, list every ticket the branch
-closes in the body, by key and title with its jTicket URL, and check that each of those
-tickets is recorded (§5) before you push:
+Only open a PR when the user asks for one — and note **which kind** they asked for:
+
+**A LOCAL PR** ("local PR", "PR in jticket", or the hand-off prompt says so) is jTicket's
+own review unit: ticket branch → integration branch, merged by jTicket with a squash —
+**no push, no `gh`, nothing leaves the machine**. The prompt usually names the branch
+jTicket already cut (`on the existing branch tick/TICK-7-…`); work on that branch. If it
+doesn't, cut one first:
+
+```bash
+curl -s -X POST "$JTICKET/api/tickets/TICK-7/branch" -H 'content-type: application/json' -d '{}'
+# → { "branch": "tick/TICK-7-persist-cart", ... }  (off the integration branch, local only)
+```
+
+When the work is committed on that branch and the ticket recorded (§5), open the PR —
+the description becomes the squash commit body, so write it like one:
+
+```bash
+curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
+  -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage; survives refresh." }'
+```
+
+Do **not** merge it yourself — the merge button is the human's. Merging moves the ticket
+to `merged` and deletes the branch; a conflicted merge marks the PR `conflicted`, and the
+fix is to rebase the ticket branch onto the integration branch and let them retry.
+
+**A GITHUB PR** (they said "PR to master" / "PR to the integration branch") goes through
+`gh` as before. List every ticket the branch closes in the body, by key and title with
+its jTicket URL, and check that each of those tickets is recorded (§5) before you push:
 
 ```bash
 git commit -m "TICK-7 feat(cart): persist across refresh"

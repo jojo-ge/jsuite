@@ -31,7 +31,7 @@ const projectTickets = computed(() =>
 )
 const stats = computed(() => ({
   tickets: projectTickets.value.length,
-  done: projectTickets.value.filter((x) => x.status === 'done').length,
+  done: projectTickets.value.filter((x) => isFinished(x.status)).length,
 }))
 
 // Documents render compact — a one-line list or a pill strip — instead of full

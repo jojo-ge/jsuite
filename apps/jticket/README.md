@@ -180,6 +180,68 @@ The project page then shows a **Pull requests** section:
 `gh` is best-effort: without it (offline, not logged in, no GitHub remote) the
 branch side still works and the PR list reports why it's empty.
 
+### Local pull requests
+
+GitHub for your local: single-ticket review happens entirely on the machine, and
+only the integration branch ever talks to origin. A **local PR** is a store
+record (`prs[]`, `PR-n` keys) — title, description, one ticket, head branch,
+base branch, lifecycle — over the project's repo; git holds the code, jTicket
+holds the story. No diffs here: every row links into jDiff.
+
+The loop, per ticket:
+
+1. **Cut the ticket branch** — `POST /api/tickets/:id/branch` cuts
+   `tick/<TICK-n>-<slug>` off the integration branch, **local only**, and records
+   it on the ticket (`ticket.branch`). The *Up next* page does this automatically
+   when you copy a "Local PR" hand-off prompt, and bakes the branch name into the
+   prompt.
+2. **Open the PR** — `POST /api/prs { ticket }` (agents) or the *New local PR*
+   button. One ticket per PR, one open PR per ticket; the title defaults to
+   `<TICK-n> <title>` and the description becomes the squash commit body.
+3. **Merge** — the button, or `POST /api/prs/:id/merge`. A **squash** onto the
+   integration branch done with plumbing (`merge-tree` → `commit-tree` →
+   `update-ref`, git ≥ 2.38): no checkout, your working tree is never touched,
+   whatever you're mid-way through. On success the ticket branch is deleted and
+   the ticket moves to **`merged`** (a fourth status; `done` and `merged` both
+   count as finished everywhere). If the integration branch happens to be checked
+   out *clean*, that checkout is fast-forwarded; checked out *dirty* refuses.
+4. **Conflicts refuse cleanly** — the repo is left exactly as it was, the PR
+   turns `conflicted` with the file list on the row. Rebase the ticket branch
+   onto the integration branch, then hit merge again.
+5. **Sync** — `POST /api/projects/:id/sync` (the *Sync* button) pushes the
+   integration branch to origin: the only remote write in the flow. The
+   *Roll-up PR* button (`POST /api/projects/:id/integration-pr`) pushes and then
+   opens — or finds — the one real GitHub PR, integration → default branch,
+   via `gh`.
+
+The project page's *Pull requests* section shows both lists: **Local pull
+requests** (with per-PR commit fold-outs, merge/close buttons) above **On
+GitHub** (the read-only `gh pr list` view, usually just the roll-up).
+
+### Herdr dispatch
+
+When the [Herdr](https://herdr.dev) server is running, the prompts on */next*
+don't have to go through the clipboard — each row and each "Merge N PRs" button
+grows a **herdr** twin that builds the terminal itself over Herdr's socket CLI
+(`server/utils/herdr.ts`):
+
+- one Herdr **workspace per project** — label = the project title, cwd = the
+  repo (created on first dispatch);
+- ticket agents as **panes, packed up to four per tab**, tabs labelled with the
+  project key (`PROJ-2`, then `PROJ-2 · 2`, …), each pane running `claude` with
+  the same hand-off prompt the copy button would have copied (the ticket branch
+  is cut first, exactly like copying);
+- merge sweeps as their **own single-pane tab** (`PROJ-2 · merge`), one agent
+  working through the PR queue;
+- **nothing steals focus** — every create/split passes `--no-focus`. Moving over
+  is explicit: the group-header **herdr** button focuses the project's
+  workspace, and per-tab chips (with agent-status dots) focus individual tabs
+  via `POST /api/herdr/focus`.
+
+All of it degrades: no `herdr` binary or no running server and the buttons
+simply don't render (`GET /api/herdr` → `available: false`). If the binary
+lives somewhere unusual, point `HERDR_BIN` at it.
+
 ## Wayfinder mode
 
 Set a project's `mode` to `wayfinder` and it becomes a home for [wayfinder](https://github.com/) maps. The mapping:
