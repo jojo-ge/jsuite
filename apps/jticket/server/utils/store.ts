@@ -11,10 +11,16 @@ export type DocStatus = 'draft' | 'ready'
 // A local PR's lifecycle. 'conflicted' is a failed merge attempt — the repo was
 // left untouched; rebase the head branch and merge again.
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-// A project is either a plain tracker or a wayfinder effort. In 'wayfinder'
-// mode the project description is the wayfinder *map* body and its tickets are
-// grouped into frontier / blocked / done.
-export type ProjectMode = 'standard' | 'wayfinder'
+// A project is a plain tracker, a wayfinder effort, or a jMap codebase-mapping
+// effort. In 'wayfinder' mode the project description is the wayfinder *map*
+// body and its tickets are grouped into frontier / blocked / done. In 'jmap'
+// mode the tickets are mapping jobs dispatched to herdr with /jmap-* commands
+// (no branches, no PRs) and their output is docs the jMap app synthesizes.
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap'
+
+export function coerceProjectMode(mode: unknown): ProjectMode {
+  return mode === 'wayfinder' || mode === 'jmap' ? mode : 'standard'
+}
 
 export interface Project {
   id: string
@@ -193,7 +199,7 @@ export function loadStore(): Store {
       // predating the GitHub link have no repo and no integration branch.
       projects: (parsed.projects ?? []).map((p) => ({
         ...p,
-        mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard',
+        mode: coerceProjectMode(p.mode),
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
       })),

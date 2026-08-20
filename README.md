@@ -1,6 +1,6 @@
 # jSuite
 
-A pnpm-workspace monorepo of six local dev apps behind one HTTPS edge — one
+A pnpm-workspace monorepo of seven local dev apps behind one HTTPS edge — one
 command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
 instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
@@ -20,6 +20,7 @@ cd ~/code/anyway/jsuite
 | https://jexplain.local   | jExplain                  | 43004     |
 | https://jgrilling.local  | jGrilling                 | 43005     |
 | https://jrig.local       | jRig                      | 43006     |
+| https://jmap.local       | jMap                      | 43007     |
 
 ## Setup
 
@@ -69,11 +70,13 @@ jsuite/
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
-│   └── jrig/           # avatar studio — draw, rig and keyframe 2D characters
+│   ├── jrig/           # avatar studio — draw, rig and keyframe 2D characters
+│   └── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── claude/         # @jsuite/claude — shared local-claude CLI runner
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
+    ├── herdr/          # @jsuite/herdr — shared herdr (terminal workspace) adapter
     └── data/           # @jsuite/data — shared .data resolver
 ```
 
@@ -107,6 +110,7 @@ overrides the search when set.
 | jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
 | jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
 | jrig | `.data/jrig/` — character/clip JSON documents (schema-validated) |
+| jmap | `.data/jmap/<key>.json` — map identity + synthesized graph; the work (tickets, docs) lives in jTicket and the shared document pool |
 
 ## @jsuite/charting
 
@@ -161,13 +165,28 @@ abort-signal cancellation. `extractJson()` repairs the JSON claude was asked to
 return. Like `@jsuite/data` it is plain ESM with no layer to extend — add
 `"@jsuite/claude": "workspace:*"` to `dependencies` and import. Failures throw
 `ClaudeError` with an HTTP-ish `statusCode`, so h3 handlers can rethrow them
-directly. jDiff and jGrilling both run on it.
+directly. jDiff and jGrilling run on it.
+
+## @jsuite/herdr
+
+The Herdr adapter born in jTicket — drives the `herdr` terminal workspace
+manager over its socket CLI: binary resolution (`HERDR_BIN` → PATH →
+`~/.local/bin`), JSON command exec, a ~5s state cache (`herdrState()` reports
+`{ available: false }` when herdr isn't running, so UIs degrade to hidden
+buttons), workspace/tab topology (`ensureHerdrWorkspace`, `acquirePackedPane`
+packs panes 2×2 per tab, `createJobTab`), macOS window focusing, and
+`startClaudeIn` (start a claude agent in a pane and submit a prompt, with the
+"not an available shell" and `agent_prompt_stalled` retry dances). Plain ESM,
+no layer; failures throw `HerdrError` with an HTTP-ish `statusCode`. jTicket
+dispatches all ticket work through it — including jMap-mode mapping tickets.
 
 ## jSkills
 
 Apps own their Claude skills in `<app>/.claude/skills` (the jTicket pattern:
 jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
-jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`). Suite-level skills live in
+jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`;
+jmap owns `j-map`, `jmap-scope`, `jmap-domain` and `jmap-synthesize`).
+Suite-level skills live in
 `.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
 app does, how they relate, and which app/skill a request routes to.
 
@@ -211,7 +230,7 @@ picker and open-in-VSCode, none of which survive containerisation. OrbStack
 terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
 
 ```
-browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006,43007}
                         │
                         └─ OrbStack local CA, auto-trusted on first visit
 ```

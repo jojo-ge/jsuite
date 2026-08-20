@@ -7,7 +7,7 @@
 // up right now — which until now meant reading every project and doing the
 // blocked/claimed arithmetic by eye. Each row carries the hand-off command, so
 // the page ends in dispatch rather than in another click.
-import type { LocalPr, Project, Ticket, WayfinderType } from '~/composables/useTracker'
+import type { LocalPr, Project, ProjectMode, Ticket, WayfinderType } from '~/composables/useTracker'
 
 useHead({ title: 'Up next' })
 
@@ -58,9 +58,9 @@ const shown = computed(() =>
 interface NextRow {
   ticket: Ticket
   wf: (typeof WAYFINDER_TYPE_META)[WayfinderType] | null
-  // Whether the ticket lives in a wayfinder project — it decides which
-  // hand-off command the row copies, not just how the row is decorated.
-  wayfinder: boolean
+  // The project's mode — it decides which hand-off command the row copies
+  // (/jwayfinder, /jmap-*, or /jimplement), not just how the row is decorated.
+  mode: ProjectMode
 }
 interface NextGroup {
   project: Project | null
@@ -85,9 +85,9 @@ const groups = computed<NextGroup[]>(() => {
 
   const rowsFor = (list: Ticket[], project: Project | null): NextRow[] =>
     list.map((ticket) => {
-      const wayfinder = project?.mode === 'wayfinder'
-      const type = wayfinder ? wayfinderType(ticket) : null
-      return { ticket, wf: type ? WAYFINDER_TYPE_META[type] : null, wayfinder }
+      const mode = project?.mode ?? 'standard'
+      const type = mode === 'wayfinder' ? wayfinderType(ticket) : null
+      return { ticket, wf: type ? WAYFINDER_TYPE_META[type] : null, mode }
     })
 
   const out: NextGroup[] = []
@@ -182,15 +182,27 @@ watch(promptTarget, (value) => localStorage.setItem('jticket-next-prompt', value
 
 const prompt = computed(() => PROMPTS.find((p) => p.value === promptTarget.value) ?? PROMPTS[0])
 
-// Wayfinder tickets are not implementation work — the frontier of a map is
-// research, prototypes and grillings, and /jwayfinder is the skill that reads
-// one. So there the hand-off is the bare command: no worktree, no PR target,
-// which is why the prompt picker above does not apply to these rows.
-function commandLabel(wayfinder: boolean) {
-  return wayfinder ? '/jwayfinder' : '/jimplement'
+// Wayfinder and jMap tickets are not implementation work — a wayfinder
+// frontier is research/prototypes/grillings and /jwayfinder is the skill that
+// reads one; a jMap frontier is mapping jobs, and the ticket's jmap:* label
+// picks its skill: jmap:scope → /jmap-scope, jmap:synthesize →
+// /jmap-synthesize, everything else → /jmap-domain. In both modes the
+// hand-off is the bare command: no worktree, no PR target, which is why the
+// prompt picker above does not apply to these rows.
+function jmapCommand(t: Ticket) {
+  if (t.labels.includes('jmap:scope')) return '/jmap-scope'
+  if (t.labels.includes('jmap:synthesize')) return '/jmap-synthesize'
+  return '/jmap-domain'
 }
-function commandFor(t: Ticket, wayfinder: boolean, branch = t.branch) {
-  return wayfinder ? `/jwayfinder ${t.key}` : prompt.value.command(t.key, branch)
+function commandLabel(mode: ProjectMode, t: Ticket) {
+  if (mode === 'wayfinder') return '/jwayfinder'
+  if (mode === 'jmap') return jmapCommand(t)
+  return '/jimplement'
+}
+function commandFor(t: Ticket, mode: ProjectMode, branch = t.branch) {
+  if (mode === 'wayfinder') return `/jwayfinder ${t.key}`
+  if (mode === 'jmap') return `${jmapCommand(t)} ${t.key}`
+  return prompt.value.command(t.key, branch)
 }
 
 // ── Merging the PR queue ──
@@ -261,18 +273,18 @@ const dispatching = ref<string | null>(null)
 // HITL tickets get their own tab — work that will stop and ask for the human
 // deserves a tab of its own, not a quarter of a grid. Throws so run-all can
 // tally failures; the single-row button wraps it with its own toasts.
-async function dispatchOne(t: Ticket, wayfinder: boolean) {
-  const branch = await resolveBranch(t, wayfinder)
+async function dispatchOne(t: Ticket, mode: ProjectMode) {
+  const branch = await resolveBranch(t, mode)
   return await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
     method: 'POST',
-    body: { prompt: commandFor(t, wayfinder, branch), ownTab: t.type === 'HITL' },
+    body: { prompt: commandFor(t, mode, branch), ownTab: t.type === 'HITL' },
   })
 }
 
-async function dispatchTicket(t: Ticket, wayfinder: boolean) {
+async function dispatchTicket(t: Ticket, mode: ProjectMode) {
   dispatching.value = t.id
   try {
-    const res = await dispatchOne(t, wayfinder)
+    const res = await dispatchOne(t, mode)
     toast.add({
       title: `${t.key} running in herdr`,
       description: `Agent ${res.agent} — use the tab chip to go watch it.`,
@@ -300,11 +312,11 @@ async function runAll(g: NextGroup) {
   let done = 0
   const failed: string[] = []
   try {
-    for (const { ticket, wayfinder } of g.rows) {
+    for (const { ticket, mode } of g.rows) {
       runAllProgress.value = `${done + failed.length + 1}/${g.rows.length}`
       dispatching.value = ticket.id
       try {
-        await dispatchOne(ticket, wayfinder)
+        await dispatchOne(ticket, mode)
         done++
       } catch {
         failed.push(ticket.key)
@@ -352,9 +364,10 @@ async function dispatchMerge(q: MergeQueue) {
 // moment the prompt is handed off (copied or dispatched) — off the integration
 // branch, local only. A failed cut (no repo, no integration branch) still
 // hands off; the agent will be told to cut a branch itself via POST /api/prs's
-// error.
-async function resolveBranch(t: Ticket, wayfinder: boolean): Promise<string> {
-  if (wayfinder || promptTarget.value !== 'local' || t.branch) return t.branch
+// error. Wayfinder and jMap tickets never get branches — their work is
+// research/docs, not code.
+async function resolveBranch(t: Ticket, mode: ProjectMode): Promise<string> {
+  if (mode !== 'standard' || promptTarget.value !== 'local' || t.branch) return t.branch
   try {
     const res = await $fetch<{ branch: string }>(`/api/tickets/${t.id}/branch`, { method: 'POST', body: {} })
     return res.branch
@@ -370,9 +383,9 @@ async function resolveBranch(t: Ticket, wayfinder: boolean): Promise<string> {
 }
 
 const copied = ref<string | null>(null)
-async function copyCommand(t: Ticket, wayfinder: boolean) {
-  const branch = await resolveBranch(t, wayfinder)
-  const command = commandFor(t, wayfinder, branch)
+async function copyCommand(t: Ticket, mode: ProjectMode) {
+  const branch = await resolveBranch(t, mode)
+  const command = commandFor(t, mode, branch)
   try {
     await navigator.clipboard.writeText(command)
     copied.value = t.id
@@ -626,7 +639,7 @@ async function copyCommand(t: Ticket, wayfinder: boolean) {
             class="divide-y divide-default overflow-hidden rounded-lg border border-default"
           >
             <li
-              v-for="{ ticket: t, wf, wayfinder } in g.rows"
+              v-for="{ ticket: t, wf, mode } in g.rows"
               :key="t.id"
               class="group cursor-pointer bg-elevated/20 px-4 py-3 transition hover:bg-elevated/60"
               :class="changedTickets[t.id] ? 'jt-moved' : ''"
@@ -668,10 +681,10 @@ async function copyCommand(t: Ticket, wayfinder: boolean) {
                     :color="copied === t.id ? 'success' : 'neutral'"
                     variant="soft"
                     size="xs"
-                    :aria-label="`Copy ${commandLabel(wayfinder)} ${t.key}`"
-                    @click.stop="copyCommand(t, wayfinder)"
+                    :aria-label="`Copy ${commandLabel(mode, t)} ${t.key}`"
+                    @click.stop="copyCommand(t, mode)"
                   >
-                    {{ copied === t.id ? 'Copied' : commandLabel(wayfinder) }}
+                    {{ copied === t.id ? 'Copied' : commandLabel(mode, t) }}
                   </UButton>
                   <UTooltip v-if="herdrUp" text="Run this hand-off in herdr (background — no focus steal)">
                     <UButton
@@ -680,7 +693,7 @@ async function copyCommand(t: Ticket, wayfinder: boolean) {
                       size="xs"
                       :loading="dispatching === t.id"
                       :aria-label="`Run ${t.key} in herdr`"
-                      @click.stop="dispatchTicket(t, wayfinder)"
+                      @click.stop="dispatchTicket(t, mode)"
                     >
                       herdr
                     </UButton>

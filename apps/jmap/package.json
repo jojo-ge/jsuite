@@ -1,0 +1,21 @@
+{
+  "name": "jmap",
+  "private": true,
+  "type": "module",
+  "description": "Codebase cartographer — a scoping claude splits a repo into domains, herdr claude sessions map each one, and a synthesis pass draws the whole system as an interactive dependency map with per-domain documents.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.0",
+    "@jsuite/data": "workspace:*",
+    "@jsuite/documents": "workspace:*",
+    "@nuxt/ui": "^4.10.0",
+    "nuxt": "^4.5.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  }
+}

@@ -1,12 +1,12 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling and jRig each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jRig and jMap each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
 ---
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of six local Nuxt
-apps behind one HTTPS edge. One command starts everything; every app has a
+jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of seven local
+Nuxt apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
 ```sh
@@ -23,6 +23,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
 | jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — claude interrogates a plan |
 | jRig | https://jrig.local | 43006 | avatar studio — draw, rig and keyframe 2D characters |
+| jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
@@ -82,6 +83,20 @@ Claude edits the files, the studio hot-reloads them); the studio has Illustrate
 mode (vector tools, palette roles, mirror symmetry) and Animate mode (timeline
 keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
 
+**jMap** — the codebase cartographer, orchestrated entirely through jTicket.
+Creating a map creates a **jMap-mode jTicket project** (repo = the mapped
+directory) with a scoping ticket; jTicket's herdr Run buttons dispatch every
+phase (`/jmap-scope` divides the repo into domains and creates one
+`jmap:domain` ticket per part; `/jmap-domain` maps one part and publishes its
+walkthrough doc on the project; `/jmap-synthesize` — created from the map
+room's Synthesize button — unifies the docs into the graph and POSTs it back
+to jMap; no branches, no PRs, docs and the graph are the output). jMap runs no
+claude itself: it polls the project for progress and renders the interactive
+SVG map (pan/zoom, hover a node to see its dependencies, click for commentary
+and the domain's document). Maps live in `.data/jmap/`. Skills: `j-map` (front
+door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
+`jmap-synthesize` (the ticket contracts).
+
 ## How they relate
 
 - **One edge**: a Caddy container routes each `.local` name to its native host
@@ -102,7 +117,12 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
   included.
 - **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
   `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
-  cancellation. jDiff's review tools and jGrilling's interviewer both run on it.
+  cancellation. jDiff's review tools, jGrilling's interviewer, and jMap's
+  scoping/synthesis passes all run on it.
+- **One herdr adapter**: `@jsuite/herdr` (plain ESM package) dispatches whole
+  terminal claude sessions into the herdr workspace manager — workspaces, panes
+  packed 2×2 per tab, agent start + prompt with the retry dances, all
+  `--no-focus`. jTicket dispatches ticket work; jMap dispatches domain mappers.
 - **Notes loop everywhere**: jChart and jExplain keep human feedback in
   `<key>.notes.json` sidecars — the human annotates in the browser, Claude reads
   the sidecar and acts on it.
@@ -123,6 +143,7 @@ keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
 | be grilled about a plan, answering in a UI | `j-grilling` |
 | draw / rig / animate an avatar character | jRig — https://jrig.local (companion skill lands with its M9 milestone) |
+| map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
 `./jsuite start` (it refuses ports held by processes it didn't launch — a stale

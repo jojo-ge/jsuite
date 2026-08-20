@@ -50,9 +50,10 @@ APPS=(
   "jexplain|jexplain|43004|pnpm dev --port 43004"
   "jgrilling|jgrilling|43005|pnpm dev --port 43005"
   "jrig|jrig|43006|pnpm dev --port 43006"
+  "jmap|jmap|43007|pnpm dev --port 43007"
 )
 
-DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jrig.local)
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jrig.local jmap.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
@@ -65,6 +66,7 @@ SKILLS_MANIFEST=(
   "apps/jchart|j-chart"
   "apps/jexplain|j-explain"
   "apps/jgrilling|j-grilling"
+  "apps/jmap|jmap-scope jmap-domain jmap-synthesize j-map"
 )
 POCOCK_SOURCE="mattpocock/skills"
 

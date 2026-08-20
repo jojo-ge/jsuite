@@ -1,8 +1,8 @@
 # jSuite
 
-Six local Nuxt apps (jticket, jdiff, jchart, jexplain, jgrilling, jrig) + shared
-packages behind one Caddy edge; OrbStack resolves the `.local` names and
-terminates HTTPS.
+Seven local Nuxt apps (jticket, jdiff, jchart, jexplain, jgrilling, jrig, jmap)
++ shared packages behind one Caddy edge; OrbStack resolves the `.local` names
+and terminates HTTPS.
 `README.md` covers architecture; this file is for routing requests to the right
 app, and the rules that keep the suite consistent. The `jsuite` skill (installed
 globally by `./jsuite setup`) carries the same map for sessions outside this repo.
@@ -17,9 +17,11 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
 | grill/stress-test a plan with the human answering in a UI | `apps/jgrilling` | skill `j-grilling`; API on :43005; state in `.data/jgrilling/` |
 | avatar characters — draw, rig, keyframe 2D avatars | `apps/jrig` | studio at https://jrig.local; character/clip JSON in `.data/jrig/` (documents API on :43006); see `apps/jrig/docs/PLAN.md` |
+| map a codebase — domains, dependency map, walkthrough docs | `apps/jmap` | skill `j-map` (front door); the work runs as a jMap-mode jTicket project (herdr-dispatched `/jmap-scope`, `/jmap-domain`, `/jmap-synthesize` tickets); jMap API on :43007 renders the posted graph; state in `.data/jmap/` |
 | charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
 | block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
-| running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff and jGrilling both drive claude through it |
+| running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff and jGrilling drive claude through it |
+| dispatching terminal claude sessions into herdr | shared pool | `packages/herdr` (`ensureHerdrWorkspace`, `acquirePackedPane`, `startClaudeIn`) — jTicket and jMap both dispatch through it |
 
 When a request spans apps (e.g. "spec this, then diagram it"), do each part with
 that app's own skill rather than improvising one app's job in another.
@@ -57,7 +59,7 @@ jsuite            # launcher: start/stop/status/logs/open/setup
 Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
-apps/             # jticket jdiff jchart jexplain jgrilling jrig
-packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner)
+apps/             # jticket jdiff jchart jexplain jgrilling jrig jmap
+packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner), @jsuite/herdr (herdr dispatch adapter)
 .data/<app>/      # ALL app state, gitignored
 ```

@@ -94,6 +94,7 @@ function slugForBranch(title: string): string {
 const modeOptions = [
   { label: 'Standard — plain tracker', value: 'standard' },
   { label: 'Wayfinder — the description is a map, tickets have a frontier', value: 'wayfinder' },
+  { label: 'jMap — tickets are codebase-mapping jobs dispatched with /jmap-* commands', value: 'jmap' },
 ]
 
 function reset() {

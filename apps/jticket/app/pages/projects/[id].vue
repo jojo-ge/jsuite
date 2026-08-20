@@ -112,6 +112,15 @@ async function removeProject() {
               >
                 Wayfinder
               </UBadge>
+              <UBadge
+                v-else-if="project.mode === 'jmap'"
+                color="success"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-map"
+              >
+                jMap
+              </UBadge>
               <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
               <span class="text-xs text-muted">{{ stats.done }}/{{ stats.tickets }} tickets done</span>
             </div>

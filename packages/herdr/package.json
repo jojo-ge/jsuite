@@ -1,0 +1,16 @@
+{
+  "name": "@jsuite/herdr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Herdr adapter — drives the herdr terminal workspace manager over its socket CLI (workspaces, packed panes, claude agents) for any jSuite app that dispatches terminal claude sessions.",
+  "main": "./index.mjs",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    },
+    "./package.json": "./package.json"
+  }
+}

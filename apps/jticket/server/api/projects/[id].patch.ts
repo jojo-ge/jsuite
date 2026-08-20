@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
 
   if (body.title !== undefined) project.title = body.title.trim()
   if (body.description !== undefined) project.description = body.description.trim()
-  if (body.mode !== undefined) project.mode = body.mode === 'wayfinder' ? 'wayfinder' : 'standard'
+  if (body.mode !== undefined) project.mode = coerceProjectMode(body.mode)
   // The GitHub link. '' on either clears it; the branch is validated here so a
   // hand-set name can't smuggle a git flag into the branch endpoints.
   if (body.repo !== undefined) {

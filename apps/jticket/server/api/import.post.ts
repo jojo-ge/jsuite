@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
       key: nextKey(store, 'project'),
       title: p.title.trim(),
       description: p.description?.trim() ?? '',
-      mode: p.mode === 'wayfinder' ? 'wayfinder' : 'standard',
+      mode: coerceProjectMode(p.mode),
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
       createdAt: ts,

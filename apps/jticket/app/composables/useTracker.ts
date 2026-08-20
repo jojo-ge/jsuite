@@ -3,7 +3,7 @@ export type TicketType = 'AFK' | 'HITL'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-export type ProjectMode = 'standard' | 'wayfinder'
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap'
 
 export interface Project {
   id: string
