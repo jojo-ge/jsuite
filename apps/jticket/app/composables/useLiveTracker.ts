@@ -68,6 +68,9 @@ function toastFor(move: Move): ToastSpec | null {
     case 'created':
       return { title: `${t.key} created`, description: t.title, icon: 'i-lucide-plus', color: 'primary' }
     case 'status':
+      if (t.status === 'merged') {
+        return { title: `${t.key} merged`, description: t.title, icon: 'i-lucide-git-merge', color: 'success' }
+      }
       if (t.status === 'done') {
         return { title: `${t.key} done`, description: t.title, icon: 'i-lucide-circle-check', color: 'success' }
       }

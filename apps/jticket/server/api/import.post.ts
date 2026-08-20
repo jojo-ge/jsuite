@@ -86,8 +86,9 @@ export default defineEventHandler(async (event) => {
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
       comments: [],
+      branch: '',
       // A breakdown imported with work already done finishes as of the import.
-      completedAt: status === 'done' ? ts : null,
+      completedAt: isFinishedStatus(status) ? ts : null,
       createdAt: ts,
       updatedAt: ts,
     }

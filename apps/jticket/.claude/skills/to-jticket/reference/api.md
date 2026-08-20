@@ -13,6 +13,12 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | POST | `/api/tickets/:id/comments` | Add a comment to a ticket |
 | DELETE | `/api/tickets/:id/comments/:commentId` | Delete one comment |
 | POST | `/api/import` | Bulk-author a whole breakdown |
+| POST | `/api/tickets/:id/branch` | Cut the ticket's local work branch off the integration branch |
+| GET / POST | `/api/prs` | List / open **local PRs** (ticket branch → integration branch, merged by jTicket) |
+| GET / PATCH / DELETE | `/api/prs/:id` | One local PR (id or `PR-n`); PATCH status only to `closed` / `open` |
+| POST | `/api/prs/:id/merge` | Squash-merge locally; deletes the branch, ticket → `merged`; 409 on conflict |
+| POST | `/api/projects/:id/sync` | Push the integration branch to origin (the only remote write) |
+| POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
 | GET / POST | `/api/attachments` | List / upload attachments |
@@ -24,13 +30,14 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 
 ```
 GET /api/tickets?projectId=PROJ-2   # project id or key
-                &status=todo|in_progress|done
+                &status=todo|in_progress|done|merged
                 &assignee=<exact name>
                 &label=<exact label>
                 &frontier=true      # todo + unblocked + unassigned, key-ordered
-                &finished=true      # done tickets, newest completedAt first
+                &finished=true      # done + merged tickets, newest completedAt first
                 &since=<ISO>        # completedAt >= this (pairs with finished=true)
 GET /api/docs?projectId=PROJ-1&status=draft|ready&label=<label>
+GET /api/prs?projectId=PROJ-2&ticket=TICK-7&status=open|conflicted|merged|closed
 ```
 
 Filters combine with AND. `frontier=true` is applied last and sorts by key number
@@ -38,14 +45,19 @@ Filters combine with AND. `frontier=true` is applied last and sorts by key numbe
 
 Every ticket in a GET response is augmented with three **read-only derived** booleans:
 
-- `blocked` — some ticket in `blockedBy` is not `done`
+- `blocked` — some ticket in `blockedBy` is not finished (`done` or `merged`)
 - `claimed` — `assignee` is non-empty
 - `frontier` — `status === "todo"` && !claimed && !blocked
 
 `completedAt` is also read-only, but it **is** persisted: the server stamps it when a
-ticket moves into `done` and clears it when it moves out. Sending it in a POST/PATCH body
-is ignored. Editing an already-done ticket keeps the original stamp, so a resolution fix
-doesn't reorder `?finished=true`.
+ticket moves into `done` or `merged` and clears it when it moves out. Sending it in a
+POST/PATCH body is ignored. Editing an already-finished ticket keeps the original stamp,
+so a resolution fix doesn't reorder `?finished=true`.
+
+Ticket statuses: `todo → in_progress → done → merged`. `done` means built and recorded;
+`merged` means its **local PR** landed on the integration branch — normally set by
+`POST /api/prs/:id/merge`, not by hand. Both count as finished everywhere (blocking, the
+frontier, `?finished=true`).
 
 ## Payloads
 
@@ -102,6 +114,38 @@ POST /api/tickets/:id/comments
 
 `DELETE /api/tickets/:id/comments/:commentId` removes one comment (`:commentId` is the
 comment's `id`, not an index). There is no comment edit — delete and re-post.
+
+### Local PRs
+
+GitHub for the local repo: a local PR is one **ticket branch** squash-merged onto the
+project's **integration branch** by jTicket itself — no push, no GitHub, no diffs (jDiff
+renders those). Exactly one ticket per PR, one open PR per ticket. The flow:
+
+```bash
+# 1. Cut the ticket's branch (off the integration branch, local only, recorded on the ticket)
+curl -s -X POST "$JTICKET/api/tickets/TICK-7/branch" -H 'content-type: application/json' -d '{}'
+# → { "branch": "tick/TICK-7-persist-cart", "base": "proj/PROJ-2-checkout", "created": true }
+
+# 2. ...commit work on that branch, mark the ticket done, then open the PR
+curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
+  -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage." }'
+# → 201 { "key": "PR-4", "title": "TICK-7 Persist the cart", "status": "open",
+#         "headBranch": "tick/TICK-7-persist-cart", "baseBranch": "proj/PROJ-2-checkout",
+#         "commits": [...] }
+# title defaults to "<TICK-n> <ticket title>"; description becomes the squash commit body.
+
+# 3. The human merges from the UI — or:
+curl -s -X POST "$JTICKET/api/prs/PR-4/merge"
+# Success: squash commit on the integration branch, ticket branch deleted, ticket → merged.
+# Conflict: 409, PR status → "conflicted" with conflictFiles, the repo left untouched.
+#   Fix = rebase the ticket branch onto the integration branch, then POST the merge again.
+# The merge never touches the working tree (plumbing merge) — a dirty checkout is fine
+# unless the *integration branch itself* is checked out dirty (409, says so).
+```
+
+Everything stays on the machine until `POST /api/projects/:id/sync` pushes the
+integration branch. `POST /api/projects/:id/integration-pr` opens the one real GitHub
+roll-up PR (integration → default branch) via `gh`.
 
 ### Doc
 

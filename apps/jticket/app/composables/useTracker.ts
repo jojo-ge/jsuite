@@ -1,7 +1,8 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
 export type TicketType = 'AFK' | 'HITL'
-export type TicketStatus = 'todo' | 'in_progress' | 'done'
+export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
+export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 export type ProjectMode = 'standard' | 'wayfinder'
 
 export interface Project {
@@ -42,6 +43,8 @@ export interface Ticket {
   resolution: string
   blockedBy: string[]
   comments: TicketComment[]
+  // The ticket's local work branch ('' until cut) — a local PR's default head.
+  branch: string
   // When the ticket last became done; null while unfinished. Stamped by the
   // server on the status change, not by callers — see /finished.
   completedAt: string | null
@@ -52,6 +55,28 @@ export interface Ticket {
   blocked?: boolean
   claimed?: boolean
   frontier?: boolean
+}
+
+// A local pull request (see server/utils/store.ts) as GET /api/prs returns it:
+// the record plus the derived ticketKey/ticketTitle/jdiffUrl.
+export interface LocalPr {
+  id: string
+  key: string
+  title: string
+  description: string
+  ticketId: string
+  projectId: string
+  headBranch: string
+  baseBranch: string
+  status: LocalPrStatus
+  conflictFiles: string[]
+  mergeCommit: string
+  mergedAt: string | null
+  createdAt: string
+  updatedAt: string
+  ticketKey?: string | null
+  ticketTitle?: string | null
+  jdiffUrl?: string | null
 }
 
 // A tracker record wrapping a document in the shared @jsuite/documents pool —
@@ -76,6 +101,7 @@ export function useTracker() {
   const projects = useState<Project[]>('jticket-projects', () => [])
   const tickets = useState<Ticket[]>('jticket-tickets', () => [])
   const docs = useState<Doc[]>('jticket-docs', () => [])
+  const prs = useState<LocalPr[]>('jticket-prs', () => [])
   // Ids of tickets that moved in the last live update (see useLiveTracker).
   // Cards ring themselves while an id is in here, so a change somebody *else*
   // made — an agent, another tab — is visible without re-reading the board.
@@ -105,14 +131,16 @@ export function useTracker() {
   }
 
   async function refresh() {
-    const [p, t, d] = await Promise.all([
+    const [p, t, d, pr] = await Promise.all([
       $fetch<Project[]>('/api/projects'),
       $fetch<Ticket[]>('/api/tickets'),
       $fetch<Doc[]>('/api/docs'),
+      $fetch<LocalPr[]>('/api/prs'),
     ])
     projects.value = p
     tickets.value = t
     docs.value = d
+    prs.value = pr
   }
 
   // ── Projects ──
@@ -170,6 +198,7 @@ export function useTracker() {
     projects,
     tickets,
     docs,
+    prs,
     changed,
     markChanged,
     refresh,
@@ -188,10 +217,43 @@ export function useTracker() {
 }
 
 // ── Small view helpers ──
-export const STATUS_META: Record<TicketStatus, { label: string; color: 'neutral' | 'info' | 'success' }> = {
+export const STATUS_META: Record<TicketStatus, { label: string; color: 'neutral' | 'info' | 'success' | 'secondary' }> = {
   todo: { label: 'To Do', color: 'neutral' },
   in_progress: { label: 'In Progress', color: 'info' },
   done: { label: 'Done', color: 'success' },
+  merged: { label: 'Merged', color: 'secondary' },
+}
+
+// 'done' and 'merged' both count as finished — the client twin of the server's
+// isFinishedStatus, used everywhere that used to ask `status === 'done'`.
+export function isFinished(status: TicketStatus): boolean {
+  return status === 'done' || status === 'merged'
+}
+
+// ── The merge sweep ──
+// A project's mergeable queue: open AND conflicted local PRs (merging the
+// conflicted ones is exactly what the sweep is for), oldest first — the landing
+// order that minimises rebase churn.
+export function mergeQueueOf<T extends Pick<LocalPr, 'projectId' | 'status' | 'key'>>(prs: T[], projectId: string): T[] {
+  const n = (k: string) => Number(k.split('-').pop()) || 0
+  return prs
+    .filter((pr) => pr.projectId === projectId && (pr.status === 'open' || pr.status === 'conflicted'))
+    .sort((a, b) => n(a.key) - n(b.key))
+}
+
+// The hand-off that lands the queue: one prompt an agent can follow to merge
+// every PR, rebasing through conflicts. Used verbatim by the copy buttons and
+// the herdr dispatch on /next and the project page.
+export function mergeSweepPrompt(
+  project: Pick<Project, 'key' | 'repo' | 'integrationBranch'>,
+  prKeys: string[],
+): string {
+  return [
+    `Merge ${project.key}'s open local jTicket PRs into its integration branch ${project.integrationBranch}, oldest first: ${prKeys.join(', ')}.`,
+    'For each one: POST http://localhost:43000/api/prs/<key>/merge.',
+    `On a 409 conflict: in the repo at ${project.repo}, rebase that PR's head branch onto ${project.integrationBranch}, resolve the conflicts preserving both sides' intent, then POST the merge again.`,
+    'Everything stays local — do not push or touch GitHub.',
+  ].join(' ')
 }
 
 export const DOC_STATUS_META: Record<DocStatus, { label: string; color: 'neutral' | 'success' }> = {
@@ -202,7 +264,7 @@ export const DOC_STATUS_META: Record<DocStatus, { label: string; color: 'neutral
 export function isBlocked(ticket: Ticket, all: Ticket[]): boolean {
   return ticket.blockedBy.some((id) => {
     const dep = all.find((t) => t.id === id)
-    return dep ? dep.status !== 'done' : false
+    return dep ? !isFinished(dep.status) : false
   })
 }
 

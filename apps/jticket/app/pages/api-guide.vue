@@ -34,9 +34,22 @@ const endpoints = [
   { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (tickets → backlog)' },
   { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, attachments)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
-  { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch and matching open PRs (?force=1 skips the 30s cache)" },
+  { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch, local PRs (with commits) and matching GitHub PRs (?force=1 skips the 30s cache)" },
   { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
+  { m: 'POST', p: '/api/projects/:id/sync', d: 'Push the integration branch to origin — the only remote write in the local-PR flow' },
+  { m: 'POST', p: '/api/projects/:id/integration-pr', d: 'Push, then open (or find) the roll-up PR on GitHub via gh: integration → default branch' },
   { m: 'GET', p: '/api/projects/:id/branches', d: 'Branches in the project\'s repo, local + origin (?q= search, ?fetch=1 pulls origin first)' },
+  { m: 'GET', p: '/api/prs', d: 'List local PRs (?projectId= &ticket= &status=open|conflicted|merged|closed)' },
+  { m: 'POST', p: '/api/prs', d: 'Open a local PR { ticket, title?, description?, headBranch?, baseBranch? } — one per ticket' },
+  { m: 'GET', p: '/api/prs/:id', d: 'One local PR (id or PR-n key) with the commits it would merge' },
+  { m: 'PATCH', p: '/api/prs/:id', d: 'Edit a local PR; status accepts only closed / open (merge outcomes are the merge\'s)' },
+  { m: 'POST', p: '/api/prs/:id/merge', d: 'Squash-merge onto the integration branch, delete the branch, ticket → merged; 409 + conflictFiles on conflict' },
+  { m: 'DELETE', p: '/api/prs/:id', d: 'Remove a local PR record (git untouched)' },
+  { m: 'POST', p: '/api/tickets/:id/branch', d: 'Cut the ticket\'s local work branch off the integration branch { branch? } — never pushed' },
+  { m: 'GET', p: '/api/herdr', d: 'Herdr state: available? + workspaces/tabs (workspace label = project title)' },
+  { m: 'POST', p: '/api/herdr/focus', d: 'Focus a herdr workspace or tab { workspace?, tab? } — the "go to herdr" buttons' },
+  { m: 'POST', p: '/api/tickets/:id/herdr', d: 'Run a hand-off prompt in herdr { prompt } — claude pane packed ≤4 per PROJ-n tab, no focus steal' },
+  { m: 'POST', p: '/api/projects/:id/herdr-merge', d: 'Run the merge sweep in herdr { prompt } — new single-pane "PROJ-n · merge" tab' },
   { m: 'GET', p: '/api/repos', d: 'Repos used before — path, slug, default branch, which projects use each' },
   { m: 'POST', p: '/api/repos', d: 'Remember a repo { path } (validates it is a clone, resolves its slug)' },
   { m: 'DELETE', p: '/api/repos?path=', d: 'Forget a repo (the list only; projects and disk are untouched)' },
@@ -145,6 +158,25 @@ curl -s http://localhost:43000/api/tickets/TICK-7/comments \\
 # Comments come back inline on every ticket GET
 curl -s http://localhost:43000/api/tickets/TICK-7 | jq '.comments'`
 
+const localPrExample = `# The local flow: cut the ticket's branch (off the integration branch, never pushed)
+curl -s -X POST http://localhost:43000/api/tickets/TICK-7/branch -d '{}' \\
+  -H 'content-type: application/json'
+# → { "branch": "tick/TICK-7-persist-cart", "created": true }
+
+# ...do the work on that branch, then open the local PR (one per ticket)
+curl -s http://localhost:43000/api/prs \\
+  -H 'content-type: application/json' \\
+  -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage." }'
+
+# Merge = squash onto the integration branch, no checkout, working tree untouched.
+# Deletes the ticket branch and moves the ticket to 'merged'.
+curl -s -X POST http://localhost:43000/api/prs/PR-4/merge
+# On conflict: 409, the PR turns 'conflicted' with conflictFiles, repo untouched —
+# rebase the ticket branch onto the integration branch and POST the merge again.
+
+# The only remote write: push the integration branch when you're ready
+curl -s -X POST http://localhost:43000/api/projects/PROJ-2/sync`
+
 const methodColor: Record<string, string> = {
   GET: 'info',
   POST: 'success',
@@ -242,12 +274,13 @@ const methodColor: Record<string, string> = {
           <li><code>description</code> — the end-to-end behaviour ("what to build")</li>
           <li><code>acceptanceCriteria</code> — string array</li>
           <li><code>type</code> — <code>AFK</code> (agent-runnable) or <code>HITL</code> (needs a human)</li>
-          <li><code>status</code> — <code>todo</code> · <code>in_progress</code> · <code>done</code></li>
+          <li><code>status</code> — <code>todo</code> · <code>in_progress</code> · <code>done</code> · <code>merged</code> (set by a local PR merge; done and merged both count as finished)</li>
           <li><code>projectId</code> / <code>project</code> — parent project</li>
           <li><code>assignee</code> — free-form name of who is working on it (agents self-assign by name; <code>''</code> = unassigned)</li>
           <li><code>labels</code> — free-form strings; wayfinder uses <code>wayfinder:research|prototype|grilling|task</code></li>
           <li><code>resolution</code> — the answer, recorded on resolve (markdown)</li>
           <li><code>blockedBy</code> — tickets that gate this one</li>
+          <li><code>branch</code> — the ticket's local work branch (cut via <code>POST /api/tickets/:id/branch</code>; a local PR's default head)</li>
           <li>
             <code>completedAt</code> — when the ticket last became done (ISO), <code>null</code> while
             unfinished. Server-set on the status change; PATCHing it does nothing. Editing a done
@@ -290,6 +323,19 @@ const methodColor: Record<string, string> = {
           still goes in <code>resolution</code>.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ commentExample }}</code></pre>
+      </section>
+
+      <section>
+        <h2 class="mb-2 flex items-center gap-2 text-base font-semibold">
+          <UIcon name="i-lucide-git-pull-request-arrow" class="size-4 text-primary" />Local pull requests
+        </h2>
+        <p class="mb-3 text-sm text-muted">
+          GitHub for your local: a PR is a <strong>ticket branch</strong> squash-merged onto the
+          project's <strong>integration branch</strong> by jTicket itself — title, ticket, commits,
+          description, destination and a merge button, no diffs (jDiff has those), nothing pushed.
+          Exactly one ticket per PR; merging it is what moves the ticket to <code>merged</code>.
+        </p>
+        <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ localPrExample }}</code></pre>
       </section>
 
       <section>

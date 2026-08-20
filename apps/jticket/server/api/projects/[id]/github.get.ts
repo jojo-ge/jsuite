@@ -25,6 +25,8 @@ export default defineEventHandler(async (event) => {
       integrationBranch: project.integrationBranch,
       suggestedBranch,
       branch: null,
+      localPrs: [],
+      mergedPrCount: 0,
       prs: [],
       prsError: null,
     }
@@ -55,6 +57,20 @@ export default defineEventHandler(async (event) => {
       }
     : null
 
+  // The project's local PRs — open and conflicted ones in full (with the
+  // commits each would merge, read live from git), merged/closed as a count.
+  const projectPrs = store.prs.filter((pr) => pr.projectId === project.id)
+  const localPrs = await Promise.all(
+    projectPrs
+      .filter((pr) => pr.status === 'open' || pr.status === 'conflicted')
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map(async (pr) => ({
+        ...withPrDerived(store, pr, path),
+        commits: await listPrCommits(path, pr.baseBranch, pr.headBranch),
+      })),
+  )
+  const mergedPrCount = projectPrs.filter((pr) => pr.status === 'merged').length
+
   let prs: ProjectPr[] = []
   let prsError: string | null = null
   try {
@@ -77,6 +93,8 @@ export default defineEventHandler(async (event) => {
     integrationBranch: branchName,
     suggestedBranch,
     branch,
+    localPrs,
+    mergedPrCount,
     prs,
     prsError,
   }

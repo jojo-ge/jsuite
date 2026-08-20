@@ -40,7 +40,7 @@ const windowDays = ref(30)
 // Only tickets that carry a completion stamp. Tickets finished before this
 // feature existed were backfilled from updatedAt when the store loaded.
 const finished = computed(() =>
-  tickets.value.filter((t) => t.status === 'done' && t.completedAt).sort(byCompletedAtDesc),
+  tickets.value.filter((t) => isFinished(t.status) && t.completedAt).sort(byCompletedAtDesc),
 )
 
 const cutoff = computed(() =>

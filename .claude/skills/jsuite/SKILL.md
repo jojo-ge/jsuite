@@ -34,7 +34,11 @@ with acceptance criteria and blocked-by edges) plus draft docs. A doc is a
 tracker record wrapping a **shared block document** (the jExplain format, one
 pool for both apps); descriptions and resolutions are plain GFM markdown.
 It is deliberately NOT Jira/Confluence: skills author breakdowns and documents
-here *locally first* for human review. Drive it via its HTTP API on :43000 —
+here *locally first* for human review. It also carries **local pull requests** —
+GitHub for the local repo: a ticket branch squash-merged onto the project's
+integration branch by jTicket itself (`POST /api/prs`, merge button in the UI;
+no push, no diffs — jDiff renders those; only the integration branch ever syncs
+to origin). Drive it via its HTTP API on :43000 —
 never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
 anything, query the board), `to-jspec` (write a spec as a doc — block format),
 `to-jdoc` (draft a doc page locally), `jwayfinder` (map work too big for one

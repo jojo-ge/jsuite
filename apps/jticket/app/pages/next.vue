@@ -7,13 +7,13 @@
 // up right now — which until now meant reading every project and doing the
 // blocked/claimed arithmetic by eye. Each row carries the hand-off command, so
 // the page ends in dispatch rather than in another click.
-import type { Project, Ticket, WayfinderType } from '~/composables/useTracker'
+import type { LocalPr, Project, Ticket, WayfinderType } from '~/composables/useTracker'
 
 useHead({ title: 'Up next' })
 
 // `changed` is the live-update highlight set — a ticket that arrives on the
 // frontier while you are looking at it flashes like it does on the board.
-const { projects, tickets, updateTicket, changed: changedTickets } = useTracker()
+const { projects, tickets, prs, changed: changedTickets } = useTracker()
 const { openEditTicket } = useTrackerModals()
 const toast = useToast()
 
@@ -122,7 +122,7 @@ function toggleAll() {
 // blocker or already in someone's hands, and saying which is the difference
 // between "nothing to do" and "nothing you can do *yet*".
 const stalled = computed(() => {
-  const open = tickets.value.filter((t) => t.status !== 'done')
+  const open = tickets.value.filter((t) => !isFinished(t.status))
   return {
     blocked: open.filter((t) => t.status === 'todo' && isBlocked(t, tickets.value)).length,
     claimed: open.filter((t) => t.status === 'todo' && t.assignee && !isBlocked(t, tickets.value)).length,
@@ -152,6 +152,12 @@ function clearFilters() {
 // every visit is exactly the friction this page exists to remove.
 const PROMPTS = [
   {
+    label: 'Local PR (merged in jTicket)',
+    value: 'local',
+    command: (key: string, branch?: string) =>
+      `/jimplement ${key} in a worktree${branch ? ` on the existing branch ${branch}` : ''}. When done open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and tear down the worktree.`,
+  },
+  {
     label: 'PR to master',
     value: 'master',
     command: (key: string) =>
@@ -167,10 +173,10 @@ const PROMPTS = [
 type PromptTarget = (typeof PROMPTS)[number]['value']
 
 const PROMPT_OPTIONS = PROMPTS.map((p) => ({ label: p.label, value: p.value }))
-const promptTarget = ref<PromptTarget>('master')
+const promptTarget = ref<PromptTarget>('local')
 onMounted(() => {
   const saved = localStorage.getItem('jticket-next-prompt')
-  if (saved === 'master' || saved === 'integration') promptTarget.value = saved
+  if (saved === 'master' || saved === 'integration' || saved === 'local') promptTarget.value = saved
 })
 watch(promptTarget, (value) => localStorage.setItem('jticket-next-prompt', value))
 
@@ -183,13 +189,190 @@ const prompt = computed(() => PROMPTS.find((p) => p.value === promptTarget.value
 function commandLabel(wayfinder: boolean) {
   return wayfinder ? '/jwayfinder' : '/jimplement'
 }
-function commandFor(t: Ticket, wayfinder: boolean) {
-  return wayfinder ? `/jwayfinder ${t.key}` : prompt.value.command(t.key)
+function commandFor(t: Ticket, wayfinder: boolean, branch = t.branch) {
+  return wayfinder ? `/jwayfinder ${t.key}` : prompt.value.command(t.key, branch)
+}
+
+// ── Merging the PR queue ──
+// Every ticket lands as its own local PR, so every few tickets there's a queue
+// to fold into the integration branch — and conflicts to resolve, which is why
+// this is a hand-off to an agent rather than N clicks of the merge button.
+// The queue and its prompt live in useTracker (the project page shares them).
+//
+// Rendered as its own strip ABOVE the frontier: a project mid-merge often has
+// nothing takeable left, so the queue must not depend on frontier groups.
+interface MergeQueue {
+  project: Project
+  queue: LocalPr[]
+  conflicted: number
+}
+const mergeQueues = computed<MergeQueue[]>(() =>
+  projects.value
+    .map((project) => {
+      const queue = mergeQueueOf(prs.value, project.id)
+      return { project, queue, conflicted: queue.filter((pr) => pr.status === 'conflicted').length }
+    })
+    .filter((q) => q.queue.length > 0),
+)
+
+const copiedMerge = ref<string | null>(null)
+async function copyMergePrompt(q: MergeQueue) {
+  const command = mergeSweepPrompt(q.project, q.queue.map((pr) => pr.key))
+  try {
+    await navigator.clipboard.writeText(command)
+    copiedMerge.value = q.project.id
+    setTimeout(() => {
+      if (copiedMerge.value === q.project.id) copiedMerge.value = null
+    }, 1600)
+  } catch {
+    toast.add({ title: 'Could not copy', description: command, icon: 'i-lucide-clipboard-x', color: 'warning' })
+  }
+}
+
+// ── Herdr — run the prompts instead of copying them ──
+// jTicket drives the terminal itself: one herdr WORKSPACE per project (label =
+// project title), ticket agents packed up to four PANES per 'PROJ-n' tab, merge
+// sweeps as their own single-pane 'PROJ-n · merge' tab. Everything is created
+// --no-focus, so dispatch never steals the screen — the herdr buttons and tab
+// chips below are the deliberate way over.
+const { available: herdrUp, refresh: refreshHerdr, workspaceByLabel, focus: herdrFocus } = useHerdr()
+
+function workspaceFor(project: Project) {
+  return workspaceByLabel(project.title)
+}
+// Only the tabs jTicket names for this project ('PROJ-2', 'PROJ-2 · 3',
+// 'PROJ-2 · merge') become chips — the workspace may hold other tabs too.
+function projectTabs(project: Project) {
+  const ws = workspaceFor(project)
+  if (!ws) return []
+  return ws.tabs.filter((t) => t.label === project.key || t.label.startsWith(`${project.key} · `))
+}
+
+async function focusHerdr(target: { workspace?: string; tab?: string }) {
+  try {
+    await herdrFocus(target)
+  } catch (err: any) {
+    toast.add({ title: 'Could not focus herdr', description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
+  }
+}
+
+const dispatching = ref<string | null>(null)
+// The core dispatch: cut the branch, build the prompt, hand it to herdr.
+// HITL tickets get their own tab — work that will stop and ask for the human
+// deserves a tab of its own, not a quarter of a grid. Throws so run-all can
+// tally failures; the single-row button wraps it with its own toasts.
+async function dispatchOne(t: Ticket, wayfinder: boolean) {
+  const branch = await resolveBranch(t, wayfinder)
+  return await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
+    method: 'POST',
+    body: { prompt: commandFor(t, wayfinder, branch), ownTab: t.type === 'HITL' },
+  })
+}
+
+async function dispatchTicket(t: Ticket, wayfinder: boolean) {
+  dispatching.value = t.id
+  try {
+    const res = await dispatchOne(t, wayfinder)
+    toast.add({
+      title: `${t.key} running in herdr`,
+      description: `Agent ${res.agent} — use the tab chip to go watch it.`,
+      icon: 'i-lucide-terminal',
+      color: 'success',
+    })
+    refreshHerdr()
+  } catch (err: any) {
+    toast.add({ title: `Could not dispatch ${t.key}`, description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
+  } finally {
+    dispatching.value = null
+  }
+}
+
+// ── Run all — one project's shown frontier into herdr, one after another ──
+// Per project, from its group header. Sequential on purpose: parallel
+// dispatches would race the tab creation and pane packing (and each agent
+// start already takes a few seconds anyway). Respects the filters: the rows
+// you see under the header are the rows that get dispatched.
+const runningAll = ref<string | null>(null)
+const runAllProgress = ref('')
+async function runAll(g: NextGroup) {
+  if (!g.project || !g.rows.length) return
+  runningAll.value = g.project.id
+  let done = 0
+  const failed: string[] = []
+  try {
+    for (const { ticket, wayfinder } of g.rows) {
+      runAllProgress.value = `${done + failed.length + 1}/${g.rows.length}`
+      dispatching.value = ticket.id
+      try {
+        await dispatchOne(ticket, wayfinder)
+        done++
+      } catch {
+        failed.push(ticket.key)
+      }
+    }
+  } finally {
+    dispatching.value = null
+    runningAll.value = null
+    runAllProgress.value = ''
+    refreshHerdr()
+  }
+  toast.add({
+    title: `${done} ${g.project.key} ticket${done === 1 ? '' : 's'} running in herdr`,
+    description: failed.length
+      ? `Could not dispatch: ${failed.join(', ')}`
+      : 'HITL tickets have their own tabs; use the chips to go watch.',
+    icon: failed.length ? 'i-lucide-triangle-alert' : 'i-lucide-terminal',
+    color: failed.length ? 'warning' : 'success',
+  })
+}
+
+const dispatchingMerge = ref<string | null>(null)
+async function dispatchMerge(q: MergeQueue) {
+  dispatchingMerge.value = q.project.id
+  try {
+    const res = await $fetch<{ agent: string }>(`/api/projects/${q.project.id}/herdr-merge`, {
+      method: 'POST',
+      body: { prompt: mergeSweepPrompt(q.project, q.queue.map((pr) => pr.key)) },
+    })
+    toast.add({
+      title: `Merge sweep running in herdr`,
+      description: `Agent ${res.agent} in tab "${q.project.key} · merge".`,
+      icon: 'i-lucide-git-merge',
+      color: 'success',
+    })
+    refreshHerdr()
+  } catch (err: any) {
+    toast.add({ title: 'Could not dispatch the merge', description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
+  } finally {
+    dispatchingMerge.value = null
+  }
+}
+
+// The local-PR hand-off names the ticket's branch, so jTicket cuts it the
+// moment the prompt is handed off (copied or dispatched) — off the integration
+// branch, local only. A failed cut (no repo, no integration branch) still
+// hands off; the agent will be told to cut a branch itself via POST /api/prs's
+// error.
+async function resolveBranch(t: Ticket, wayfinder: boolean): Promise<string> {
+  if (wayfinder || promptTarget.value !== 'local' || t.branch) return t.branch
+  try {
+    const res = await $fetch<{ branch: string }>(`/api/tickets/${t.id}/branch`, { method: 'POST', body: {} })
+    return res.branch
+  } catch (err: any) {
+    toast.add({
+      title: `No branch cut for ${t.key}`,
+      description: branchErrorText(err),
+      icon: 'i-lucide-git-branch',
+      color: 'warning',
+    })
+    return t.branch
+  }
 }
 
 const copied = ref<string | null>(null)
 async function copyCommand(t: Ticket, wayfinder: boolean) {
-  const command = commandFor(t, wayfinder)
+  const branch = await resolveBranch(t, wayfinder)
+  const command = commandFor(t, wayfinder, branch)
   try {
     await navigator.clipboard.writeText(command)
     copied.value = t.id
@@ -203,15 +386,6 @@ async function copyCommand(t: Ticket, wayfinder: boolean) {
   }
 }
 
-const starting = ref<string | null>(null)
-async function start(t: Ticket) {
-  starting.value = t.id
-  try {
-    await updateTicket(t.id, { status: 'in_progress' })
-  } finally {
-    starting.value = null
-  }
-}
 </script>
 
 <template>
@@ -253,6 +427,71 @@ async function start(t: Ticket) {
           </UButton>
         </div>
       </div>
+
+      <!-- Merge queues — projects with local PRs waiting to land. Deliberately
+           independent of the frontier: mid-merge a project often has nothing
+           takeable left, and that's exactly when this matters most. -->
+      <section v-if="mergeQueues.length" class="mb-8">
+        <div class="mb-2 flex items-center gap-2">
+          <UIcon name="i-lucide-git-merge" class="size-4 text-secondary" />
+          <h2 class="text-sm font-semibold">Merge queues</h2>
+          <span class="text-xs text-muted">local PRs waiting on their integration branch</span>
+        </div>
+        <div class="overflow-hidden rounded-lg border border-default">
+          <div
+            v-for="q in mergeQueues"
+            :key="q.project.id"
+            class="flex flex-wrap items-center gap-2 border-b border-default/60 px-3 py-2 text-sm last:border-0"
+          >
+            <NuxtLink :to="`/projects/${q.project.key}`" class="group inline-flex min-w-0 items-center gap-1.5 hover:text-primary">
+              <span class="font-mono text-xs text-muted">{{ q.project.key }}</span>
+              <span class="truncate font-medium">{{ q.project.title }}</span>
+            </NuxtLink>
+            <UBadge color="secondary" variant="subtle" size="sm">
+              {{ q.queue.length }} PR{{ q.queue.length === 1 ? '' : 's' }}
+            </UBadge>
+            <UBadge v-if="q.conflicted" color="error" variant="subtle" size="sm" icon="i-lucide-triangle-alert">
+              {{ q.conflicted }} conflicted
+            </UBadge>
+            <span class="hidden font-mono text-xs text-muted sm:inline">→ {{ q.project.integrationBranch }}</span>
+            <div class="ml-auto flex items-center gap-1">
+              <UButton
+                :icon="copiedMerge === q.project.id ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                :color="copiedMerge === q.project.id ? 'success' : 'neutral'"
+                variant="soft"
+                size="xs"
+                :aria-label="`Copy the prompt that merges ${q.project.key}'s open local PRs`"
+                @click="copyMergePrompt(q)"
+              >
+                {{ copiedMerge === q.project.id ? 'Copied' : 'Copy prompt' }}
+              </UButton>
+              <UTooltip v-if="herdrUp" text="Run the merge sweep in a new herdr tab (background — no focus steal)">
+                <UButton
+                  icon="i-lucide-terminal"
+                  color="secondary"
+                  variant="soft"
+                  size="xs"
+                  :loading="dispatchingMerge === q.project.id"
+                  :aria-label="`Merge ${q.project.key}'s open PRs in herdr`"
+                  @click="dispatchMerge(q)"
+                >
+                  herdr
+                </UButton>
+              </UTooltip>
+              <UTooltip v-if="herdrUp && workspaceFor(q.project)" :text="`Go to the ${q.project.title} workspace in herdr`">
+                <UButton
+                  icon="i-lucide-app-window"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  :aria-label="`Focus the ${q.project.title} workspace in herdr`"
+                  @click="focusHerdr({ workspace: workspaceFor(q.project)!.workspaceId })"
+                />
+              </UTooltip>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <!-- Nothing takeable anywhere -->
       <div
@@ -329,6 +568,56 @@ async function start(t: Ticket) {
               Tickets with no project
             </h2>
             <UBadge color="primary" variant="subtle" size="sm">{{ g.rows.length }} ready</UBadge>
+            <UTooltip
+              v-if="herdrUp && g.project"
+              :text="`Dispatch all ${g.rows.length} of ${g.project.key}'s shown tickets into herdr — HITL tickets get their own tab`"
+            >
+              <UButton
+                icon="i-lucide-terminal"
+                variant="soft"
+                size="xs"
+                :loading="runningAll === g.project.id"
+                :disabled="!!runningAll && runningAll !== g.project.id"
+                @click.stop="runAll(g)"
+              >
+                {{ runningAll === g.project.id ? `Running ${runAllProgress}…` : `Run all (${g.rows.length})` }}
+              </UButton>
+            </UTooltip>
+            <template v-if="herdrUp && g.project && workspaceFor(g.project)">
+              <UTooltip :text="`Go to the ${g.project.title} workspace in herdr`">
+                <UButton
+                  icon="i-lucide-app-window"
+                  color="neutral"
+                  variant="soft"
+                  size="xs"
+                  :aria-label="`Focus the ${g.project.title} workspace in herdr`"
+                  @click.stop="focusHerdr({ workspace: workspaceFor(g.project)!.workspaceId })"
+                >
+                  herdr
+                </UButton>
+              </UTooltip>
+              <UButton
+                v-for="tab in projectTabs(g.project)"
+                :key="tab.tabId"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                class="font-mono text-xs"
+                :aria-label="`Focus herdr tab ${tab.label}`"
+                @click.stop="focusHerdr({ tab: tab.tabId })"
+              >
+                <span
+                  class="mr-1 inline-block size-1.5 rounded-full"
+                  :class="{
+                    'bg-info': tab.agentStatus === 'working',
+                    'bg-warning': tab.agentStatus === 'blocked',
+                    'bg-success': tab.agentStatus === 'idle' || tab.agentStatus === 'done',
+                    'bg-neutral-400': !tab.agentStatus || tab.agentStatus === 'unknown',
+                  }"
+                />
+                {{ tab.label }}
+              </UButton>
+            </template>
             <div class="h-px flex-1 bg-default" />
           </div>
 
@@ -384,15 +673,18 @@ async function start(t: Ticket) {
                   >
                     {{ copied === t.id ? 'Copied' : commandLabel(wayfinder) }}
                   </UButton>
-                  <UButton
-                    icon="i-lucide-play"
-                    variant="soft"
-                    size="xs"
-                    :loading="starting === t.id"
-                    @click.stop="start(t)"
-                  >
-                    Start
-                  </UButton>
+                  <UTooltip v-if="herdrUp" text="Run this hand-off in herdr (background — no focus steal)">
+                    <UButton
+                      icon="i-lucide-terminal"
+                      variant="soft"
+                      size="xs"
+                      :loading="dispatching === t.id"
+                      :aria-label="`Run ${t.key} in herdr`"
+                      @click.stop="dispatchTicket(t, wayfinder)"
+                    >
+                      herdr
+                    </UButton>
+                  </UTooltip>
                 </div>
               </div>
             </li>

@@ -55,7 +55,7 @@ const BUCKET_META: Record<BucketKey, { label: string; icon: string; dot: string;
 const bucketed = computed(() => {
   const done: Ticket[] = [], blocked: Ticket[] = [], frontier: Ticket[] = [], claimed: Ticket[] = []
   for (const t of props.tickets) {
-    if (t.status === 'done') done.push(t)
+    if (isFinished(t.status)) done.push(t)
     else if (isBlocked(t, props.allTickets)) blocked.push(t)
     else if (isFrontier(t, props.allTickets)) frontier.push(t)
     else claimed.push(t)
@@ -94,7 +94,7 @@ function wfOf(t: Ticket) {
   return props.wayfinder ? wayfinderType(t) : null
 }
 function stateOf(t: Ticket): BucketKey {
-  if (t.status === 'done') return 'done'
+  if (isFinished(t.status)) return 'done'
   if (isBlocked(t, props.allTickets)) return 'blocked'
   if (isFrontier(t, props.allTickets)) return 'frontier'
   return 'claimed'
@@ -173,6 +173,7 @@ function stateOf(t: Ticket): BucketKey {
         <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
         <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="truncate" :class="stateOf(t) === 'frontier' ? 'font-medium' : ''">{{ t.title }}</span>
+        <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
         <UBadge v-if="t.type === 'HITL'" color="warning" variant="subtle" size="sm" class="shrink-0">HITL</UBadge>
         <span v-if="t.assignee" class="shrink-0 text-xs text-info">{{ t.assignee }}</span>
         <template v-if="stateOf(t) === 'blocked' && blockersOf(t).length">
@@ -180,7 +181,7 @@ function stateOf(t: Ticket): BucketKey {
           <UBadge
             v-for="b in blockersOf(t)"
             :key="b.id"
-            :color="b.status === 'done' ? 'success' : 'error'"
+            :color="isFinished(b.status) ? 'success' : 'error'"
             variant="outline"
             size="sm"
             class="shrink-0 font-mono"
@@ -237,12 +238,13 @@ function stateOf(t: Ticket): BucketKey {
               <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
               <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
               <span class="truncate text-sm">{{ t.title }}</span>
+              <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
               <template v-if="g.key === 'blocked' && blockersOf(t).length">
                 <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
                 <UBadge
                   v-for="b in blockersOf(t)"
                   :key="b.id"
-                  :color="b.status === 'done' ? 'success' : 'error'"
+                  :color="isFinished(b.status) ? 'success' : 'error'"
                   variant="outline"
                   size="sm"
                   class="shrink-0 font-mono"

@@ -32,9 +32,10 @@ export default defineEventHandler(async (event) => {
     resolution: typeof body.resolution === 'string' ? body.resolution.trim() : '',
     blockedBy,
     comments: [],
-    // Created straight into 'done' (an already-finished ticket being recorded)
-    // counts as finishing now.
-    completedAt: status === 'done' ? ts : null,
+    branch: typeof body.branch === 'string' && isSafeRef(body.branch.trim()) ? body.branch.trim() : '',
+    // Created straight into a finished status (an already-finished ticket being
+    // recorded) counts as finishing now.
+    completedAt: isFinishedStatus(status) ? ts : null,
     createdAt: ts,
     updatedAt: ts,
   }

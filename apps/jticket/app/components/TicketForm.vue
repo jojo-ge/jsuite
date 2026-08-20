@@ -96,6 +96,7 @@ const statusOptions = [
   { label: 'To Do', value: 'todo' },
   { label: 'In Progress', value: 'in_progress' },
   { label: 'Done', value: 'done' },
+  { label: 'Merged', value: 'merged' },
 ]
 const projectOptions = computed(() => [
   { label: 'No project (backlog)', value: null as string | null },

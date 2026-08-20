@@ -24,7 +24,7 @@ const PAD_BOTTOM = 24
 const byId = computed(() => new Map(props.allTickets.map((t) => [t.id, t])))
 
 function stateOf(t: Ticket): NodeState {
-  if (t.status === 'done') return 'done'
+  if (isFinished(t.status)) return 'done'
   if (isBlocked(t, props.allTickets)) return 'blocked'
   if (isFrontier(t, props.allTickets)) return 'frontier'
   return 'claimed'
@@ -149,7 +149,7 @@ const layout = computed(() => {
       return [{
         id: `${d.id}-${n.ticket.id}`,
         d: `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`,
-        open: d.status !== 'done',
+        open: !isFinished(d.status),
       }]
     }),
   )
