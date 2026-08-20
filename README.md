@@ -1,6 +1,6 @@
 # jSuite
 
-A pnpm-workspace monorepo of seven local dev apps behind one HTTPS edge — one
+A pnpm-workspace monorepo of six local dev apps behind one HTTPS edge — one
 command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
 instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
@@ -19,7 +19,6 @@ cd ~/code/anyway/jsuite
 | https://jchart.local     | jChart                    | 43003     |
 | https://jexplain.local   | jExplain                  | 43004     |
 | https://jgrilling.local  | jGrilling                 | 43005     |
-| https://jrig.local       | jRig                      | 43006     |
 | https://jmap.local       | jMap                      | 43007     |
 
 ## Setup
@@ -70,7 +69,6 @@ jsuite/
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
 │   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
-│   ├── jrig/           # avatar studio — draw, rig and keyframe 2D characters
 │   └── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
@@ -109,7 +107,6 @@ overrides the search when set.
 | jdiff | `.data/jdiff/` — ratings, tours, risks, asks, comments, caches |
 | jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
 | jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
-| jrig | `.data/jrig/` — character/clip JSON documents (schema-validated) |
 | jmap | `.data/jmap/<key>.json` — map identity + synthesized graph; the work (tickets, docs) lives in jTicket and the shared document pool |
 
 ## @jsuite/charting
@@ -230,7 +227,7 @@ picker and open-in-VSCode, none of which survive containerisation. OrbStack
 terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
 
 ```
-browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006,43007}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43007}
                         │
                         └─ OrbStack local CA, auto-trusted on first visit
 ```

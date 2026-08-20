@@ -2,7 +2,7 @@
   "name": "jgrilling",
   "private": true,
   "type": "module",
-  "description": "Browser grilling sessions — Claude (your local subscription, via @jsuite/claude) interrogates you about a plan one question at a time, then publishes the decisions as a shared block document with charts.",
+  "description": "Browser grilling sessions — an external Claude session (usually in herdr) posts jspec-format questions over the HTTP API and monitors the session file for your answers; this app just renders the state and records answers.",
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.0",
-    "@jsuite/claude": "workspace:*",
     "@jsuite/data": "workspace:*",
     "@jsuite/documents": "workspace:*",
     "@nuxt/ui": "^4.10.0",

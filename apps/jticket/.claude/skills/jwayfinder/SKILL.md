@@ -144,8 +144,10 @@ that answers its own questions has broken this). This is the ticket's `type` fie
   making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub,
   or UI/logic code via the `/prototype` skill. Links the prototype as an asset. Use when
   "how should it look" or "how should it behave" is the key question.
-- **Grilling** (HITL) — `wayfinder:grilling`. Conversation via the `/grilling` and
-  `/domain-modeling` skills, one question at a time. The default case.
+- **Grilling** (HITL) — `wayfinder:grilling`. Conversation one question at a time,
+  run through **`/j-grilling`** (the jGrilling browser room: post questions as jspec
+  blocks, monitor the session file for answers — don't ask in the terminal), with
+  `/domain-modeling` alongside. The default case.
 - **Task** (HITL or AFK) — `wayfinder:task`. Manual work that must happen before a
   *decision* can be made — nothing to decide, prototype, or research, but the discussion
   is blocked until it's done. Signing up for a service so its API can be judged,

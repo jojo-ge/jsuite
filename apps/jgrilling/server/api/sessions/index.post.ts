@@ -4,19 +4,20 @@ import { resolve } from 'node:path'
 import type { GrillSession } from '../../../app/utils/grillTypes'
 
 /**
- * Start a grilling session. Body: { plan, title?, repoPath?, key? }
+ * Open a grilling room. Body: { title?, plan?, repoPath?, key? }
  *
- * `plan` is the markdown under interrogation. `repoPath` (optional) points
- * claude at the repo the plan concerns so it looks facts up instead of asking.
- * Returns { key, title, path: "/g/<key>" } — the room where the grilling runs.
+ * The caller — a Claude session acting as the interviewer — owns the whole
+ * interview: it posts questions to /:key/questions and watches the session
+ * file for answers. `plan` is the markdown under interrogation, shown to the
+ * user for context. Returns { key, title, path: "/g/<key>" }.
  */
 export default defineEventHandler(async (event) => {
   const body = (await readBody(event)) ?? {}
   const plan = String(body.plan ?? '').trim()
-  if (!plan) throw createError({ statusCode: 400, message: 'missing `plan` — nothing to grill' })
 
-  const firstLine = plan.split('\n')[0]!.replace(/^#+\s*/, '').trim()
-  const title = String(body.title ?? '').trim() || firstLine.slice(0, 80) || 'Untitled plan'
+  const firstLine = plan.split('\n')[0]?.replace(/^#+\s*/, '').trim() ?? ''
+  const title = String(body.title ?? '').trim() || firstLine.slice(0, 80)
+  if (!title) throw createError({ statusCode: 400, message: 'missing `title` (or a `plan` to take one from)' })
 
   let repoPath: string | undefined
   const rawRepo = String(body.repoPath ?? '').trim()
@@ -31,7 +32,7 @@ export default defineEventHandler(async (event) => {
   const now = new Date().toISOString()
   const session: GrillSession = {
     format: 'j-grilling',
-    version: 1,
+    version: 2,
     key,
     title,
     plan,

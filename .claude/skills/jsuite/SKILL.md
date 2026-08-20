@@ -1,11 +1,11 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jRig and jMap each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling and jMap each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
 ---
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of seven local
+jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of six local
 Nuxt apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
@@ -21,8 +21,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
-| jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — claude interrogates a plan |
-| jRig | https://jrig.local | 43006 | avatar studio — draw, rig and keyframe 2D characters |
+| jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — an external claude session interrogates, you answer in the UI |
 | jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
@@ -66,22 +65,16 @@ in place, "Open in jChart" for the full workbench. Skill: `j-explain` (author a
 JSON payload, publish via `explain.py`, read notes back, revise with
 `--replace`; also the block-vocabulary reference for jTicket docs).
 
-**jGrilling** — get grilled about a plan before building it. The server runs
-the user's local `claude` CLI (via `@jsuite/claude`, the runner extracted from
-jDiff) to play Matt Pocock's *grilling* interview: one question at a time, each
-with a recommended answer, until shared understanding is reached. The user
-answers in the browser; with a repo attached claude looks facts up itself. The
-wrap-up is a debrief in the shared document pool (decision table + a jChart
-decision-tree chart), readable in-app, in jExplain, or in jTicket. Sessions
-live in `.data/jgrilling/`. Skill: `j-grilling` (push the current plan into a
-session and hand the user the URL).
-
-**jRig** — the avatar studio. Characters are live vector documents drawn over
-one fixed skeleton, so every animation clip plays on every character. A
-character or clip is AI-legible JSON in `.data/jrig/` (schema-validated;
-Claude edits the files, the studio hot-reloads them); the studio has Illustrate
-mode (vector tools, palette roles, mirror symmetry) and Animate mode (timeline
-keyframing). Build plan: `apps/jrig/docs/PLAN.md`.
+**jGrilling** — get grilled about a plan before building it. A passive
+question room: an external Claude session (usually in herdr, often working a
+HITL jTicket) IS the interviewer — it runs Matt Pocock's *grilling* interview,
+posts each question over the HTTP API as jspec-format blocks (one at a time,
+each with a recommended answer), and monitors the session file in
+`.data/jgrilling/` until the user's answer lands. The user answers in the
+browser (scrollable transcript, sticky answer bar). The wrap-up is a debrief
+in the shared document pool (decision table + a jChart decision-tree chart),
+readable in-app, in jExplain, or in jTicket. Skill: `j-grilling` (the
+interviewer's playbook: open a session, post questions, monitor for answers).
 
 **jMap** — the codebase cartographer, orchestrated entirely through jTicket.
 Creating a map creates a **jMap-mode jTicket project** (repo = the mapped
@@ -117,8 +110,8 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
   included.
 - **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
   `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
-  cancellation. jDiff's review tools, jGrilling's interviewer, and jMap's
-  scoping/synthesis passes all run on it.
+  cancellation. jDiff's review tools and jMap's scoping/synthesis passes run
+  on it.
 - **One herdr adapter**: `@jsuite/herdr` (plain ESM package) dispatches whole
   terminal claude sessions into the herdr workspace manager — workspaces, panes
   packed 2×2 per tab, agent start + prompt with the retry dances, all
@@ -142,7 +135,6 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
 | be grilled about a plan, answering in a UI | `j-grilling` |
-| draw / rig / animate an avatar character | jRig — https://jrig.local (companion skill lands with its M9 milestone) |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
