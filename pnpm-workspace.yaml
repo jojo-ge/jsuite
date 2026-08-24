@@ -4,3 +4,7 @@ packages:
 
 patchedDependencies:
   '@excalidraw/mermaid-to-excalidraw': patches/@excalidraw__mermaid-to-excalidraw.patch
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

@@ -1,0 +1,11 @@
+// Deploy config for the hosted relay (TICK-298 wraps this in a wizard).
+// Local development and tests never touch Cloudflare — see src/local.mjs.
+{
+  "name": "jsuite-relay",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-08-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "RelayRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayRoom"] }]
+}

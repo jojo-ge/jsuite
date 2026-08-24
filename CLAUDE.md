@@ -59,6 +59,6 @@ Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
 apps/             # jticket jdiff jchart jexplain jgrilling jmap
-packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter)
+packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter), @jsuite/relay (sync signaling relay worker)
 .data/<app>/      # ALL app state, gitignored
 ```
