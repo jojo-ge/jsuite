@@ -3,7 +3,9 @@
 // the link to paste to a coworker, re-share to re-arm it with a fresh room and
 // expiry, stop sharing to revoke immediately. State comes from
 // /api/projects/:id/share; the header button opens the modal, which fetches on
-// open so the button itself costs nothing.
+// open so the button itself costs nothing. On a project this machine IMPORTED
+// (share.side 'importer') the panel is informational only — it names the
+// creator; the share is theirs to rotate or revoke.
 import type { Project } from '~/composables/useTracker'
 import type { ShareViewDto as ShareView } from '~~/server/utils/shares'
 
@@ -23,6 +25,12 @@ const sharedKey = ref('')
 const peerName = ref(props.project.share?.peerName ?? '')
 
 const armed = computed(() => !!props.project.share)
+// This machine imported the project from a share link: the room is the
+// creator's to rotate, so the panel offers no share actions here (the API
+// would 409 them anyway) and names the creator instead.
+const imported = computed(() => props.project.share?.side === 'importer')
+// On the importer side, peerName is the creator's name (typed at import).
+const creatorName = computed(() => props.project.share?.peerName ?? '')
 const keyValid = computed(() => /^[A-Z][A-Z0-9]{0,3}$/.test(sharedKey.value))
 const canShare = computed(() => keyValid.value && (armed.value || !!peerName.value.trim()))
 const expiresLabel = computed(() =>
@@ -49,7 +57,9 @@ async function load() {
 }
 
 watch(open, (v) => {
-  if (v) load()
+  // No fetch on an imported project: the panel is informational there, and the
+  // record's derived link would claim the creator side.
+  if (v && !imported.value) load()
 })
 
 async function createOrRearm() {
@@ -93,20 +103,34 @@ async function copyLink() {
 </script>
 
 <template>
-  <UTooltip text="Share this project with a coworker">
+  <UTooltip :text="imported ? `Imported from ${creatorName}'s share` : 'Share this project with a coworker'">
     <UButton
-      icon="i-lucide-share-2"
+      :icon="imported ? 'i-lucide-download' : 'i-lucide-share-2'"
       size="sm"
       color="neutral"
       variant="ghost"
-      aria-label="Share project"
+      :aria-label="imported ? 'Sharing details' : 'Share project'"
       @click="open = true"
     />
   </UTooltip>
 
-  <UModal v-model:open="open" :title="`Share ${project.key}`" :ui="{ content: 'sm:max-w-lg' }">
+  <UModal v-model:open="open" :title="imported ? `${project.key} is shared by ${creatorName}` : `Share ${project.key}`" :ui="{ content: 'sm:max-w-lg' }">
     <template #body>
-      <div v-if="loading" class="py-10 text-center text-sm text-muted">Loading…</div>
+      <!-- Importer side: informational only — creating, re-sharing and
+           stopping are the creator's; the API refuses them from here. -->
+      <div v-if="imported" class="space-y-4">
+        <div class="flex items-center gap-2">
+          <UBadge color="info" variant="subtle" size="sm">Imported</UBadge>
+          <span class="text-xs text-muted">From {{ creatorName }}</span>
+        </div>
+        <p class="text-sm text-muted">
+          You imported this project from {{ creatorName }}'s share link. The share is
+          theirs to manage — only they can re-share it or stop sharing. Ask them for a fresh link
+          if the room has gone quiet.
+        </p>
+      </div>
+
+      <div v-else-if="loading" class="py-10 text-center text-sm text-muted">Loading…</div>
 
       <div v-else class="space-y-4">
         <div v-if="share" class="flex items-center gap-2">
