@@ -28,6 +28,14 @@ export default defineEventHandler(async (event) => {
   const refused = peerDispatchError(ticket, project.share)
   if (refused) throw createError({ statusCode: 403, statusMessage: refused })
 
+  // Untrusted-content framing (spec DOC-30): dispatching a local ticket on a
+  // shared project still puts peer-authored text in front of the agent — the
+  // project's description (creator-owned metadata) and any peer-owned doc the
+  // ticket links. It rides along wrapped as collaborator content: data, not
+  // instructions. Local-only projects pass the prompt through byte-identical.
+  const framing = await collaboratorFramingFor(ticket, project, store.docs, readDoc)
+  const framedPrompt = framedDispatchPrompt(prompt, framing)
+
   const cwd = resolveRepoDir(project.repo)
 
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
@@ -43,7 +51,7 @@ export default defineEventHandler(async (event) => {
   } else {
     ;({ tabId, paneId } = await acquireTicketPane(workspaceId, project.key, cwd, freshTab))
   }
-  const agent = await startClaudeIn(paneId, ticket.key, prompt)
+  const agent = await startClaudeIn(paneId, ticket.key, framedPrompt)
 
   return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
 })
