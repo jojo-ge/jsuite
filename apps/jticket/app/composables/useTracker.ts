@@ -70,6 +70,11 @@ export interface Ticket {
   // Peer-owned tickets are read-only and undispatchable — see peerNameOf.
   origin: ShareSide | ''
   owner: ShareSide | ''
+  // Ownership-transfer state: '' = none, 'pending' = offered to the peer and
+  // frozen (no edits, no dispatch, either side), 'declined' = bounced back,
+  // marker awaiting the transferor's next pull. transferAt stamps the offer.
+  transfer: '' | 'pending' | 'declined'
+  transferAt: string
   createdAt: string
   updatedAt: string
   // Derived flags the GET endpoints attach (never persisted). Optional so a

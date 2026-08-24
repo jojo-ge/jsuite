@@ -43,6 +43,8 @@ export default defineEventHandler(async (event) => {
     // recorded) counts as finishing now.
     completedAt: isFinishedStatus(status) ? ts : null,
     ...entityOwnership(share),
+    transfer: '',
+    transferAt: '',
     createdAt: ts,
     updatedAt: ts,
   }

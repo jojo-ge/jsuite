@@ -11,9 +11,14 @@ export default defineEventHandler((event) => {
   if (!share) throw createError({ statusCode: 404, statusMessage: 'project is not shared' })
   saveStore(store)
 
-  // "Stop-sharing kills the room instantly" (DOC-30) — best effort; the
-  // serving gate refuses regardless, this just cuts the signaling path too.
-  if (syncRelayUrl()) void killRelayRoom(syncRelayUrl(), share)
+  // "Stop-sharing kills the room instantly" (DOC-30) — both directions; best
+  // effort; the serving gate refuses regardless, this just cuts signaling too.
+  if (syncRelayUrl()) {
+    void killRelayRoom(syncRelayUrl(), share)
+    if (share.reverseRoomId) {
+      void killRelayRoom(syncRelayUrl(), { roomId: share.reverseRoomId, roomSecret: share.reverseRoomSecret })
+    }
+  }
 
   return { share: shareView(share, getRequestURL(event).origin) }
 })

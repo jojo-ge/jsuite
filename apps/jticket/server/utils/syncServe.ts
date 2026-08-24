@@ -2,16 +2,17 @@ import type { PeerManager } from './peer'
 import { usePeerManager } from './peer'
 import type { Store } from './store'
 import { loadStore } from './store'
-import { shareStatus } from './shares'
+import { serveRoom, shareStatus } from './shares'
 import { ensureRelayRoom } from './relayRooms'
 import { assembleSyncSnapshot } from './syncIo'
 import type { PullWireMessage } from './syncWire'
 import { encodeWireMessage, parseWireMessage, snapshotFrames } from './syncWire'
 import { handshakeTimeoutMs as configHandshakeTimeoutMs, pullRequestTtlMs, syncRelayUrl } from './syncConfig'
 
-// The serving side of the pull flow (TICK-294, spec DOC-30). While a share
-// this machine created is active, a presence dial waits in its relay room; an
-// importer's pull-request becomes a pending approval the human answers in the
+// The serving side of the pull flow (TICK-294, spec DOC-30). While a share is
+// active, a presence dial waits in the room this side serves (creator: the
+// main room, importer: the reverse one — TICK-295 made pulls bidirectional);
+// the peer's pull-request becomes a pending approval the human answers in the
 // UI. Approve builds the snapshot and streams it over the channel; deny and
 // expiry send a refusal and transfer nothing. Framework-free — the Nitro
 // plugin drives tick() on an interval, tests drive it directly.
@@ -122,11 +123,14 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       }
     }
 
-    // Presence: one waiting dial per active share this machine created.
+    // Presence: one waiting dial per active share, in the room this side
+    // serves — the creator waits in the main room, the importer in the
+    // reverse one, so pulls work in both directions (shares.ts serveRoom).
     const store = loadState()
     const url = relayUrl()
     for (const share of store.shares) {
-      if (share.side !== 'creator') continue
+      const room = serveRoom(share)
+      if (!room) continue // pre-two-way record: nothing to serve from this side yet
       const active = shareStatus(share, nowIso()) === 'active' && store.projects.some((p) => p.id === share.projectId)
       const peerId = conns.get(share.id)
       const state = peerId ? peers.get(peerId)?.state : undefined
@@ -141,15 +145,15 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       }
       if (!url || state === 'connecting' || state === 'connected') continue
       try {
-        await ensureRelayRoom(url, share, nowMs)
+        await ensureRelayRoom(url, room, nowMs)
       } catch {
         continue // relay down or refusing — retry next tick
       }
       const holder = { id: '' }
       holder.id = peers.dial({
         relayUrl: url,
-        roomId: share.roomId,
-        secret: share.roomSecret,
+        roomId: room.roomId,
+        secret: room.roomSecret,
         initiator: false,
         ...(handshakeTimeoutMs ? { handshakeTimeoutMs } : {}),
         // The hello tells the importer this side is listening — its request

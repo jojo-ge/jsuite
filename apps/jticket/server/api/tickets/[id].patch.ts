@@ -8,6 +8,11 @@ export default defineEventHandler(async (event) => {
   // The peer's half of a shared project is read-only here — sync is the only
   // writer. Refused at the API, not just hidden in the UI.
   const project = store.projects.find((p) => p.id === ticket.projectId)
+  // A ticket mid-transfer is frozen on both machines until the transferee
+  // accepts or declines (spec DOC-30). Checked before the peer guard: the
+  // transferor's pending copy is peer-owned too, and "frozen" is why.
+  const frozen = transferFreezeError(ticket, project?.share)
+  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
   const refused = peerWriteError(ticket, project?.share)
   if (refused) throw createError({ statusCode: 403, statusMessage: refused })
 

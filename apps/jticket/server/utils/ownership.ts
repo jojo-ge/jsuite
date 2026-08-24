@@ -116,6 +116,94 @@ export function armCreatorShare(
   }
 }
 
+// ── Ownership transfer (TICK-295, spec DOC-30) ──────────────────────────────
+// Tickets (never docs) change sides via a two-phase protocol that survives
+// pull-only snapshots. The state machine lives here; sync.ts moves the states
+// across the wire. During limbo the record is identical on both machines:
+// owner already names the transferee, transfer: 'pending' — frozen (no edits,
+// no dispatch) and immune to absence-deletion everywhere. `origin` never
+// changes: parity is fixed at minting for the ticket's lifetime.
+
+/** The transfer-bearing slice of a Ticket — keeps this module store-free. */
+export interface TransferState extends Owned {
+  key?: string
+  transfer: '' | 'pending' | 'declined'
+  transferAt: string
+}
+
+// The freeze: a pending transfer blocks edits, deletion, branch cuts and
+// dispatch on BOTH machines — the transferor's copy is peer-owned anyway, but
+// the transferee's copy carries this side's owner before acceptance, and only
+// this guard keeps it read-only and undispatchable until the human accepts.
+export function transferFreezeError(
+  ticket: TransferState,
+  share: ProjectShare | null | undefined,
+): string | null {
+  if (!share || ticket.transfer !== 'pending') return null
+  // Owner reading as this side = the offer is TO this side, so the actor who
+  // must answer is the local human, not the peer.
+  if (ticket.owner === share.side) {
+    return `${ticket.key ?? 'this ticket'} is an unanswered transfer offer from ${share.peerName} — accept or decline it first`
+  }
+  return `${ticket.key ?? 'this ticket'} is mid-transfer — frozen until ${share.peerName} accepts or declines`
+}
+
+// Initiate: this side's ticket becomes the peer's-pending. The transferAt
+// stamp identifies the offer — a decline names it, so a stale decline can
+// never kill a later re-offer. An unstamped (pre-share) ticket is stamped
+// with this side as origin first: it was minted here.
+export function initiateTransfer(
+  ticket: TransferState,
+  share: ProjectShare | null | undefined,
+  at: string = new Date().toISOString(),
+): string | null {
+  if (!share) return 'only tickets on a shared project can be transferred'
+  // In-transfer first: the transferor's own pending copy is peer-owned too,
+  // and "already in transfer" is the truth of that state.
+  if (ticket.transfer !== '') {
+    return `${ticket.key ?? 'this ticket'} is already in transfer (${ticket.transfer})`
+  }
+  const refused = peerWriteError(ticket, share)
+  if (refused) return refused
+  if (!ticket.origin) ticket.origin = share.side
+  ticket.owner = otherSide(share.side)
+  ticket.transfer = 'pending'
+  ticket.transferAt = at
+  return null
+}
+
+// A ticket is an open offer to THIS side when it is pending and its owner
+// already names this side — exactly the state a pulled offer lands in.
+function offeredHereError(ticket: TransferState, share: ProjectShare): string | null {
+  if (ticket.transfer === 'pending' && ticket.owner === share.side) return null
+  return `${ticket.key ?? 'this ticket'} is not offered to this side`
+}
+
+// Accept: the offer becomes a plain owned ticket — editable, dispatchable,
+// exported as this side's from the next pull on. That export is what lets the
+// transferor finalize (drop their frozen copy by wholesale replace).
+export function acceptTransfer(ticket: TransferState, share: ProjectShare | null | undefined): string | null {
+  if (!share) return 'only tickets on a shared project can be transferred'
+  const refused = offeredHereError(ticket, share)
+  if (refused) return refused
+  ticket.transfer = ''
+  ticket.transferAt = ''
+  return null
+}
+
+// Decline: ownership bounces straight back to the peer; the 'declined' marker
+// (with the offer's transferAt) is what buildSyncExport turns into the
+// transferDeclines entry the transferor reverts on. The marker clears when
+// the peer re-exports the ticket as plainly theirs.
+export function declineTransfer(ticket: TransferState, share: ProjectShare | null | undefined): string | null {
+  if (!share) return 'only tickets on a shared project can be transferred'
+  const refused = offeredHereError(ticket, share)
+  if (refused) return refused
+  ticket.owner = otherSide(share.side)
+  ticket.transfer = 'declined'
+  return null
+}
+
 // Next ticket key on a shared project: '<KEY>-<n>' where n follows the side's
 // parity — creator odd, importer even — so both machines mint identical keys
 // with zero coordination. Derived from the tickets already in the project (max

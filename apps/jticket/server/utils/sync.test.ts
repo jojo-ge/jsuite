@@ -65,6 +65,8 @@ function makeTicket(over: Partial<Ticket> = {}): Ticket {
     completedAt: null,
     origin: 'creator',
     owner: 'creator',
+    transfer: '',
+    transferAt: '',
     createdAt: AT,
     updatedAt: AT,
     ...over,
@@ -274,6 +276,7 @@ function makeSnapshot(over: Partial<SyncSnapshot> = {}): SyncSnapshot {
     projectMeta: null,
     tickets: [],
     peerComments: [],
+    transferDeclines: [],
     docs: [],
     attachments: [],
     media: [],
@@ -993,5 +996,241 @@ describe('applySyncSnapshot — properties', () => {
       expect(JSON.stringify({ t: second.tickets, d: second.docs }))
         .toBe(JSON.stringify({ t: res.tickets, d: res.docs }))
     }
+  })
+})
+
+// ── Ownership transfer (TICK-295, spec DOC-30 "ownership transfer") ─────────
+// Two-phase over pull-only snapshots. During limbo the record is identical on
+// both machines — owner already names the transferee, transfer: 'pending' —
+// frozen and immune to absence-deletion everywhere. Accept turns the
+// transferee's copy into a plain owned ticket; the transferor's next pull sees
+// the peer exporting it and finalizes by wholesale replace. Declines travel as
+// snapshot transferDeclines entries naming the offer's transferAt stamp.
+
+describe('ownership transfer — export', () => {
+  const T1 = '2026-08-24T11:00:00.000Z'
+
+  it('exports a pending ticket it no longer owns, transfer state intact, without duplicating into peerComments', () => {
+    // The transferor: owner already flipped to the peer, frozen, still exported.
+    const { snapshot } = buildSyncExport(exportInput({
+      tickets: [makeTicket({
+        id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1,
+        comments: [
+          makeComment({ id: 'cmt_mine', owner: 'creator' }),
+          makeComment({ id: 'cmt_theirs', origin: 'importer', owner: 'importer' }),
+        ],
+      })],
+    }))
+    expect(snapshot.tickets).toHaveLength(1)
+    expect(snapshot.tickets[0]).toMatchObject({
+      id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1,
+    })
+    // Own comments ride inline; the ticket is not ALSO in peerComments.
+    expect(snapshot.tickets[0]!.comments.map((c) => c.id)).toEqual(['cmt_mine'])
+    expect(snapshot.peerComments).toEqual([])
+  })
+
+  it('exports the transferee\'s own pending copy still marked pending, never as settled ownership', () => {
+    // The transferee before accepting: owner is this side, but transfer must
+    // travel — an export claiming transfer '' would finalize the peer early.
+    const { snapshot } = buildSyncExport(exportInput({
+      tickets: [makeTicket({ id: 'tick_t', key: 'AB-2', origin: 'importer', owner: 'creator', transfer: 'pending', transferAt: T1 })],
+    }))
+    expect(snapshot.tickets).toHaveLength(1)
+    expect(snapshot.tickets[0]).toMatchObject({ owner: 'creator', transfer: 'pending', transferAt: T1 })
+  })
+
+  it('does not export a declined ticket as a record — the decline travels as a transferDeclines entry', () => {
+    // The decliner: ownership already bounced back to the peer.
+    const { snapshot } = buildSyncExport(exportInput({
+      tickets: [makeTicket({ id: 'tick_t', key: 'AB-2', origin: 'importer', owner: 'importer', transfer: 'declined', transferAt: T1 })],
+    }))
+    expect(snapshot.tickets).toEqual([])
+    expect(snapshot.transferDeclines).toEqual([{ ticketId: 'tick_t', transferAt: T1 }])
+  })
+
+  it('ordinary exports carry no transfer state and no declines', () => {
+    const { snapshot } = buildSyncExport(exportInput({ tickets: [makeTicket()] }))
+    expect(snapshot.tickets[0]).toMatchObject({ transfer: '', transferAt: '' })
+    expect(snapshot.transferDeclines).toEqual([])
+  })
+})
+
+describe('ownership transfer — apply', () => {
+  const T1 = '2026-08-24T11:00:00.000Z'
+  const T2 = '2026-08-24T12:00:00.000Z'
+
+  // The peer (importer) offering their ticket to this side (creator).
+  const offer = (over: Partial<Ticket> = {}) =>
+    theirTicket({ owner: 'creator', transfer: 'pending', transferAt: T1, ...over })
+
+  it('an incoming offer lands as a pending copy of the previously peer-owned ticket', () => {
+    const res = applySyncSnapshot(applyInput({
+      tickets: [makeTicket({ id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'importer' })],
+      snapshot: makeSnapshot({ tickets: [offer()] }),
+    }))
+    expect(res.tickets).toHaveLength(1)
+    expect(res.tickets[0]).toMatchObject({
+      id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'creator', transfer: 'pending', transferAt: T1,
+    })
+    expect(res.summary.tickets.changed).toEqual(['AB-2'])
+    expect(res.dropped).toEqual([])
+  })
+
+  it('an offer of a never-pulled ticket lands as a new pending copy', () => {
+    const res = applySyncSnapshot(applyInput({ snapshot: makeSnapshot({ tickets: [offer()] }) }))
+    expect(res.tickets).toHaveLength(1)
+    expect(res.tickets[0]).toMatchObject({ owner: 'creator', transfer: 'pending', transferAt: T1 })
+    expect(res.summary.tickets.added).toEqual(['AB-2'])
+  })
+
+  it('re-applying the same offer is idempotent — one copy, empty summary', () => {
+    const first = applySyncSnapshot(applyInput({ snapshot: makeSnapshot({ tickets: [offer()] }) }))
+    const second = applySyncSnapshot(applyInput({
+      tickets: first.tickets,
+      snapshot: makeSnapshot({ tickets: [offer()] }),
+    }))
+    expect(second.tickets).toHaveLength(1)
+    expect(second.summary.tickets).toEqual({ added: [], changed: [], deleted: [] })
+    expect(second.dropped).toEqual([])
+  })
+
+  it('an offer whose id is a settled locally-owned ticket is ignored, not merged and not duplicated', () => {
+    // The accepted-but-not-yet-finalized window: the peer still exports the
+    // offer, this side already owns the ticket outright. Also the hostile case.
+    const mine = makeTicket({ id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'creator' })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [mine],
+      snapshot: makeSnapshot({ tickets: [offer({ title: 'evil rewrite' })] }),
+    }))
+    expect(res.tickets).toHaveLength(1)
+    expect(res.tickets[0]).toMatchObject({ id: 'tick_p1', owner: 'creator', transfer: '', title: 'A ticket' })
+    expect(res.summary.tickets).toEqual({ added: [], changed: [], deleted: [] })
+  })
+
+  it('a pending ticket this side gave away survives a snapshot that does not carry it, key still reserved', () => {
+    // Transferor limbo: the transferee hasn't pulled the offer yet, so their
+    // export lacks the ticket — absence must not delete it, and its parity key
+    // must not be handed to anything else.
+    const pending = makeTicket({ id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [pending],
+      snapshot: makeSnapshot({ tickets: [theirTicket({ id: 'tick_sneak', key: 'AB-1' })] }),
+    }))
+    expect(res.tickets.map((t) => t.id)).toEqual(['tick_t'])
+    expect(res.tickets[0]).toMatchObject({ transfer: 'pending', owner: 'importer' })
+    expect(res.summary.tickets.deleted).toEqual([])
+    expect(res.dropped).toEqual(['AB-1'])
+  })
+
+  it('a pending offer held on this side survives a snapshot that does not carry it', () => {
+    // Transferee limbo, defensively: the transferor always exports a pending
+    // ticket, but a snapshot without it must not delete the offer.
+    const pendingMine = makeTicket({ id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'creator', transfer: 'pending', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({ tickets: [pendingMine], snapshot: makeSnapshot() }))
+    expect(res.tickets.map((t) => t.id)).toEqual(['tick_p1'])
+    expect(res.tickets[0]).toMatchObject({ transfer: 'pending' })
+    expect(res.summary.tickets.deleted).toEqual([])
+  })
+
+  it('both copies pending: the peer\'s limbo export applies without churn', () => {
+    const pending = makeTicket({
+      id: 'tick_t', key: 'AB-2', projectId: 'proj_local', origin: 'importer', owner: 'creator', transfer: 'pending', transferAt: T1,
+    })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [pending],
+      snapshot: makeSnapshot({ tickets: [offer({ id: 'tick_t' })] }),
+    }))
+    expect(res.tickets).toHaveLength(1)
+    expect(res.summary.tickets).toEqual({ added: [], changed: [], deleted: [] })
+  })
+
+  it('finalize: the peer exporting the ticket as plainly theirs replaces this side\'s pending copy', () => {
+    // This side initiated (owner flipped to importer, frozen); the peer
+    // accepted and now exports it as a normal owned ticket.
+    const pending = makeTicket({ id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [pending],
+      snapshot: makeSnapshot({ tickets: [theirTicket({ id: 'tick_t', key: 'AB-1', origin: 'creator', title: 'now theirs' })] }),
+    }))
+    expect(res.tickets).toHaveLength(1)
+    expect(res.tickets[0]).toMatchObject({
+      id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: '', transferAt: '', title: 'now theirs',
+    })
+    // Finalized = out of this side's export set.
+    const reExport = buildSyncExport(exportInput({ tickets: res.tickets }))
+    expect(reExport.snapshot.tickets).toEqual([])
+  })
+
+  it('a matching decline reverts the pending ticket to this side, unfrozen', () => {
+    const pending = makeTicket({ id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [pending],
+      snapshot: makeSnapshot({ transferDeclines: [{ ticketId: 'tick_t', transferAt: T1 }] }),
+    }))
+    expect(res.tickets[0]).toMatchObject({ id: 'tick_t', origin: 'creator', owner: 'creator', transfer: '', transferAt: '' })
+    expect(res.summary.tickets.changed).toEqual(['AB-1'])
+  })
+
+  it('a decline merges the decliner\'s comments from the same snapshot', () => {
+    // The decliner's comments ride peerComments (the ticket is peer-owned on
+    // their side again) — the revert must not leave the first post-decline
+    // pull without them.
+    const pending = makeTicket({ id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [pending],
+      snapshot: makeSnapshot({
+        transferDeclines: [{ ticketId: 'tick_t', transferAt: T1 }],
+        peerComments: [{
+          ticketId: 'tick_t',
+          comments: [makeComment({ id: 'cmt_why', body: 'not mine to take', origin: 'importer', owner: 'importer' })],
+        }],
+      }),
+    }))
+    expect(res.tickets[0]).toMatchObject({ owner: 'creator', transfer: '' })
+    expect(res.tickets[0]!.comments.map((c) => c.id)).toEqual(['cmt_why'])
+    expect(res.summary.comments.added).toBe(1)
+  })
+
+  it('a stale decline does not touch a re-initiated offer', () => {
+    const reOffered = makeTicket({ id: 'tick_t', key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T2 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [reOffered],
+      snapshot: makeSnapshot({ transferDeclines: [{ ticketId: 'tick_t', transferAt: T1 }] }),
+    }))
+    expect(res.tickets[0]).toMatchObject({ transfer: 'pending', transferAt: T2, owner: 'importer' })
+    expect(res.summary.tickets).toEqual({ added: [], changed: [], deleted: [] })
+  })
+
+  it('a declined copy outlasts the stale re-offer it already declined', () => {
+    // The decliner keeps saying no until the transferor reverts: the incoming
+    // offer names the same transferAt, so it neither resurrects the offer nor
+    // deletes the local copy.
+    const declined = makeTicket({ id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'importer', transfer: 'declined', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [declined],
+      snapshot: makeSnapshot({ tickets: [offer()] }),
+    }))
+    expect(res.tickets).toHaveLength(1)
+    expect(res.tickets[0]).toMatchObject({ transfer: 'declined', transferAt: T1, owner: 'importer' })
+    expect(res.summary.tickets).toEqual({ added: [], changed: [], deleted: [] })
+  })
+
+  it('a fresh offer supersedes an old decline', () => {
+    const declined = makeTicket({ id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'importer', transfer: 'declined', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [declined],
+      snapshot: makeSnapshot({ tickets: [offer({ transferAt: T2 })] }),
+    }))
+    expect(res.tickets[0]).toMatchObject({ owner: 'creator', transfer: 'pending', transferAt: T2 })
+  })
+
+  it('the peer re-exporting a bounced ticket as plainly theirs clears the decline marker', () => {
+    const declined = makeTicket({ id: 'tick_p1', key: 'AB-2', origin: 'importer', owner: 'importer', transfer: 'declined', transferAt: T1 })
+    const res = applySyncSnapshot(applyInput({
+      tickets: [declined],
+      snapshot: makeSnapshot({ tickets: [theirTicket()] }),
+    }))
+    expect(res.tickets[0]).toMatchObject({ owner: 'importer', transfer: '', transferAt: '' })
   })
 })

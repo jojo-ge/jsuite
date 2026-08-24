@@ -123,6 +123,8 @@ export default defineEventHandler(async (event) => {
       completedAt: isFinishedStatus(t.status) ? (t.completedAt ?? t.updatedAt ?? ts) : null,
       origin: '',
       owner: '',
+      transfer: '',
+      transferAt: '',
       createdAt: t.createdAt || ts,
       updatedAt: t.updatedAt || ts,
     }

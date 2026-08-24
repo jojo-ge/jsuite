@@ -21,6 +21,14 @@ export interface Share {
   sharedKey: string // 1–4 char key the shared project uses on both machines
   roomId: string // signaling-relay room …
   roomSecret: string // … and the secret that opens it
+  // The second room of the pair, serving the opposite direction: the creator
+  // waits in roomId and pulls via reverseRoomId; the importer the other way
+  // around. Minted with the main room and carried in the same link, so one
+  // share arms pulls both ways (the transfer protocol needs both — DOC-30's
+  // "the transferor's next pull"). '' on records from before two-way sync:
+  // that direction refuses until the share is re-armed and re-imported.
+  reverseRoomId: string
+  reverseRoomSecret: string
   side: ShareSide // parity THIS machine holds for the shared project
   expiresAt: string // links are valid 2 hours; re-sharing re-arms
   revokedAt: string | null // stop-sharing stamps this; re-sharing clears it
@@ -90,6 +98,8 @@ export function createOrRearmShare(
     }
     existing.roomId = newRoomId()
     existing.roomSecret = newRoomSecret()
+    existing.reverseRoomId = newRoomId()
+    existing.reverseRoomSecret = newRoomSecret()
     existing.expiresAt = expiryFrom(at, ttl)
     existing.revokedAt = null
     existing.updatedAt = at
@@ -102,6 +112,8 @@ export function createOrRearmShare(
     sharedKey,
     roomId: newRoomId(),
     roomSecret: newRoomSecret(),
+    reverseRoomId: newRoomId(),
+    reverseRoomSecret: newRoomSecret(),
     side: 'creator',
     expiresAt: expiryFrom(at, ttl),
     revokedAt: null,
@@ -152,6 +164,34 @@ export function shareStatus(share: Share, at: string = now()): ShareStatus {
   return 'active'
 }
 
+// ── Room directions ─────────────────────────────────────────────────────────
+// One share = one room pair. Each machine WAITS (serves) in one room and
+// DIALS (pulls) the other: the creator serves the main room, the importer the
+// reverse one. Null when the record predates two-way sync and that direction
+// has no room yet — re-sharing mints the pair.
+
+export interface RelayRoomRef {
+  roomId: string
+  roomSecret: string
+  expiresAt: string
+}
+
+/** The room this machine's serve loop waits in for the share, if armed. */
+export function serveRoom(share: Share): RelayRoomRef | null {
+  const [roomId, roomSecret] = share.side === 'creator'
+    ? [share.roomId, share.roomSecret]
+    : [share.reverseRoomId, share.reverseRoomSecret]
+  return roomId ? { roomId, roomSecret, expiresAt: share.expiresAt } : null
+}
+
+/** The peer's serving room — the one a pull from this machine dials. */
+export function pullRoom(share: Share): RelayRoomRef | null {
+  const [roomId, roomSecret] = share.side === 'creator'
+    ? [share.reverseRoomId, share.reverseRoomSecret]
+    : [share.roomId, share.roomSecret]
+  return roomId ? { roomId, roomSecret, expiresAt: share.expiresAt } : null
+}
+
 function expiryFrom(at: string, ttlMs: number = SHARE_TTL_MS): string {
   return new Date(Date.parse(at) + ttlMs).toISOString()
 }
@@ -188,6 +228,10 @@ export interface ShareBlob {
   sharedKey: string
   roomId: string
   roomSecret: string
+  // The reverse-direction room pair ('' from links cut before two-way sync —
+  // then only creator-serves-importer pulls work until a fresh share).
+  reverseRoomId: string
+  reverseRoomSecret: string
   side: ShareSide
   expiresAt: string
 }
@@ -199,6 +243,8 @@ export function shareLink(share: Share, base: string): string {
     sharedKey: share.sharedKey,
     roomId: share.roomId,
     roomSecret: share.roomSecret,
+    reverseRoomId: share.reverseRoomId,
+    reverseRoomSecret: share.reverseRoomSecret,
     side: share.side === 'creator' ? 'importer' : 'creator',
     expiresAt: share.expiresAt,
   }
@@ -254,6 +300,8 @@ export function recordImportedShare(
     existing.projectId = projectId
     existing.roomId = blob.roomId
     existing.roomSecret = blob.roomSecret
+    existing.reverseRoomId = blob.reverseRoomId
+    existing.reverseRoomSecret = blob.reverseRoomSecret
     existing.expiresAt = blob.expiresAt
     existing.revokedAt = null
     existing.updatedAt = at
@@ -266,6 +314,8 @@ export function recordImportedShare(
     sharedKey: blob.sharedKey,
     roomId: blob.roomId,
     roomSecret: blob.roomSecret,
+    reverseRoomId: blob.reverseRoomId,
+    reverseRoomSecret: blob.reverseRoomSecret,
     side: blob.side,
     expiresAt: blob.expiresAt,
     revokedAt: null,
@@ -306,12 +356,18 @@ export function parseShareBlob(fragment: string, at: string = now()): ShareBlob 
     throw new Error('not a share link')
   }
   if (shareIsExpired({ expiresAt: b.expiresAt }, at)) throw new ShareLinkExpiredError('share link expired')
+  // Links cut before two-way sync carry no reverse room; the pair still
+  // imports (one direction), so an absent/half pair degrades to '' not 400.
+  const hasReverse = typeof b.reverseRoomId === 'string' && !!b.reverseRoomId
+    && typeof b.reverseRoomSecret === 'string' && !!b.reverseRoomSecret
   return {
     v: 1,
     projectUuid: b.projectUuid,
     sharedKey: b.sharedKey,
     roomId: b.roomId,
     roomSecret: b.roomSecret,
+    reverseRoomId: hasReverse ? b.reverseRoomId! : '',
+    reverseRoomSecret: hasReverse ? b.reverseRoomSecret! : '',
     side: b.side,
     expiresAt: b.expiresAt,
   }

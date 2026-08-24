@@ -53,6 +53,10 @@ describe('creating a share', () => {
       sharedKey: 'CART',
       roomId: share.roomId,
       roomSecret: share.roomSecret,
+      // The reverse pair rides the same link — one share arms both pull
+      // directions (the importer serves the creator's pulls from it).
+      reverseRoomId: share.reverseRoomId,
+      reverseRoomSecret: share.reverseRoomSecret,
       // The recipient of a creator's link plays the importer side (even keys).
       side: 'importer',
       expiresAt: TWO_HOURS_LATER,

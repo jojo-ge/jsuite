@@ -63,6 +63,8 @@ export default defineEventHandler(async (event) => {
     completedAt: null,
     origin: '',
     owner: '',
+    transfer: '',
+    transferAt: '',
     createdAt: ts,
     updatedAt: ts,
   }

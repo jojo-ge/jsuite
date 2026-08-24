@@ -31,6 +31,17 @@ const peerName = computed(() =>
   peerNameOf(props.ticket, projects.value.find((p) => p.id === props.ticket.projectId)),
 )
 
+// Mid-ownership-transfer: an offer travelling one way or the other (frozen
+// either way), or a decline waiting for the peer's next pull.
+const transferBadge = computed(() => {
+  const share = projects.value.find((p) => p.id === props.ticket.projectId)?.share
+  if (!share || !props.ticket.transfer) return null
+  if (props.ticket.transfer === 'declined') return { label: 'Transfer declined', icon: 'i-lucide-undo-2' }
+  return props.ticket.owner === share.side
+    ? { label: `Offered by ${share.peerName}`, icon: 'i-lucide-inbox' }
+    : { label: `Offered to ${share.peerName}`, icon: 'i-lucide-send' }
+})
+
 const blocked = computed(() => isBlocked(props.ticket, props.tickets))
 // Frontier highlighting is independent of wayfinder mode — every board groups by
 // flow state, so the takeable edge is worth ringing everywhere. The wayfinder
@@ -85,6 +96,9 @@ const ring = computed(() => {
           </UBadge>
           <UBadge v-if="peerName" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
             {{ peerName }}
+          </UBadge>
+          <UBadge v-if="transferBadge" color="warning" variant="subtle" size="sm" :icon="transferBadge.icon">
+            {{ transferBadge.label }}
           </UBadge>
           <UBadge :color="ticket.type === 'HITL' ? 'warning' : 'neutral'" variant="subtle" size="sm">
             {{ ticket.type }}

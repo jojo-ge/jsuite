@@ -13,8 +13,13 @@ import {
   projectMoveError,
   sharedTicketKey,
   armCreatorShare,
+  transferFreezeError,
+  initiateTransfer,
+  acceptTransfer,
+  declineTransfer,
   type Owned,
   type ProjectShare,
+  type TransferState,
 } from './ownership.ts'
 
 const creatorShare: ProjectShare = { key: 'AB', side: 'creator', peerName: 'sam' }
@@ -184,4 +189,68 @@ test('re-arming still stamps entities the first arm missed — self-healing for 
   const legacy: Owned = { origin: '', owner: '' }
   armCreatorShare(project, 'AB', '', [legacy])
   assert.deepEqual(legacy, { origin: 'creator', owner: 'creator' })
+})
+
+// ── Ownership transfer (TICK-295) ───────────────────────────────────────────
+// The pure state machine: initiate flips owner to the peer and freezes;
+// accept settles the transferee's copy; decline bounces ownership back and
+// leaves the marker the snapshot's transferDeclines entry is built from.
+
+const T1 = '2026-08-24T11:00:00.000Z'
+
+function transferable(over: Partial<TransferState> = {}): TransferState {
+  return { key: 'AB-1', origin: 'creator', owner: 'creator', transfer: '', transferAt: '', ...over }
+}
+
+test('a pending transfer freezes the ticket on both sides; settled and declined states do not', () => {
+  assert.equal(transferFreezeError(transferable(), creatorShare), null)
+  // The transferor's copy (owner already the peer) and the transferee's copy
+  // (owner this side) are both frozen while pending.
+  const out = transferable({ owner: 'importer', transfer: 'pending', transferAt: T1 })
+  const offered = transferable({ owner: 'creator', transfer: 'pending', transferAt: T1 })
+  assert.match(transferFreezeError(out, creatorShare)!, /transfer/)
+  assert.match(transferFreezeError(offered, creatorShare)!, /transfer/)
+  assert.equal(transferFreezeError(transferable({ transfer: 'declined', owner: 'importer', transferAt: T1 }), creatorShare), null)
+})
+
+test('initiate flips owner to the peer, marks pending, stamps the offer time', () => {
+  const t = transferable()
+  assert.equal(initiateTransfer(t, creatorShare, T1), null)
+  assert.deepEqual(t, { key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1 })
+})
+
+test('initiate stamps an unstamped pre-share ticket with this side as origin', () => {
+  const t = transferable({ origin: '', owner: '' })
+  assert.equal(initiateTransfer(t, creatorShare, T1), null)
+  assert.deepEqual(t, { key: 'AB-1', origin: 'creator', owner: 'importer', transfer: 'pending', transferAt: T1 })
+})
+
+test('initiate refuses without a share, on a peer-owned ticket, and while already in transfer', () => {
+  const local = transferable()
+  assert.match(initiateTransfer(local, null)!, /shared/)
+  const theirs = transferable({ origin: 'importer', owner: 'importer' })
+  assert.match(initiateTransfer(theirs, creatorShare)!, /owned by sam/)
+  const pending = transferable({ owner: 'importer', transfer: 'pending', transferAt: T1 })
+  assert.match(initiateTransfer(pending, creatorShare)!, /transfer/)
+})
+
+test('accept settles the offered copy as plainly owned', () => {
+  const offered = transferable({ origin: 'importer', owner: 'creator', transfer: 'pending', transferAt: T1 })
+  assert.equal(acceptTransfer(offered, creatorShare), null)
+  assert.deepEqual(offered, { key: 'AB-1', origin: 'importer', owner: 'creator', transfer: '', transferAt: '' })
+})
+
+test('accept and decline only work on the side the ticket is offered to', () => {
+  // The transferor's own pending copy (owner = peer) cannot self-accept.
+  const out = transferable({ owner: 'importer', transfer: 'pending', transferAt: T1 })
+  assert.match(acceptTransfer(out, creatorShare)!, /offered/)
+  assert.match(declineTransfer(out, creatorShare)!, /offered/)
+  const settled = transferable()
+  assert.match(acceptTransfer(settled, creatorShare)!, /offered/)
+})
+
+test('decline bounces ownership back and keeps the offer stamp for the wire marker', () => {
+  const offered = transferable({ origin: 'importer', owner: 'creator', transfer: 'pending', transferAt: T1 })
+  assert.equal(declineTransfer(offered, creatorShare), null)
+  assert.deepEqual(offered, { key: 'AB-1', origin: 'importer', owner: 'importer', transfer: 'declined', transferAt: T1 })
 })

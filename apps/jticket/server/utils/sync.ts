@@ -36,6 +36,15 @@ export interface SyncTicketComments {
   comments: TicketComment[]
 }
 
+// A declined ownership transfer, named by the offer's transferAt stamp so a
+// stale decline can never kill a re-initiated offer. The decliner keeps
+// exporting the entry until the transferor's pull reverts their pending copy
+// and re-exports the ticket as plainly theirs (which clears the marker).
+export interface SyncTransferDecline {
+  ticketId: string
+  transferAt: string
+}
+
 // The wire payload of one pull: the exporting side's owned half of the shared
 // project. Machine-local fields (repo, integration branch, ticket branches)
 // never appear. Entity ids are the exporter's and are preserved on apply, so
@@ -49,9 +58,13 @@ export interface SyncSnapshot {
   sharedKey: string
   /** Project metadata belongs to the link creator; null from the importer. */
   projectMeta: SyncProjectMeta | null
-  /** Exporter-owned tickets, carrying only exporter-owned comments. */
+  /** Exporter-owned tickets — plus in-transfer pending ones, whatever their
+   * owner reads: both sides keep a pending ticket in their export so transfer
+   * limbo survives pulls in either order. */
   tickets: Ticket[]
   peerComments: SyncTicketComments[]
+  /** Transfers this side declined — see SyncTransferDecline. */
+  transferDeclines: SyncTransferDecline[]
   /** Exporter-owned doc records with their shared-pool bodies inlined. */
   docs: BundleDoc[]
   /** Filled by the caller from attachmentNames / mediaRefs — see SyncExport. */
@@ -172,9 +185,13 @@ export function buildSyncExport(input: SyncExportInput): SyncExport {
 
   const tickets: Ticket[] = []
   const peerComments: SyncTicketComments[] = []
+  const transferDeclines: SyncTransferDecline[] = []
   for (const t of input.tickets) {
-    if (!ownedHere(t, share)) {
-      // Not mine to export — but my comments on it are.
+    const pending = t.transfer === 'pending'
+    if (!pending && !ownedHere(t, share)) {
+      // Not mine to export — but my comments on it are, and so is the marker
+      // for a transfer I declined (the record itself is the peer's again).
+      if (t.transfer === 'declined') transferDeclines.push({ ticketId: t.id, transferAt: t.transferAt })
       const comments = t.comments.filter((c) => ownedHere(c, share)).map((c) => exportComment(c, side))
       if (comments.length) peerComments.push({ ticketId: t.id, comments })
       continue
@@ -199,7 +216,13 @@ export function buildSyncExport(input: SyncExportInput): SyncExport {
       completedAt: t.completedAt,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
-      ...exportStamp(t, side),
+      // A pending ticket travels exactly as it stands — owner already names
+      // the transferee on both machines, and an export claiming '' would read
+      // as settled ownership and finalize the transferor early.
+      origin: t.origin || side,
+      owner: pending ? t.owner : side,
+      transfer: pending ? 'pending' : '',
+      transferAt: pending ? t.transferAt : '',
     })
   }
 
@@ -236,6 +259,7 @@ export function buildSyncExport(input: SyncExportInput): SyncExport {
       : null,
     tickets,
     peerComments,
+    transferDeclines,
     docs,
     attachments: [],
     media: [],
@@ -261,16 +285,18 @@ const strOr = (v: unknown, fallback: string): string =>
   typeof v === 'string' && v ? v : fallback
 
 // Reserve the keys this pull must not hand out: everything locally owned,
-// plus peer copies that survive (id-matched). A peer entity dying by absence
-// releases its key, so the peer set can be replaced without self-colliding.
+// plus peer copies that survive (id-matched), plus tickets in transfer limbo
+// — a pending ticket is immune to absence-deletion, so its key lives on even
+// when the snapshot lacks it. A peer entity dying by absence releases its
+// key, so the peer set can be replaced without self-colliding.
 function reserveSurvivorKeys(
   reserved: Set<string>,
-  entities: Array<{ id: string; key: string; owner: ShareSide | '' }>,
+  entities: Array<{ id: string; key: string; owner: ShareSide | ''; transfer?: string }>,
   incomingIds: Set<unknown>,
   share: ProjectShare,
 ): void {
   for (const e of entities) {
-    if (ownedHere(e, share) || incomingIds.has(e.id)) reserved.add(e.key)
+    if (ownedHere(e, share) || incomingIds.has(e.id) || e.transfer === 'pending') reserved.add(e.key)
     else reserved.delete(e.key)
   }
 }
@@ -350,10 +376,12 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
     comments: { added: 0, changed: 0, deleted: 0 },
   }
 
-  // Locally-owned entities are untouchable — collect their ids so an incoming
-  // id collision (peer bug or hostile snapshot) is refused, not merged.
+  // Locally-owned SETTLED entities are untouchable — collect their ids so an
+  // incoming id collision (peer bug or hostile snapshot) is refused, not
+  // merged. A pending offer held here reads as this side's owner but is not
+  // settled: the peer's limbo export may still update or finalize it.
   const localIds = new Set<string>()
-  for (const t of input.tickets) if (ownedHere(t, share)) localIds.add(t.id)
+  for (const t of input.tickets) if (ownedHere(t, share) && t.transfer !== 'pending') localIds.add(t.id)
   for (const d of input.docs) if (ownedHere(d, share)) localIds.add(d.id)
 
   // ── Attachments — before any text lands, so renames can rewrite it ──
@@ -459,7 +487,9 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
   const fixText = (text: string): string => rewriteDocMediaUrls(fixAttachmentUrls(text), docKeyRenames)
 
   // ── Tickets ──
-  const localPeerTickets = new Map(input.tickets.filter((t) => !ownedHere(t, share)).map((t) => [t.id, t]))
+  // Keyed by id across ALL local copies (peer-owned, pending, declined): the
+  // stable cross-machine identity every incoming ticket resolves against.
+  const localTicketsById = new Map(input.tickets.map((t) => [t.id, t]))
 
   // Parity keys are collision-free by construction, so a clash with a
   // locally-owned ticket means broken parity or a hostile snapshot — refuse
@@ -470,16 +500,43 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
   const reservedTicketKeys = new Set(input.takenTicketKeys)
   reserveSurvivorKeys(reservedTicketKeys, input.tickets, new Set((snap.tickets ?? []).map((t) => t?.id).filter(Boolean)), share)
 
+  // Offers this apply refused only because they were already declined here —
+  // the merge loop keeps those declined copies alive instead of reading the
+  // skipped offer as an absence-deletion of them.
+  const staleOfferIds = new Set<string>()
+
   const incomingTickets = new Map<string, Ticket>()
   for (const t of snap.tickets ?? []) {
     if (!t || typeof t.id !== 'string' || !t.id) continue
     const key = String(t.key ?? '')
     const title = String(t.title ?? '').trim()
-    if (t.owner !== peer || localIds.has(t.id) || !key || !title || incomingTickets.has(t.id)) {
+    const pending = t.transfer === 'pending'
+    // Whose copy may this become? The peer's own half always; this side's
+    // owner is accepted only as a pending transfer offer.
+    const incomingOwner: ShareSide | null = t.owner === peer ? peer : pending && t.owner === share.side ? share.side : null
+    if (incomingOwner === null || !key || !title || incomingTickets.has(t.id)) {
       if (key) dropped.push(key)
       continue
     }
-    const existing = localPeerTickets.get(t.id)
+    const local = localTicketsById.get(t.id)
+    if (pending && incomingOwner === share.side) {
+      // The accepted-but-not-finalized window: the peer still exports the
+      // offer while this side already owns the ticket outright. Ignored, not
+      // an error — the peer's next pull finalizes and stops the re-offer.
+      // (Also swallows hostile offers reusing a settled local id.)
+      if (localIds.has(t.id)) continue
+      // Already declined, same offer: keep saying no until the peer reverts.
+      if (local?.transfer === 'declined' && local.transferAt === String(t.transferAt ?? '')) {
+        staleOfferIds.add(t.id)
+        continue
+      }
+    } else if (localIds.has(t.id)) {
+      dropped.push(key)
+      continue
+    }
+    // Reaching here, any local copy is peer-owned or in transfer (settled
+    // local ids were screened above) — either way it anchors the key.
+    const existing = local
     let finalKey: string
     if (existing) {
       finalKey = existing.key
@@ -518,7 +575,11 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
       branch: '', // the peer's work branch is machine-local to the peer
       completedAt: finished ? (t.completedAt ?? t.updatedAt ?? fallbackAt) : null,
       origin: validSide(t.origin) ? t.origin : peer,
-      owner: peer,
+      owner: incomingOwner,
+      // Only 'pending' crosses the wire as a ticket field — declines travel
+      // as transferDeclines entries, and anything else reads as settled.
+      transfer: pending ? 'pending' : '',
+      transferAt: pending ? strOr(t.transferAt, fallbackAt) : '',
       createdAt: strOr(t.createdAt, fallbackAt),
       updatedAt: strOr(t.updatedAt, fallbackAt),
     })
@@ -552,8 +613,62 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
     summary.comments.deleted += prevById.size
   }
 
+  // Declines the peer sent: offer stamps by ticket id. Only a pending copy
+  // this side gave away (owner = peer) reverts, and only on an exact
+  // transferAt match — a stale decline never touches a re-initiated offer.
+  const declines = new Map<string, string>()
+  for (const d of snap.transferDeclines ?? []) {
+    if (d && typeof d.ticketId === 'string' && d.ticketId) declines.set(d.ticketId, String(d.transferAt ?? ''))
+  }
+
   const tickets: Ticket[] = []
+  const replaceWith = (t: Ticket, next: Ticket): void => {
+    incomingTickets.delete(t.id)
+    const merged = mergeComments(t.comments.filter((c) => c.owner !== peer), next.comments)
+    const replacement = { ...next, comments: merged }
+    tickets.push(replacement)
+    if (!sameTicketRecord(replacement, t)) summary.tickets.changed.push(replacement.key)
+    diffPeerComments(t.comments, merged)
+  }
   for (const t of input.tickets) {
+    if (t.transfer === 'pending') {
+      // Transfer limbo. Whatever the peer exports for it wins — their limbo
+      // copy (no-op), a re-offer, or the accepted ticket as plainly theirs
+      // (finalize: this side's frozen copy becomes a normal peer ticket and
+      // leaves the export set). Absent from the snapshot, it survives: a
+      // pending ticket is immune to absence-deletion (spec DOC-30) — unless
+      // the peer declined this exact offer, which bounces it back here.
+      const next = incomingTickets.get(t.id)
+      if (next) {
+        replaceWith(t, next)
+      } else if (isPeerOwned(t, share) && declines.get(t.id) === t.transferAt) {
+        // Bounced back. The decliner's comments on it ride this same
+        // snapshot's peerComments (the ticket is peer-owned on their side),
+        // so merge them now rather than leaving the first post-decline pull
+        // incomplete.
+        const incoming = peerCommentSets.get(t.id)
+        let comments = t.comments
+        if (incoming !== undefined || t.comments.some((c) => c.owner === peer)) {
+          comments = mergeComments(t.comments.filter((c) => c.owner !== peer), incoming ?? [])
+          diffPeerComments(t.comments, comments)
+        }
+        tickets.push({ ...t, owner: share.side, transfer: '', transferAt: '', comments })
+        summary.tickets.changed.push(t.key)
+      } else {
+        tickets.push(t)
+      }
+      continue
+    }
+    if (t.transfer === 'declined') {
+      // The bounced copy holds its ground against the stale re-offer it
+      // already declined; anything else the peer exports for it (or true
+      // absence, once they revert and delete) applies as usual.
+      const next = incomingTickets.get(t.id)
+      if (next) replaceWith(t, next)
+      else if (staleOfferIds.has(t.id)) tickets.push(t)
+      else summary.tickets.deleted.push(t.key)
+      continue
+    }
     if (ownedHere(t, share)) {
       const incoming = peerCommentSets.get(t.id)
       if (incoming === undefined && !t.comments.some((c) => c.owner === peer)) {
@@ -570,12 +685,7 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
       summary.tickets.deleted.push(t.key)
       continue // deletion by absence
     }
-    incomingTickets.delete(t.id)
-    const merged = mergeComments(t.comments.filter((c) => c.owner !== peer), next.comments)
-    const replacement = { ...next, comments: merged }
-    tickets.push(replacement)
-    if (!sameTicketRecord(replacement, t)) summary.tickets.changed.push(replacement.key)
-    diffPeerComments(t.comments, merged)
+    replaceWith(t, next)
   }
   for (const next of incomingTickets.values()) {
     tickets.push(next)

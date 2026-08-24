@@ -9,7 +9,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:open': [boolean] }>()
 
-const { projects, updateTicket, deleteTicket, addComment, deleteComment } = useTracker()
+const { projects, updateTicket, deleteTicket, addComment, deleteComment, refresh } = useTracker()
+const toast = useToast()
 
 const isEdit = computed(() => !!props.ticket)
 
@@ -55,6 +56,49 @@ const isWayfinder = computed(() => project.value?.mode === 'wayfinder' || !!(liv
 // Peer-owned = the other side of a shared project's ticket — badged with the
 // peer's name; the API refuses writes and dispatch on it.
 const peerName = computed(() => (live.value ? peerNameOf(live.value, project.value) : null))
+
+// ── Ownership transfer (spec DOC-30) ──
+// While 'pending' the ticket is frozen everywhere. Direction reads off the
+// owner: an offer TO this side already carries this side's owner; the copy
+// this side gave away carries the peer's.
+const share = computed(() => project.value?.share ?? null)
+const transferOffer = computed(
+  () => !!share.value && live.value?.transfer === 'pending' && live.value.owner === share.value.side,
+)
+const transferPendingOut = computed(
+  () => !!share.value && live.value?.transfer === 'pending' && live.value.owner !== share.value.side,
+)
+const transferDeclined = computed(() => !!share.value && live.value?.transfer === 'declined')
+// Only a settled, locally-owned ticket on a shared project can be handed over.
+const canTransfer = computed(() => !!share.value && !!live.value && !peerName.value && !live.value.transfer)
+const transferBusy = ref(false)
+
+async function startTransfer() {
+  if (!live.value || !share.value) return
+  if (!confirm(`Hand ${live.value.key} to ${share.value.peerName}? It freezes until they accept or decline.`)) return
+  transferBusy.value = true
+  try {
+    await $fetch(`/api/tickets/${live.value.id}/transfer`, { method: 'POST' })
+    await refresh()
+  } catch (e: any) {
+    toast.add({ title: 'Could not transfer', description: e?.data?.statusMessage ?? String(e), color: 'error' })
+  } finally {
+    transferBusy.value = false
+  }
+}
+
+async function answerTransfer(action: 'accept' | 'decline') {
+  if (!live.value) return
+  transferBusy.value = true
+  try {
+    await $fetch(`/api/tickets/${live.value.id}/transfer/${action}`, { method: 'POST' })
+    await refresh()
+  } catch (e: any) {
+    toast.add({ title: `Could not ${action}`, description: e?.data?.statusMessage ?? String(e), color: 'error' })
+  } finally {
+    transferBusy.value = false
+  }
+}
 const wfMeta = computed(() => {
   const wt = live.value ? wayfinderType(live.value) : null
   return wt ? WAYFINDER_TYPE_META[wt] : null
@@ -131,10 +175,48 @@ const statusOptions = [
     <template #body>
       <!-- ── Rich view ── -->
       <div v-if="mode === 'view' && live" class="space-y-6">
+        <!-- A pending offer: the one place remote-authored work becomes
+             runnable here, so the human reviews the full ticket and answers
+             explicitly (spec DOC-30). -->
+        <div v-if="transferOffer" class="rounded-lg border border-warning/40 bg-warning/5 px-4 py-3">
+          <p class="text-sm font-medium">
+            <UIcon name="i-lucide-inbox" class="mr-1 inline size-4 align-[-2px]" />
+            {{ share!.peerName }} wants to hand you this ticket.
+          </p>
+          <p class="mt-1 text-xs text-muted">
+            Review the full description, acceptance criteria and comments below — it stays frozen and
+            undispatchable until you accept. Declining returns it to {{ share!.peerName }} on their next sync.
+          </p>
+          <div class="mt-2.5 flex gap-2">
+            <UButton size="sm" icon="i-lucide-check" :loading="transferBusy" @click="answerTransfer('accept')">
+              Accept ticket
+            </UButton>
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-x"
+              :loading="transferBusy"
+              @click="answerTransfer('decline')"
+            >
+              Decline
+            </UButton>
+          </div>
+        </div>
+
         <div>
           <div class="flex flex-wrap items-center gap-2">
             <UBadge v-if="peerName" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
               {{ peerName }} · read-only
+            </UBadge>
+            <UBadge v-if="transferPendingOut" color="warning" variant="subtle" size="sm" icon="i-lucide-send">
+              Offered to {{ share!.peerName }} · frozen
+            </UBadge>
+            <UBadge v-if="transferOffer" color="warning" variant="subtle" size="sm" icon="i-lucide-inbox">
+              Pending your review
+            </UBadge>
+            <UBadge v-if="transferDeclined" color="warning" variant="subtle" size="sm" icon="i-lucide-undo-2">
+              Declined · returns to {{ share!.peerName }}
             </UBadge>
             <UBadge v-if="wfMeta" :color="wfMeta.color" variant="subtle" size="sm" :icon="wfMeta.icon">
               {{ wfMeta.label }}
@@ -305,12 +387,33 @@ const statusOptions = [
     </template>
 
     <template #footer>
-      <!-- View footer -->
+      <!-- View footer — a pending transfer freezes the ticket, so the write
+           affordances go with it (the API refuses them anyway). -->
       <div v-if="mode === 'view'" class="flex w-full items-center gap-2">
-        <UButton icon="i-lucide-trash-2" color="error" variant="ghost" @click="removeTicket">Delete</UButton>
+        <UButton
+          v-if="live?.transfer !== 'pending'"
+          icon="i-lucide-trash-2"
+          color="error"
+          variant="ghost"
+          @click="removeTicket"
+        >
+          Delete
+        </UButton>
+        <UButton
+          v-if="canTransfer"
+          icon="i-lucide-send"
+          color="neutral"
+          variant="ghost"
+          :loading="transferBusy"
+          @click="startTransfer"
+        >
+          Transfer to {{ share!.peerName }}
+        </UButton>
         <div class="ml-auto flex gap-2">
           <UButton color="neutral" variant="ghost" @click="emit('update:open', false)">Close</UButton>
-          <UButton icon="i-lucide-pencil" variant="soft" @click="startEdit">Edit</UButton>
+          <UButton v-if="live?.transfer !== 'pending'" icon="i-lucide-pencil" variant="soft" @click="startEdit">
+            Edit
+          </UButton>
         </div>
       </div>
       <!-- Edit footer -->

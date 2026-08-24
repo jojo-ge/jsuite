@@ -7,6 +7,11 @@ export default defineEventHandler((event) => {
   // Peer-owned tickets only ever leave by sync (deletion by absence), never
   // by a local delete.
   const project = store.projects.find((p) => p.id === ticket.projectId)
+  // Mid-transfer = frozen (spec DOC-30): the pending copy must survive on
+  // both machines until the offer is answered. Before the peer guard — the
+  // transferor's pending copy is peer-owned too, and "frozen" is why.
+  const frozen = transferFreezeError(ticket, project?.share)
+  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
   const refused = peerWriteError(ticket, project?.share)
   if (refused) throw createError({ statusCode: 403, statusMessage: refused })
 

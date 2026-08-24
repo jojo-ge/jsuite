@@ -2,7 +2,7 @@ import type { PeerManager } from './peer'
 import { usePeerManager } from './peer'
 import type { Store } from './store'
 import { loadStore } from './store'
-import { shareIsExpired } from './shares'
+import { pullRoom, shareIsExpired } from './shares'
 import { ensureRelayRoom } from './relayRooms'
 import { performSyncApply } from './syncIo'
 import type { SyncChangeSummary, SyncSnapshot } from './sync'
@@ -82,8 +82,12 @@ export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
     if (!project) throw new PullStartError('project not found', 404)
     const share = store.shares.find((s) => s.projectId === project.id)
     if (!share) throw new PullStartError('project is not shared', 409)
-    if (share.side !== 'importer') {
-      throw new PullStartError('pulls run on the importing side — this machine serves this share', 409)
+    // Either side pulls — each dials the room the OTHER side serves. A record
+    // from before two-way sync has no reverse room, so the creator direction
+    // can't dial until the pair re-shares and re-imports a fresh link.
+    const room = pullRoom(share)
+    if (!room) {
+      throw new PullStartError('this share predates two-way sync — re-share and re-import a fresh link to pull from this side', 409)
     }
     if (shareIsExpired(share, new Date(nowMs()).toISOString())) {
       throw new PullStartError('share link expired — ask your coworker for a fresh link', 410)
@@ -187,8 +191,8 @@ export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
       if (TERMINAL.has(attempt.state)) return
       attempt.peerId = peers.dial({
         relayUrl: url,
-        roomId: share.roomId,
-        secret: share.roomSecret,
+        roomId: room.roomId,
+        secret: room.roomSecret,
         initiator: true,
         ...(handshakeTimeoutMs ? { handshakeTimeoutMs } : {}),
         onMessage: handleMessage,
@@ -208,7 +212,7 @@ export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
     attempt.timer = setTimeout(() => finish('expired', 'no answer before the timeout'), timeoutMs)
     void (async () => {
       try {
-        await ensureRelayRoom(url, share, nowMs)
+        await ensureRelayRoom(url, room, nowMs)
       } catch (error) {
         finish('failed', error instanceof Error ? error.message : String(error))
         return

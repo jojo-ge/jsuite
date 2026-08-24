@@ -65,6 +65,8 @@ function makeTicket(overrides: Partial<Ticket>): Ticket {
     completedAt: null,
     origin: '',
     owner: '',
+    transfer: '',
+    transferAt: '',
     createdAt: at,
     updatedAt: at,
     ...overrides,
@@ -87,6 +89,8 @@ function makeFixture({ expiresInMs = 60 * 60 * 1000 } = {}): Fixture {
   const projectUuid = randomUUID()
   const roomId = `room-${randomUUID()}`
   const roomSecret = `secret-${randomUUID()}`
+  const reverseRoomId = `room-${randomUUID()}`
+  const reverseRoomSecret = `secret-${randomUUID()}`
 
   const creatorStore = emptyStore()
   const creatorProject: Project = {
@@ -109,6 +113,8 @@ function makeFixture({ expiresInMs = 60 * 60 * 1000 } = {}): Fixture {
     sharedKey: 'AB',
     roomId,
     roomSecret,
+    reverseRoomId,
+    reverseRoomSecret,
     side: 'creator',
     expiresAt,
     revokedAt: null,
@@ -144,6 +150,8 @@ function makeFixture({ expiresInMs = 60 * 60 * 1000 } = {}): Fixture {
     sharedKey: 'AB',
     roomId,
     roomSecret,
+    reverseRoomId,
+    reverseRoomSecret,
     side: 'importer',
     expiresAt,
     revokedAt: null,
@@ -161,14 +169,21 @@ interface Applied {
   snapshot: SyncSnapshot
 }
 
-function startPair(fixture: Fixture, { requestTtlMs = 30_000, timeoutMs = 30_000, applyError = '' } = {}) {
+function startPair(
+  fixture: Fixture,
+  { requestTtlMs = 30_000, timeoutMs = 30_000, applyError = '', reverse = false } = {},
+) {
+  // reverse runs the same pair the other way around: the importer's machine
+  // serves, the creator's pulls — the transfer protocol needs both directions.
+  const serveStore = reverse ? fixture.importerStore : fixture.creatorStore
+  const pullStore = reverse ? fixture.creatorStore : fixture.importerStore
   servePeers = createPeerManager()
   pullPeers = createPeerManager()
   const applied: Applied[] = []
   server = createSyncServer({
     peers: servePeers,
     relayUrl: () => relay.url.href,
-    loadState: () => fixture.creatorStore,
+    loadState: () => serveStore,
     requestTtlMs,
     // Short handshake reclaim: transient WebRTC failures recover fast enough
     // to stay inside the suite's wait windows.
@@ -177,7 +192,7 @@ function startPair(fixture: Fixture, { requestTtlMs = 30_000, timeoutMs = 30_000
   puller = createSyncPuller({
     peers: pullPeers,
     relayUrl: () => relay.url.href,
-    loadState: () => fixture.importerStore,
+    loadState: () => pullStore,
     timeoutMs,
     handshakeTimeoutMs: 3_000,
     applySnapshot: async (projectId, snapshot) => {
@@ -300,6 +315,38 @@ describe('pull flow — request, approve, snapshot, apply', () => {
     expect(done.state).toBe('failed')
     expect(server!.pending()).toHaveLength(0)
     expect(applied).toHaveLength(0)
+  })
+
+  it('the reverse direction serves too: the creator pulls the importer half over the reverse room', async () => {
+    const fixture = makeFixture()
+    fixture.importerStore.tickets.push(
+      makeTicket({ id: 'tick_b2', key: 'AB-2', title: 'importer ticket', projectId: fixture.importerProject.id, origin: 'importer', owner: 'importer' }),
+    )
+    const { applied } = startPair(fixture, { reverse: true })
+
+    const attempt = puller!.start(fixture.creatorProject.id)
+    const pending = await waitFor(() => server!.pending(), (p) => p.length === 1, { label: 'pending on the importer side' })
+    // The serving side names the requester from ITS project.share.peerName.
+    expect(pending[0]!.requester).toBe('Avery')
+    expect(pending[0]!.id).toBe(attempt.id)
+
+    await server!.approve(attempt.id)
+    const done = await waitFor(() => puller!.get(attempt.id), (a) => terminal(a.state), { label: 'reverse pull applied' })
+    expect(done.state).toBe('applied')
+
+    expect(applied).toHaveLength(1)
+    expect(applied[0]!.projectId).toBe(fixture.creatorProject.id)
+    expect(applied[0]!.snapshot.side).toBe('importer')
+    expect(applied[0]!.snapshot.projectMeta).toBeNull()
+    expect(applied[0]!.snapshot.tickets.map((t) => t.title)).toEqual(['importer ticket'])
+  })
+
+  it('a share without a reverse room refuses a creator-side pull with a re-share hint', async () => {
+    const fixture = makeFixture()
+    fixture.creatorShare.reverseRoomId = ''
+    fixture.creatorShare.reverseRoomSecret = ''
+    startPair(fixture, { reverse: true })
+    expect(() => puller!.start(fixture.creatorProject.id)).toThrowError(/re-share/)
   })
 
   it('an apply failure surfaces as a failed pull', async () => {

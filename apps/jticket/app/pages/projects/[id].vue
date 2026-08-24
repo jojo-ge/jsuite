@@ -211,8 +211,9 @@ async function removeProject() {
             </UTooltip>
             <!-- Share with a peer — jTicket sync's capability link (DOC-30) -->
             <ProjectShare :project="project" />
-            <!-- Imported shared project: pull the coworker's half on demand -->
-            <SyncPull v-if="project.share?.side === 'importer'" :project="project" />
+            <!-- Shared project: pull the coworker's half on demand — both
+                 sides pull since TICK-295 (each serves the other's direction) -->
+            <SyncPull v-if="project.share" :project="project" />
             <UButton
               icon="i-lucide-download"
               size="sm"
