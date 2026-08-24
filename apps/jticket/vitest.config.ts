@@ -20,7 +20,11 @@ export default defineConfig({
     testTimeout: 20_000,
     hookTimeout: 20_000,
     // Store modules resolve .data through @jsuite/data at import time, so every
-    // test runs against a throwaway data root instead of the real .data/.
+    // test runs against a throwaway data root instead of the real .data/. The
+    // setup file re-scopes it per worker so parallel test files never share a
+    // root (TICK-305); this env value is the fallback for anything reading it
+    // outside a worker.
     env: { JSUITE_DATA_DIR: join(tmpdir(), 'jticket-vitest-data') },
+    setupFiles: ['tests/setup/per-worker-data-dir.ts'],
   },
 })
