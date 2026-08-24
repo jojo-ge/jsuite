@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { api, ok } from './helpers'
 import { startInstance, type Instance } from './harness/instance'
 
 // The import screen's server half, across two real jTicket instances (spec
@@ -18,26 +19,10 @@ afterAll(async () => {
   await Promise.all([A?.dispose(), B?.dispose()])
 })
 
-async function api(instance: Instance, method: string, path: string, body?: unknown) {
-  const res = await fetch(`${instance.url}${path}`, {
-    method,
-    headers: { 'content-type': 'application/json' },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  const text = await res.text()
-  return { status: res.status, body: text ? JSON.parse(text) : undefined }
-}
-
-async function ok(instance: Instance, method: string, path: string, body?: unknown) {
-  const res = await api(instance, method, path, body)
-  if (res.status >= 400) throw new Error(`${method} ${path} → ${res.status}: ${JSON.stringify(res.body)}`)
-  return res.body
-}
-
 /** Share a fresh project on `instance` under `sharedKey` → the link's fragment. */
 async function shareOut(instance: Instance, title: string, sharedKey: string): Promise<string> {
   const project = await ok(instance, 'POST', '/api/projects', { title })
-  const { share } = await ok(instance, 'POST', `/api/projects/${project.id}/share`, { sharedKey })
+  const { share } = await ok(instance, 'POST', `/api/projects/${project.id}/share`, { sharedKey, peerName: 'Bo' })
   return share.link.split('#')[1]!
 }
 
@@ -64,7 +49,7 @@ describe('importing a share link across two instances', () => {
 
   it('re-importing a re-armed link lands on the same project with the fresh room', async () => {
     const projectA = await ok(A, 'POST', '/api/projects', { title: 'Search relaunch' })
-    const first = await ok(A, 'POST', `/api/projects/${projectA.id}/share`, { sharedKey: 'SRCH' })
+    const first = await ok(A, 'POST', `/api/projects/${projectA.id}/share`, { sharedKey: 'SRCH', peerName: 'Bo' })
     const imported = await ok(B, 'POST', '/api/shares/import', {
       fragment: first.share.link.split('#')[1]!,
       peerName: 'Ana',

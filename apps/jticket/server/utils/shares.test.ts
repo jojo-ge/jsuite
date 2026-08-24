@@ -128,6 +128,16 @@ describe('stop-sharing and re-sharing', () => {
     expect(again.revokedAt).toBeNull()
     expect(assertServable(again, '2026-08-24T15:00:00.000Z')).toBe(again)
   })
+
+  it("refuses to re-arm an imported share — the room is the creator's to rotate", () => {
+    const creator = state()
+    const share = createOrRearmShare(creator, 'proj_creator', 'CART', AT)
+    const blob = parseShareBlob(shareLink(share, 'http://localhost:43000').split('#')[1]!, AT)
+
+    const importer = state()
+    recordImportedShare(importer, blob, 'proj_importer', AT)
+    expect(() => createOrRearmShare(importer, 'proj_importer', 'CART', AT)).toThrowError(/creator/)
+  })
 })
 
 describe('shared key clashes (creator side)', () => {

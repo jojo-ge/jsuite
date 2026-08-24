@@ -1,4 +1,23 @@
 import type { LocalRelay } from '@jsuite/relay'
+import type { Instance } from './harness/instance'
+
+/** Raw HTTP call against a harness instance → { status, body } — for asserting refusals. */
+export async function api(instance: Instance, method: string, path: string, body?: unknown) {
+  const res = await fetch(`${instance.url}${path}`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const text = await res.text()
+  return { status: res.status, body: text ? JSON.parse(text) : undefined }
+}
+
+/** Like api, but throws on any 4xx/5xx — for steps that must succeed. */
+export async function ok(instance: Instance, method: string, path: string, body?: unknown) {
+  const res = await api(instance, method, path, body)
+  if (res.status >= 400) throw new Error(`${method} ${path} → ${res.status}: ${JSON.stringify(res.body)}`)
+  return res.body
+}
 
 /** Mint a room on the local relay → { roomId, secret }. */
 export async function createRoom(relay: LocalRelay): Promise<{ roomId: string; secret: string }> {

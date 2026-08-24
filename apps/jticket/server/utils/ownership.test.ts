@@ -12,6 +12,8 @@ import {
   projectMetadataError,
   projectMoveError,
   sharedTicketKey,
+  armCreatorShare,
+  type Owned,
   type ProjectShare,
 } from './ownership.ts'
 
@@ -138,4 +140,48 @@ test('a peer number never sets the pace for this side', () => {
   // Importer has minted far ahead; creator still just takes its own next odd.
   const tickets = [{ key: 'AB-2' }, { key: 'AB-100' }]
   assert.equal(sharedTicketKey(creatorShare, tickets), 'AB-1')
+})
+
+// ── Arming the creator side (TICK-302) ──────────────────────────────────────
+
+test('the first share arms project.share with the creator side and the peer name', () => {
+  const project: { share: ProjectShare | null } = { share: null }
+  armCreatorShare(project, 'AB', 'sam', [])
+  assert.deepEqual(project.share, { key: 'AB', side: 'creator', peerName: 'sam' })
+})
+
+test('arming stamps unstamped entities with the creator side', () => {
+  const project: { share: ProjectShare | null } = { share: null }
+  const preShare: Owned[] = [
+    { origin: '', owner: '' },
+    { origin: '', owner: '' },
+  ]
+  armCreatorShare(project, 'AB', 'sam', preShare)
+  for (const e of preShare) assert.deepEqual(e, { origin: 'creator', owner: 'creator' })
+})
+
+test('arming never touches stamped entities — the peer half survives a re-share', () => {
+  const project: { share: ProjectShare | null } = { share: creatorShare }
+  const peers: Owned = { origin: 'importer', owner: 'importer' }
+  const transferred: Owned = { origin: 'importer', owner: 'creator' }
+  armCreatorShare(project, 'AB', 'sam', [peers, transferred])
+  assert.deepEqual(peers, { origin: 'importer', owner: 'importer' })
+  assert.deepEqual(transferred, { origin: 'importer', owner: 'creator' })
+})
+
+test('re-arming an armed project keeps the share and refreshes only a given peer name', () => {
+  const project: { share: ProjectShare | null } = { share: { key: 'AB', side: 'creator', peerName: 'sam' } }
+  armCreatorShare(project, 'AB', '', [])
+  assert.deepEqual(project.share, { key: 'AB', side: 'creator', peerName: 'sam' })
+  armCreatorShare(project, 'AB', 'samantha', [])
+  assert.deepEqual(project.share, { key: 'AB', side: 'creator', peerName: 'samantha' })
+})
+
+test('re-arming still stamps entities the first arm missed — self-healing for pre-fix shares', () => {
+  // A share cut before arming existed: project.share armed later, entities from
+  // before the share still unstamped.
+  const project: { share: ProjectShare | null } = { share: { key: 'AB', side: 'creator', peerName: 'sam' } }
+  const legacy: Owned = { origin: '', owner: '' }
+  armCreatorShare(project, 'AB', '', [legacy])
+  assert.deepEqual(legacy, { origin: 'creator', owner: 'creator' })
 })

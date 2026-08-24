@@ -72,6 +72,12 @@ export function createOrRearmShare(
   }
   const existing = findShare(state, projectId)
   if (existing) {
+    // Only the side that made the share re-arms it: an importer-side record's
+    // room is the creator's to rotate — re-arming it here would kill the live
+    // room and hand out a link claiming the creator side.
+    if (existing.side !== 'creator') {
+      throw new Error('this project was imported from a share link — only its creator can re-share it')
+    }
     // Re-arm never renames: the key is the shared project's identity on both
     // machines, fixed when the share is first cut (DOC-30 lists only the room
     // and expiry as rotating).

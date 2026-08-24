@@ -93,6 +93,29 @@ export function projectMoveError(
   return 'entities cannot move into or out of a shared project — mint a new one there instead'
 }
 
+// Arming the creator side at share time — the share flow's half of the
+// partition (the importer's half is the import screen, which creates its
+// project already armed). The first share sets project.share; every share
+// stamps the entities that predate it, since unstamped ('') means minted on
+// this machine before the project was shared. Idempotent: an armed project
+// only has its peerName refreshed (when one is given), and stamped entities —
+// including the peer's after a sync — are never touched.
+export function armCreatorShare(
+  project: { share: ProjectShare | null },
+  key: string,
+  peerName: string,
+  entities: Iterable<Owned>,
+): void {
+  if (!project.share) project.share = { key, side: 'creator', peerName }
+  else if (peerName) project.share.peerName = peerName
+  for (const e of entities) {
+    if (!e.origin && !e.owner) {
+      e.origin = 'creator'
+      e.owner = 'creator'
+    }
+  }
+}
+
 // Next ticket key on a shared project: '<KEY>-<n>' where n follows the side's
 // parity — creator odd, importer even — so both machines mint identical keys
 // with zero coordination. Derived from the tickets already in the project (max
