@@ -44,12 +44,7 @@ export default defineEventHandler(async (event) => {
       attachmentRenames.set(name, renamed)
     }
   }
-  const fixAttachments = (text: string): string =>
-    attachmentRenames.size
-      ? text.replace(/\/attachments\/([\w.-]+)/g, (whole, n: string) =>
-          attachmentRenames.has(n) ? `/attachments/${attachmentRenames.get(n)}` : whole,
-        )
-      : text
+  const fixAttachments = (text: string): string => rewriteAttachmentUrls(text, attachmentRenames)
 
   // 2. Charts — into the shared jChart pool, suffixing colliding keys.
   const chartRenames = new Map<string, string>()

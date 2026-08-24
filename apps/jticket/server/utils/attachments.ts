@@ -1,12 +1,13 @@
-import { extname, basename } from 'node:path'
+import { extname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
+import { sanitizeAttachmentName } from './bundle'
 
 // Attachments live next to the store, in <monorepo root>/.data/jticket/attachments/.
 export const ATTACHMENTS_DIR = appDataFile('jticket', 'attachments')
 
 // Strip anything path-like or shell-unfriendly from a client-supplied name.
 export function safeAttachmentName(raw: string): string {
-  const name = basename(String(raw)).replace(/[^\w.-]+/g, '-').replace(/^[-.]+/, '')
+  const name = sanitizeAttachmentName(raw)
   if (!name) throw createError({ statusCode: 400, statusMessage: 'invalid attachment name' })
   return name
 }

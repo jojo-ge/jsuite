@@ -75,6 +75,21 @@ export function docMediaRefs(text: string): DocMediaRef[] {
   return [...out.values()]
 }
 
+/** Rewrite /attachments/<name> urls whose file was renamed on import/apply. */
+export function rewriteAttachmentUrls(text: string, renames: Map<string, string>): string {
+  if (!renames.size) return text
+  return text.replace(/\/attachments\/([\w.-]+)/g, (whole, name: string) =>
+    renames.has(name) ? `/attachments/${renames.get(name)}` : whole,
+  )
+}
+
+// Strip anything path-like or shell-unfriendly from a client-supplied file
+// name — the pure core of safeAttachmentName ('' instead of a 400 when
+// nothing survives), shared with the sync engine.
+export function sanitizeAttachmentName(raw: unknown): string {
+  return String(raw ?? '').split(/[\\/]/).pop()!.replace(/[^\w.-]+/g, '-').replace(/^[-.]+/, '')
+}
+
 /** Rewrite /api/media/<key>/… urls whose doc key was renamed on import. */
 export function rewriteDocMediaUrls(text: string, renames: Map<string, string>): string {
   if (!renames.size) return text
