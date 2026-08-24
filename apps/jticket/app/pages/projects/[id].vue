@@ -209,6 +209,8 @@ async function removeProject() {
                 <span class="truncate font-mono text-xs">{{ project.integrationBranch }}</span>
               </UButton>
             </UTooltip>
+            <!-- Share with a peer — jTicket sync's capability link (DOC-30) -->
+            <ProjectShare :project="project" />
             <UButton
               icon="i-lucide-download"
               size="sm"

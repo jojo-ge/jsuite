@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
 import type { ProjectShare, ShareSide } from './ownership'
+import type { Share } from './shares'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
@@ -176,6 +177,7 @@ export interface Store {
   docs: Doc[]
   prs: LocalPr[]
   repos: KnownRepo[] // repos used before — see rememberRepo
+  shares: Share[] // at most one per shared project — see shares.ts
   counters: { project: number; ticket: number; doc: number; pr: number }
 }
 
@@ -192,6 +194,7 @@ function emptyStore(): Store {
     docs: [],
     prs: [],
     repos: [],
+    shares: [],
     counters: { project: 0, ticket: 0, doc: 0, pr: 0 },
   }
 }
@@ -289,6 +292,8 @@ export function loadStore(): Store {
         defaultBranch: r.defaultBranch ?? '',
         lastUsedAt: r.lastUsedAt ?? '',
       })).filter((r) => r.path),
+      // Shares postdate everything else; absent = nothing shared yet.
+      shares: parsed.shares ?? [],
       counters: {
         project: parsed.counters?.project ?? 0,
         ticket: parsed.counters?.ticket ?? 0,
