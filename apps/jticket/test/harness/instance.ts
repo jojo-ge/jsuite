@@ -36,14 +36,21 @@ export async function startInstance({
 } = {}): Promise<Instance> {
   const port = await freePort()
   const dataDir = mkdtempSync(join(tmpdir(), `jticket-harness-${label}-`))
+  // pnpm run sets NODE_PATH to its hidden hoist dir, which would let the
+  // node-datachannel platform addon resolve from the workspace store even when
+  // the build didn't package it. Strip the inherited value so instances boot
+  // exactly like a deployed `node .output/server/index.mjs` from a clean shell
+  // (TICK-306); a test that passes its own NODE_PATH via `env` still wins.
+  const childEnv: Record<string, string | undefined> = { ...process.env }
+  delete childEnv.NODE_PATH
+  Object.assign(childEnv, {
+    PORT: String(port),
+    HOST: '127.0.0.1',
+    JSUITE_DATA_DIR: dataDir,
+    ...env,
+  })
   const child: ChildProcess = spawn('node', [serverEntry], {
-    env: {
-      ...process.env,
-      PORT: String(port),
-      HOST: '127.0.0.1',
-      JSUITE_DATA_DIR: dataDir,
-      ...env,
-    },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
