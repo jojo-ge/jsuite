@@ -150,9 +150,15 @@ importers:
       '@jsuite/herdr':
         specifier: workspace:*
         version: link:../../packages/herdr
+      '@jsuite/relay':
+        specifier: workspace:*
+        version: link:../../packages/relay
       '@nuxt/ui':
         specifier: ^4.10.0
         version: 4.10.0(f5be658b5235b3fae1af664a7143ebe0)
+      node-datachannel:
+        specifier: ^0.33.1
+        version: 0.33.1
       nuxt:
         specifier: ^4.5.0
         version: 4.5.1(@babel/plugin-syntax-jsx@7.29.7(@babel/core@7.29.7))(@babel/plugin-syntax-typescript@7.29.7(@babel/core@7.29.7))(@types/node@26.1.2)(@vue/compiler-sfc@3.5.40)(db0@0.3.4)(esbuild@0.28.1)(ioredis@5.11.1)(lightningcss@1.33.0)(magicast@0.5.3)(oxc-parser@0.140.0)(rollup-plugin-visualizer@7.0.1(rolldown@1.2.1)(rollup@4.62.3))(rollup@4.62.3)(srvx@0.12.5)(terser@5.49.0)(typescript@7.0.2)(vite@8.2.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(yaml@2.9.0))(vue-tsc@3.3.9(typescript@7.0.2))(yaml@2.9.0)
@@ -1089,6 +1095,50 @@ packages:
     peerDependencies:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.3
       '@emnapi/runtime': ^1.7.1 || ^2.0.0-alpha.3
+
+  '@node-datachannel/darwin-arm64@0.33.1':
+    resolution: {integrity: sha512-6reyGKzuYNzuJypm4KrpJVTpION39rZmLoqDNMiehTVuSZzV1yoYyLHCzJ9XNVpOViGdaUvAWXJTlHcoQOZtrw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@node-datachannel/darwin-x64@0.33.1':
+    resolution: {integrity: sha512-1zXH/E79bswwRfbUwilw9iPNCCI4GLul/xxsjx/H7jbPT9SeMgkHKcx7Emuw91NBeYYPvYSYwQ705h4FTVDxow==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@node-datachannel/linux-arm64-gnu@0.33.1':
+    resolution: {integrity: sha512-FriA+y9cKnr9shQaNz4AdqkaNb7yqBcj1U/OgAlLvJtY/mJLvRX7R3iic18aUA5BkMMK+wwqBI/0Al3brxdRAw==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-arm64-musl@0.33.1':
+    resolution: {integrity: sha512-MGtNFlIZ5b9sRBDFD3xS3oAhmAxJyEDrrhuUUEtR4Z4boSGOIzg0IiE5YQalmG7XgpMe0cxigBBTJitDczYyNQ==}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/linux-x64-gnu@0.33.1':
+    resolution: {integrity: sha512-0mTxq+0fYatoQ/7y9uMLDSRbnb0/Vrrl1Fhsuys8PfB06ft3IA8+6/qdFgRriHbCNkCkB3mSvWEIjCVjXuPr1A==}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@node-datachannel/linux-x64-musl@0.33.1':
+    resolution: {integrity: sha512-LSIdM/tpdwy8d+pN7Vj5Dd4kU3vtdh1PKzz8MYPEPKpv2If5gBydA9pvmGDldiyn07Ijj1TrIQhV+1ozGBm0dw==}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@node-datachannel/win32-arm64-msvc@0.33.1':
+    resolution: {integrity: sha512-uERR6Zz3wqLnOhBe1YRFodFSD9c7N3aM2Upe/z7miR7F8sprLr00+SkrTXZ+RayW8BN+xDtZRKFYYROvuJy/ug==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@node-datachannel/win32-x64-msvc@0.33.1':
+    resolution: {integrity: sha512-i5c3t+hDz6oNcen8aQZetxtAfYnNeUEND67oJrnAL8qQFzaRv6wKO5Q7G1vpjzQUyC54xe6s4oD8uuVo2sKPzA==}
+    cpu: [x64]
+    os: [win32]
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -4625,6 +4675,10 @@ packages:
       xml2js:
         optional: true
 
+  node-datachannel@0.33.1:
+    resolution: {integrity: sha512-9oryOvUx2WqOmMUQ+JHyCx9w9UPBLGQcZQNcSYDc1LZS/hFSAqDyIRt6b5H5Ue13Gpe/vTjU8y9UvCBrbwpbAQ==}
+    engines: {node: '>=18.20.0'}
+
   node-fetch-native@1.6.7:
     resolution: {integrity: sha512-g9yhqoedzIUm0nTnTqAQvueMPVOuIY16bqgAJJC8XOOubYFNwz6IER9qs0Gq2Xd0+CecCKFjtdDTMA4u4xG06Q==}
 
@@ -7175,6 +7229,30 @@ snapshots:
       '@emnapi/core': 2.0.0-alpha.3
       '@emnapi/runtime': 2.0.0-alpha.3
       '@tybys/wasm-util': 0.10.3
+    optional: true
+
+  '@node-datachannel/darwin-arm64@0.33.1':
+    optional: true
+
+  '@node-datachannel/darwin-x64@0.33.1':
+    optional: true
+
+  '@node-datachannel/linux-arm64-gnu@0.33.1':
+    optional: true
+
+  '@node-datachannel/linux-arm64-musl@0.33.1':
+    optional: true
+
+  '@node-datachannel/linux-x64-gnu@0.33.1':
+    optional: true
+
+  '@node-datachannel/linux-x64-musl@0.33.1':
+    optional: true
+
+  '@node-datachannel/win32-arm64-msvc@0.33.1':
+    optional: true
+
+  '@node-datachannel/win32-x64-msvc@0.33.1':
     optional: true
 
   '@nodelib/fs.scandir@2.1.5':
@@ -11439,6 +11517,19 @@ snapshots:
       - uploadthing
       - vite
       - webpack
+
+  node-datachannel@0.33.1:
+    dependencies:
+      detect-libc: 2.1.2
+    optionalDependencies:
+      '@node-datachannel/darwin-arm64': 0.33.1
+      '@node-datachannel/darwin-x64': 0.33.1
+      '@node-datachannel/linux-arm64-gnu': 0.33.1
+      '@node-datachannel/linux-arm64-musl': 0.33.1
+      '@node-datachannel/linux-x64-gnu': 0.33.1
+      '@node-datachannel/linux-x64-musl': 0.33.1
+      '@node-datachannel/win32-arm64-msvc': 0.33.1
+      '@node-datachannel/win32-x64-msvc': 0.33.1
 
   node-fetch-native@1.6.7: {}
 

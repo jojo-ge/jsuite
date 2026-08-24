@@ -2,6 +2,8 @@
 // between the (at most two) members of a room. Data-blind: it never parses a
 // blob, and durable storage holds room metadata only — never blob contents.
 
+import { CLOSE_REASONS } from './closeCodes.mjs'
+
 const ROOM_TTL_MS = 2 * 60 * 60 * 1000
 
 async function sha256hex(text) {
@@ -91,7 +93,7 @@ export class RelayRoom {
     await this.state.storage.put('meta', meta)
     for (const member of this.members) {
       try {
-        member.close(4005, 'room killed')
+        member.close(4005, CLOSE_REASONS[4005])
       } catch {}
     }
     this.members = []
@@ -110,23 +112,23 @@ export class RelayRoom {
 
     // Refusals accept the socket, then close with an application code the
     // client can observe (an HTTP error on upgrade surfaces codeless).
-    const refuse = (code, reason) => {
-      server.close(code, reason)
+    const refuse = (code) => {
+      server.close(code, CLOSE_REASONS[code])
       return new Response(null, { status: 101, webSocket: client })
     }
 
     const meta = await this.state.storage.get('meta')
-    if (!meta) return refuse(4001, 'unknown room')
+    if (!meta) return refuse(4001)
 
-    if (meta.killed) return refuse(4005, 'room killed')
+    if (meta.killed) return refuse(4005)
 
-    if (!(await secretMatches(new URL(request.url), meta))) return refuse(4002, 'wrong secret')
+    if (!(await secretMatches(new URL(request.url), meta))) return refuse(4002)
 
     // Expiry gates new joins only — members already connected keep ferrying,
     // so an in-flight pull completes.
-    if (Date.now() > meta.expiresAt) return refuse(4004, 'room expired')
+    if (Date.now() > meta.expiresAt) return refuse(4004)
 
-    if (this.members.length >= 2) return refuse(4003, 'room full')
+    if (this.members.length >= 2) return refuse(4003)
 
     this.members.push(server)
 

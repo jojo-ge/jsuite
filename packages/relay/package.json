@@ -3,13 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Signaling relay for jTicket sync — a Cloudflare Worker (Durable Objects) that ferries opaque WebRTC handshake blobs between the two members of a room and stores nothing else.",
+  "description": "Signaling relay for jTicket sync \u2014 a Cloudflare Worker (Durable Objects) that ferries opaque WebRTC handshake blobs between the two members of a room and stores nothing else.",
   "main": "./index.mjs",
   "types": "./index.d.ts",
   "exports": {
     ".": {
       "types": "./index.d.ts",
       "default": "./index.mjs"
+    },
+    "./codes": {
+      "types": "./codes.d.ts",
+      "default": "./src/closeCodes.mjs"
     },
     "./package.json": "./package.json"
   },
