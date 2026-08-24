@@ -85,6 +85,8 @@ export default defineEventHandler(async (event) => {
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
     // Starring is a local "what's on deck" flag, so it doesn't travel.
     starred: false,
+    // A bundle import is a plain copy, not a sync share — local-only.
+    share: null,
     createdAt: bundle.project.createdAt || ts,
     updatedAt: bundle.project.updatedAt || ts,
   }
@@ -117,11 +119,15 @@ export default defineEventHandler(async (event) => {
           author: c.author?.trim() || 'anonymous',
           body: fixAttachments(String(c.body)),
           createdAt: c.createdAt || ts,
+          origin: '' as const,
+          owner: '' as const,
         })),
       branch: typeof t.branch === 'string' ? t.branch.trim() : '',
       // The bundle carries the original completion stamp; bundles exported
       // before completedAt existed fall back to updatedAt, as loadStore does.
       completedAt: isFinishedStatus(t.status) ? (t.completedAt ?? t.updatedAt ?? ts) : null,
+      origin: '',
+      owner: '',
       createdAt: t.createdAt || ts,
       updatedAt: t.updatedAt || ts,
     }
@@ -170,6 +176,8 @@ export default defineEventHandler(async (event) => {
       projectId: project.id,
       labels: cleanLabels(record.labels),
       status: isDocStatus(record.status) ? record.status : 'draft',
+      origin: '',
+      owner: '',
       createdAt: record.createdAt || ts,
       updatedAt: record.updatedAt || ts,
     }

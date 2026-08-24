@@ -52,6 +52,9 @@ const project = computed(() =>
 // A ticket is "in wayfinder mode" when its project is a wayfinder effort — then
 // the sub-type and resolution controls appear.
 const isWayfinder = computed(() => project.value?.mode === 'wayfinder' || !!(live.value && wayfinderType(live.value)))
+// Peer-owned = the other side of a shared project's ticket — badged with the
+// peer's name; the API refuses writes and dispatch on it.
+const peerName = computed(() => (live.value ? peerNameOf(live.value, project.value) : null))
 const wfMeta = computed(() => {
   const wt = live.value ? wayfinderType(live.value) : null
   return wt ? WAYFINDER_TYPE_META[wt] : null
@@ -130,6 +133,9 @@ const statusOptions = [
       <div v-if="mode === 'view' && live" class="space-y-6">
         <div>
           <div class="flex flex-wrap items-center gap-2">
+            <UBadge v-if="peerName" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
+              {{ peerName }} · read-only
+            </UBadge>
             <UBadge v-if="wfMeta" :color="wfMeta.color" variant="subtle" size="sm" :icon="wfMeta.icon">
               {{ wfMeta.label }}
             </UBadge>
@@ -237,6 +243,9 @@ const statusOptions = [
             <li v-for="c in comments" :key="c.id" class="group rounded-lg border border-default px-3 py-2.5">
               <div class="flex items-center gap-2 text-xs text-muted">
                 <span class="font-medium text-default">{{ c.author }}</span>
+                <UBadge v-if="peerNameOf(c, project)" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
+                  {{ peerNameOf(c, project) }}
+                </UBadge>
                 <span>{{ c.createdAt.slice(0, 10) }} {{ c.createdAt.slice(11, 16) }}</span>
                 <UButton
                   icon="i-lucide-x"

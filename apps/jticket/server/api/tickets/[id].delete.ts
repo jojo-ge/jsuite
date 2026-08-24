@@ -4,6 +4,12 @@ export default defineEventHandler((event) => {
   const ticket = store.tickets.find((t) => t.id === id || t.key === id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
 
+  // Peer-owned tickets only ever leave by sync (deletion by absence), never
+  // by a local delete.
+  const project = store.projects.find((p) => p.id === ticket.projectId)
+  const refused = peerWriteError(ticket, project?.share)
+  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+
   store.tickets = store.tickets.filter((t) => t.id !== ticket.id)
   // Clean up dangling blocked-by edges pointing at the deleted ticket.
   for (const t of store.tickets) {

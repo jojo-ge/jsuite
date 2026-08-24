@@ -25,6 +25,12 @@ const moved = computed(() => !!changed.value[props.ticket.id])
 const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
 const diffUrl = computed(() => ticketDiffUrl(props.ticket, projects.value, prs.value, jdiffBase))
 
+// Peer-owned = the other side of a shared project's ticket: visibly badged
+// with the peer's name (the API refuses writes and dispatch on it anyway).
+const peerName = computed(() =>
+  peerNameOf(props.ticket, projects.value.find((p) => p.id === props.ticket.projectId)),
+)
+
 const blocked = computed(() => isBlocked(props.ticket, props.tickets))
 // Frontier highlighting is independent of wayfinder mode — every board groups by
 // flow state, so the takeable edge is worth ringing everywhere. The wayfinder
@@ -76,6 +82,9 @@ const ring = computed(() => {
           </UBadge>
           <UBadge v-if="archMeta" :color="archMeta.color" variant="subtle" size="sm" :icon="archMeta.icon">
             {{ archMeta.label }}
+          </UBadge>
+          <UBadge v-if="peerName" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
+            {{ peerName }}
           </UBadge>
           <UBadge :color="ticket.type === 'HITL' ? 'warning' : 'neutral'" variant="subtle" size="sm">
             {{ ticket.type }}

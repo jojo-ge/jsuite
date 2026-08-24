@@ -31,6 +31,7 @@ export default defineEventHandler(async (event) => {
     repo: probe.path,
     integrationBranch: '',
     starred: false,
+    share: null,
     createdAt: ts,
     updatedAt: ts,
   }
@@ -60,6 +61,8 @@ export default defineEventHandler(async (event) => {
     comments: [],
     branch: '',
     completedAt: null,
+    origin: '',
+    owner: '',
     createdAt: ts,
     updatedAt: ts,
   }

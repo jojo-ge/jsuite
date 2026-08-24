@@ -1,6 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
+import type { ProjectShare, ShareSide } from './ownership'
+
+export type { ProjectShare, ShareSide } from './ownership'
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type TicketType = 'AFK' | 'HITL'
@@ -51,6 +54,10 @@ export interface Project {
   // project is unaffected — its tickets still appear on /running, /finished
   // and the board.
   starred: boolean
+  // Two-party sync (spec DOC-30): null = local-only, and everything behaves
+  // exactly as before. When set, the project's entities are partitioned by
+  // owner side and the peer's half is read-only here — see ownership.ts.
+  share: ProjectShare | null
   createdAt: string
   updatedAt: string
 }
@@ -63,6 +70,11 @@ export interface TicketComment {
   author: string // free-form name, same convention as assignee
   body: string // GFM markdown
   createdAt: string
+  // Which side of a shared project wrote this comment ('' on local-only
+  // projects). Comment sets merge per ticket during sync — each side may
+  // comment on any ticket, but only its own comments are its to delete.
+  origin: ShareSide | ''
+  owner: ShareSide | ''
 }
 
 export interface Ticket {
@@ -88,6 +100,13 @@ export interface Ticket {
   // separate from updatedAt, which any edit bumps — this is what /finished
   // orders by. Never set directly by callers; see stampCompletion.
   completedAt: string | null
+  // Ownership on a shared project ('' / '' on local-only ones). `origin` is
+  // the side that minted the ticket — immutable, it fixes the key's parity;
+  // `owner` is whose half it lives in now (mutable only by ownership
+  // transfer). Peer-owned = read-only and undispatchable here. Stamped at
+  // creation (entityOwnership), never writable through PATCH.
+  origin: ShareSide | ''
+  owner: ShareSide | ''
   createdAt: string
   updatedAt: string
 }
@@ -105,6 +124,10 @@ export interface Doc {
   projectId: string | null // optional parent project
   labels: string[]
   status: DocStatus
+  // Ownership on a shared project ('' / '' on local-only ones) — same
+  // partition as tickets, minus transfer (docs never change sides).
+  origin: ShareSide | ''
+  owner: ShareSide | ''
   createdAt: string
   updatedAt: string
 }
@@ -222,6 +245,8 @@ export function loadStore(): Store {
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
         starred: p.starred ?? false,
+        // Projects predating (or never entering) sync are local-only.
+        share: p.share ?? null,
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -232,13 +257,21 @@ export function loadStore(): Store {
         assignee: t.assignee ?? '',
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
-        comments: t.comments ?? [],
+        // Entities predating sync are unowned ('') — local, editable here.
+        comments: (t.comments ?? []).map((c) => ({ ...c, origin: c.origin ?? '', owner: c.owner ?? '' })),
         branch: t.branch ?? '',
         completedAt: t.completedAt ?? (isFinishedStatus(t.status) ? t.updatedAt : null),
+        origin: t.origin ?? '',
+        owner: t.owner ?? '',
       })),
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).
-      docs: (parsed.docs ?? []).map((d) => ({ ...d, documentKey: d.documentKey ?? '' })),
+      docs: (parsed.docs ?? []).map((d) => ({
+        ...d,
+        documentKey: d.documentKey ?? '',
+        origin: d.origin ?? '',
+        owner: d.owner ?? '',
+      })),
       // Local PRs postdate everything else; absent = none yet.
       prs: (parsed.prs ?? []).map((pr) => ({
         ...pr,

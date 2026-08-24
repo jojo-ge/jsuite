@@ -21,6 +21,13 @@ export default defineEventHandler(async (event) => {
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
+
+  // Hard invariant (spec DOC-30): no remote-originated content ever reaches a
+  // dispatch endpoint. A peer-owned ticket is refused here at the API — if its
+  // work is yours to do, mint your own ticket (a human rewrite in between).
+  const refused = peerDispatchError(ticket, project.share)
+  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+
   const cwd = resolveRepoDir(project.repo)
 
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)

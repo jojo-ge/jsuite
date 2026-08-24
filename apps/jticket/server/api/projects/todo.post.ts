@@ -26,6 +26,7 @@ export default defineEventHandler(async (event) => {
     integrationBranch: '',
     // Never starred: /next is for dispatchable work, todos are grilled instead.
     starred: false,
+    share: null,
     createdAt: ts,
     updatedAt: ts,
   }

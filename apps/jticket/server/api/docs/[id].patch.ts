@@ -10,6 +10,12 @@ export default defineEventHandler(async (event) => {
   const doc = store.docs.find((d) => d.id === id || d.key === id)
   if (!doc) throw createError({ statusCode: 404, statusMessage: 'doc not found' })
 
+  // The peer's half of a shared project is read-only here — sync is the only
+  // writer. Refused at the API, not just hidden in the UI.
+  const docProject = store.projects.find((p) => p.id === doc.projectId)
+  const refused = peerWriteError(doc, docProject?.share)
+  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+
   if (body.title !== undefined) doc.title = String(body.title).trim()
   if (body.labels !== undefined) doc.labels = cleanLabels(body.labels)
   if (body.status !== undefined) {
@@ -20,13 +26,18 @@ export default defineEventHandler(async (event) => {
   }
   const ref = body.project !== undefined ? body.project : body.projectId
   if (ref !== undefined) {
-    if (ref === null || ref === '') {
-      doc.projectId = null
-    } else {
-      const project = findProjectRef(store, ref)
-      if (!project) throw createError({ statusCode: 400, statusMessage: `unknown project: ${ref}` })
-      doc.projectId = project.id
+    let target: Project | null = null
+    if (ref !== null && ref !== '') {
+      target = findProjectRef(store, ref) ?? null
+      if (!target) throw createError({ statusCode: 400, statusMessage: `unknown project: ${ref}` })
     }
+    // An actual move across the share boundary would smuggle in an unstamped
+    // entity — see projectMoveError. Same-project no-ops pass.
+    if ((target?.id ?? null) !== doc.projectId) {
+      const moveRefused = projectMoveError(docProject?.share, target?.share)
+      if (moveRefused) throw createError({ statusCode: 403, statusMessage: moveRefused })
+    }
+    doc.projectId = target?.id ?? null
   }
 
   if (body.documentKey !== undefined) {

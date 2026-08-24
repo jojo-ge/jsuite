@@ -4,6 +4,15 @@ export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect'
+export type ShareSide = 'creator' | 'importer'
+
+// Two-party sync (see server/utils/ownership.ts): which side this machine is
+// and who the other participant is. null = local-only project.
+export interface ProjectShare {
+  key: string
+  side: ShareSide
+  peerName: string
+}
 
 export interface Project {
   id: string
@@ -19,6 +28,7 @@ export interface Project {
   // Starred = on deck: only starred projects surface on /next. Tickets are
   // unaffected everywhere else (/running, /finished, the board).
   starred: boolean
+  share: ProjectShare | null
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,
@@ -33,6 +43,8 @@ export interface TicketComment {
   author: string
   body: string
   createdAt: string
+  origin: ShareSide | ''
+  owner: ShareSide | ''
 }
 
 export interface Ticket {
@@ -54,6 +66,10 @@ export interface Ticket {
   // When the ticket last became done; null while unfinished. Stamped by the
   // server on the status change, not by callers — see /finished.
   completedAt: string | null
+  // Which half of a shared project it belongs to ('' on local-only projects).
+  // Peer-owned tickets are read-only and undispatchable — see peerNameOf.
+  origin: ShareSide | ''
+  owner: ShareSide | ''
   createdAt: string
   updatedAt: string
   // Derived flags the GET endpoints attach (never persisted). Optional so a
@@ -97,6 +113,8 @@ export interface Doc {
   projectId: string | null
   labels: string[]
   status: DocStatus
+  origin: ShareSide | ''
+  owner: ShareSide | ''
   createdAt: string
   updatedAt: string
 }
@@ -235,6 +253,20 @@ export const STATUS_META: Record<TicketStatus, { label: string; color: 'neutral'
 // isFinishedStatus, used everywhere that used to ask `status === 'done'`.
 export function isFinished(status: TicketStatus): boolean {
   return status === 'done' || status === 'merged'
+}
+
+// ── Shared-project ownership ──
+// The peer's display name when the entity belongs to the other side of its
+// shared project, null otherwise — the client twin of the server's
+// isPeerOwned. Non-null means the entity is read-only here (the API refuses
+// writes and dispatch) and the UI badges it with this name.
+export function peerNameOf(
+  entity: { owner: ShareSide | '' },
+  project: Pick<Project, 'share'> | null | undefined,
+): string | null {
+  const share = project?.share
+  if (!share || !entity.owner || entity.owner === share.side) return null
+  return share.peerName
 }
 
 // ── The merge sweep ──
