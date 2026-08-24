@@ -217,8 +217,9 @@ export default defineEventHandler(async (event) => {
 
   // 7. Doc media bytes — into the documents media store, under each doc's
   // final (possibly renamed) key. The bundle's bytes win over whatever a stale
-  // media dir holds (deleteDoc never removes media/, so a renamed key can land
-  // on leftovers): the doc body they belong to was just written from the bundle.
+  // media dir holds (deleteDoc removes media/ now, but dirs deleted before it
+  // did — or written outside deleteDoc — can linger): the doc body they belong
+  // to was just written from the bundle.
   for (const m of bundle.media ?? []) {
     const buf = Buffer.from(String(m.base64 ?? ''), 'base64')
     if (!buf.length) continue
