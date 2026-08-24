@@ -23,6 +23,13 @@ export interface DialOptions {
   echo?: boolean
   /** STUN/TURN servers; defaults to none (host candidates — fine locally). */
   iceServers?: string[]
+  /**
+   * Local address to bind ICE to. Unset, libjuice gathers the machine's real
+   * interfaces (VPN subnets, rotating IPv6 privacy addresses) and skips
+   * loopback — self-connections over those can intermittently die with
+   * EADDRNOTAVAIL mid-DTLS. Tests bind 127.0.0.1 to stay off real interfaces.
+   */
+  bindAddress?: string
 }
 
 export interface PeerStatus {
@@ -32,6 +39,14 @@ export interface PeerStatus {
   reason: string
   /** Messages received over the data channel so far, in order. */
   received: string[]
+  /**
+   * True once the signaling socket's close handshake has completed. The relay
+   * frees the room's member slot when it processes that close, and the close
+   * ack reaches us after that in every observed ordering (though no spec
+   * guarantees it) — so gate a re-dial of the same room on this, paired with a
+   * retry for the rare miss.
+   */
+  signalingClosed: boolean
 }
 
 export interface PeerManager {
@@ -60,6 +75,7 @@ interface Peer {
   pc: PeerConnection
   dc: DataChannel | null
   ws: WebSocket
+  signalingClosed: boolean
   /** Candidates that arrived before the remote description — applied after. */
   pendingCandidates: Array<{ candidate: string; mid: string }>
   haveRemoteDescription: boolean
@@ -72,13 +88,13 @@ export function createPeerManager(): PeerManager {
 
   function dial(options: DialOptions): { id: string } {
     const id = `peer_${nextId++}`
-    const { relayUrl, roomId, secret, initiator, echo = false, iceServers = [] } = options
+    const { relayUrl, roomId, secret, initiator, echo = false, iceServers = [], bindAddress } = options
 
     const wsUrl = new URL(`/rooms/${roomId}/ws`, relayUrl)
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
     wsUrl.searchParams.set('secret', secret)
 
-    const pc = new PeerConnection(id, { iceServers })
+    const pc = new PeerConnection(id, { iceServers, ...(bindAddress ? { bindAddress } : {}) })
     const ws = new WebSocket(wsUrl)
     const peer: Peer = {
       id,
@@ -88,6 +104,7 @@ export function createPeerManager(): PeerManager {
       pc,
       dc: null,
       ws,
+      signalingClosed: false,
       pendingCandidates: [],
       haveRemoteDescription: false,
     }
@@ -168,6 +185,7 @@ export function createPeerManager(): PeerManager {
       }
     })
     ws.addEventListener('close', (event) => {
+      peer.signalingClosed = true
       const refusal = RELAY_CLOSE_REASONS[event.code]
       if (refusal) fail(`relay refused: ${refusal}`)
       else if (peer.state === 'connecting') fail('signaling socket closed before the channel opened')
@@ -202,8 +220,8 @@ export function createPeerManager(): PeerManager {
     get(id) {
       const peer = peers.get(id)
       if (!peer) return undefined
-      const { state, reason, received } = peer
-      return { id, state, reason, received: [...received] }
+      const { state, reason, received, signalingClosed } = peer
+      return { id, state, reason, received: [...received], signalingClosed }
     },
     send(id, data) {
       const peer = mustGet(id)
