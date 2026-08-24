@@ -1,34 +1,14 @@
 <script setup lang="ts">
 // The serving side's pending pull approvals for one project (jTicket sync,
-// DOC-30): every pull is approved by a human, per pull. Pending requests are
-// in-memory on the server, so this polls rather than riding the store's SSE.
-// The requester name is this machine's own record of the coworker
-// (project.share.peerName) — never text the peer sent over the wire.
-import type { PendingPullView } from '~~/server/utils/syncServe'
-
+// DOC-30): every pull is approved by a human, per pull. Polling and the
+// requester-name rule (project.share.peerName, never wire text) live in
+// usePendingPulls, shared with the header's global indicator.
 const props = defineProps<{ projectId: string }>()
 
 const toast = useToast()
-const pulls = ref<PendingPullView[]>([])
+const { pulls: allPulls, poll } = usePendingPulls(2000)
+const pulls = computed(() => allPulls.value.filter((p) => p.projectId === props.projectId))
 const busy = ref('')
-let timer: ReturnType<typeof setInterval> | undefined
-
-async function poll() {
-  try {
-    const res = await $fetch<{ pulls: PendingPullView[] }>('/api/sync/pulls')
-    pulls.value = res.pulls.filter((p) => p.projectId === props.projectId)
-  } catch {
-    pulls.value = []
-  }
-}
-
-onMounted(() => {
-  poll()
-  timer = setInterval(poll, 2000)
-})
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-})
 
 async function answer(id: string, action: 'approve' | 'deny') {
   if (busy.value) return
