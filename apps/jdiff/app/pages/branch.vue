@@ -365,7 +365,7 @@ async function createPr() {
         </template>
         <button
           class="rate-btn run-all"
-          :title="anyPending ? 'stop the run' : 'one claude run generates reviewability, risk heatmap, guided tour, and ask yourself'"
+          :title="anyPending ? 'stop the run' : 'one herdr claude session (opus 5) generates reviewability, risk heatmap, guided tour, ask yourself, and findings'"
           @click="anyPending ? cancelAllTools() : runAllTools()"
         >
           <span v-if="anyPending" class="spinner small" />

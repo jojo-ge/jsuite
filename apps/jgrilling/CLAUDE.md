@@ -14,9 +14,9 @@ Rules that matter here:
   `.data/jgrilling/<key>.json` for `turns[-1].answer`; the app must never
   buffer state elsewhere or delay the `writeGrill` after an answer. The app
   writes answers, the API writes questions/finish — no other writers.
-- The app runs **no claude** — don't reintroduce `@jsuite/claude` here. If a
-  feature seems to need the app to think, it belongs in the interviewer's
-  skill instead.
+- The app runs **no claude** — don't add a claude runner here. If a feature
+  seems to need the app to think, it belongs in the interviewer's skill
+  instead.
 - Question bodies are blocks: materialise them with the shared
   `materialiseBlocks` (per-turn pseudo doc key `<sessionKey>-<turnId>`) so
   mermaid/charts land in the jChart pool — don't store raw mermaid on turns.

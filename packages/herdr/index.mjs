@@ -223,8 +223,10 @@ async function clientBundleId() {
  * names must be unique) and submit the prompt. Returns the name that stuck.
  * `agent start` blocks until herdr sees the agent ready (~seconds), so the
  * endpoint that calls this is a slow button, not a fire-and-forget.
+ * `opts.args` are extra CLI args for the claude binary itself (herdr passes
+ * everything after `--` through) — e.g. ['--model', 'claude-opus-5'].
  */
-export async function startClaudeIn(paneId, name, prompt) {
+export async function startClaudeIn(paneId, name, prompt, opts = {}) {
   const base = name.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[^a-z]+/, 'a').slice(0, 28)
   const live = new Set(
     ((await herdrJson(['agent', 'list']))?.result?.agents ?? [])
@@ -240,7 +242,10 @@ export async function startClaudeIn(paneId, name, prompt) {
   const deadline = Date.now() + 10_000
   for (;;) {
     try {
-      await herdrJson(['agent', 'start', agentName, '--kind', 'claude', '--pane', paneId])
+      await herdrJson([
+        'agent', 'start', agentName, '--kind', 'claude', '--pane', paneId,
+        ...(opts.args?.length ? ['--', ...opts.args] : []),
+      ])
       break
     } catch (err) {
       const msg = String(err?.message ?? err)

@@ -13,8 +13,8 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@jsuite/claude": "workspace:*",
     "@jsuite/data": "workspace:*",
+    "@jsuite/herdr": "workspace:*",
     "marked": "^18.0.6",
     "nuxt": "^4.4.8",
     "parse-diff": "^0.12.0",

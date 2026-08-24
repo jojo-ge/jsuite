@@ -40,6 +40,6 @@ export default defineEventHandler(async (event) => {
     base,
     created: !existed,
     adopted: existed,
-    jdiffUrl: jdiffBranchUrl(path, branch),
+    jdiffUrl: jdiffBranchUrl(path, branch, base),
   }
 })

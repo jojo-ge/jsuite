@@ -7,7 +7,8 @@ import type { Project, Ticket } from '~/composables/useTracker'
 
 useHead({ title: 'Running now' })
 
-const { projects, tickets } = useTracker()
+// Codebase-scoped, like every list page — the raw arrays stay in useTracker.
+const { scopedProjects: projects, scopedTickets: tickets } = useCodebase()
 const { openEditTicket, onDeleteTicket } = useTrackerModals()
 
 function byKey(a: Ticket, b: Ticket) {

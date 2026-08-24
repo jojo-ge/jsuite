@@ -43,7 +43,15 @@ never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
 anything, query the board), `to-jspec` (write a spec as a doc — block format),
 `to-jdoc` (draft a doc page locally), `jwayfinder` (map work too big for one
 session as investigation tickets), `jimplement` (claim a ticket, build it,
-record the outcome).
+record the outcome). It also hosts **architect-mode projects** — the projects
+page's Improve-architecture button (or `POST /api/projects/architect`) scans
+the selected codebase for deepening opportunities: `/jarchitect-scan` fills
+the board with graded HITL candidate tickets (`arch:strong` /
+`arch:worth-exploring` / `arch:speculative`, one `arch:top-pick`) plus an
+assessment spec with before/after jChart diagrams; a candidate's herdr button
+dispatches its go/no-go grilling (`/jarchitect-grill`, answered in jGrilling)
+and finishes the ticket — the grilling hardens it into an
+implementation-ready spec doc.
 
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR
@@ -108,14 +116,20 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
   `server/api/documents/**` over `.data/jexplain/`, so a jTicket doc is the
   same object jExplain renders — one document system serving both apps, notes
   included.
-- **One claude runner**: `@jsuite/claude` (plain ESM package) drives the local
-  `claude` CLI headlessly — streamed progress, tool allowlists, timeouts,
-  cancellation. jDiff's review tools and jMap's scoping/synthesis passes run
-  on it.
 - **One herdr adapter**: `@jsuite/herdr` (plain ESM package) dispatches whole
   terminal claude sessions into the herdr workspace manager — workspaces, panes
-  packed 2×2 per tab, agent start + prompt with the retry dances, all
-  `--no-focus`. jTicket dispatches ticket work; jMap dispatches domain mappers.
+  packed 2×2 per tab, agent start + prompt with the retry dances, model
+  overrides via agent args. jTicket dispatches ticket work; jMap dispatches
+  domain mappers; jDiff dispatches its review-guidance sessions (the
+  `jdiff-review`/`jdiff-ask` skills, pinned to Opus 5) — no app runs a
+  headless claude of its own.
+- **jTicket ↔ jDiff reviews**: jTicket deep-links every branch/PR into jDiff
+  (finished tickets and merged local PRs link to their exact squash diff), and
+  its Run-review buttons proxy to jDiff's `POST /api/analyze-dispatch` with
+  `ticket=`/`project=` context. The dispatched `jdiff-review` session then
+  reports its findings back into jTicket: an integration-branch review files
+  `review:finding` tickets in the project; a single ticket's branch review
+  posts a comment on that ticket.
 - **Notes loop everywhere**: jChart and jExplain keep human feedback in
   `<key>.notes.json` sidecars — the human annotates in the browser, Claude reads
   the sidecar and acts on it.
@@ -136,6 +150,7 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
 | be grilled about a plan, answering in a UI | `j-grilling` |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
+| find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
 `./jsuite start` (it refuses ports held by processes it didn't launch — a stale

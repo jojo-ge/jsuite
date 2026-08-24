@@ -1,7 +1,10 @@
 <script setup lang="ts">
 useHead({ title: 'Board' })
 
-const { projects, tickets, docs } = useTracker()
+// The raw ticket array still backs blocked/frontier arithmetic (blockedBy can
+// cross scopes); everything rendered comes from the codebase-scoped views.
+const { tickets } = useTracker()
+const { scopedProjects: projects, scopedTickets, scopedDocs: docs, todoProject, todoTickets } = useCodebase()
 const {
   openNewTicket,
   openEditTicket,
@@ -12,10 +15,13 @@ const {
 } = useTrackerModals()
 
 // ── Grouping ──
+// The TODO project renders as its own pinned list (see <TodoList>), so the
+// project sections skip it.
+const boardProjects = computed(() => projects.value.filter((p) => p.mode !== 'todo'))
 function ticketsForProject(projectId: string) {
-  return tickets.value.filter((t) => t.projectId === projectId)
+  return scopedTickets.value.filter((t) => t.projectId === projectId)
 }
-const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
+const backlog = computed(() => scopedTickets.value.filter((t) => !t.projectId))
 </script>
 
 <template>
@@ -24,7 +30,7 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
 
     <UContainer class="py-8">
       <!-- Empty state -->
-      <div v-if="!projects.length && !tickets.length && !docs.length" class="flex flex-col items-center gap-4 py-24 text-center">
+      <div v-if="!projects.length && !scopedTickets.length && !docs.length" class="flex flex-col items-center gap-4 py-24 text-center">
         <UIcon name="i-lucide-inbox" class="size-12 text-muted" />
         <div>
           <p class="text-lg font-medium">Nothing here yet</p>
@@ -37,6 +43,22 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
       </div>
 
       <div v-else class="space-y-12">
+        <!-- TODO — the codebase's running todo list, pinned above everything:
+             it's the entry point of the loop (todos get grilled into projects). -->
+        <section v-if="todoProject">
+          <div class="mb-3 flex items-center gap-2">
+            <UIcon name="i-lucide-list-todo" class="size-4 text-muted" />
+            <NuxtLink :to="`/projects/${todoProject.key}`" class="group inline-flex items-center gap-1.5">
+              <h2 class="text-xl font-semibold group-hover:text-primary">TODO</h2>
+              <UIcon name="i-lucide-arrow-up-right" class="size-4 text-muted opacity-0 transition group-hover:opacity-100" />
+            </NuxtLink>
+            <span class="text-xs text-muted">
+              {{ todoTickets.filter((t) => !isFinished(t.status)).length }} open · grill one to work it out
+            </span>
+          </div>
+          <TodoList :project="todoProject" :tickets="todoTickets" />
+        </section>
+
         <!-- Documents — draft Confluence-style pages, pinned to the top -->
         <section v-if="docs.length">
           <div class="mb-3 flex items-center gap-2">
@@ -53,7 +75,7 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
         </section>
 
         <!-- Projects -->
-        <section v-for="project in projects" :key="project.id" class="space-y-6">
+        <section v-for="project in boardProjects" :key="project.id" class="space-y-6">
           <div class="flex items-start justify-between gap-3 border-b border-default pb-3">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
@@ -79,6 +101,7 @@ const backlog = computed(() => tickets.value.filter((t) => !t.projectId))
             :tickets="ticketsForProject(project.id)"
             :all-tickets="tickets"
             :wayfinder="project.mode === 'wayfinder'"
+            :project="project"
             :body="project.description"
             @new-ticket="openNewTicket(project.id)"
             @edit-ticket="openEditTicket"

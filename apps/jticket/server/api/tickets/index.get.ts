@@ -9,6 +9,12 @@ export default defineEventHandler((event) => {
     const projectId = project?.id ?? q.projectId
     tickets = tickets.filter((t) => t.projectId === projectId)
   }
+  // ?repo= → tickets in that codebase's projects (path, '~/…', or known slug).
+  // Backlog tickets (projectId null) belong to no codebase, so they're excluded.
+  if (q.repo) {
+    const ids = projectIdsForRepo(store, resolveRepoParam(store, q.repo))
+    tickets = tickets.filter((t) => t.projectId && ids.has(t.projectId))
+  }
   if (q.status) tickets = tickets.filter((t) => t.status === q.status)
   if (q.assignee) tickets = tickets.filter((t) => t.assignee === q.assignee)
   if (q.label) tickets = tickets.filter((t) => t.labels.includes(String(q.label)))

@@ -9,7 +9,7 @@
 // that opens the project's body — the map (destination / decisions / fog) or a
 // plain description — in a modal, so it never buries the tickets. The page
 // around this component owns the project header; this is just the tickets.
-import type { Ticket } from '~/composables/useTracker'
+import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
 
 const props = defineProps<{
   tickets: Ticket[]
@@ -17,6 +17,11 @@ const props = defineProps<{
   wayfinder?: boolean
   // The project description — the map body on a wayfinder project.
   body?: string
+  // The project these tickets belong to. When given, the board grows the same
+  // hand-off controls as /next: a run-all into herdr, per-card copy/dispatch
+  // buttons, and the workspace/tab chips — so kickoff never needs a trip to
+  // the Up next page.
+  project?: Project | null
 }>()
 const emit = defineEmits<{
   'new-ticket': []
@@ -93,11 +98,62 @@ function blockersOf(t: Ticket) {
 function wfOf(t: Ticket) {
   return props.wayfinder ? wayfinderType(t) : null
 }
+function archOf(t: Ticket) {
+  return mode.value === 'architect' ? archTag(t) : null
+}
+// A done candidate stays re-grillable — dispatching was the triage decision,
+// so "run it again" is the one control a resolved architect row keeps.
+function regrillable(t: Ticket) {
+  return mode.value === 'architect' && isArchCandidate(t) && !!props.project && herdrUp.value
+}
 function stateOf(t: Ticket): BucketKey {
   if (isFinished(t.status)) return 'done'
   if (isBlocked(t, props.allTickets)) return 'blocked'
   if (isFrontier(t, props.allTickets)) return 'frontier'
   return 'claimed'
+}
+
+// ── Hand-off + herdr — the same machinery /next runs, via useHerdrDispatch ──
+// State (prompt target, dispatching, run-all progress) is shared with /next,
+// so a dispatch started there shows as busy here and vice versa.
+const {
+  herdrUp,
+  promptTarget,
+  commandLabel,
+  workspaceFor,
+  projectTabs,
+  focusHerdr,
+  dispatching,
+  dispatchTicket,
+  runningAll,
+  runAllProgress,
+  runAll,
+  cleaningUp,
+  cleanupHerdr,
+  copied,
+  copyCommand,
+} = useHerdrDispatch()
+
+const mode = computed<ProjectMode>(() => props.project?.mode ?? 'standard')
+const herdrWorkspace = computed(() => (props.project ? workspaceFor(props.project) : null))
+const herdrTabs = computed(() => (props.project ? projectTabs(props.project) : []))
+
+function runAllFrontier() {
+  if (!props.project) return
+  runAll(
+    props.project,
+    bucketed.value.frontier.map((ticket) => ({ ticket, mode: mode.value })),
+  )
+}
+
+// The per-card control state — the card itself stays presentational.
+function dispatchFor(t: Ticket) {
+  return {
+    commandLabel: commandLabel(mode.value, t),
+    copied: copied.value === t.id,
+    dispatching: dispatching.value === t.id,
+    herdr: herdrUp.value,
+  }
 }
 </script>
 
@@ -119,7 +175,84 @@ function stateOf(t: Ticket): BucketKey {
       </template>
       <span v-else class="text-muted">No tickets yet</span>
 
-      <div class="ml-auto flex items-center gap-2">
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <!-- Kickoff, right from the board — the same controls as /next -->
+        <template v-if="project && counts.frontier">
+          <USelect
+            v-if="mode === 'standard'"
+            v-model="promptTarget"
+            :items="HANDOFF_PROMPT_OPTIONS"
+            value-key="value"
+            icon="i-lucide-git-pull-request"
+            size="xs"
+            class="w-52"
+            aria-label="Where the hand-off prompt points its PR"
+          />
+          <UTooltip
+            v-if="herdrUp"
+            :text="`Dispatch all ${counts.frontier} takeable ${counts.frontier === 1 ? 'ticket' : 'tickets'} into herdr — HITL tickets get their own tab`"
+          >
+            <UButton
+              icon="i-lucide-terminal"
+              variant="soft"
+              size="xs"
+              :loading="runningAll === project.id"
+              :disabled="!!runningAll && runningAll !== project.id"
+              @click="runAllFrontier"
+            >
+              {{ runningAll === project.id ? `Running ${runAllProgress}…` : `Run all (${counts.frontier})` }}
+            </UButton>
+          </UTooltip>
+        </template>
+        <template v-if="project && herdrUp && herdrWorkspace">
+          <UTooltip :text="`Go to the ${project.title} workspace in herdr`">
+            <UButton
+              icon="i-lucide-app-window"
+              color="neutral"
+              variant="soft"
+              size="xs"
+              :aria-label="`Focus the ${project.title} workspace in herdr`"
+              @click="focusHerdr({ workspace: herdrWorkspace.workspaceId })"
+            >
+              herdr
+            </UButton>
+          </UTooltip>
+          <UButton
+            v-for="tab in herdrTabs"
+            :key="tab.tabId"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            class="font-mono text-xs"
+            :aria-label="`Focus herdr tab ${tab.label}`"
+            @click="focusHerdr({ tab: tab.tabId })"
+          >
+            <span
+              class="mr-1 inline-block size-1.5 rounded-full"
+              :class="{
+                'bg-info': tab.agentStatus === 'working',
+                'bg-warning': tab.agentStatus === 'blocked',
+                'bg-success': tab.agentStatus === 'idle' || tab.agentStatus === 'done',
+                'bg-neutral-400': !tab.agentStatus || tab.agentStatus === 'unknown',
+              }"
+            />
+            {{ tab.label }}
+          </UButton>
+          <UTooltip
+            v-if="herdrTabs.length"
+            :text="`Close ${project.key}'s herdr tabs (asks first if an agent is still busy)`"
+          >
+            <UButton
+              icon="i-lucide-paintbrush"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :loading="cleaningUp === project.id"
+              :aria-label="`Close ${project.key}'s herdr tabs`"
+              @click="cleanupHerdr(project)"
+            />
+          </UTooltip>
+        </template>
         <UButton
           v-if="renderedBody"
           :icon="wayfinder ? 'i-lucide-book-open' : 'i-lucide-align-left'"
@@ -172,6 +305,8 @@ function stateOf(t: Ticket): BucketKey {
         <span class="size-2 shrink-0 rounded-full" :class="BUCKET_META[stateOf(t)].dot" />
         <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
         <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
+        <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
+        <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="truncate" :class="stateOf(t) === 'frontier' ? 'font-medium' : ''">{{ t.title }}</span>
         <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
         <UBadge v-if="t.type === 'HITL'" color="warning" variant="subtle" size="sm" class="shrink-0">HITL</UBadge>
@@ -208,8 +343,12 @@ function stateOf(t: Ticket): BucketKey {
               :ticket="t"
               :tickets="allTickets"
               :wayfinder="wayfinder"
+              :architect="mode === 'architect'"
+              :dispatch="project ? dispatchFor(t) : null"
               @edit="emit('edit-ticket', $event)"
               @delete="emit('delete-ticket', $event)"
+              @copy="copyCommand($event, mode)"
+              @run="dispatchTicket($event, mode)"
             />
           </div>
         </template>
@@ -227,18 +366,38 @@ function stateOf(t: Ticket): BucketKey {
             <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
           </button>
           <div v-if="!folded.has(g.key)" class="mt-1 space-y-0.5">
-            <button
+            <!-- A div, not a button: the done rows of an architect board nest a
+                 re-grill UButton, and the HTML parser closes a <button> at any
+                 nested one (which would break hydration). -->
+            <div
               v-for="t in g.tickets"
               :key="t.id"
-              type="button"
-              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-elevated/40"
+              role="button"
+              tabindex="0"
+              class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-elevated/40"
               @click="emit('edit-ticket', t)"
+              @keydown.enter="emit('edit-ticket', t)"
             >
               <span class="size-1.5 shrink-0 rounded-full" :class="g.dot" />
               <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
               <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
+              <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
+              <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
               <span class="truncate text-sm">{{ t.title }}</span>
               <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
+              <!-- Re-grill: a triaged candidate can be sent back to the interview -->
+              <UTooltip v-if="g.key === 'done' && regrillable(t)" text="Run the grilling again in herdr">
+                <UButton
+                  icon="i-lucide-terminal"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  class="ml-auto shrink-0"
+                  :loading="dispatching === t.id"
+                  :aria-label="`Re-run ${t.key}'s grilling in herdr`"
+                  @click.stop="dispatchTicket(t, mode)"
+                />
+              </UTooltip>
               <template v-if="g.key === 'blocked' && blockersOf(t).length">
                 <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
                 <UBadge
@@ -252,7 +411,7 @@ function stateOf(t: Ticket): BucketKey {
                   {{ b.key }}
                 </UBadge>
               </template>
-            </button>
+            </div>
           </div>
         </template>
       </div>

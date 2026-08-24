@@ -7,7 +7,11 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET / POST | `/api/projects` | List / create projects |
+| POST | `/api/projects/todo` | Get-or-create a codebase's TODO project (idempotent; the only way to make a `todo`-mode project) |
+| POST | `/api/projects/architect` | Create an architecture-review project + its `arch:scan` ticket (one per scan, never reused; the only way to make an `architect`-mode project) |
 | GET / PATCH / DELETE | `/api/projects/:id` | One project (id **or** key) |
+| GET / POST / DELETE | `/api/repos` | Known repos = **codebases** (POST remembers a path after probing it; DELETE `?path=` forgets) |
+| GET | `/api/repos/probe?path=` | Is this path a usable git clone? (answers, never errors) |
 | GET / POST | `/api/tickets` | List / create tickets |
 | GET / PATCH / DELETE | `/api/tickets/:id` | One ticket (id or key) |
 | POST | `/api/tickets/:id/comments` | Add a comment to a ticket |
@@ -30,15 +34,22 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 
 ```
 GET /api/tickets?projectId=PROJ-2   # project id or key
+                &repo=<path|slug>   # codebase scope: tickets in that repo's projects
                 &status=todo|in_progress|done|merged
                 &assignee=<exact name>
                 &label=<exact label>
                 &frontier=true      # todo + unblocked + unassigned, key-ordered
                 &finished=true      # done + merged tickets, newest completedAt first
                 &since=<ISO>        # completedAt >= this (pairs with finished=true)
-GET /api/docs?projectId=PROJ-1&status=draft|ready&label=<label>
-GET /api/prs?projectId=PROJ-2&ticket=TICK-7&status=open|conflicted|merged|closed
+GET /api/projects?repo=<path|slug>
+GET /api/docs?projectId=PROJ-1&repo=<path|slug>&status=draft|ready&label=<label>
+GET /api/prs?projectId=PROJ-2&repo=<path|slug>&ticket=TICK-7&status=open|conflicted|merged|closed
 ```
+
+`repo` accepts an absolute path, `~/…`, or a known repo's `owner/name` slug; a project
+belongs to the codebase its `repo` field resolves to. Backlog tickets and project-less
+docs belong to no codebase, so `?repo=` excludes them. Every project in a GET response
+carries a derived read-only `repoPath` (its `repo` with `~` resolved).
 
 Filters combine with AND. `frontier=true` is applied last and sorts by key number
 (`TICK-9` before `TICK-10`).
@@ -67,10 +78,43 @@ frontier, `?finished=true`).
 POST /api/projects
 { "title": "Checkout",                  // required
   "description": "Everything payments-related",
-  "mode": "standard" }                  // or "wayfinder"; anything else → "standard"
+  "repo": "~/code/my-repo",             // the codebase this project belongs to
+  "mode": "standard" }                  // or "wayfinder" / "jmap"; anything else → "standard"
+                                        // ("todo" and "architect" have their own endpoints below — don't POST them here)
 ```
 
 `PATCH /api/projects/:id` accepts the same fields; omitted fields are untouched.
+
+### TODO project (per codebase)
+
+Every codebase gets exactly one `todo`-mode project — its human-written todo list,
+whose one-liner tickets the UI exercises with a Grill button (a jGrilling interview).
+Never POST one directly; use the idempotent get-or-create:
+
+```jsonc
+POST /api/projects/todo
+{ "repo": "~/code/my-repo" }            // must be a real git clone (probed)
+→ 201 { "key": "PROJ-7", "mode": "todo", "created": true, ... }   // first call
+→ 200 { "key": "PROJ-7", "mode": "todo", "created": false, ... }  // every later call
+```
+
+A todo is then a title-only ticket POSTed with that project's key.
+
+### Architect project (one per scan)
+
+An architecture review of a codebase — the projects page's Improve-architecture
+button calls this, and so can an agent. Not idempotent: every call is a fresh
+review (a fresh run is a fresh project). Creates the `architect`-mode project
+plus its `arch:scan` ticket; dispatching that ticket into herdr
+(`/jarchitect-scan TICK-n`) fills the board with graded HITL `arch:candidate`
+tickets and publishes the assessment spec doc.
+
+```jsonc
+POST /api/projects/architect
+{ "repo": "~/code/my-repo" }            // must be a real git clone (probed)
+→ 201 { "project": { "key": "PROJ-8", "mode": "architect", ... },
+        "ticket":  { "key": "TICK-31", "labels": ["arch", "arch:scan"], ... } }
+```
 
 ### Ticket
 

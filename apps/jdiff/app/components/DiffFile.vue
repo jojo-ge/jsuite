@@ -354,9 +354,10 @@ async function submit() {
   }
 }
 
-// "Ask" mode: fires a preset question at the local claude CLI over SSE.
-// One stream at a time; thinking + tool logs render live, then the saved
-// ask (persisted server-side in ~/.jdiff/asks.json) replaces the stream.
+// "Ask" mode: fires a preset question by dispatching a claude session into
+// herdr (POST /api/ask-dispatch — the session runs the jdiff-ask skill on
+// opus 5 and POSTs its answer back). One ask at a time; this component polls
+// /api/asks until the saved answer lands, then the parent's refetch renders it.
 function rowAsks(row: Row): SavedAsk[] {
   const out: SavedAsk[] = []
   if (row.left.num != null && row.left.type !== 'empty') {
@@ -372,18 +373,11 @@ const askStream = ref<{
   side: 'LEFT' | 'RIGHT'
   line: number
   label: string
-  thinking: string
-  answer: string
+  status: string
   error: string
 } | null>(null)
 const askBusy = ref(false)
-let askEs: EventSource | null = null
-const thinkEl = ref<HTMLElement | null>(null)
-
-watch(
-  () => askStream.value?.thinking.length,
-  () => nextTick(() => thinkEl.value?.scrollTo({ top: thinkEl.value.scrollHeight })),
-)
+let askTimer: ReturnType<typeof setInterval> | null = null
 
 function askStreamMatches(row: Row): boolean {
   const a = askStream.value
@@ -393,64 +387,69 @@ function askStreamMatches(row: Row): boolean {
     : row.right.type !== 'empty' && row.right.num === a.line
 }
 
-function startAsk(q: AskQuestion) {
+async function startAsk(q: AskQuestion) {
   if (askBusy.value || !newAt.value) return
   const { side, line } = newAt.value
   cancel()
   askBusy.value = true
-  askStream.value = { side, line, label: q.label, thinking: '', answer: '', error: '' }
+  askStream.value = { side, line, label: q.label, status: 'dispatching a session into herdr…', error: '' }
 
-  const params = new URLSearchParams({
-    repo: props.repo,
-    ...tq.value,
-    path: props.file.path,
-    line: String(line),
-    side,
-    question: q.id,
-  })
-  const es = new EventSource(`/api/ask?${params}`)
-  askEs = es
-  const finish = () => {
-    es.close()
-    askEs = null
+  let dispatchedAt = 0
+  try {
+    const res = await $fetch<{ agent: string; dispatchedAt: number }>('/api/ask-dispatch', {
+      method: 'POST',
+      body: {
+        repo: props.repo,
+        ...tq.value,
+        path: props.file.path,
+        line,
+        side,
+        question: q.id,
+      },
+    })
+    dispatchedAt = res.dispatchedAt
+    if (askStream.value) {
+      askStream.value.status = `answering in herdr (agent "${res.agent}", opus 5) — the answer will appear here`
+    }
+  } catch (e: any) {
+    if (askStream.value) askStream.value.error = e?.data?.message ?? e?.message ?? 'failed to dispatch into herdr'
     askBusy.value = false
+    return
   }
-  es.onmessage = (e) => {
-    const msg = JSON.parse(e.data)
+
+  // Poll the ask store until the session's answer lands, then let the
+  // parent's refetch render it as a normal saved ask.
+  askTimer = setInterval(async () => {
     const a = askStream.value
     if (!a) return
-    if (msg.kind === 'thinking') {
-      a.thinking += msg.text
-    } else if (msg.kind === 'log') {
-      a.thinking += `[${msg.text}]\n`
-    } else if (msg.kind === 'answer') {
-      a.answer += msg.text
-    } else if (msg.kind === 'result') {
-      finish()
-      askStream.value = null
-      emit('asked')
-    } else if (msg.kind === 'error') {
-      a.error = msg.message
-      finish()
-    }
-  }
-  es.onerror = () => {
-    if (askBusy.value && askStream.value && !askStream.value.error) {
-      askStream.value.error = 'connection to ask stream lost'
-    }
-    finish()
-  }
+    try {
+      const asks = await $fetch<SavedAsk[]>('/api/asks', {
+        query: { repo: props.repo, ...tq.value },
+      })
+      const landed = asks.some((s) =>
+        s.path === props.file.path && s.line === a.line && s.side === a.side
+        && s.questionId === q.id && Date.parse(s.createdAt) >= dispatchedAt,
+      )
+      if (landed) {
+        dismissAsk()
+        emit('asked')
+      }
+    } catch { /* transient — the next tick retries */ }
+  }, 4_000)
 }
 
 function dismissAsk() {
-  askEs?.close()
-  askEs = null
+  if (askTimer) clearInterval(askTimer)
+  askTimer = null
   askBusy.value = false
   askStream.value = null
 }
 
-// Unmounting mid-ask closes the stream, which kills the claude run server-side.
-onUnmounted(() => askEs?.close())
+// Unmounting only stops watching — the herdr session keeps running and its
+// answer still lands in the ask store, shown on the next visit.
+onUnmounted(() => {
+  if (askTimer) clearInterval(askTimer)
+})
 
 // No free-form input: instead the reviewer can copy a pointer prompt and
 // paste it into their own claude session with whatever question they want.
@@ -649,10 +648,9 @@ async function copyAsk(a: SavedAsk) {
                   <span v-if="askBusy" class="ask-spinner" />
                   <span v-else class="ask-star">✦</span>
                   <span class="ask-q">{{ askStream!.label }}</span>
-                  <button class="ask-dismiss" :title="askBusy ? 'cancel' : 'dismiss'" @click="dismissAsk">×</button>
+                  <button class="ask-dismiss" :title="askBusy ? 'stop waiting' : 'dismiss'" @click="dismissAsk">×</button>
                 </div>
-                <div v-if="askStream!.thinking" ref="thinkEl" class="ask-thinking">{{ askStream!.thinking }}</div>
-                <div v-if="askStream!.answer" class="ask-answer" v-html="renderMarkdown(askStream!.answer)" />
+                <div v-if="askStream!.status" class="ask-thinking">{{ askStream!.status }}</div>
                 <div v-if="askStream!.error" class="ask-error">{{ askStream!.error }}</div>
               </div>
 

@@ -3,7 +3,7 @@ export type TicketType = 'AFK' | 'HITL'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap'
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect'
 
 export interface Project {
   id: string
@@ -16,8 +16,14 @@ export interface Project {
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string
+  // Starred = on deck: only starred projects surface on /next. Tickets are
+  // unaffected everywhere else (/running, /finished, the board).
+  starred: boolean
   createdAt: string
   updatedAt: string
+  // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,
+  // so the client can compare against a codebase path — see useCodebase.
+  repoPath?: string
 }
 
 // The human leaves direction here before handing the ticket to an LLM; LLMs
@@ -71,6 +77,7 @@ export interface LocalPr {
   status: LocalPrStatus
   conflictFiles: string[]
   mergeCommit: string
+  mergeParent: string
   mergedAt: string | null
   createdAt: string
   updatedAt: string
@@ -256,6 +263,27 @@ export function mergeSweepPrompt(
   ].join(' ')
 }
 
+// ── Where "see this ticket's changes" points in jDiff ──
+// Prefer the ticket's newest non-closed local PR — the server already derived
+// the right URL for it (head vs base while open, the exact squash diff once
+// merged). Fall back to the ticket's work branch against the project's
+// integration branch. Null when there is nothing to diff.
+export function ticketDiffUrl(
+  ticket: Pick<Ticket, 'id' | 'branch' | 'projectId'>,
+  projects: Project[],
+  prs: LocalPr[],
+  jdiffBase: string,
+): string | null {
+  const prUrl = prs
+    .filter((pr) => pr.ticketId === ticket.id && pr.status !== 'closed')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .find((pr) => pr.jdiffUrl)?.jdiffUrl
+  if (prUrl) return prUrl
+  const project = projects.find((p) => p.id === ticket.projectId)
+  if (!ticket.branch || !project?.repo) return null
+  return jdiffBranchLink(jdiffBase, project.repo, ticket.branch, project.integrationBranch || undefined)
+}
+
 export const DOC_STATUS_META: Record<DocStatus, { label: string; color: 'neutral' | 'success' }> = {
   draft: { label: 'Draft', color: 'neutral' },
   ready: { label: 'Ready', color: 'success' },
@@ -291,6 +319,35 @@ export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | n
     if (m) return m[1] as WayfinderType
   }
   return null
+}
+
+// ── Architect labels ──
+// The scan tags each candidate with the skill's native recommendation
+// strength, plus arch:top-pick on exactly one — the "really worth working on"
+// signal the board renders as badges.
+export type ArchTag = 'strong' | 'worth-exploring' | 'speculative'
+
+export const ARCH_TAG_META: Record<ArchTag, { label: string; icon: string; color: 'success' | 'warning' | 'neutral' }> = {
+  'strong': { label: 'Strong', icon: 'i-lucide-gem', color: 'success' },
+  'worth-exploring': { label: 'Worth exploring', icon: 'i-lucide-telescope', color: 'warning' },
+  'speculative': { label: 'Speculative', icon: 'i-lucide-sparkles', color: 'neutral' },
+}
+
+// Pull the strength out of a candidate's labels (first arch:<strength>).
+export function archTag(ticket: Pick<Ticket, 'labels'>): ArchTag | null {
+  for (const l of ticket.labels ?? []) {
+    const m = /^arch:(strong|worth-exploring|speculative)$/.exec(l)
+    if (m) return m[1] as ArchTag
+  }
+  return null
+}
+
+export function isArchCandidate(ticket: Pick<Ticket, 'labels'>): boolean {
+  return (ticket.labels ?? []).includes('arch:candidate')
+}
+
+export function isArchTopPick(ticket: Pick<Ticket, 'labels'>): boolean {
+  return (ticket.labels ?? []).includes('arch:top-pick')
 }
 
 // ── Completion times ──

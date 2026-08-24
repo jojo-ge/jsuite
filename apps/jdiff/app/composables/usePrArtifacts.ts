@@ -1,11 +1,12 @@
 import type { SelfQuestion } from '~/utils/askYourself'
+import type { Finding } from '~/utils/findings'
 import type { ReviewRating } from '~/utils/rating'
 import type { FileRisk } from '~/utils/risk'
 import type { Tour } from '~/utils/tour'
 
-// The four guidance artifacts (rating, risk map, tour, ask yourself) for one
-// PR: each loads from its ~/.jdiff store on mount and is overwritten by the
-// live result of a claude run streaming through useAiTasks. Both the review
+// The guidance artifacts (rating, risk map, tour, ask yourself, findings) for one
+// PR: each loads from its saved store on mount and is overwritten by the
+// result of a herdr review run landing through useAiTasks. Both the review
 // page and the tool-summary page fold the same two sources, so the folding
 // lives here; page-specific concerns (logs UI, tour walking, checklists)
 // stay in the pages.
@@ -118,14 +119,44 @@ export function usePrArtifacts(
   }, { immediate: true })
   const answeredCount = computed(() => (selfQs.value ?? []).filter((q) => q.answer.trim()).length)
 
+  // null = no findings artifact yet; [] = the review ran and came back clean.
+  const findings = ref<Finding[] | null>(null)
+  const findingsAt = ref('')
+  const { data: savedFindings } = useFetch<{ findings: Finding[]; createdAt: string } | null>('/api/findings', {
+    query: q,
+  })
+  watch(savedFindings, (v) => {
+    if (v && !findings.value) {
+      findings.value = v.findings
+      findingsAt.value = v.createdAt
+    }
+  }, { immediate: true })
+  watch(() => tasks.value.findings.result, (v) => {
+    if (v) {
+      findings.value = v.findings
+      findingsAt.value = v.createdAt
+    }
+  }, { immediate: true })
+
+  const FINDING_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
+  const sortedFindings = computed(() =>
+    [...(findings.value ?? [])].sort((a, b) => FINDING_ORDER[a.severity]! - FINDING_ORDER[b.severity]!),
+  )
+  const findingCounts = computed(() => {
+    const c = { high: 0, medium: 0, low: 0 }
+    for (const f of findings.value ?? []) c[f.severity]++
+    return c
+  })
+
   const ratingStale = computed(() => isStale(ratedAt.value))
   const riskStale = computed(() => isStale(riskAt.value))
   const tourStale = computed(() => isStale(tourAt.value))
   const selfStale = computed(() => isStale(selfAt.value))
+  const findingsStale = computed(() => isStale(findingsAt.value))
   // A push after generation dates every artifact at once (they come from
   // one run), so staleness prompts a single re-run of all tools.
   const anyStale = computed(() =>
-    ratingStale.value || riskStale.value || tourStale.value || selfStale.value,
+    ratingStale.value || riskStale.value || tourStale.value || selfStale.value || findingsStale.value,
   )
 
   return {
@@ -146,6 +177,11 @@ export function usePrArtifacts(
     selfAt,
     selfStale,
     answeredCount,
+    findings,
+    findingsAt,
+    findingsStale,
+    sortedFindings,
+    findingCounts,
     anyStale,
   }
 }

@@ -11,7 +11,7 @@ defineProps<{
   allTickets: Ticket[]
   done?: boolean
 }>()
-defineEmits<{ edit: [project: Project]; delete: [project: Project] }>()
+defineEmits<{ edit: [project: Project]; delete: [project: Project]; star: [project: Project] }>()
 </script>
 
 <template>
@@ -26,23 +26,35 @@ defineEmits<{ edit: [project: Project]; delete: [project: Project] }>()
         <UBadge v-if="done" color="success" variant="subtle" size="sm">Done</UBadge>
         <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
       </div>
-      <div class="flex shrink-0 gap-0.5 opacity-0 transition group-hover:opacity-100">
+      <div class="flex shrink-0 gap-0.5">
+        <!-- The star stays visible when set — it's state, not an action menu. -->
         <UButton
-          icon="i-lucide-pencil"
+          icon="i-lucide-star"
           size="xs"
-          color="neutral"
+          :color="project.starred ? 'warning' : 'neutral'"
           variant="ghost"
-          aria-label="Edit project"
-          @click.prevent="$emit('edit', project)"
+          :class="project.starred ? '' : 'opacity-0 transition group-hover:opacity-100'"
+          :aria-label="project.starred ? 'Unstar project — drop it from Up next' : 'Star project — surface it on Up next'"
+          @click.prevent="$emit('star', project)"
         />
-        <UButton
-          icon="i-lucide-trash-2"
-          size="xs"
-          color="error"
-          variant="ghost"
-          aria-label="Delete project"
-          @click.prevent="$emit('delete', project)"
-        />
+        <div class="flex gap-0.5 opacity-0 transition group-hover:opacity-100">
+          <UButton
+            icon="i-lucide-pencil"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            aria-label="Edit project"
+            @click.prevent="$emit('edit', project)"
+          />
+          <UButton
+            icon="i-lucide-trash-2"
+            size="xs"
+            color="error"
+            variant="ghost"
+            aria-label="Delete project"
+            @click.prevent="$emit('delete', project)"
+          />
+        </div>
       </div>
     </div>
 

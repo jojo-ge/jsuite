@@ -21,6 +21,8 @@ JSKILLS=(
   to-jticket
   to-jspec
   to-jdoc
+  jarchitect-scan
+  jarchitect-grill
 )
 
 POCOCK_SOURCE="mattpocock/skills"

@@ -11,15 +11,25 @@ export type DocStatus = 'draft' | 'ready'
 // A local PR's lifecycle. 'conflicted' is a failed merge attempt — the repo was
 // left untouched; rebase the head branch and merge again.
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-// A project is a plain tracker, a wayfinder effort, or a jMap codebase-mapping
-// effort. In 'wayfinder' mode the project description is the wayfinder *map*
-// body and its tickets are grouped into frontier / blocked / done. In 'jmap'
-// mode the tickets are mapping jobs dispatched to herdr with /jmap-* commands
-// (no branches, no PRs) and their output is docs the jMap app synthesizes.
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap'
+// A project is a plain tracker, a wayfinder effort, a jMap codebase-mapping
+// effort, a codebase's TODO list, or an architecture review. In 'wayfinder'
+// mode the project description is the wayfinder *map* body and its tickets are
+// grouped into frontier / blocked / done. In 'jmap' mode the tickets are
+// mapping jobs dispatched to herdr with /jmap-* commands (no branches, no PRs)
+// and their output is docs the jMap app synthesizes. In 'todo' mode the
+// project is its codebase's one running todo list — human-written one-liner
+// tickets exercised with the Grill action (no branches, no PRs); made only by
+// get-or-create (POST /api/projects/todo), one per codebase. In 'architect'
+// mode the project is one architecture scan of its repo (made by POST
+// /api/projects/architect): the arch:scan ticket dispatches /jarchitect-scan,
+// which fills the board with HITL arch:candidate tickets — deepening
+// opportunities whose herdr button dispatches /jarchitect-grill (no branches,
+// no PRs; dispatching the grilling is the triage decision and moves the
+// candidate to done).
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect'
 
 export function coerceProjectMode(mode: unknown): ProjectMode {
-  return mode === 'wayfinder' || mode === 'jmap' ? mode : 'standard'
+  return mode === 'wayfinder' || mode === 'jmap' || mode === 'todo' || mode === 'architect' ? mode : 'standard'
 }
 
 export interface Project {
@@ -36,6 +46,11 @@ export interface Project {
   // branch that the project's PRs target, and which lands as one PR when the
   // project is done. See server/utils/github.ts.
   integrationBranch: string
+  // Starred projects are the ones on deck: /next only surfaces frontier
+  // tickets (and merge queues) from starred projects. Everything else about a
+  // project is unaffected — its tickets still appear on /running, /finished
+  // and the board.
+  starred: boolean
   createdAt: string
   updatedAt: string
 }
@@ -112,6 +127,10 @@ export interface LocalPr {
   // Files the last failed merge attempt conflicted on; [] unless 'conflicted'.
   conflictFiles: string[]
   mergeCommit: string // oid of the squash commit, '' until merged
+  // Oid of the squash commit's parent (the base tip it landed on), '' until
+  // merged — keeps mergeParent..mergeCommit reviewable in jDiff after the
+  // head branch is deleted.
+  mergeParent: string
   mergedAt: string | null
   createdAt: string
   updatedAt: string
@@ -202,6 +221,7 @@ export function loadStore(): Store {
         mode: coerceProjectMode(p.mode),
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
+        starred: p.starred ?? false,
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -224,6 +244,9 @@ export function loadStore(): Store {
         ...pr,
         conflictFiles: pr.conflictFiles ?? [],
         mergeCommit: pr.mergeCommit ?? '',
+        // PRs merged before this field existed keep '' — their jDiff link
+        // degrades to the base branch (localPrs.ts prJdiffUrl).
+        mergeParent: pr.mergeParent ?? '',
         mergedAt: pr.mergedAt ?? null,
       })),
       // The remembered-repo list postdates everything else; absent = none yet.

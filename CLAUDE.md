@@ -17,10 +17,10 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
 | grill/stress-test a plan with the human answering in a UI | `apps/jgrilling` | skill `j-grilling`; API on :43005; state in `.data/jgrilling/` |
 | map a codebase — domains, dependency map, walkthrough docs | `apps/jmap` | skill `j-map` (front door); the work runs as a jMap-mode jTicket project (herdr-dispatched `/jmap-scope`, `/jmap-domain`, `/jmap-synthesize` tickets); jMap API on :43007 renders the posted graph; state in `.data/jmap/` |
+| improve/deepen a codebase's architecture | `apps/jticket` | the Improve-architecture button on the projects page (or `POST /api/projects/architect`) makes an architect-mode project whose scan (`/jarchitect-scan`) fills the board with graded HITL candidates + an assessment spec; a candidate's herdr button dispatches its go/no-go grilling (`/jarchitect-grill`, via jGrilling) and finishes the ticket |
 | charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
 | block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
-| running the local `claude` CLI from an app server | shared pool | `packages/claude` (`runClaude`, `extractJson`, `ANALYSIS_TOOLS`) — jDiff drives claude through it |
-| dispatching terminal claude sessions into herdr | shared pool | `packages/herdr` (`ensureHerdrWorkspace`, `acquirePackedPane`, `startClaudeIn`) — jTicket and jMap both dispatch through it |
+| dispatching terminal claude sessions into herdr | shared pool | `packages/herdr` (`ensureHerdrWorkspace`, `acquirePackedPane`, `startClaudeIn`) — jTicket, jMap and jDiff all dispatch through it (jDiff's review sessions run the `jdiff-review`/`jdiff-ask` skills on Opus 5); jTicket's Run-review buttons proxy to jDiff's dispatch with ticket/project context, and the review session reports findings back into jTicket (fix tickets / ticket comments) |
 
 When a request spans apps (e.g. "spec this, then diagram it"), do each part with
 that app's own skill rather than improvising one app's job in another.
@@ -59,6 +59,6 @@ Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
 apps/             # jticket jdiff jchart jexplain jgrilling jmap
-packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/claude (claude CLI runner), @jsuite/herdr (herdr dispatch adapter)
+packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter)
 .data/<app>/      # ALL app state, gitignored
 ```

@@ -150,13 +150,16 @@ const acceptRecommendation = () => submitAnswer(activeTurn.value?.recommendation
           </div>
         </section>
 
-        <!-- Interviewer at work -->
+        <!-- Interviewer at work: something to chew on while you wait -->
         <section
           v-if="session.status === 'active' && !activeTurn"
-          class="flex items-center gap-2 rounded-xl border border-dashed border-default p-5 text-sm text-muted"
+          class="flex flex-col gap-4 rounded-xl border border-dashed border-default p-5"
         >
-          <UIcon name="i-lucide-flame" class="animate-pulse text-primary" />
-          {{ session.turns.length ? 'Answer received — the interviewer is working out the next question…' : 'Waiting for the interviewer\'s first question…' }}
+          <div class="flex items-center gap-2 text-sm text-muted">
+            <UIcon name="i-lucide-flame" class="animate-pulse text-primary" />
+            {{ session.turns.length ? 'Answer received — the interviewer is working out the next question…' : 'Waiting for the interviewer\'s first question…' }}
+          </div>
+          <FlipTheSteak />
         </section>
 
         <!-- Done -->

@@ -52,7 +52,7 @@ export default defineEventHandler(async (event) => {
     created: !hadLocal && !hadRemote,
     pushed: !hadRemote,
     adopted: hadLocal || hadRemote,
-    jdiffUrl: jdiffBranchUrl(path, branch),
+    jdiffUrl: jdiffBranchUrl(path, branch, base),
     githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branch)}` : null,
   }
 })

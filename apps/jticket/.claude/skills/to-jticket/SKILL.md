@@ -22,8 +22,8 @@ curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 ```
 
 If it is **down**, tell the user and stop — do not write files as a fallback, and do
-not start the server yourself unless they ask. The start command is `pnpm dev` in the
-jTicket repo (`~/code/jTicket`).
+not start the server yourself unless they ask. jTicket is part of the jSuite —
+`./jsuite start jticket` from the jsuite repo (`~/code/jojo/jsuite`).
 
 Every write below is `-H 'content-type: application/json'`. Read the response of every
 write: jTicket **silently drops** refs it cannot resolve (see [Gotchas](#gotchas)).
@@ -44,8 +44,10 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 ## 2. Core model
 
 - **Project** `PROJ-n` — `{ key, title, description, mode, repo, integrationBranch }`. `mode` is
-  `standard` or `wayfinder`. `repo` (path to a local clone) + `integrationBranch` are the
-  optional GitHub link — see **GitHub** below; both `""` when unset.
+  `standard`, `wayfinder`, `jmap`, or `todo` (a codebase's auto-created TODO list — see
+  **Codebases** below; never create one with a plain POST). `repo` (path to a local clone) +
+  `integrationBranch` are the optional GitHub link — see **GitHub** below; both `""` when unset.
+  `repo` is also what scopes a project to a **codebase**.
 - **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
   - `type`: `AFK` (an agent can take it cold) or `HITL` (needs a human)
@@ -110,6 +112,30 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-4" -H 'content-type: application/jso
 # comment on a ticket (author = your own name; body is GFM markdown)
 curl -s "$JTICKET/api/tickets/TICK-4/comments" -H 'content-type: application/json' \
   -d '{ "author": "claude", "body": "Blocked on the schema question — see TICK-3." }'
+```
+
+### Codebases
+
+The UI is codebase-first: the user picks a local repo and everything is scoped to it.
+On the API a codebase is just a repo path — projects belong to the codebase their
+`repo` resolves to, and the list endpoints take `?repo=` (an absolute path, `~/…`, or
+a known repo's `owner/name` slug):
+
+```bash
+# everything in the codebase you are working in
+curl -s "$JTICKET/api/projects?repo=$PWD"
+curl -s "$JTICKET/api/tickets?repo=$PWD&status=todo"    # backlog (no-project) tickets excluded
+curl -s "$JTICKET/api/docs?repo=$PWD"
+
+# the codebase's TODO project — idempotent get-or-create, the ONLY way a
+# todo-mode project is made (one per codebase; response carries created: true/false)
+curl -s "$JTICKET/api/projects/todo" -H 'content-type: application/json' \
+  -d "{ \"repo\": \"$PWD\" }"
+
+# add a todo: a title-only ticket in that project (todos are one-liners the
+# human exercises with the Grill button — don't pad them with descriptions)
+curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' \
+  -d '{ "title": "Work out the caching story", "projectId": "PROJ-7" }'
 ```
 
 ### GitHub

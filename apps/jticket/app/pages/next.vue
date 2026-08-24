@@ -13,7 +13,10 @@ useHead({ title: 'Up next' })
 
 // `changed` is the live-update highlight set — a ticket that arrives on the
 // frontier while you are looking at it flashes like it does on the board.
-const { projects, tickets, prs, changed: changedTickets } = useTracker()
+// The raw ticket array still backs the blocked/frontier arithmetic (blockedBy
+// can cross scopes); everything rendered is codebase-scoped.
+const { tickets: allTickets, changed: changedTickets } = useTracker()
+const { scopedProjects: projects, scopedTickets: tickets, scopedPrs: prs } = useCodebase()
 const { openEditTicket } = useTrackerModals()
 const toast = useToast()
 
@@ -26,7 +29,7 @@ const typeFilter = ref<'all' | 'AFK' | 'HITL'>('all')
 
 const projectOptions = computed(() => [
   { label: 'All projects', value: 'all' },
-  ...projects.value.map((p) => ({ label: `${p.key} · ${p.title}`, value: p.id })),
+  ...starredProjects.value.map((p) => ({ label: `${p.key} · ${p.title}`, value: p.id })),
 ])
 const projectFilter = ref<string>('all')
 
@@ -37,7 +40,7 @@ function byKey(a: Ticket, b: Ticket) {
 
 // The frontier is computed the same way everywhere — the same helper the cards
 // ring with and the same rule `?frontier=true` serves to agents.
-const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, tickets.value)).sort(byKey))
+const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, allTickets.value)).sort(byKey))
 
 const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))
 
@@ -45,8 +48,22 @@ function projectOf(ticket: Ticket): Project | null {
   return ticket.projectId ? (projectById.value.get(ticket.projectId) ?? null) : null
 }
 
+// Only starred projects surface here — starring is how a project earns its
+// /next slot. This page alone applies the star; /running and /finished show
+// every project's tickets regardless. Loose backlog tickets have no project
+// to star, so they always stay. The TODO project never belongs here even if
+// starred by hand — todos are grilled from the board, not dispatched.
+const starredProjects = computed(() => projects.value.filter((p) => p.starred && p.mode !== 'todo'))
+const onDeck = computed(() => frontier.value.filter((t) => {
+  const p = projectOf(t)
+  return !p || (p.starred && p.mode !== 'todo')
+}))
+// Takeable tickets the star is hiding — named in the empty state so "nothing
+// here" reads as "nothing starred", not "nothing to do".
+const hiddenByStar = computed(() => frontier.value.length - onDeck.value.length)
+
 const shown = computed(() =>
-  frontier.value.filter((t) => {
+  onDeck.value.filter((t) => {
     if (typeFilter.value !== 'all' && t.type !== typeFilter.value) return false
     if (projectFilter.value !== 'all' && projectOf(t)?.id !== projectFilter.value) return false
     return true
@@ -124,15 +141,15 @@ function toggleAll() {
 const stalled = computed(() => {
   const open = tickets.value.filter((t) => !isFinished(t.status))
   return {
-    blocked: open.filter((t) => t.status === 'todo' && isBlocked(t, tickets.value)).length,
-    claimed: open.filter((t) => t.status === 'todo' && t.assignee && !isBlocked(t, tickets.value)).length,
+    blocked: open.filter((t) => t.status === 'todo' && isBlocked(t, allTickets.value)).length,
+    claimed: open.filter((t) => t.status === 'todo' && t.assignee && !isBlocked(t, allTickets.value)).length,
     running: open.filter((t) => t.status === 'in_progress').length,
   }
 })
 
 const counts = computed(() => ({
-  afk: frontier.value.filter((t) => t.type === 'AFK').length,
-  hitl: frontier.value.filter((t) => t.type === 'HITL').length,
+  afk: onDeck.value.filter((t) => t.type === 'AFK').length,
+  hitl: onDeck.value.filter((t) => t.type === 'HITL').length,
 }))
 
 const filtered = computed(() => typeFilter.value !== 'all' || projectFilter.value !== 'all')
@@ -143,67 +160,27 @@ function clearFilters() {
 
 // The hand-off: the command that puts this ticket in front of an agent. Copying
 // it is the whole point of the page — the ticket is the spec, /jimplement reads
-// it from here.
-//
-// Where the PR lands is a rhythm, not a constant: work that ships on its own
-// goes straight to master, while a run of tickets being stacked for one review
-// wants every PR pointed at an integration branch. So the prompt is a choice,
-// and it sticks between sessions — it changes rarely, and re-picking it on
-// every visit is exactly the friction this page exists to remove.
-const PROMPTS = [
-  {
-    label: 'Local PR (merged in jTicket)',
-    value: 'local',
-    command: (key: string, branch?: string) =>
-      `/jimplement ${key} in a worktree${branch ? ` on the existing branch ${branch}` : ''}. When done open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and tear down the worktree.`,
-  },
-  {
-    label: 'PR to master',
-    value: 'master',
-    command: (key: string) =>
-      `/jimplement ${key} in a worktree. When done open a PR to master and tear down the worktree.`,
-  },
-  {
-    label: 'PR to integration branch',
-    value: 'integration',
-    command: (key: string) =>
-      `/jimplement ${key} in a worktree and open a PR to the integration branch. When done tear down the worktree.`,
-  },
-] as const
-type PromptTarget = (typeof PROMPTS)[number]['value']
-
-const PROMPT_OPTIONS = PROMPTS.map((p) => ({ label: p.label, value: p.value }))
-const promptTarget = ref<PromptTarget>('local')
-onMounted(() => {
-  const saved = localStorage.getItem('jticket-next-prompt')
-  if (saved === 'master' || saved === 'integration' || saved === 'local') promptTarget.value = saved
-})
-watch(promptTarget, (value) => localStorage.setItem('jticket-next-prompt', value))
-
-const prompt = computed(() => PROMPTS.find((p) => p.value === promptTarget.value) ?? PROMPTS[0])
-
-// Wayfinder and jMap tickets are not implementation work — a wayfinder
-// frontier is research/prototypes/grillings and /jwayfinder is the skill that
-// reads one; a jMap frontier is mapping jobs, and the ticket's jmap:* label
-// picks its skill: jmap:scope → /jmap-scope, jmap:synthesize →
-// /jmap-synthesize, everything else → /jmap-domain. In both modes the
-// hand-off is the bare command: no worktree, no PR target, which is why the
-// prompt picker above does not apply to these rows.
-function jmapCommand(t: Ticket) {
-  if (t.labels.includes('jmap:scope')) return '/jmap-scope'
-  if (t.labels.includes('jmap:synthesize')) return '/jmap-synthesize'
-  return '/jmap-domain'
-}
-function commandLabel(mode: ProjectMode, t: Ticket) {
-  if (mode === 'wayfinder') return '/jwayfinder'
-  if (mode === 'jmap') return jmapCommand(t)
-  return '/jimplement'
-}
-function commandFor(t: Ticket, mode: ProjectMode, branch = t.branch) {
-  if (mode === 'wayfinder') return `/jwayfinder ${t.key}`
-  if (mode === 'jmap') return `${jmapCommand(t)} ${t.key}`
-  return prompt.value.command(t.key, branch)
-}
+// it from here. The prompt picker, the commands and every herdr control below
+// live in useHerdrDispatch, shared verbatim with the project page's board.
+const {
+  herdrUp,
+  refreshHerdr,
+  promptTarget,
+  prompt,
+  commandLabel,
+  workspaceFor,
+  projectTabs,
+  focusHerdr,
+  dispatching,
+  dispatchTicket,
+  runningAll,
+  runAllProgress,
+  runAll: runAllRows,
+  cleaningUp,
+  cleanupHerdr,
+  copied,
+  copyCommand,
+} = useHerdrDispatch()
 
 // ── Merging the PR queue ──
 // Every ticket lands as its own local PR, so every few tickets there's a queue
@@ -219,7 +196,9 @@ interface MergeQueue {
   conflicted: number
 }
 const mergeQueues = computed<MergeQueue[]>(() =>
-  projects.value
+  // Same star rule as the frontier — an unstarred project's queue is work
+  // you've deliberately parked.
+  starredProjects.value
     .map((project) => {
       const queue = mergeQueueOf(prs.value, project.id)
       return { project, queue, conflicted: queue.filter((pr) => pr.status === 'conflicted').length }
@@ -241,101 +220,11 @@ async function copyMergePrompt(q: MergeQueue) {
   }
 }
 
-// ── Herdr — run the prompts instead of copying them ──
-// jTicket drives the terminal itself: one herdr WORKSPACE per project (label =
-// project title), ticket agents packed up to four PANES per 'PROJ-n' tab, merge
-// sweeps as their own single-pane 'PROJ-n · merge' tab. Everything is created
-// --no-focus, so dispatch never steals the screen — the herdr buttons and tab
-// chips below are the deliberate way over.
-const { available: herdrUp, refresh: refreshHerdr, workspaceByLabel, focus: herdrFocus } = useHerdr()
-
-function workspaceFor(project: Project) {
-  return workspaceByLabel(project.title)
-}
-// Only the tabs jTicket names for this project ('PROJ-2', 'PROJ-2 · 3',
-// 'PROJ-2 · merge') become chips — the workspace may hold other tabs too.
-function projectTabs(project: Project) {
-  const ws = workspaceFor(project)
-  if (!ws) return []
-  return ws.tabs.filter((t) => t.label === project.key || t.label.startsWith(`${project.key} · `))
-}
-
-async function focusHerdr(target: { workspace?: string; tab?: string }) {
-  try {
-    await herdrFocus(target)
-  } catch (err: any) {
-    toast.add({ title: 'Could not focus herdr', description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
-  }
-}
-
-const dispatching = ref<string | null>(null)
-// The core dispatch: cut the branch, build the prompt, hand it to herdr.
-// HITL tickets get their own tab — work that will stop and ask for the human
-// deserves a tab of its own, not a quarter of a grid. Throws so run-all can
-// tally failures; the single-row button wraps it with its own toasts.
-async function dispatchOne(t: Ticket, mode: ProjectMode) {
-  const branch = await resolveBranch(t, mode)
-  return await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
-    method: 'POST',
-    body: { prompt: commandFor(t, mode, branch), ownTab: t.type === 'HITL' },
-  })
-}
-
-async function dispatchTicket(t: Ticket, mode: ProjectMode) {
-  dispatching.value = t.id
-  try {
-    const res = await dispatchOne(t, mode)
-    toast.add({
-      title: `${t.key} running in herdr`,
-      description: `Agent ${res.agent} — use the tab chip to go watch it.`,
-      icon: 'i-lucide-terminal',
-      color: 'success',
-    })
-    refreshHerdr()
-  } catch (err: any) {
-    toast.add({ title: `Could not dispatch ${t.key}`, description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
-  } finally {
-    dispatching.value = null
-  }
-}
-
-// ── Run all — one project's shown frontier into herdr, one after another ──
-// Per project, from its group header. Sequential on purpose: parallel
-// dispatches would race the tab creation and pane packing (and each agent
-// start already takes a few seconds anyway). Respects the filters: the rows
-// you see under the header are the rows that get dispatched.
-const runningAll = ref<string | null>(null)
-const runAllProgress = ref('')
-async function runAll(g: NextGroup) {
+// Run-all from a group header — the rows you see under the header are the
+// rows that get dispatched (so it respects the filters).
+function runAll(g: NextGroup) {
   if (!g.project || !g.rows.length) return
-  runningAll.value = g.project.id
-  let done = 0
-  const failed: string[] = []
-  try {
-    for (const { ticket, mode } of g.rows) {
-      runAllProgress.value = `${done + failed.length + 1}/${g.rows.length}`
-      dispatching.value = ticket.id
-      try {
-        await dispatchOne(ticket, mode)
-        done++
-      } catch {
-        failed.push(ticket.key)
-      }
-    }
-  } finally {
-    dispatching.value = null
-    runningAll.value = null
-    runAllProgress.value = ''
-    refreshHerdr()
-  }
-  toast.add({
-    title: `${done} ${g.project.key} ticket${done === 1 ? '' : 's'} running in herdr`,
-    description: failed.length
-      ? `Could not dispatch: ${failed.join(', ')}`
-      : 'HITL tickets have their own tabs; use the chips to go watch.',
-    icon: failed.length ? 'i-lucide-triangle-alert' : 'i-lucide-terminal',
-    color: failed.length ? 'warning' : 'success',
-  })
+  return runAllRows(g.project, g.rows)
 }
 
 const dispatchingMerge = ref<string | null>(null)
@@ -360,45 +249,6 @@ async function dispatchMerge(q: MergeQueue) {
   }
 }
 
-// The local-PR hand-off names the ticket's branch, so jTicket cuts it the
-// moment the prompt is handed off (copied or dispatched) — off the integration
-// branch, local only. A failed cut (no repo, no integration branch) still
-// hands off; the agent will be told to cut a branch itself via POST /api/prs's
-// error. Wayfinder and jMap tickets never get branches — their work is
-// research/docs, not code.
-async function resolveBranch(t: Ticket, mode: ProjectMode): Promise<string> {
-  if (mode !== 'standard' || promptTarget.value !== 'local' || t.branch) return t.branch
-  try {
-    const res = await $fetch<{ branch: string }>(`/api/tickets/${t.id}/branch`, { method: 'POST', body: {} })
-    return res.branch
-  } catch (err: any) {
-    toast.add({
-      title: `No branch cut for ${t.key}`,
-      description: branchErrorText(err),
-      icon: 'i-lucide-git-branch',
-      color: 'warning',
-    })
-    return t.branch
-  }
-}
-
-const copied = ref<string | null>(null)
-async function copyCommand(t: Ticket, mode: ProjectMode) {
-  const branch = await resolveBranch(t, mode)
-  const command = commandFor(t, mode, branch)
-  try {
-    await navigator.clipboard.writeText(command)
-    copied.value = t.id
-    setTimeout(() => {
-      if (copied.value === t.id) copied.value = null
-    }, 1600)
-  } catch {
-    // Clipboard access can be refused (an insecure origin, a denied prompt) —
-    // show the command so it is still copyable by hand.
-    toast.add({ title: 'Could not copy', description: command, icon: 'i-lucide-clipboard-x', color: 'warning' })
-  }
-}
-
 </script>
 
 <template>
@@ -410,20 +260,21 @@ async function copyCommand(t: Ticket, mode: ProjectMode) {
         <div>
           <h1 class="text-2xl font-bold">Up next</h1>
           <p class="text-sm text-muted">
-            {{ frontier.length }} {{ frontier.length === 1 ? 'ticket' : 'tickets' }} takeable right now — open,
-            unblocked, unclaimed
-            <template v-if="frontier.length"> · {{ counts.afk }} AFK · {{ counts.hitl }} HITL</template>
+            {{ onDeck.length }} {{ onDeck.length === 1 ? 'ticket' : 'tickets' }} takeable right now — open,
+            unblocked, unclaimed, in a starred project
+            <template v-if="onDeck.length"> · {{ counts.afk }} AFK · {{ counts.hitl }} HITL</template>
+            <template v-if="hiddenByStar"> · {{ hiddenByStar }} more in unstarred projects</template>
           </p>
-          <p v-if="frontier.length" class="mt-1 font-mono text-xs text-dimmed">
+          <p v-if="onDeck.length" class="mt-1 font-mono text-xs text-dimmed">
             {{ prompt.command('TICK-123') }}
           </p>
         </div>
-        <div v-if="frontier.length" class="flex flex-wrap items-center gap-2">
+        <div v-if="onDeck.length" class="flex flex-wrap items-center gap-2">
           <USelect v-model="typeFilter" :items="TYPES" value-key="value" class="w-56" />
           <USelect v-model="projectFilter" :items="projectOptions" value-key="value" class="w-56" />
           <USelect
             v-model="promptTarget"
-            :items="PROMPT_OPTIONS"
+            :items="HANDOFF_PROMPT_OPTIONS"
             value-key="value"
             icon="i-lucide-git-pull-request"
             class="w-56"
@@ -506,16 +357,20 @@ async function copyCommand(t: Ticket, mode: ProjectMode) {
         </div>
       </section>
 
-      <!-- Nothing takeable anywhere -->
+      <!-- Nothing takeable in any starred project -->
       <div
-        v-if="!frontier.length"
+        v-if="!onDeck.length"
         class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-default py-20 text-center"
       >
-        <UIcon name="i-lucide-flag-off" class="size-10 text-muted" />
+        <UIcon :name="hiddenByStar ? 'i-lucide-star-off' : 'i-lucide-flag-off'" class="size-10 text-muted" />
         <div>
-          <p class="font-medium">Nothing on the frontier</p>
+          <p class="font-medium">{{ hiddenByStar ? 'Nothing starred is takeable' : 'Nothing on the frontier' }}</p>
           <p class="text-sm text-muted">
-            <template v-if="stalled.blocked || stalled.claimed || stalled.running">
+            <template v-if="hiddenByStar">
+              {{ hiddenByStar }} takeable {{ hiddenByStar === 1 ? 'ticket is' : 'tickets are' }} in unstarred
+              projects — star a project to bring its tickets here.
+            </template>
+            <template v-else-if="stalled.blocked || stalled.claimed || stalled.running">
               Everything open is already moving or waiting —
               <template v-if="stalled.running">{{ stalled.running }} in progress</template>
               <template v-if="stalled.running && (stalled.blocked || stalled.claimed)"> · </template>
@@ -527,6 +382,15 @@ async function copyCommand(t: Ticket, mode: ProjectMode) {
           </p>
         </div>
         <div class="flex gap-2">
+          <UButton
+            v-if="hiddenByStar"
+            icon="i-lucide-star"
+            variant="soft"
+            color="neutral"
+            to="/projects"
+          >
+            Star a project
+          </UButton>
           <UButton
             v-if="stalled.running"
             icon="i-lucide-loader"
@@ -547,8 +411,8 @@ async function copyCommand(t: Ticket, mode: ProjectMode) {
       >
         <UIcon name="i-lucide-filter-x" class="size-8 text-muted" />
         <p class="text-sm text-muted">
-          Nothing on the frontier matches these filters — {{ frontier.length }} takeable
-          {{ frontier.length === 1 ? 'ticket is' : 'tickets are' }} hidden.
+          Nothing on the frontier matches these filters — {{ onDeck.length }} takeable
+          {{ onDeck.length === 1 ? 'ticket is' : 'tickets are' }} hidden.
         </p>
         <UButton size="sm" variant="soft" color="neutral" @click="clearFilters">Clear filters</UButton>
       </div>
@@ -630,6 +494,20 @@ async function copyCommand(t: Ticket, mode: ProjectMode) {
                 />
                 {{ tab.label }}
               </UButton>
+              <UTooltip
+                v-if="projectTabs(g.project).length"
+                :text="`Close ${g.project.key}'s herdr tabs (asks first if an agent is still busy)`"
+              >
+                <UButton
+                  icon="i-lucide-paintbrush"
+                  color="neutral"
+                  variant="ghost"
+                  size="xs"
+                  :loading="cleaningUp === g.project.id"
+                  :aria-label="`Close ${g.project.key}'s herdr tabs`"
+                  @click.stop="cleanupHerdr(g.project)"
+                />
+              </UTooltip>
             </template>
             <div class="h-px flex-1 bg-default" />
           </div>

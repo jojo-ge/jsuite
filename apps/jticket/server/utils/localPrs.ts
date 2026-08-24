@@ -82,7 +82,7 @@ async function worktreeIsClean(dir: string): Promise<boolean> {
 }
 
 export type SquashResult =
-  | { ok: true; commit: string; headDeleted: boolean }
+  | { ok: true; commit: string; parent: string; headDeleted: boolean }
   | { ok: false; conflictFiles: string[] }
 
 /**
@@ -154,7 +154,10 @@ export async function squashMergePr(
     headDeleted = (await tryGit(path, ['branch', '-D', head])) !== null
   }
 
-  return { ok: true, commit, headDeleted }
+  // `parent` is the squash commit's sole parent (the base tip it landed on) —
+  // recorded on the PR so parent..commit can be reviewed after the head branch
+  // is gone.
+  return { ok: true, commit, parent: baseOid, headDeleted }
 }
 
 /** Resolve a PR by id or key. */
@@ -176,6 +179,17 @@ export function withPrDerived(store: Store, pr: LocalPr, repoPath: string | null
     ...pr,
     ticketKey: ticket?.key ?? null,
     ticketTitle: ticket?.title ?? null,
-    jdiffUrl: repoPath ? jdiffBranchUrl(repoPath, pr.status === 'merged' ? pr.baseBranch : pr.headBranch) : null,
+    jdiffUrl: repoPath ? prJdiffUrl(pr, repoPath) : null,
   }
+}
+
+// Where "review this PR" should land in jDiff. Open/conflicted: the head
+// branch against its base. Merged: the exact squash diff (parent..commit —
+// jDiff takes bare oids as refs); PRs merged before mergeParent existed fall
+// back to the base branch, since their head branch is gone.
+function prJdiffUrl(pr: LocalPr, repoPath: string): string {
+  if (pr.status !== 'merged') return jdiffBranchUrl(repoPath, pr.headBranch, pr.baseBranch)
+  return pr.mergeCommit && pr.mergeParent
+    ? jdiffBranchUrl(repoPath, pr.mergeCommit, pr.mergeParent)
+    : jdiffBranchUrl(repoPath, pr.baseBranch)
 }

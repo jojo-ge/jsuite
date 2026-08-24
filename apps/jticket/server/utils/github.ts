@@ -309,8 +309,13 @@ export function jdiffPrsUrl(repoPath: string): string {
   return `${JDIFF_BASE}/prs?repo=${encodeURIComponent(repoPath)}`
 }
 
-export function jdiffBranchUrl(repoPath: string, branch: string): string {
-  return `${JDIFF_BASE}/branch?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}`
+// `branch`/`base` take any ref jDiff's isSafeRef accepts — commit oids
+// included, which is how merged local PRs link to their exact squash diff.
+// Carry `base` whenever it's known: jDiff's branch page can fall back to the
+// repo's default branch, but its branch-summary page cannot.
+export function jdiffBranchUrl(repoPath: string, branch: string, base?: string): string {
+  const baseParam = base ? `&base=${encodeURIComponent(base)}` : ''
+  return `${JDIFF_BASE}/branch?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}${baseParam}`
 }
 
 export function matchProjectPrs(

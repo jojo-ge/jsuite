@@ -286,6 +286,71 @@ async function closePr(pr: LocalPrRow) {
   }
 }
 
+// The whole panel folds, closed by default — the project page is for the
+// tickets; PRs open on demand. The header keeps the count so a waiting queue
+// still announces itself.
+const open = ref(false)
+
+// ── jDiff reviews — dispatched from here, findings reported back to jTicket ──
+// An integration-branch review files findings as review:finding tickets in
+// this project; a local-PR review comments them onto the PR's ticket. The
+// running state comes from jDiff's job registry, polled only while the panel
+// is open; jDiff being down just means no badges, never an error.
+interface ReviewStatus { available: boolean; running: string[] }
+const reviewStatus = ref<ReviewStatus>({ available: false, running: [] })
+async function refreshReviewStatus() {
+  try {
+    reviewStatus.value = await $fetch<ReviewStatus>(`/api/projects/${props.project.id}/review-status`)
+  } catch { /* transient — the next poll retries */ }
+}
+let reviewTick: ReturnType<typeof setInterval> | undefined
+watch(open, (o) => {
+  if (o && !reviewTick) {
+    refreshReviewStatus()
+    reviewTick = setInterval(refreshReviewStatus, 8_000)
+  } else if (!o && reviewTick) {
+    clearInterval(reviewTick)
+    reviewTick = undefined
+  }
+}, { immediate: true })
+onUnmounted(() => { if (reviewTick) clearInterval(reviewTick) })
+
+// jDiff keys branch runs "branch/<name>".
+const reviewRunning = (branch: string) => reviewStatus.value.running.includes(`branch/${branch}`)
+
+const dispatchingReview = ref('')
+async function runIntegrationReview() {
+  dispatchingReview.value = 'integration'
+  try {
+    const res = await $fetch<{ agent: string; attached: boolean }>(
+      `/api/projects/${props.project.id}/review`,
+      { method: 'POST' },
+    )
+    toast.add(res.attached
+      ? { title: 'A review is already running for this branch', description: 'Attached to it — this run keeps its original context.', color: 'neutral', icon: 'i-lucide-sparkles' }
+      : { title: 'Review dispatched to herdr', description: `Agent ${res.agent} — findings will be filed as ${props.project.key} tickets.`, color: 'success', icon: 'i-lucide-sparkles' })
+  } catch (err: any) {
+    toast.add({ title: 'Could not dispatch the review', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    dispatchingReview.value = ''
+    refreshReviewStatus()
+  }
+}
+async function runPrReview(pr: LocalPrRow) {
+  dispatchingReview.value = pr.id
+  try {
+    const res = await $fetch<{ agent: string; attached: boolean }>(`/api/prs/${pr.id}/review`, { method: 'POST' })
+    toast.add(res.attached
+      ? { title: `A review is already running for ${pr.headBranch}`, description: 'Attached to it — this run keeps its original context.', color: 'neutral', icon: 'i-lucide-sparkles' }
+      : { title: `Review dispatched for ${pr.key}`, description: `Agent ${res.agent} — findings land as a comment on ${pr.ticketKey ?? 'its ticket'}.`, color: 'success', icon: 'i-lucide-sparkles' })
+  } catch (err: any) {
+    toast.add({ title: `Could not dispatch the review for ${pr.key}`, description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    dispatchingReview.value = ''
+    refreshReviewStatus()
+  }
+}
+
 // Per-row commit fold-out — the "commit details" a PR row carries.
 const expandedPrs = reactive(new Set<string>())
 function togglePr(id: string) {
@@ -384,11 +449,19 @@ async function createPr() {
 <template>
   <section class="mb-8">
     <div class="mb-2 flex items-center gap-2">
-      <UIcon name="i-lucide-git-pull-request" class="size-4 text-muted" />
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Pull requests</h2>
-      <span v-if="data?.configured" class="text-xs text-muted">{{ prs.length }}</span>
+      <button
+        type="button"
+        class="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-elevated/40"
+        :aria-expanded="open"
+        @click="open = !open"
+      >
+        <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 text-muted" />
+        <UIcon name="i-lucide-git-pull-request" class="size-4 text-muted" />
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Pull requests</h2>
+        <span v-if="data?.configured" class="text-xs text-muted">{{ prs.length }}</span>
+      </button>
       <UButton
-        v-if="data?.configured"
+        v-if="data?.configured && open"
         icon="i-lucide-refresh-cw"
         size="xs"
         color="neutral"
@@ -403,12 +476,13 @@ async function createPr() {
         size="xs"
         color="neutral"
         variant="ghost"
-        :class="data?.configured ? '' : 'ml-auto'"
+        :class="data?.configured && open ? '' : 'ml-auto'"
         aria-label="Edit the GitHub link"
         @click="emit('configure')"
       />
     </div>
 
+    <template v-if="open">
     <!-- No repo yet -->
     <div
       v-if="data && !data.configured"
@@ -500,6 +574,18 @@ async function createPr() {
             >
               Review
             </UButton>
+            <UTooltip text="Run the jDiff review on the integration branch — findings become project tickets">
+              <UButton
+                icon="i-lucide-sparkles"
+                size="xs"
+                color="secondary"
+                variant="soft"
+                :loading="dispatchingReview === 'integration' || reviewRunning(data.branch.name)"
+                @click="runIntegrationReview"
+              >
+                {{ reviewRunning(data.branch.name) ? 'Reviewing…' : 'Run review' }}
+              </UButton>
+            </UTooltip>
             <UTooltip text="Push the integration branch to origin — the only remote write in the local flow">
               <UButton
                 icon="i-lucide-upload"
@@ -630,6 +716,17 @@ async function createPr() {
                   aria-label="Review in jDiff"
                 />
               </UTooltip>
+              <UTooltip :text="`Run the jDiff review — findings land as a comment on ${pr.ticketKey ?? 'its ticket'}`">
+                <UButton
+                  icon="i-lucide-sparkles"
+                  size="xs"
+                  color="secondary"
+                  variant="ghost"
+                  :loading="dispatchingReview === pr.id || reviewRunning(pr.headBranch)"
+                  aria-label="Run the jDiff review"
+                  @click="runPrReview(pr)"
+                />
+              </UTooltip>
               <UButton
                 icon="i-lucide-git-merge"
                 size="xs"
@@ -751,6 +848,7 @@ async function createPr() {
     </div>
 
     <div v-else class="py-6 text-center text-sm text-muted">Loading…</div>
+    </template>
 
     <!-- New local PR — the manual fallback; agents POST /api/prs directly -->
     <UModal

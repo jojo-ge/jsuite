@@ -3,7 +3,7 @@ import type { Doc } from '~/composables/useTracker'
 import type { Explainer } from '@jsuite/documents/types'
 
 const route = useRoute()
-const { projects, tickets, docs } = useTracker()
+const { projects, tickets, docs, updateProject } = useTracker()
 const {
   openNewTicket,
   openEditTicket,
@@ -34,9 +34,24 @@ const stats = computed(() => ({
   done: projectTickets.value.filter((x) => isFinished(x.status)).length,
 }))
 
+// Star/unstar — the flag that decides whether this project surfaces on /next.
+const starring = ref(false)
+async function toggleStar() {
+  if (!project.value || starring.value) return
+  starring.value = true
+  try {
+    await updateProject(project.value.id, { starred: !project.value.starred })
+  } finally {
+    starring.value = false
+  }
+}
+
 // Documents render compact — a one-line list or a pill strip — instead of full
 // cards that read like tickets. The choice is per-visitor and in-memory.
 const docsView = ref<'rows' | 'chips'>('rows')
+// The section itself folds, closed by default — the page is for the tickets;
+// docs (like the PR panel below) open on demand.
+const docsOpen = ref(false)
 
 // Clicking a doc previews its shared document (the same object /docs/[key]
 // renders) in a modal; a footer link opens the full page.
@@ -121,6 +136,24 @@ async function removeProject() {
               >
                 jMap
               </UBadge>
+              <UBadge
+                v-else-if="project.mode === 'todo'"
+                color="warning"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-list-todo"
+              >
+                TODO list
+              </UBadge>
+              <UBadge
+                v-else-if="project.mode === 'architect'"
+                color="info"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-drafting-compass"
+              >
+                Architect
+              </UBadge>
               <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
               <span class="text-xs text-muted">{{ stats.done }}/{{ stats.tickets }} tickets done</span>
             </div>
@@ -137,6 +170,17 @@ async function removeProject() {
             </p>
           </div>
           <div class="flex shrink-0 gap-1">
+            <UTooltip :text="project.starred ? 'Starred — its takeable tickets show on Up next' : 'Star to surface this project on Up next'">
+              <UButton
+                icon="i-lucide-star"
+                size="sm"
+                :color="project.starred ? 'warning' : 'neutral'"
+                :variant="project.starred ? 'soft' : 'ghost'"
+                :loading="starring"
+                :aria-label="project.starred ? 'Unstar project' : 'Star project'"
+                @click="toggleStar"
+              />
+            </UTooltip>
             <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="openNewTicket(project.id)">Ticket</UButton>
             <!-- Integration branch: cut it, or jump to reviewing it -->
             <UTooltip v-if="project.repo && !project.integrationBranch" text="Cut an empty branch off the default branch and push it">
@@ -180,13 +224,22 @@ async function removeProject() {
           </div>
         </div>
 
-        <!-- Documents — compact, with a Rows / Chips toggle; a click previews the doc -->
+        <!-- Documents — a folded accordion (closed by default); inside, compact
+             rows or chips, and a click previews the doc -->
         <section v-if="projectDocs.length" class="mb-8">
           <div class="mb-2 flex items-center gap-2">
-            <UIcon name="i-lucide-file-text" class="size-4 text-muted" />
-            <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Documents</h2>
-            <span class="text-xs text-muted">{{ projectDocs.length }}</span>
-            <UFieldGroup size="xs" class="ml-auto">
+            <button
+              type="button"
+              class="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-elevated/40"
+              :aria-expanded="docsOpen"
+              @click="docsOpen = !docsOpen"
+            >
+              <UIcon :name="docsOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 text-muted" />
+              <UIcon name="i-lucide-file-text" class="size-4 text-muted" />
+              <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Documents</h2>
+              <span class="text-xs text-muted">{{ projectDocs.length }}</span>
+            </button>
+            <UFieldGroup v-if="docsOpen" size="xs" class="ml-auto">
               <UButton
                 icon="i-lucide-list"
                 :color="docsView === 'rows' ? 'primary' : 'neutral'"
@@ -209,6 +262,7 @@ async function removeProject() {
               size="xs"
               color="neutral"
               variant="ghost"
+              :class="docsOpen ? '' : 'ml-auto'"
               :to="`/docs/new?project=${project.id}`"
             >
               New doc
@@ -216,7 +270,7 @@ async function removeProject() {
           </div>
 
           <!-- Rows: a tight one-line list -->
-          <div v-if="docsView === 'rows'" class="overflow-hidden rounded-lg border border-default">
+          <div v-if="docsOpen && docsView === 'rows'" class="overflow-hidden rounded-lg border border-default">
             <button
               v-for="d in projectDocs"
               :key="d.id"
@@ -234,7 +288,7 @@ async function removeProject() {
           </div>
 
           <!-- Chips: a wrapping row of pills; hover shows the full title -->
-          <div v-else class="flex flex-wrap gap-2">
+          <div v-else-if="docsOpen" class="flex flex-wrap gap-2">
             <UTooltip v-for="d in projectDocs" :key="d.id" :text="d.title">
               <button
                 type="button"
@@ -255,11 +309,15 @@ async function removeProject() {
         <!-- GitHub — the project's integration branch and its open PRs -->
         <ProjectGithub :project="project" @configure="openEditProject(project)" />
 
-        <!-- Tickets -->
+        <!-- Tickets. The TODO project gets its checklist instead of a board —
+             same rendering the board page pins at the top. -->
+        <TodoList v-if="project.mode === 'todo'" :project="project" :tickets="projectTickets" />
         <TicketBoard
+          v-else
           :tickets="projectTickets"
           :all-tickets="tickets"
           :wayfinder="project.mode === 'wayfinder'"
+          :project="project"
           :body="project.description"
           @new-ticket="openNewTicket(project.id)"
           @edit-ticket="openEditTicket"

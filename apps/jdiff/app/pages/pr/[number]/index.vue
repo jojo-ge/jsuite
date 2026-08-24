@@ -201,9 +201,9 @@ onMounted(() => { resumeAiTasks() })
 
 const tourPending = computed(() => aiTasks.value.tour.pending)
 
-// Compact run status: while claude works (or after a failure) the page shows
-// the run's live log inline; the full per-tool panels live on the summary
-// page. The combined analyze run mirrors one log into every pending tool,
+// Compact run status: while the herdr session works (or after a failure) the
+// page shows the run's status lines inline; the full per-tool panels live on
+// the summary page. The dispatch mirrors one log into every pending tool,
 // so the first pending tool's log is the run's log.
 const TOOL_KINDS = ['rating', 'risk', 'tour', 'self'] as const
 const runLog = computed(() => {
@@ -356,10 +356,10 @@ onMounted(() => {
   }, { immediate: true })
 })
 
-// No unmount cleanup or leave-page warning for claude runs: the job runs
-// server-side detached from the page, its stream lives in useAiTasks
-// (runAllTools drives the combined /api/analyze-generate run), and leaving
-// simply stops watching.
+// No unmount cleanup or leave-page warning for review runs: the claude
+// session lives in herdr detached from the page, useAiTasks only watches for
+// its artifacts (runAllTools drives the /api/analyze-dispatch hand-off), and
+// leaving simply stops watching.
 
 function onFileLinkClick(e: MouseEvent, path: string) {
   if (!closedFiles.value.includes(path)) return
@@ -503,7 +503,7 @@ function openSelfCard() {
         </template>
         <button
           class="rate-btn run-all"
-          :title="anyPending ? 'stop the run' : 'one claude run generates reviewability, risk heatmap, guided tour, and ask yourself together'"
+          :title="anyPending ? 'stop watching the run' : 'one herdr claude session (opus 5) generates reviewability, risk heatmap, guided tour, ask yourself, and findings together'"
           @click="anyPending ? cancelAllTools() : runAllTools()"
         >
           <span v-if="anyPending" class="spinner small" />

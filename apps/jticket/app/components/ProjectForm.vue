@@ -12,6 +12,21 @@ const emit = defineEmits<{ saved: [] }>()
 
 const { createProject, updateProject } = useTracker()
 
+// Codebase-first: a new project belongs to the selected codebase, so its repo
+// is prefilled and shown as a static row. "Use a different repo" opens the
+// old probe/browse field as the escape hatch. Editing keeps the field as-is.
+const { selectedPath, current, label: codebaseLabel } = useCodebase()
+const customRepo = ref(false)
+const showRepoField = computed(() => !!props.project || customRepo.value || !selectedPath.value)
+
+// The TODO project is made only by POST /api/projects/todo (one per codebase),
+// so the mode is locked when editing it and never offered when creating.
+const isTodoProject = computed(() => props.project?.mode === 'todo')
+// Architect projects are made only by the projects page's Improve-architecture
+// button (POST /api/projects/architect) — same deal: render the value when
+// editing one, never offer it as a choice.
+const isArchitectProject = computed(() => props.project?.mode === 'architect')
+
 const form = reactive({ title: '', description: '', mode: 'standard' as ProjectMode, repo: '', integrationBranch: '' })
 const saving = ref(false)
 const canSave = computed(() => !!form.title.trim())
@@ -91,17 +106,23 @@ function slugForBranch(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '')
 }
 
-const modeOptions = [
+const modeOptions = computed(() => [
   { label: 'Standard — plain tracker', value: 'standard' },
   { label: 'Wayfinder — the description is a map, tickets have a frontier', value: 'wayfinder' },
   { label: 'jMap — tickets are codebase-mapping jobs dispatched with /jmap-* commands', value: 'jmap' },
-]
+  // Only so the locked select on the TODO project can render its own value —
+  // never offered as a choice (the select is disabled whenever this applies).
+  ...(isTodoProject.value ? [{ label: "TODO — the codebase's todo list (one per codebase, auto-created)", value: 'todo' }] : []),
+  // Same: only so an architect project's select can render its own value.
+  ...(isArchitectProject.value ? [{ label: 'Architect — one architecture scan; tickets are graded deepening candidates', value: 'architect' }] : []),
+])
 
 function reset() {
   form.title = props.project?.title ?? ''
   form.description = props.project?.description ?? ''
   form.mode = props.project?.mode ?? 'standard'
-  form.repo = props.project?.repo ?? ''
+  // A new project starts in the selected codebase.
+  form.repo = props.project?.repo ?? selectedPath.value ?? ''
   form.integrationBranch = props.project?.integrationBranch ?? ''
 }
 reset()
@@ -135,8 +156,13 @@ defineExpose({ save, reset, saving, canSave })
     <UFormField label="Description">
       <UTextarea v-model="form.description" :rows="4" placeholder="What this project covers…" class="w-full" />
     </UFormField>
-    <UFormField label="Mode" help="Wayfinder projects treat the description as a map and surface a takeable frontier of tickets.">
-      <USelect v-model="form.mode" :items="modeOptions" class="w-full" />
+    <UFormField
+      label="Mode"
+      :help="isTodoProject
+        ? 'The TODO project is auto-created, one per codebase — its mode is fixed.'
+        : 'Wayfinder projects treat the description as a map and surface a takeable frontier of tickets.'"
+    >
+      <USelect v-model="form.mode" :items="modeOptions" :disabled="isTodoProject" class="w-full" />
     </UFormField>
 
     <!-- GitHub link. Optional: with a repo the project view lists the project's
@@ -147,7 +173,19 @@ defineExpose({ save, reset, saving, canSave })
         <span class="text-xs font-semibold uppercase tracking-wide text-muted">GitHub</span>
         <span class="text-xs text-muted">optional</span>
       </div>
-      <UFormField label="Repo" help="Path to a local clone — the same path jDiff takes. '~' is fine.">
+      <!-- Codebase-first: a new project lands in the selected codebase. The
+           full repo field stays one click away for the odd project that
+           belongs elsewhere. -->
+      <div v-if="!showRepoField" class="flex items-center gap-2 rounded-lg border border-default bg-elevated/30 px-3 py-2">
+        <UIcon name="i-lucide-folder-git-2" class="size-4 shrink-0 text-muted" />
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium">{{ codebaseLabel(current ?? { path: selectedPath ?? '' }) }}</p>
+          <p class="truncate font-mono text-xs text-muted">{{ selectedPath }}</p>
+        </div>
+        <UButton size="xs" color="neutral" variant="ghost" @click="customRepo = true">Use a different repo</UButton>
+      </div>
+
+      <UFormField v-if="showRepoField" label="Repo" help="Path to a local clone — the same path jDiff takes. '~' is fine.">
         <div class="flex gap-2">
           <UInput v-model="form.repo" placeholder="~/code/my-repo" class="flex-1 font-mono text-sm" />
           <UButton
@@ -163,19 +201,19 @@ defineExpose({ save, reset, saving, canSave })
       </UFormField>
 
       <!-- What that path actually is -->
-      <p v-if="probing" class="-mt-2 text-xs text-muted">Checking…</p>
-      <p v-else-if="probe?.ok" class="-mt-2 flex items-center gap-1.5 text-xs text-success">
+      <p v-if="showRepoField && probing" class="-mt-2 text-xs text-muted">Checking…</p>
+      <p v-else-if="showRepoField && probe?.ok" class="-mt-2 flex items-center gap-1.5 text-xs text-success">
         <UIcon name="i-lucide-check" class="size-3.5" />
         <span>{{ probe.slug ?? 'local git repo' }}</span>
         <span class="text-muted">· default branch {{ probe.defaultBranch }}</span>
       </p>
-      <p v-else-if="probe && form.repo" class="-mt-2 flex items-center gap-1.5 text-xs text-error">
+      <p v-else-if="showRepoField && probe && form.repo" class="-mt-2 flex items-center gap-1.5 text-xs text-error">
         <UIcon name="i-lucide-triangle-alert" class="size-3.5" />
         {{ probe.error }}: {{ probe.path }}
       </p>
 
       <!-- Repos this tracker has been pointed at before -->
-      <div v-if="recentRepos.length" class="-mt-1 flex flex-wrap items-center gap-1.5">
+      <div v-if="showRepoField && recentRepos.length" class="-mt-1 flex flex-wrap items-center gap-1.5">
         <span class="text-xs text-muted">Recent</span>
         <UTooltip v-for="r in recentRepos" :key="r.path" :text="r.path">
           <div

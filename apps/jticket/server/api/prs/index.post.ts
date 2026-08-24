@@ -65,6 +65,7 @@ export default defineEventHandler(async (event) => {
     status: 'open',
     conflictFiles: [],
     mergeCommit: '',
+    mergeParent: '',
     mergedAt: null,
     createdAt: ts,
     updatedAt: ts,

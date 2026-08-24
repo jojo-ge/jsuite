@@ -39,6 +39,11 @@ const {
   selfAt,
   selfStale,
   answeredCount,
+  findings,
+  findingsAt,
+  findingsStale,
+  sortedFindings,
+  findingCounts,
   anyStale,
 } = usePrArtifacts(repo, computed(() => ({ number: number.value })), computed(() => pr.value?.lastPushedAt ?? null))
 onMounted(() => { resumeAiTasks() })
@@ -56,6 +61,7 @@ const ratingOpen = ref(true)
 const riskOpen = ref(true)
 const tourOpen = ref(true)
 const selfOpen = ref(true)
+const findingsOpen = ref(true)
 
 const ratingPending = computed(() => aiTasks.value.rating.pending)
 const ratingError = computed(() => aiTasks.value.rating.error)
@@ -121,6 +127,19 @@ watch(
   () => nextTick(() => selfLogEl.value?.scrollTo({ top: selfLogEl.value.scrollHeight })),
 )
 
+const findingsPending = computed(() => aiTasks.value.findings.pending)
+const findingsError = computed(() => aiTasks.value.findings.error)
+const findingsLog = computed(() => aiTasks.value.findings.log)
+const showFindingsLog = computed({
+  get: () => aiTasks.value.findings.showLog,
+  set: (v) => { aiTasks.value.findings.showLog = v },
+})
+const findingsLogEl = ref<HTMLElement | null>(null)
+watch(
+  () => findingsLog.value.length,
+  () => nextTick(() => findingsLogEl.value?.scrollTo({ top: findingsLogEl.value.scrollHeight })),
+)
+
 function saveAnswer(i: number) {
   const q = selfQs.value?.[i]
   if (!q) return
@@ -177,7 +196,7 @@ async function postAnswer(i: number) {
         <NuxtLink :to="reviewRoute" class="rate-btn">← back to the diff</NuxtLink>
         <button
           class="rate-btn run-all"
-          :title="anyPending ? 'stop the run' : 'one claude run generates reviewability, risk heatmap, guided tour, and ask yourself together'"
+          :title="anyPending ? 'stop the run' : 'one herdr claude session (opus 5) generates reviewability, risk heatmap, guided tour, ask yourself, and findings together'"
           @click="anyPending ? cancelAllTools() : runAllTools()"
         >
           <span v-if="anyPending" class="spinner small" />
@@ -369,6 +388,66 @@ async function postAnswer(i: number) {
         </template>
         <div v-if="!tour && !tourPending && !tourError" class="item-note empty-note">
           not generated yet — run all tools to get an ordered walkthrough of the change
+        </div>
+      </div>
+
+      <div id="findings-card" class="rating-card">
+        <div
+          class="rating-head"
+          :class="{ clickable: findings && !findingsPending }"
+          @click="findings && !findingsPending && (findingsOpen = !findingsOpen)"
+        >
+          <span v-if="findings && !findingsPending" class="rating-chevron">{{ findingsOpen ? '▾' : '▸' }}</span>
+          <span class="card-title" :class="{ 'risk-title': findings }">{{ findings ? 'findings' : '✦ findings' }}</span>
+          <template v-if="findings">
+            <span v-if="findings.length" class="risk-counts">
+              <span v-if="findingCounts.high" class="rc high">{{ findingCounts.high }} high</span>
+              <span v-if="findingCounts.medium" class="rc medium">{{ findingCounts.medium }} medium</span>
+              <span v-if="findingCounts.low" class="rc low">{{ findingCounts.low }} low</span>
+            </span>
+            <span v-else class="rc low">clean</span>
+            <span v-if="findingsAt" class="rating-effort">found {{ timeAgo(findingsAt) }}</span>
+            <span v-if="findingsStale" class="stale-badge" title="the PR was pushed after these findings were generated — re-run all tools to refresh">out of date</span>
+          </template>
+          <span class="head-actions">
+            <button
+              v-if="findingsOpen && findingsLog.length && !findingsPending"
+              class="log-toggle"
+              @click.stop="showFindingsLog = !showFindingsLog"
+            >
+              {{ showFindingsLog ? 'hide log' : 'show log' }}
+            </button>
+            <span v-if="findingsPending" class="spinner small" />
+          </span>
+        </div>
+        <div v-if="showFindingsLog && findingsLog.length" ref="findingsLogEl" class="rating-log">
+          <div v-for="(l, i) in findingsLog" :key="i" class="log-line">
+            <span class="log-t">{{ l.t }}s</span>{{ l.text }}
+          </div>
+        </div>
+        <div v-if="findingsError" class="error-box in-card">{{ findingsError }}</div>
+        <template v-if="findings && !findingsPending && findingsOpen">
+          <ul v-if="findings.length" class="risk-list">
+            <li v-for="(f, i) in sortedFindings" :key="i">
+              <span class="factor-dot" :class="'risk-' + f.severity" />
+              <div class="risk-item">
+                <strong class="stop-title">{{ f.title }}</strong>
+                <div>
+                  <NuxtLink
+                    v-if="diffPaths.has(f.path)"
+                    :to="{ ...reviewRoute, hash: reviewAnchor(f.path) }"
+                    class="reading-path"
+                  >{{ f.path }}<template v-if="f.line">:{{ f.line }}</template></NuxtLink>
+                  <span v-else class="reading-path">{{ f.path }}<template v-if="f.line">:{{ f.line }}</template></span>
+                </div>
+                <div class="item-note">{{ f.detail }}</div>
+              </div>
+            </li>
+          </ul>
+          <div v-else class="item-note empty-note">no findings — the review came back clean</div>
+        </template>
+        <div v-if="!findings && !findingsPending && !findingsError" class="item-note empty-note">
+          not generated yet — run all tools to hunt for concrete defects in the change
         </div>
       </div>
 

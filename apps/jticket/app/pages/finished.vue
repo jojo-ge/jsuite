@@ -9,8 +9,16 @@ import type { Project, Ticket } from '~/composables/useTracker'
 
 useHead({ title: 'Recently finished' })
 
-const { projects, tickets } = useTracker()
+// Codebase-scoped, like every list page — the raw arrays stay in useTracker.
+const { scopedProjects: projects, scopedTickets: tickets, scopedPrs: prs } = useCodebase()
 const { openEditTicket, onDeleteTicket } = useTrackerModals()
+
+// "View changes" — the ticket's diff in jDiff (exact squash diff for merged
+// local PRs, the work branch otherwise).
+const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
+function diffUrlOf(ticket: Ticket): string | null {
+  return ticketDiffUrl(ticket, projects.value, prs.value, jdiffBase)
+}
 
 // `now` is the live clock, and it is deliberately client-only: it starts null so
 // the first client render matches the server, then fills in after mount and
@@ -185,6 +193,16 @@ const stats = computed(() => {
                     <span v-if="ticket.assignee" class="inline-flex items-center gap-1">
                       <UIcon name="i-lucide-user-round" class="size-3.5" />{{ ticket.assignee }}
                     </span>
+                    <a
+                      v-if="diffUrlOf(ticket)"
+                      :href="diffUrlOf(ticket)!"
+                      target="_blank"
+                      rel="noreferrer"
+                      class="inline-flex items-center gap-1 hover:text-primary"
+                      @click.stop
+                    >
+                      <UIcon name="i-lucide-git-compare" class="size-3.5" />View changes
+                    </a>
                   </div>
                 </div>
 

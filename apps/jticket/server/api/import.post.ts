@@ -57,6 +57,7 @@ export default defineEventHandler(async (event) => {
       mode: coerceProjectMode(p.mode),
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
+      starred: p.starred === true,
       createdAt: ts,
       updatedAt: ts,
     }

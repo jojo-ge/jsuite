@@ -68,6 +68,12 @@ export function focusHerdrWindow(): Promise<boolean>
  * Start claude in a shell pane under `name` (suffixed until free — live agent
  * names must be unique) and submit the prompt. Returns the name that stuck.
  * Blocks until herdr sees the agent ready (~seconds) — a slow button, not
- * fire-and-forget.
+ * fire-and-forget. `opts.args` are extra CLI args for the claude binary
+ * itself (e.g. ['--model', 'claude-opus-5']).
  */
-export function startClaudeIn(paneId: string, name: string, prompt: string): Promise<string>
+export function startClaudeIn(
+  paneId: string,
+  name: string,
+  prompt: string,
+  opts?: { args?: string[] },
+): Promise<string>

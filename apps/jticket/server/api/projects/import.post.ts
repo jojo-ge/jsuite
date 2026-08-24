@@ -16,6 +16,18 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const ts = now()
 
+  // Optional ?repo= — attach the imported project to a local clone (a path,
+  // '~/…', or a known slug). Query, not bundle: the repo is the importer's,
+  // never part of the bundle format.
+  const repoQuery = getQuery(event).repo
+  let repoOverride = ''
+  if (repoQuery) {
+    const probe = await probeRepo(resolveRepoParam(store, repoQuery))
+    if (!probe.ok) throw createError({ statusCode: 400, statusMessage: `${probe.error}: ${probe.path}` })
+    repoOverride = probe.path
+    rememberRepo(store, { path: probe.path, slug: probe.slug ?? '', defaultBranch: probe.defaultBranch })
+  }
+
   // 1. Attachments — suffix names that collide with different bytes.
   const attachmentRenames = new Map<string, string>()
   if (bundle.attachments?.length) mkdirSync(ATTACHMENTS_DIR, { recursive: true })
@@ -67,9 +79,12 @@ export default defineEventHandler(async (event) => {
     mode: bundle.project.mode === 'wayfinder' ? 'wayfinder' : 'standard',
     // The integration branch travels with the bundle (it names a branch on the
     // shared remote); the repo path does not — it's local to the machine that
-    // exported it, so the importer points the project at their own clone.
-    repo: '',
+    // exported it. ?repo= lets the importer attach the project to their own
+    // clone in the same call (the UI passes the selected codebase).
+    repo: repoOverride,
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
+    // Starring is a local "what's on deck" flag, so it doesn't travel.
+    starred: false,
     createdAt: bundle.project.createdAt || ts,
     updatedAt: bundle.project.updatedAt || ts,
   }

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import type { Project } from '~/composables/useTracker'
+import type { Project, Ticket } from '~/composables/useTracker'
 
 useHead({ title: 'Projects' })
 
-const { projects, tickets, refresh } = useTracker()
+// Codebase-scoped, like every list page — the raw arrays stay in useTracker.
+const { refresh, updateProject } = useTracker()
+const { scopedProjects: projects, scopedTickets: tickets, selectedPath } = useCodebase()
 const { openNewProject, openEditProject, onDeleteProject } = useTrackerModals()
+const { herdrUp, dispatchTicket } = useHerdrDispatch()
 
 // ── Import a project bundle (produced by the project page's Export button) ──
 const toast = useToast()
@@ -19,7 +22,13 @@ async function importBundle(e: Event) {
   importing.value = true
   try {
     const bundle = JSON.parse(await file.text())
-    const res = await $fetch<{ project: Project }>('/api/projects/import', { method: 'POST', body: bundle })
+    // ?repo= attaches the imported project to the selected codebase — the
+    // bundle never carries a repo path (it's local to the exporting machine).
+    const res = await $fetch<{ project: Project }>('/api/projects/import', {
+      method: 'POST',
+      body: bundle,
+      query: selectedPath.value ? { repo: selectedPath.value } : undefined,
+    })
     await refresh()
     toast.add({ title: `Imported ${res.project.key} · ${res.project.title}`, color: 'success' })
     navigateTo(`/projects/${res.project.key}`)
@@ -52,6 +61,45 @@ const doneProjects = computed(() => projects.value.filter((p) => isDone(p.id)))
 const showDone = ref(false)
 
 const backlogCount = computed(() => tickets.value.filter((t) => !t.projectId).length)
+
+// Star/unstar — the flag that decides whether the project surfaces on /next.
+function toggleStar(project: Project) {
+  return updateProject(project.id, { starred: !project.starred })
+}
+
+// ── Improve architecture — one click, one scan ──
+// Creates an architect-mode project against the selected codebase (repo comes
+// from the scope, nothing to ask) and dispatches its scan straight into herdr.
+// The review moment is the populated board, not the empty project — so there
+// is no create-then-confirm step; with herdr down the project still lands and
+// the scan waits on its Run button.
+const improving = ref(false)
+async function improveArchitecture() {
+  if (!selectedPath.value || improving.value) return
+  improving.value = true
+  try {
+    const res = await $fetch<{ project: Project; ticket: Ticket }>('/api/projects/architect', {
+      method: 'POST',
+      body: { repo: selectedPath.value },
+    })
+    await refresh()
+    if (herdrUp.value) await dispatchTicket(res.ticket, 'architect')
+    else {
+      toast.add({
+        title: `${res.project.key} created — herdr isn't running`,
+        description: 'Start herdr, then Run the scan ticket from the board.',
+        icon: 'i-lucide-drafting-compass',
+        color: 'warning',
+      })
+    }
+    navigateTo(`/projects/${res.project.key}`)
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    toast.add({ title: 'Could not start the architecture scan', description: detail, color: 'error' })
+  } finally {
+    improving.value = false
+  }
+}
 </script>
 
 <template>
@@ -77,6 +125,18 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.projectId).le
           >
             Import
           </UButton>
+          <UTooltip text="Scan this codebase for deepening opportunities — a herdr session fills a new project with graded candidates">
+            <UButton
+              icon="i-lucide-drafting-compass"
+              variant="soft"
+              color="neutral"
+              :loading="improving"
+              :disabled="!selectedPath"
+              @click="improveArchitecture"
+            >
+              Improve architecture
+            </UButton>
+          </UTooltip>
           <UButton icon="i-lucide-folder-tree" variant="soft" color="neutral" @click="openNewProject">New project</UButton>
         </div>
       </div>
@@ -106,6 +166,7 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.projectId).le
             :all-tickets="tickets"
             @edit="openEditProject"
             @delete="onDeleteProject"
+            @star="toggleStar"
           />
         </div>
 
@@ -137,6 +198,7 @@ const backlogCount = computed(() => tickets.value.filter((t) => !t.projectId).le
               done
               @edit="openEditProject"
               @delete="onDeleteProject"
+              @star="toggleStar"
             />
           </div>
         </div>

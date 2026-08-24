@@ -2,6 +2,28 @@
 
 A local GitHub client that's really good at diffs. Nuxt 4 app; `gh` lists PRs, local `git` computes and highlights diffs. See README.md for architecture.
 
+## Review guidance runs in herdr — jDiff runs NO claude
+
+The AI tools (reviewability rating, risk heatmap, guided tour, ask-yourself,
+findings, per-line asks) are produced by a claude session dispatched into
+herdr via `@jsuite/herdr` (`server/utils/herdrReview.ts`), pinned to Opus 5.
+The dispatched session runs the globally-installed `jdiff-review` /
+`jdiff-ask` skills (owned here in `.claude/skills/`, installed by
+`./jsuite setup`) and POSTs artifacts back to `/api/review-artifact`,
+`/api/ask-result`, and `/api/review-complete`; the UI polls the
+saved-artifact endpoints. Don't reintroduce an in-process claude runner — a
+new guidance tool means a new artifact shape in the skill + a validator in
+`server/utils/aiArtifacts.ts`, not an app-side claude run. The prompts live
+in the skills, nowhere else; keep `jdiff-ask`'s question table in sync with
+`app/utils/askQuestions.ts`.
+
+jTicket triggers reviews too: its Run-review buttons proxy to
+`POST /api/analyze-dispatch` with `ticket=`/`project=` context and
+`focus: false`. This server stays ticket-agnostic — it only relays the two
+validated keys into the prompt; it is the dispatched `jdiff-review` session
+that reports findings back to jTicket (fix tickets for an integration-branch
+review, a ticket comment for a single ticket's branch).
+
 ## Design Context
 
 Before any UI work, read:

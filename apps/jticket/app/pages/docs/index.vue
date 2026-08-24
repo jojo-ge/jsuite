@@ -1,7 +1,9 @@
 <script setup lang="ts">
 useHead({ title: 'Documents' })
 
-const { docs, projects } = useTracker()
+// Codebase-scoped, like every list page — project-less docs stay visible
+// under every scope (they belong to no codebase).
+const { scopedDocs: docs, scopedProjects: projects } = useCodebase()
 
 // Group docs under their project (like the board), unassigned last.
 const grouped = computed(() => {

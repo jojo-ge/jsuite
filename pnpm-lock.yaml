@@ -39,12 +39,12 @@ importers:
 
   apps/jdiff:
     dependencies:
-      '@jsuite/claude':
-        specifier: workspace:*
-        version: link:../../packages/claude
       '@jsuite/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@jsuite/herdr':
+        specifier: workspace:*
+        version: link:../../packages/herdr
       marked:
         specifier: ^18.0.6
         version: 18.0.7
@@ -180,8 +180,6 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
-
-  packages/claude: {}
 
   packages/data: {}
 

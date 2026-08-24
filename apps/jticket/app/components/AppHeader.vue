@@ -6,13 +6,31 @@ const props = defineProps<{ defaultProjectId?: string | null }>()
 const { tickets } = useTracker()
 const { openCreate } = useTrackerModals()
 
+// The codebase scope — the switcher next to the logo, and the gate on the
+// rest of the header: with nothing selected (first visit, forgotten repo)
+// there is no scope to navigate or create into, so only the picker link shows.
+const { selectedPath, codebases, refreshCodebases, current, label: codebaseLabel, select, scopedTickets } = useCodebase()
+onMounted(() => { refreshCodebases().catch(() => {}) })
+
+const codebaseItems = computed(() => [
+  codebases.value.map((c) => ({
+    label: codebaseLabel(c),
+    icon: 'i-lucide-folder-git-2',
+    type: 'checkbox' as const,
+    checked: c.path === selectedPath.value,
+    onSelect: () => { select(c.path) },
+  })),
+  [{ label: 'Manage codebases…', icon: 'i-lucide-settings-2', to: '/codebases' }],
+])
+
 // Only the two counts the nav actually badges — the header is deliberately
 // narrow (jTicket lives on a vertical monitor), so anything that doesn't help
-// you choose a destination stays off it.
+// you choose a destination stays off it. Scoped: the badge answers "in this
+// codebase", like every page behind the links does.
 const counts = computed(() => ({
-  running: tickets.value.filter((t) => t.status === 'in_progress').length,
-  // The takeable edge across every project — what /next lists.
-  next: tickets.value.filter((t) => isFrontier(t, tickets.value)).length,
+  running: scopedTickets.value.filter((t) => t.status === 'in_progress').length,
+  // The takeable edge across the codebase's projects — what /next lists.
+  next: scopedTickets.value.filter((t) => isFrontier(t, tickets.value)).length,
 }))
 
 // Whether the live stream is actually delivering. Shown rather than hidden: a
@@ -66,7 +84,23 @@ const links = computed(() => [
           <AppLogo :size="32" />
           <h1 class="hidden shrink-0 whitespace-nowrap text-lg font-semibold leading-none lg:block">jTicket</h1>
         </NuxtLink>
-        <nav class="flex shrink-0 items-center gap-1">
+        <!-- The codebase switcher — the scope every page renders inside. -->
+        <ClientOnly>
+          <UDropdownMenu v-if="selectedPath" :items="codebaseItems">
+            <UButton
+              icon="i-lucide-folder-git-2"
+              trailing-icon="i-lucide-chevron-down"
+              color="neutral"
+              variant="soft"
+              size="sm"
+              class="max-w-48"
+              :aria-label="`Codebase: ${codebaseLabel(current ?? { path: selectedPath })} — switch`"
+            >
+              <span class="truncate">{{ codebaseLabel(current ?? { path: selectedPath }) }}</span>
+            </UButton>
+          </UDropdownMenu>
+        </ClientOnly>
+        <nav v-if="selectedPath" class="flex shrink-0 items-center gap-1">
           <UButton
             v-for="l in links"
             :key="l.to"
@@ -111,8 +145,9 @@ const links = computed(() => [
             <UButton icon="i-lucide-sun" color="neutral" variant="ghost" aria-label="Toggle theme" disabled />
           </template>
         </ClientOnly>
-        <!-- One create button for all four things — see CreateModal. -->
-        <UButton icon="i-lucide-plus" @click="openCreate(props.defaultProjectId ?? null)">Create</UButton>
+        <!-- One create button for all four things — see CreateModal. Hidden
+             with no codebase: there is nothing to create into yet. -->
+        <UButton v-if="selectedPath" icon="i-lucide-plus" @click="openCreate(props.defaultProjectId ?? null)">Create</UButton>
       </div>
     </UContainer>
   </header>

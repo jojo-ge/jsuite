@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
   pr.status = 'merged'
   pr.conflictFiles = []
   pr.mergeCommit = result.commit
+  pr.mergeParent = result.parent
   pr.mergedAt = ts
   pr.updatedAt = ts
 

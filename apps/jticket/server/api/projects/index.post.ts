@@ -13,6 +13,8 @@ export default defineEventHandler(async (event) => {
     mode: coerceProjectMode(body.mode),
     repo: body.repo?.trim() ?? '',
     integrationBranch: body.integrationBranch?.trim() ?? '',
+    // Unstarred by default — a new project earns its /next slot explicitly.
+    starred: body.starred === true,
     createdAt: ts,
     updatedAt: ts,
   }

@@ -1,12 +1,23 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
-import type { AiJobFailure } from './aiJobs'
 
-// Why the last run for a target failed. The job registry is in-memory, so a
-// finished job's reason died with it — and in dev, a Nitro rebuild wiped it
-// mid-session. Failures are the one thing a reviewer needs *after* the fact,
-// so they outlive the process here, next to the artifacts they replace.
+// A failure recorded against the last review run for a target — either
+// reported by the herdr review session itself (per tool), or recorded here
+// when a dispatch went stale without ever posting results.
+export interface AiJobFailure {
+  jobKind: string
+  // Set for a per-tool failure ('rating', 'risk', …); absent when the whole
+  // run died.
+  tool?: string
+  message: string
+  at: string
+}
+
+// Why the last run for a target failed. The dispatch registry is in-memory,
+// so a finished run's reason died with it — and in dev, a Nitro rebuild wiped
+// it mid-session. Failures are the one thing a reviewer needs *after* the
+// fact, so they outlive the process here, next to the artifacts they replace.
 export interface SavedFailure {
   repo: string
   number: string

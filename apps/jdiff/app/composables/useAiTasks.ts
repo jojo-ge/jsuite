@@ -1,21 +1,20 @@
-// Global state for the claude review-guidance runs (rating, risk map, tour,
-// ask-yourself). The server runs each job detached from its SSE connection,
-// so this composable owns the client half of that contract: task state lives
-// in app-wide useState keyed by repo + target (it survives route changes), the
-// EventSources live at module scope (never closed on unmount), and landing
-// back on a review page re-attaches to whatever is still running via
-// /api/ai-jobs. Cancelling is an explicit POST — closing a stream only
-// stops watching.
+// Global state for the review-guidance runs (rating, risk map, tour,
+// ask-yourself, findings). A run is a claude session dispatched into herdr — jDiff does
+// not own the process, it only tracks it: this composable POSTs
+// /api/analyze-dispatch to start one, then polls the saved-artifact endpoints
+// (plus /api/ai-jobs for liveness) until every tool has landed or the
+// dispatch is gone. Task state lives in app-wide useState keyed by repo +
+// target (it survives route changes) and the pollers live at module scope
+// (never stopped on unmount), so navigating away never loses a run.
 //
 // A "target" is either a GitHub PR ({ number }) or a local branch
 // ({ branch, base? }); the id derived from it matches the server's storeKey,
-// so PR runs key by the bare number (keeping useAiTasksHub compatible) and
-// branch runs key by "branch/<name>".
+// so PR runs key by the bare number and branch runs key by "branch/<name>".
 //
 // useAiTasks binds one target (a review page); useAiTasksHub binds a whole
 // repo (the PR list view: kick off runs per row, badge rows with running jobs).
 
-export type AiToolKind = 'rating' | 'risk' | 'tour' | 'self'
+export type AiToolKind = 'rating' | 'risk' | 'tour' | 'self' | 'findings'
 
 export type ReviewTarget = { number: string } | { branch: string; base?: string }
 
@@ -41,8 +40,8 @@ export interface AiToolState {
   error: string
   log: { t: string; text: string }[]
   showLog: boolean
-  // The tool's last 'result' event payload ({ rating | risks | tour |
-  // questions, createdAt }); pages watch this and fold it into their view.
+  // The tool's saved artifact ({ rating | risks | tour | questions,
+  // createdAt }); pages watch this and fold it into their view.
   result: Record<string, any> | null
 }
 
@@ -50,36 +49,24 @@ export type PrAiTasks = Record<AiToolKind, AiToolState>
 
 type Store = Ref<Record<string, PrAiTasks>>
 
-const TOOL_KINDS: AiToolKind[] = ['rating', 'risk', 'tour', 'self']
-
-const ENDPOINT: Record<AiToolKind, string> = {
-  rating: '/api/review-rating',
-  risk: '/api/risk-heatmap',
-  tour: '/api/tour-generate',
-  self: '/api/ask-yourself-generate',
-}
+const TOOL_KINDS: AiToolKind[] = ['rating', 'risk', 'tour', 'self', 'findings']
 
 const SAVED_ENDPOINT: Record<AiToolKind, string> = {
   rating: '/api/rating',
   risk: '/api/risk',
   tour: '/api/tour',
   self: '/api/ask-yourself',
+  findings: '/api/findings',
 }
 
-// The combined analyze run tags each result/toolError event with a tool name.
-const ANALYZE_TOOL: Record<string, AiToolKind> = {
-  rating: 'rating',
-  risk: 'risk',
-  tour: 'tour',
-  questions: 'self',
-}
-
-// …and the reverse, for matching a recorded failure back to its panel.
+// The server (dispatch registry, failure records, the review skill's POSTs)
+// names the fourth tool 'questions'; the UI has always called it 'self'.
 const TOOL_NAME: Record<AiToolKind, string> = {
   rating: 'rating',
   risk: 'risk',
   tour: 'tour',
   self: 'questions',
+  findings: 'findings',
 }
 
 // A failure recorded by the server for a run that has already finished.
@@ -108,194 +95,199 @@ function useAiTasksStore(): Store {
 function ensurePr(store: Store, repo: string, id: string): PrAiTasks {
   const key = `${repo} ${id}`
   if (!store.value[key]) {
-    store.value[key] = { rating: blankTool(), risk: blankTool(), tour: blankTool(), self: blankTool() }
+    store.value[key] = { rating: blankTool(), risk: blankTool(), tour: blankTool(), self: blankTool(), findings: blankTool() }
   }
   return store.value[key]!
 }
 
-function resetTool(t: AiToolState) {
-  t.pending = true
-  t.error = ''
-  t.log = []
-  t.showLog = true
+// ── Watching a dispatched run ───────────────────────────────────────────────
+// One watcher per (repo, target). Module scope: navigation must not stop it.
+// `startedAt` separates the run's fresh artifacts from whatever was saved
+// before it — a tool settles when its saved artifact is newer than the
+// dispatch.
+
+interface Watcher {
+  timer: ReturnType<typeof setInterval>
+  startedAt: number
 }
 
-function handleToolMessage(t: AiToolState, msg: any) {
-  if (msg.kind === 'log') {
-    t.log.push({ t: msg.t, text: msg.text })
-  } else if (msg.kind === 'result') {
-    t.result = msg
-    t.pending = false
-    t.showLog = false
-  } else if (msg.kind === 'error') {
-    t.error = msg.message
-    t.pending = false
+const watchers = new Map<string, Watcher>()
+
+const POLL_MS = 4_000
+
+function watchKey(repo: string, id: string): string {
+  return `${repo} ${id}`
+}
+
+function logLine(pr: PrAiTasks, startedAt: number, text: string) {
+  const line = { t: ((Date.now() - startedAt) / 1000).toFixed(1), text }
+  for (const k of TOOL_KINDS) if (pr[k].pending) pr[k].log.push(line)
+}
+
+function stopWatching(repo: string, id: string) {
+  const key = watchKey(repo, id)
+  const w = watchers.get(key)
+  if (w) clearInterval(w.timer)
+  watchers.delete(key)
+}
+
+// Fetch a tool's saved artifact; settle the panel if it postdates the run.
+async function trySettle(
+  t: AiToolState,
+  kind: AiToolKind,
+  repo: string,
+  target: ReviewTarget,
+  startedAt: number,
+): Promise<boolean> {
+  let saved: Record<string, any> | null = null
+  try {
+    saved = await $fetch<Record<string, any> | null>(SAVED_ENDPOINT[kind], {
+      query: { repo, ...targetQuery(target) },
+    })
+  } catch {
+    return false
   }
+  if (!saved?.createdAt || Date.parse(saved.createdAt) < startedAt) return false
+  t.result = saved
+  t.pending = false
+  t.showLog = false
+  return true
 }
 
-// Live EventSources. Module scope: navigation must not close them.
-const sources = new Map<string, EventSource>()
-
-function sourceKey(repo: string, id: string, kind: AiToolKind | 'analyze'): string {
-  return `${repo} ${id} ${kind}`
-}
-
-function attach(store: Store, repo: string, target: ReviewTarget, kind: AiToolKind | 'analyze') {
+function startWatching(store: Store, repo: string, target: ReviewTarget, startedAt: number) {
   const id = targetId(target)
-  const key = sourceKey(repo, id, kind)
-  if (sources.has(key)) return
+  const key = watchKey(repo, id)
+  if (watchers.has(key)) return
   const pr = ensurePr(store, repo, id)
 
-  const url = kind === 'analyze' ? '/api/analyze-generate' : ENDPOINT[kind]
-  const params = new URLSearchParams({ repo, ...targetQuery(target) })
-  const es = new EventSource(`${url}?${params}`)
-  sources.set(key, es)
-
-  const close = () => {
-    es.close()
-    if (sources.get(key) === es) sources.delete(key)
-  }
-  es.onmessage = (e) => {
-    const msg = JSON.parse(e.data)
-    // 'done' is the job's terminal marker; close before EventSource
-    // auto-reconnects, or a reconnect after the job expires would start a
-    // fresh run. A tool still pending at 'done' will never get its result
-    // event — settle it from the saved artifact instead of spinning forever.
-    if (msg.kind === 'done') {
-      close()
-      const unsettled: AiToolKind[] = []
-      for (const k of (kind === 'analyze' ? TOOL_KINDS : [kind])) {
-        if (pr[k].pending) {
-          pr[k].pending = false
-          pr[k].showLog = false
-          unsettled.push(k)
-        }
+  let busy = false
+  const tick = async () => {
+    if (busy) return
+    busy = true
+    try {
+      const pendingKinds = TOOL_KINDS.filter((k) => pr[k].pending)
+      if (!pendingKinds.length) {
+        stopWatching(repo, id)
+        return
       }
-      void settleAll(pr, unsettled, repo, target)
-      return
-    }
-    if (kind !== 'analyze') {
-      handleToolMessage(pr[kind], msg)
-    } else if (msg.kind === 'log') {
-      // One run, one log — mirror it into every panel still waiting.
-      const line = { t: msg.t, text: msg.text }
-      for (const k of TOOL_KINDS) if (pr[k].pending) pr[k].log.push(line)
-    } else if (msg.kind === 'result' || msg.kind === 'toolError') {
-      const tool = ANALYZE_TOOL[msg.tool]
-      if (tool) handleToolMessage(pr[tool], msg.kind === 'toolError' ? { ...msg, kind: 'error' } : msg)
-    } else if (msg.kind === 'error') {
-      for (const k of TOOL_KINDS) if (pr[k].pending) handleToolMessage(pr[k], msg)
+      await Promise.all(pendingKinds.map((k) => trySettle(pr[k], k, repo, target, startedAt)))
+
+      // Dispatch gone with panels still spinning ⇒ the run finished, failed,
+      // or was cancelled without posting those tools — settle them with the
+      // recorded reason instead of spinning forever.
+      const res = await $fetch<{ running: string[]; failures?: AiJobFailure[] }>('/api/ai-jobs', {
+        query: { repo, ...targetQuery(target) },
+      })
+      if (!res.running.includes('analyze')) {
+        for (const k of TOOL_KINDS) {
+          if (!pr[k].pending) continue
+          const settled = await trySettle(pr[k], k, repo, target, startedAt)
+          if (!settled) {
+            pr[k].pending = false
+            pr[k].showLog = false
+            if (!pr[k].error) pr[k].error = failureFor(res.failures ?? [], k)
+          }
+        }
+        stopWatching(repo, id)
+      }
+    } catch {
+      /* transient — the next tick retries */
+    } finally {
+      busy = false
     }
   }
-  // Transport drop (server restart, network). The job is still running
-  // server-side, so keep the pending state and try to re-attach; if the
-  // job finished in the gap, reattach() settles from the saved artifacts.
-  es.onerror = () => {
-    close()
-    const stillWaiting = kind === 'analyze'
-      ? TOOL_KINDS.some((k) => pr[k].pending)
-      : pr[kind].pending
-    if (stillWaiting) setTimeout(() => reattach(store, repo, target), 1500)
-  }
+
+  watchers.set(key, { timer: setInterval(tick, POLL_MS), startedAt })
+  void tick()
 }
 
-// All four artifacts from a single claude run against /api/analyze-generate.
-function startAllFor(store: Store, repo: string, target: ReviewTarget) {
+// ── Starting / cancelling ───────────────────────────────────────────────────
+
+// All five artifacts from a single claude session dispatched into herdr.
+async function startAllFor(store: Store, repo: string, target: ReviewTarget) {
   if (import.meta.server) return
   const pr = ensurePr(store, repo, targetId(target))
   if (TOOL_KINDS.some((k) => pr[k].pending)) return
-  for (const k of TOOL_KINDS) resetTool(pr[k])
-  attach(store, repo, target, 'analyze')
-}
-
-function requestCancel(repo: string, target: ReviewTarget, kind: AiToolKind | 'analyze') {
-  $fetch('/api/ai-job-cancel', { method: 'POST', body: { repo, ...targetQuery(target), kind } })
-    .catch(() => { /* job may have just finished; nothing to kill */ })
-}
-
-function closeSource(repo: string, id: string, kind: AiToolKind | 'analyze') {
-  const key = sourceKey(repo, id, kind)
-  sources.get(key)?.close()
-  sources.delete(key)
+  for (const k of TOOL_KINDS) {
+    pr[k].pending = true
+    pr[k].error = ''
+    pr[k].log = []
+    pr[k].showLog = true
+  }
+  try {
+    const res = await $fetch<{ agent: string; startedAt: number }>('/api/analyze-dispatch', {
+      method: 'POST',
+      body: { repo, ...targetQuery(target) },
+    })
+    logLine(pr, res.startedAt, `review session dispatched to herdr as agent "${res.agent}" (opus 5)`)
+    logLine(pr, res.startedAt, 'artifacts land here as the session posts them…')
+    startWatching(store, repo, target, res.startedAt)
+  } catch (e: any) {
+    const message = e?.data?.message ?? e?.message ?? 'failed to dispatch into herdr'
+    for (const k of TOOL_KINDS) {
+      pr[k].pending = false
+      pr[k].error = message
+    }
+  }
 }
 
 function cancelAllFor(store: Store, repo: string, target: ReviewTarget) {
   const id = targetId(target)
   const pr = ensurePr(store, repo, id)
-  // Kill the run server-side (all four tools share one claude process) and
-  // stop watching — even if the stream was already dropped, clear the pending
-  // spinners so the page doesn't hang.
-  closeSource(repo, id, 'analyze')
-  requestCancel(repo, target, 'analyze')
+  // Stop tracking and ask the server to interrupt the session (best-effort —
+  // the pane belongs to herdr and stays open for the reviewer).
+  stopWatching(repo, id)
+  $fetch('/api/ai-job-cancel', { method: 'POST', body: { repo, ...targetQuery(target) } })
+    .catch(() => { /* run may have just finished; nothing to clear */ })
   for (const k of TOOL_KINDS) {
     pr[k].pending = false
     pr[k].showLog = false
   }
 }
 
-// Re-attach to whatever the server is still running for this target. Tools we
-// thought were pending but that finished (or died) while no stream was
-// watching settle from their saved artifacts.
+// Re-attach to whatever herdr session is still running for this target: mark
+// only the tools the session hasn't posted yet as pending and watch for them.
 async function reattach(store: Store, repo: string, target: ReviewTarget) {
   const id = targetId(target)
   const pr = ensurePr(store, repo, id)
-  let running: string[]
-  let failures: AiJobFailure[]
+  type JobsRes = {
+    running: string[]
+    failures?: AiJobFailure[]
+    startedAt?: number | null
+    pendingTools?: string[]
+    agent?: string | null
+  }
+  let res: JobsRes
   try {
-    const res = await $fetch<{ running: string[]; failures?: AiJobFailure[] }>('/api/ai-jobs', { query: { repo, ...targetQuery(target) } })
-    running = res.running
-    failures = res.failures ?? []
+    res = await $fetch<JobsRes>('/api/ai-jobs', { query: { repo, ...targetQuery(target) } })
   } catch {
     return
   }
-  if (running.includes('analyze')) {
-    for (const k of TOOL_KINDS) if (!pr[k].pending) resetTool(pr[k])
-    attach(store, repo, target, 'analyze')
+  if (res.running.includes('analyze') && res.startedAt) {
+    const waiting = new Set(res.pendingTools ?? [])
+    for (const k of TOOL_KINDS) {
+      if (waiting.has(TOOL_NAME[k]) && !pr[k].pending) {
+        pr[k].pending = true
+        pr[k].error = ''
+        pr[k].log = [{ t: '0.0', text: `review session running in herdr (agent "${res.agent ?? '?'}")` }]
+        pr[k].showLog = true
+      }
+    }
+    startWatching(store, repo, target, res.startedAt)
+    return
   }
+  // Nothing running: clear any pending state left over from a lost watcher
+  // (a reload mid-run), settling from the saved artifacts or the recorded
+  // failure.
   for (const k of TOOL_KINDS) {
-    if (pr[k].pending && !running.includes('analyze') && !sources.has(sourceKey(repo, id, k))) {
-      // Finished (or died) while detached: settle from the saved artifact so
-      // the page doesn't stay stuck on a spinner, and if nothing was saved,
-      // show the reason the run recorded.
+    if (!pr[k].pending || watchers.has(watchKey(repo, id))) continue
+    const settled = await trySettle(pr[k], k, repo, target, 0)
+    if (!settled) {
       pr[k].pending = false
       pr[k].showLog = false
-      void settleFromStore(pr[k], k, repo, target, failures)
+      if (!pr[k].error) pr[k].error = failureFor(res.failures ?? [], k)
     }
   }
-}
-
-async function settleFromStore(
-  t: AiToolState,
-  kind: AiToolKind,
-  repo: string,
-  target: ReviewTarget,
-  failures: AiJobFailure[] = [],
-) {
-  try {
-    const saved = await $fetch<Record<string, any> | null>(SAVED_ENDPOINT[kind], {
-      query: { repo, ...targetQuery(target) },
-    })
-    if (saved) {
-      t.result = saved
-      return
-    }
-  } catch { /* the page's own saved-artifact fetch remains the fallback */ }
-  // Nothing was produced: say why rather than leaving a blank panel.
-  if (!t.error) t.error = failureFor(failures, kind)
-}
-
-// Settle a batch of tools that stopped without a result, fetching the run's
-// recorded failures once so each panel can show its own reason.
-async function settleAll(pr: PrAiTasks, kinds: AiToolKind[], repo: string, target: ReviewTarget) {
-  if (!kinds.length) return
-  let failures: AiJobFailure[] = []
-  try {
-    const res = await $fetch<{ failures?: AiJobFailure[] }>('/api/ai-jobs', {
-      query: { repo, ...targetQuery(target) },
-    })
-    failures = res.failures ?? []
-  } catch { /* no reason available; the artifact fetch still decides the panel */ }
-  await Promise.all(kinds.map((k) => settleFromStore(pr[k], k, repo, target, failures)))
 }
 
 export function useAiTasks(repo: Ref<string>, target: Ref<ReviewTarget>) {
@@ -320,7 +312,7 @@ const HUB_POLL_MS = 8_000
 // One running job as the list view sees it. `startedAt` is epoch ms from the
 // server (null for a run this tab just kicked off, which the poll hasn't
 // picked up yet); `lastLog` is the newest log line, preferring this tab's live
-// stream over the poll snapshot.
+// state over the poll snapshot.
 export interface RunningAiJob {
   jobKind: string
   id: string
@@ -338,7 +330,7 @@ interface JobSummary {
 }
 
 // Newest line from whichever panel of a locally-watched run has the longest
-// log; the four panels mirror the same run, but one may have settled early.
+// log; the panels mirror the same run, but one may have settled early.
 function localLastLog(pr: PrAiTasks): string {
   let best: { t: string; text: string } | undefined
   let bestLen = 0
@@ -352,10 +344,10 @@ function localLastLog(pr: PrAiTasks): string {
   return best?.text ?? ''
 }
 
-// Repo-wide view for the PR list: which PRs have jobs running (local state
-// answers instantly for runs started in this session; a light poll of
-// /api/ai-jobs catches runs from before a reload or another tab), plus a
-// fire-and-forget starter per row.
+// Repo-wide view for the PR list: which PRs have herdr review sessions
+// running (local state answers instantly for runs started in this session; a
+// light poll of /api/ai-jobs catches runs from before a reload or another
+// tab), plus a fire-and-forget starter per row.
 export function useAiTasksHub(repo: Ref<string>) {
   const store = useAiTasksStore()
   const serverRunning = ref<Record<string, string[]>>({})
@@ -407,7 +399,7 @@ export function useAiTasksHub(repo: Ref<string>) {
   })
 
   function startAll(number: string | number) {
-    startAllFor(store, repo.value, { number: String(number) })
+    void startAllFor(store, repo.value, { number: String(number) })
   }
 
   function cancel(target: ReviewTarget) {

@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
         name: branchName,
         local: await localBranchExists(path, branchName),
         remote: await remoteBranchExists(path, branchName),
-        jdiffUrl: jdiffBranchUrl(path, branchName),
+        jdiffUrl: jdiffBranchUrl(path, branchName, ctx.defaultBranch),
         githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branchName)}` : null,
         // "Open the roll-up PR" — the integration branch against the default branch.
         comparePrUrl: ctx.slug

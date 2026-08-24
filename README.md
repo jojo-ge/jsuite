@@ -72,7 +72,6 @@ jsuite/
 │   └── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
-    ├── claude/         # @jsuite/claude — shared local-claude CLI runner
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     ├── herdr/          # @jsuite/herdr — shared herdr (terminal workspace) adapter
     └── data/           # @jsuite/data — shared .data resolver
@@ -151,19 +150,6 @@ jExplain lists and renders; review notes and chart edits flow both ways.
 jExplain stays the canonical reading shell; jTicket wraps documents in
 project/status/label metadata.
 
-## @jsuite/claude
-
-The local-claude runner born in jDiff — `runClaude()` drives the `claude` CLI
-(`-p --output-format stream-json`, the user's own subscription, no API key)
-with live progress callbacks (`log`, `onThinking`, `onText`), tool allowlists
-for headless runs (`ANALYSIS_TOOLS` = read-only file tools + git), an
-overridable timeout (`JSUITE_CLAUDE_TIMEOUT_MS` or `opts.timeoutMs`), and
-abort-signal cancellation. `extractJson()` repairs the JSON claude was asked to
-return. Like `@jsuite/data` it is plain ESM with no layer to extend — add
-`"@jsuite/claude": "workspace:*"` to `dependencies` and import. Failures throw
-`ClaudeError` with an HTTP-ish `statusCode`, so h3 handlers can rethrow them
-directly. jDiff and jGrilling run on it.
-
 ## @jsuite/herdr
 
 The Herdr adapter born in jTicket — drives the `herdr` terminal workspace
@@ -173,14 +159,18 @@ manager over its socket CLI: binary resolution (`HERDR_BIN` → PATH →
 buttons), workspace/tab topology (`ensureHerdrWorkspace`, `acquirePackedPane`
 packs panes 2×2 per tab, `createJobTab`), macOS window focusing, and
 `startClaudeIn` (start a claude agent in a pane and submit a prompt, with the
-"not an available shell" and `agent_prompt_stalled` retry dances). Plain ESM,
-no layer; failures throw `HerdrError` with an HTTP-ish `statusCode`. jTicket
-dispatches all ticket work through it — including jMap-mode mapping tickets.
+"not an available shell" and `agent_prompt_stalled` retry dances; extra CLI
+args for the claude binary — e.g. `--model` — pass through `opts.args`). Plain
+ESM, no layer; failures throw `HerdrError` with an HTTP-ish `statusCode`.
+jTicket dispatches all ticket work through it (including jMap-mode mapping
+tickets), and jDiff dispatches its review-guidance sessions (the
+`jdiff-review` / `jdiff-ask` skills, pinned to Opus 5).
 
 ## jSkills
 
 Apps own their Claude skills in `<app>/.claude/skills` (the jTicket pattern:
 jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
+jdiff owns `jdiff-review` and `jdiff-ask`;
 jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`;
 jmap owns `j-map`, `jmap-scope`, `jmap-domain` and `jmap-synthesize`).
 Suite-level skills live in
