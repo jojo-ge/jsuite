@@ -17,6 +17,10 @@ const open = ref(false)
 const loading = ref(false)
 const busy = ref(false)
 const share = ref<ShareView | null>(null)
+// Sharing works end to end only with a signaling relay configured; without
+// one the link imports fine but no pull can ever connect. Fetched with the
+// share so the panel can say so up front instead of failing at pull time.
+const relayConfigured = ref(true)
 // The 1–4 char key the shared project uses on both machines. Fixed for the
 // share's lifetime once a share exists — the input locks to the record's key.
 const sharedKey = ref('')
@@ -53,6 +57,12 @@ async function load() {
     share.value = null
   } finally {
     loading.value = false
+  }
+  try {
+    const relay = await $fetch<{ configured: boolean }>('/api/sync/relay')
+    relayConfigured.value = relay.configured
+  } catch {
+    relayConfigured.value = true // can't tell — don't cry wolf
   }
 }
 
@@ -133,6 +143,15 @@ async function copyLink() {
       <div v-else-if="loading" class="py-10 text-center text-sm text-muted">Loading…</div>
 
       <div v-else class="space-y-4">
+        <UAlert
+          v-if="!relayConfigured"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-satellite-dish"
+          title="No signaling relay configured"
+          description="Links can be created and imported, but pulls won't connect. Run packages/relay/wizard.sh — both machines must use the same relay URL."
+        />
+
         <div v-if="share" class="flex items-center gap-2">
           <UBadge :color="STATUS_META[share.status].color" variant="subtle" size="sm">
             {{ STATUS_META[share.status].label }}

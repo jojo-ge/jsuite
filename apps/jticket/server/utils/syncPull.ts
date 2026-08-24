@@ -89,7 +89,12 @@ export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
       throw new PullStartError('share link expired — ask your coworker for a fresh link', 410)
     }
     const url = relayUrl()
-    if (!url) throw new PullStartError('no signaling relay configured (JTICKET_RELAY_URL)', 503)
+    if (!url) {
+      throw new PullStartError(
+        'no signaling relay configured — run packages/relay/wizard.sh (or set JTICKET_RELAY_URL)',
+        503,
+      )
+    }
 
     const id = `pull_${nextAttempt++}_${nowMs().toString(36)}`
     const attempt: Attempt = {

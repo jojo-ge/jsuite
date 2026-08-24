@@ -2,9 +2,25 @@
 // shrink every window. Functions, not constants: the harness boots instances
 // with per-process env, and tests that tweak process.env want fresh reads.
 
-/** Base URL of the signaling relay; '' = sync is unconfigured on this machine. */
+import { readFileSync } from 'node:fs'
+import { appDataFile } from '@jsuite/data'
+
+/**
+ * Base URL of the signaling relay; '' = sync is unconfigured on this machine.
+ * JTICKET_RELAY_URL wins when non-empty (harness instances, one-off runs);
+ * otherwise the deploy wizard's .data/jticket/sync.json `relayUrl`. The file
+ * is read fresh on every call so a wizard run lands without a restart.
+ */
 export function syncRelayUrl(): string {
-  return process.env.JTICKET_RELAY_URL?.trim() ?? ''
+  const env = process.env.JTICKET_RELAY_URL?.trim()
+  if (env) return env
+  try {
+    const config: unknown = JSON.parse(readFileSync(appDataFile('jticket', 'sync.json'), 'utf8'))
+    const url = (config as { relayUrl?: unknown })?.relayUrl
+    return typeof url === 'string' ? url.trim() : ''
+  } catch {
+    return '' // no file, or one too broken to trust — sync is unconfigured
+  }
 }
 
 const intEnv = (name: string, fallback: number): number => {
