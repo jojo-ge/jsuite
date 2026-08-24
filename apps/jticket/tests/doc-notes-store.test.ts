@@ -9,7 +9,13 @@ const DIR = join(process.env.JSUITE_DATA_DIR!, 'jexplain')
 
 describe('readDocNotes', () => {
   beforeEach(() => {
-    rmSync(DIR, { recursive: true, force: true })
+    // Clean only this suite's own keys — the pool dir is shared with other
+    // test files running in parallel, so nuking it wholesale races them.
+    for (const key of ['e2e-doc', 'nope']) {
+      rmSync(join(DIR, `${key}.json`), { force: true })
+      rmSync(join(DIR, `${key}.notes.json`), { force: true })
+      rmSync(join(DIR, 'media', key), { recursive: true, force: true })
+    }
     mkdirSync(DIR, { recursive: true })
   })
 

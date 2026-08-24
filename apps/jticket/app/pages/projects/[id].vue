@@ -211,6 +211,8 @@ async function removeProject() {
             </UTooltip>
             <!-- Share with a peer — jTicket sync's capability link (DOC-30) -->
             <ProjectShare :project="project" />
+            <!-- Imported shared project: pull the coworker's half on demand -->
+            <SyncPull v-if="project.share?.side === 'importer'" :project="project" />
             <UButton
               icon="i-lucide-download"
               size="sm"
@@ -225,6 +227,9 @@ async function removeProject() {
             <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="removeProject" />
           </div>
         </div>
+
+        <!-- Pending pull approvals — the serving side's per-pull human gate -->
+        <SyncPullRequests :project-id="project.id" class="mb-6" />
 
         <!-- Documents — a folded accordion (closed by default); inside, compact
              rows or chips, and a click previews the doc -->

@@ -203,3 +203,58 @@ describe('in-flight-only ferrying — nothing persists beyond the hand-off', () 
     await Promise.all([closed(a2), closed(b2)])
   })
 })
+
+describe('client-supplied rooms — jTicket shares mint room ids locally', () => {
+  function killRoom(roomId, secret) {
+    const url = new URL(`/rooms/${roomId}`, relay.url)
+    url.searchParams.set('secret', secret)
+    return fetch(url, { method: 'DELETE' })
+  }
+
+  it('registers a room under the supplied id and secret', async () => {
+    const res = await createRoom(relay, { roomId: 'share-room-1', secret: 'share-secret', ttlMs: 60_000 })
+    expect(res.status).toBe(201)
+    const room = await res.json()
+    expect(room.roomId).toBe('share-room-1')
+    expect(room.secret).toBe('share-secret')
+
+    // …and it admits members exactly like a minted room.
+    const a = await join(relay, 'share-room-1', 'share-secret')
+    const b = await join(relay, 'share-room-1', 'share-secret')
+    a.send('blob')
+    expect(await nextMessage(b)).toBe('blob')
+    a.close()
+    b.close()
+    await Promise.all([closed(a), closed(b)])
+  })
+
+  it('re-registering with the matching secret refreshes the expiry', async () => {
+    await createRoom(relay, { roomId: 'refresh-room', secret: 's3', ttlMs: 100 })
+    await sleep(150)
+    const res = await createRoom(relay, { roomId: 'refresh-room', secret: 's3', ttlMs: 60_000 })
+    expect(res.status).toBe(201)
+    expect((await res.json()).roomId).toBe('refresh-room')
+    const a = await join(relay, 'refresh-room', 's3')
+    const b = await join(relay, 'refresh-room', 's3')
+    a.send('post-refresh blob')
+    expect(await nextMessage(b)).toBe('post-refresh blob')
+    a.close()
+    b.close()
+    await Promise.all([closed(a), closed(b)])
+  })
+
+  it('refuses to re-register with a different secret', async () => {
+    await createRoom(relay, { roomId: 'squat-room', secret: 'right', ttlMs: 60_000 })
+    const res = await createRoom(relay, { roomId: 'squat-room', secret: 'wrong', ttlMs: 60_000 })
+    expect(res.status).toBe(403)
+  })
+
+  it('a killed room stays dead — re-registration cannot revive it', async () => {
+    await createRoom(relay, { roomId: 'dead-room', secret: 'sd', ttlMs: 60_000 })
+    expect((await killRoom('dead-room', 'sd')).status).toBe(204)
+    const res = await createRoom(relay, { roomId: 'dead-room', secret: 'sd', ttlMs: 60_000 })
+    expect(res.status).toBe(409)
+    const ws = new WebSocket(joinUrl(relay, 'dead-room', 'sd'))
+    expect((await closed(ws)).code).toBe(4005)
+  })
+})

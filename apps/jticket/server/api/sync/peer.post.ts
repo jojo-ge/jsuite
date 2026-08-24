@@ -2,7 +2,7 @@
 // handshake. Returns { id } immediately — poll GET /api/sync/peer/:id.
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
-  const { relayUrl, roomId, secret, initiator, echo, iceServers } = body ?? {}
+  const { relayUrl, roomId, secret, initiator, iceServers } = body ?? {}
   if (typeof relayUrl !== 'string' || !relayUrl) {
     throw createError({ statusCode: 400, statusMessage: 'relayUrl is required' })
   }
@@ -23,7 +23,6 @@ export default defineEventHandler(async (event) => {
     roomId,
     secret,
     initiator,
-    echo: echo === true,
     ...(Array.isArray(iceServers) ? { iceServers } : {}),
   })
 })

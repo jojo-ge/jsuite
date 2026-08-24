@@ -19,8 +19,12 @@ export interface DialOptions {
   secret: string
   /** The initiating side creates the data channel and sends the offer. */
   initiator: boolean
-  /** Send every received message straight back — the harness's echo side. */
-  echo?: boolean
+  /** Fires once when the data channel opens (state is 'connected'). */
+  onOpen?: () => void
+  /** Every message received over the data channel, in order. */
+  onMessage?: (data: string) => void
+  /** Fires once when the connection ends — closed by either side, or failed. */
+  onClose?: () => void
   /** STUN/TURN servers; defaults to none (host candidates — fine locally). */
   iceServers?: string[]
   /**
@@ -30,6 +34,13 @@ export interface DialOptions {
    * EADDRNOTAVAIL mid-DTLS. Tests bind 127.0.0.1 to stay off real interfaces.
    */
   bindAddress?: string
+  /**
+   * Once a handshake has STARTED (a remote description arrived), fail the
+   * peer if no channel opens within this window — a stuck half-handshake
+   * would otherwise wait forever and block its owner from re-dialing.
+   * Waiting in a room with no offer yet stays indefinite.
+   */
+  handshakeTimeoutMs?: number
 }
 
 export interface PeerStatus {
@@ -37,8 +48,6 @@ export interface PeerStatus {
   state: PeerState
   /** Why the peer failed ('' unless state is 'failed'). */
   reason: string
-  /** Messages received over the data channel so far, in order. */
-  received: string[]
   /**
    * True once the signaling socket's close handshake has completed. The relay
    * frees the room's member slot when it processes that close, and the close
@@ -71,7 +80,6 @@ interface Peer {
   id: string
   state: PeerState
   reason: string
-  received: string[]
   pc: PeerConnection
   dc: DataChannel | null
   ws: WebSocket
@@ -79,6 +87,18 @@ interface Peer {
   /** Candidates that arrived before the remote description — applied after. */
   pendingCandidates: Array<{ candidate: string; mid: string }>
   haveRemoteDescription: boolean
+  handshakeTimer: ReturnType<typeof setTimeout> | null
+  onClose?: () => void
+  /** onClose fires exactly once, whether the end is a close or a failure. */
+  closeNotified: boolean
+}
+
+function notifyClose(peer: Peer) {
+  if (peer.closeNotified) return
+  peer.closeNotified = true
+  try {
+    peer.onClose?.()
+  } catch {}
 }
 
 let nextId = 1
@@ -88,7 +108,10 @@ export function createPeerManager(): PeerManager {
 
   function dial(options: DialOptions): { id: string } {
     const id = `peer_${nextId++}`
-    const { relayUrl, roomId, secret, initiator, echo = false, iceServers = [], bindAddress } = options
+    const {
+      relayUrl, roomId, secret, initiator, onOpen, onMessage, onClose,
+      iceServers = [], bindAddress, handshakeTimeoutMs = 10_000,
+    } = options
 
     const wsUrl = new URL(`/rooms/${roomId}/ws`, relayUrl)
     wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -100,13 +123,15 @@ export function createPeerManager(): PeerManager {
       id,
       state: 'connecting',
       reason: '',
-      received: [],
       pc,
       dc: null,
       ws,
       signalingClosed: false,
       pendingCandidates: [],
       haveRemoteDescription: false,
+      handshakeTimer: null,
+      onClose,
+      closeNotified: false,
     }
     peers.set(id, peer)
 
@@ -115,6 +140,7 @@ export function createPeerManager(): PeerManager {
         peer.state = 'failed'
         peer.reason = reason
         teardown(peer)
+        notifyClose(peer)
       }
     }
 
@@ -125,23 +151,35 @@ export function createPeerManager(): PeerManager {
       }
     }
 
+    const opened = () => {
+      // Once only: the non-initiator can see both onOpen and the
+      // already-open-on-arrival fallback for the same channel.
+      if (peer.state !== 'connecting') return
+      peer.state = 'connected'
+      if (peer.handshakeTimer) clearTimeout(peer.handshakeTimer)
+      peer.handshakeTimer = null
+      // The handshake is done — the signaling socket has served its purpose,
+      // and leaving frees the room's member slot for a later re-dial.
+      ws.close()
+      try {
+        onOpen?.()
+      } catch {}
+    }
+
     const adoptChannel = (dc: DataChannel) => {
       peer.dc = dc
-      dc.onOpen(() => {
-        peer.state = 'connected'
-        // The handshake is done — the signaling socket has served its purpose,
-        // and leaving frees the room's member slot for a later re-dial.
-        ws.close()
-      })
+      dc.onOpen(opened)
       dc.onMessage((msg) => {
         const text = typeof msg === 'string' ? msg : Buffer.from(msg as ArrayBuffer).toString()
-        peer.received.push(text)
-        if (echo) dc.sendMessage(text)
+        try {
+          onMessage?.(text)
+        } catch {}
       })
       dc.onClosed(() => {
         if (peer.state === 'connected' || peer.state === 'connecting') {
           peer.state = 'closed'
         }
+        notifyClose(peer)
       })
     }
 
@@ -151,20 +189,24 @@ export function createPeerManager(): PeerManager {
       if (state === 'failed') fail('peer connection failed')
       else if ((state === 'closed' || state === 'disconnected') && peer.state === 'connected') {
         peer.state = 'closed'
+        notifyClose(peer)
       }
     })
 
     if (initiator) {
-      // Creating the channel kicks off offer generation.
+      // Creating the channel kicks off offer generation. The initiator's
+      // handshake starts NOW — its offer can be swallowed by a stale member
+      // still holding the room, so an unanswered dial must fail (and let the
+      // caller re-dial) rather than wait forever.
+      peer.handshakeTimer = setTimeout(() => {
+        if (peer.state === 'connecting') fail('handshake timed out')
+      }, handshakeTimeoutMs)
       adoptChannel(pc.createDataChannel('sync'))
     } else {
       pc.onDataChannel((dc) => {
         adoptChannel(dc)
         // The channel arrives already open on the receiving side.
-        if (dc.isOpen()) {
-          peer.state = 'connected'
-          ws.close()
-        }
+        if (dc.isOpen()) opened()
       })
     }
 
@@ -175,14 +217,25 @@ export function createPeerManager(): PeerManager {
       } catch {
         return
       }
-      if (signal.kind === 'description') {
-        pc.setRemoteDescription(signal.sdp, signal.type as never)
-        peer.haveRemoteDescription = true
-        for (const c of peer.pendingCandidates.splice(0)) pc.addRemoteCandidate(c.candidate, c.mid)
-      } else if (signal.kind === 'candidate') {
-        if (peer.haveRemoteDescription) pc.addRemoteCandidate(signal.candidate, signal.mid)
-        else peer.pendingCandidates.push({ candidate: signal.candidate, mid: signal.mid })
-      }
+      // A signal a negotiated pc can't take any more (e.g. a re-dialing peer's
+      // fresh offer landing on a stuck half-handshake) must not crash the
+      // process — the handshake timer below reclaims the stuck peer instead.
+      try {
+        if (signal.kind === 'description') {
+          pc.setRemoteDescription(signal.sdp, signal.type as never)
+          if (!peer.haveRemoteDescription) {
+            peer.haveRemoteDescription = true
+            // The initiator's timer is already running from dial().
+            peer.handshakeTimer ??= setTimeout(() => {
+              if (peer.state === 'connecting') fail('handshake timed out')
+            }, handshakeTimeoutMs)
+          }
+          for (const c of peer.pendingCandidates.splice(0)) pc.addRemoteCandidate(c.candidate, c.mid)
+        } else if (signal.kind === 'candidate') {
+          if (peer.haveRemoteDescription) pc.addRemoteCandidate(signal.candidate, signal.mid)
+          else peer.pendingCandidates.push({ candidate: signal.candidate, mid: signal.mid })
+        }
+      } catch {}
     })
     ws.addEventListener('close', (event) => {
       peer.signalingClosed = true
@@ -198,6 +251,8 @@ export function createPeerManager(): PeerManager {
   }
 
   function teardown(peer: Peer) {
+    if (peer.handshakeTimer) clearTimeout(peer.handshakeTimer)
+    peer.handshakeTimer = null
     try {
       peer.dc?.close()
     } catch {}
@@ -220,8 +275,8 @@ export function createPeerManager(): PeerManager {
     get(id) {
       const peer = peers.get(id)
       if (!peer) return undefined
-      const { state, reason, received, signalingClosed } = peer
-      return { id, state, reason, received: [...received], signalingClosed }
+      const { state, reason, signalingClosed } = peer
+      return { id, state, reason, signalingClosed }
     },
     send(id, data) {
       const peer = mustGet(id)
@@ -234,11 +289,13 @@ export function createPeerManager(): PeerManager {
       const peer = mustGet(id)
       if (peer.state !== 'failed') peer.state = 'closed'
       teardown(peer)
+      notifyClose(peer)
     },
     closeAll() {
       for (const peer of peers.values()) {
         if (peer.state !== 'failed') peer.state = 'closed'
         teardown(peer)
+        notifyClose(peer)
       }
     },
   }

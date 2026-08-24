@@ -5,8 +5,10 @@ import { startInstance, type Instance } from './harness/instance'
 
 // The two-instance harness — TICK-289's end-to-end slice. Two real jTicket
 // server processes and a local relay in one run: instance A dials instance B
-// through the relay and round-trips bytes over the data channel, driven
-// entirely through each instance's local HTTP API. No browser anywhere.
+// through the relay and opens a data channel, driven entirely through each
+// instance's local HTTP API. No browser anywhere. Real traffic over the
+// channel is the pull flow's job (sync-pull.e2e.test.ts) — the raw peer API
+// carries no message affordances since TICK-294.
 
 let relay: LocalRelay
 let A: Instance
@@ -33,7 +35,7 @@ async function api(instance: Instance, method: string, path: string, body?: unkn
 function waitForPeer(
   instance: Instance,
   id: string,
-  predicate: (status: { state: string; received: string[] }) => boolean,
+  predicate: (status: { state: string }) => boolean,
   options?: { label?: string },
 ) {
   return waitFor(() => api(instance, 'GET', `/api/sync/peer/${id}`), predicate, { intervalMs: 100, ...options })
@@ -42,13 +44,7 @@ function waitForPeer(
 async function connectPair() {
   const { roomId, secret } = await createRoom(relay)
   const relayUrl = relay.url.href
-  const { id: idB } = await api(B, 'POST', '/api/sync/peer', {
-    relayUrl,
-    roomId,
-    secret,
-    initiator: false,
-    echo: true,
-  })
+  const { id: idB } = await api(B, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: false })
   const { id: idA } = await api(A, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: true })
   await waitForPeer(A, idA, (s) => s.state === 'connected', { label: 'A connected' })
   await waitForPeer(B, idB, (s) => s.state === 'connected', { label: 'B connected' })
@@ -56,15 +52,10 @@ async function connectPair() {
 }
 
 describe('two jTicket instances over the local relay', () => {
-  it('A dials B and round-trips bytes over the data channel', async () => {
+  it('A dials B and both sides open the data channel', async () => {
     const { idA, idB } = await connectPair()
-
-    await api(A, 'POST', `/api/sync/peer/${idA}/send`, { data: 'ping-across-processes' })
-    const echoed = await waitForPeer(A, idA, (s) => s.received.length > 0, { label: 'echo back at A' })
-    expect(echoed.received).toEqual(['ping-across-processes'])
-
-    const atB = await api(B, 'GET', `/api/sync/peer/${idB}`)
-    expect(atB.received).toEqual(['ping-across-processes'])
+    expect((await api(A, 'GET', `/api/sync/peer/${idA}`)).state).toBe('connected')
+    expect((await api(B, 'GET', `/api/sync/peer/${idB}`)).state).toBe('connected')
   })
 
   it('tears down over the API and re-dials through a fresh handshake', async () => {
@@ -76,8 +67,6 @@ describe('two jTicket instances over the local relay', () => {
     await waitForPeer(B, first.idB, (s) => s.state === 'closed', { label: 'B sees the close' })
 
     const again = await connectPair()
-    await api(A, 'POST', `/api/sync/peer/${again.idA}/send`, { data: 'after-redial' })
-    const echoed = await waitForPeer(A, again.idA, (s) => s.received.length > 0, { label: 'echo after re-dial' })
-    expect(echoed.received).toEqual(['after-redial'])
+    expect((await api(A, 'GET', `/api/sync/peer/${again.idA}`)).state).toBe('connected')
   })
 })

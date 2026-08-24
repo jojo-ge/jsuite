@@ -7,11 +7,12 @@
 //
 // Body: { sharedKey?: string,  // 1–4 chars; required on first share,
 //                              // defaults to the existing key on re-share
-//         peerName?: string }  // required while the project is unarmed,
+//         peerName?: string,   // required while the project is unarmed,
 //                              // refreshes the armed name otherwise
+//         ttlMs?: number }     // test affordance — shorter windows only
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  const body = await readBody<{ sharedKey?: string; peerName?: string }>(event).catch(() => undefined)
+  const body = await readBody<{ sharedKey?: string; peerName?: string; ttlMs?: number }>(event).catch(() => undefined)
 
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
@@ -37,7 +38,8 @@ export default defineEventHandler(async (event) => {
   // not malformed requests.
   let share
   try {
-    share = createOrRearmShare(store, project.id, sharedKey)
+    const ttlMs = typeof body?.ttlMs === 'number' && body.ttlMs > 0 ? body.ttlMs : undefined
+    share = createOrRearmShare(store, project.id, sharedKey, undefined, ttlMs)
   } catch (e) {
     throw createError({ statusCode: 409, statusMessage: e instanceof Error ? e.message : String(e) })
   }
@@ -48,5 +50,11 @@ export default defineEventHandler(async (event) => {
   project.updatedAt = now()
 
   saveStore(store)
+
+  // Register the room on the relay right away so the link is dialable the
+  // moment it's pasted. Best effort — the presence loop re-ensures it every
+  // tick, so a briefly unreachable relay doesn't fail the share.
+  if (syncRelayUrl()) void ensureRelayRoom(syncRelayUrl(), share).catch(() => {})
+
   return { share: shareView(share, getRequestURL(event).origin) }
 })

@@ -64,7 +64,11 @@ export function createOrRearmShare(
   projectId: string,
   sharedKey: string,
   at: string = now(),
+  // Test affordance, like the relay's: a shorter window only — the 2h product
+  // rule is the ceiling.
+  ttlMs: number = SHARE_TTL_MS,
 ): Share {
+  const ttl = Math.min(Math.max(1, ttlMs), SHARE_TTL_MS)
   // "Must be free on both machines" (DOC-30) — this is the creator's half;
   // the peer's half is the import screen's clash check.
   if (RESERVED_KEYS.has(sharedKey) || state.shares.some((s) => s.projectId !== projectId && s.sharedKey === sharedKey)) {
@@ -86,7 +90,7 @@ export function createOrRearmShare(
     }
     existing.roomId = newRoomId()
     existing.roomSecret = newRoomSecret()
-    existing.expiresAt = expiryFrom(at)
+    existing.expiresAt = expiryFrom(at, ttl)
     existing.revokedAt = null
     existing.updatedAt = at
     return existing
@@ -99,7 +103,7 @@ export function createOrRearmShare(
     roomId: newRoomId(),
     roomSecret: newRoomSecret(),
     side: 'creator',
-    expiresAt: expiryFrom(at),
+    expiresAt: expiryFrom(at, ttl),
     revokedAt: null,
     createdAt: at,
     updatedAt: at,
@@ -148,8 +152,8 @@ export function shareStatus(share: Share, at: string = now()): ShareStatus {
   return 'active'
 }
 
-function expiryFrom(at: string): string {
-  return new Date(Date.parse(at) + SHARE_TTL_MS).toISOString()
+function expiryFrom(at: string, ttlMs: number = SHARE_TTL_MS): string {
+  return new Date(Date.parse(at) + ttlMs).toISOString()
 }
 
 function newRoomId(): string {

@@ -21,8 +21,6 @@ export default {
     const url = new URL(request.url)
 
     if (request.method === 'POST' && url.pathname === '/rooms') {
-      const roomId = crypto.randomUUID()
-      const secret = randomSecret()
       // ttlMs can only shorten a room's life (tests use tiny rooms); the 2h
       // ceiling is the product rule and cannot be raised from outside.
       let ttlMs = ROOM_TTL_MS
@@ -30,11 +28,20 @@ export default {
       if (Number.isFinite(body?.ttlMs) && body.ttlMs > 0) {
         ttlMs = Math.min(body.ttlMs, ROOM_TTL_MS)
       }
+      // A client may supply its own room id + secret (jTicket shares mint the
+      // pair locally at share time, and both peers "ensure" the room before
+      // dialing). Re-registering with the matching secret only refreshes the
+      // expiry; a killed room stays dead — a re-armed share is a new room.
+      const supplied =
+        typeof body?.roomId === 'string' && body.roomId && typeof body?.secret === 'string' && body.secret
+      const roomId = supplied ? body.roomId : crypto.randomUUID()
+      const secret = supplied ? body.secret : randomSecret()
       const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId))
       const initRes = await stub.fetch('https://room/init', {
         method: 'POST',
         body: JSON.stringify({ secretHash: await sha256hex(secret), ttlMs }),
       })
+      if (!initRes.ok) return new Response(await initRes.text(), { status: initRes.status })
       const { expiresAt } = await initRes.json()
       return Response.json({ roomId, secret, expiresAt }, { status: 201 })
     }
@@ -69,6 +76,9 @@ export class RelayRoom {
 
     if (request.method === 'POST' && url.pathname === '/init') {
       const { secretHash, ttlMs } = await request.json()
+      const existing = await this.state.storage.get('meta')
+      if (existing?.killed) return new Response('room killed', { status: 409 })
+      if (existing && existing.secretHash !== secretHash) return new Response('wrong secret', { status: 403 })
       const expiresAt = Date.now() + ttlMs
       await this.state.storage.put('meta', { secretHash, expiresAt })
       return Response.json({ expiresAt })

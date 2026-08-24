@@ -10,5 +10,10 @@ export default defineEventHandler((event) => {
   const share = revokeShare(store, project.id)
   if (!share) throw createError({ statusCode: 404, statusMessage: 'project is not shared' })
   saveStore(store)
+
+  // "Stop-sharing kills the room instantly" (DOC-30) — best effort; the
+  // serving gate refuses regardless, this just cuts the signaling path too.
+  if (syncRelayUrl()) void killRelayRoom(syncRelayUrl(), share)
+
   return { share: shareView(share, getRequestURL(event).origin) }
 })

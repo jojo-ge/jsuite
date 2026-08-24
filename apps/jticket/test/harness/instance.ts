@@ -30,7 +30,10 @@ async function freePort(): Promise<number> {
   })
 }
 
-export async function startInstance({ label = 'jticket' } = {}): Promise<Instance> {
+export async function startInstance({
+  label = 'jticket',
+  env = {} as Record<string, string>,
+} = {}): Promise<Instance> {
   const port = await freePort()
   const dataDir = mkdtempSync(join(tmpdir(), `jticket-harness-${label}-`))
   const child: ChildProcess = spawn('node', [serverEntry], {
@@ -39,6 +42,7 @@ export async function startInstance({ label = 'jticket' } = {}): Promise<Instanc
       PORT: String(port),
       HOST: '127.0.0.1',
       JSUITE_DATA_DIR: dataDir,
+      ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
