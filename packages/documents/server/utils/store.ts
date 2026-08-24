@@ -68,15 +68,16 @@ export async function deleteDoc(key: string): Promise<void> {
 
 export async function readDocNotes(key: string): Promise<DocNotes> {
   const p = docNotesPath(key)
-  if (!existsSync(p)) return { general: '', notes: [] }
+  if (!existsSync(p)) return { general: '', notes: [], generalAttachments: [] }
   try {
     const parsed = JSON.parse(await readFile(p, 'utf8')) as Partial<DocNotes>
     return {
       general: typeof parsed.general === 'string' ? parsed.general : '',
       notes: Array.isArray(parsed.notes) ? (parsed.notes as DocNote[]) : [],
+      generalAttachments: Array.isArray(parsed.generalAttachments) ? parsed.generalAttachments : [],
     }
   } catch {
-    return { general: '', notes: [] }
+    return { general: '', notes: [], generalAttachments: [] }
   }
 }
 

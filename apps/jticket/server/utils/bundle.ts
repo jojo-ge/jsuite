@@ -27,6 +27,13 @@ export interface BundleAttachment {
   base64: string
 }
 
+// A file from the documents media store (.data/jexplain/media/<docKey>/…):
+// an image-block image, or — when `notes` — a note attachment from the
+// docKey's notes/ subdirectory.
+export interface BundleDocMedia extends DocMediaRef {
+  base64: string
+}
+
 export interface ProjectBundle {
   format: typeof BUNDLE_FORMAT
   version: 1
@@ -36,6 +43,8 @@ export interface ProjectBundle {
   docs: BundleDoc[]
   charts: BundleChart[]
   attachments: BundleAttachment[]
+  /** Absent from bundles exported before doc media travelled. */
+  media?: BundleDocMedia[]
 }
 
 // Bundles exported before the epic layer was removed carry it between project
@@ -49,4 +58,27 @@ export function attachmentRefs(text: string): Set<string> {
   const out = new Set<string>()
   for (const m of text.matchAll(/\/attachments\/([\w.-]+)/g)) out.add(m[1]!)
   return out
+}
+
+export interface DocMediaRef {
+  docKey: string
+  name: string
+  notes: boolean
+}
+
+/** Every /api/media/<docKey>/[notes/]<name> reference in a blob of text, deduped. */
+export function docMediaRefs(text: string): DocMediaRef[] {
+  const out = new Map<string, DocMediaRef>()
+  for (const m of text.matchAll(/\/api\/media\/([\w-]+)\/(notes\/)?([\w.-]+)/g)) {
+    out.set(`${m[1]}/${m[2] ?? ''}${m[3]}`, { docKey: m[1]!, name: m[3]!, notes: !!m[2] })
+  }
+  return [...out.values()]
+}
+
+/** Rewrite /api/media/<key>/… urls whose doc key was renamed on import. */
+export function rewriteDocMediaUrls(text: string, renames: Map<string, string>): string {
+  if (!renames.size) return text
+  return text.replace(/\/api\/media\/([\w-]+)\//g, (whole, key: string) =>
+    renames.has(key) ? `/api/media/${renames.get(key)}/` : whole,
+  )
 }
