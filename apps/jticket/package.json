@@ -20,6 +20,7 @@
     "@jsuite/herdr": "workspace:*",
     "@jsuite/relay": "workspace:*",
     "@nuxt/ui": "^4.10.0",
+    "h3": "^1.15.11",
     "node-datachannel": "^0.33.1",
     "nuxt": "^4.5.0",
     "vue": "^3.5.0",

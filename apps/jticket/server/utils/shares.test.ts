@@ -3,13 +3,16 @@ import {
   assertServable,
   createOrRearmShare,
   findShare,
+  importedShareError,
   isValidSharedKey,
+  recordImportedShare,
   revokeShare,
   parseShareBlob,
   shareLink,
   shareStatus,
   type Share,
 } from './shares'
+import { sharedTicketKey } from './ownership'
 
 const AT = '2026-08-24T12:00:00.000Z'
 const TWO_HOURS_LATER = '2026-08-24T14:00:00.000Z'
@@ -165,6 +168,100 @@ describe('share status', () => {
     createOrRearmShare(s, 'proj_abc123', 'CART', '2026-08-24T15:00:00.000Z')
     expect(shareStatus(share, '2026-08-24T15:00:00.000Z')).toBe('active')
     expect(shareStatus(share, '2026-08-24T17:00:00.000Z')).toBe('expired')
+  })
+})
+
+describe('importing a share link (peer side)', () => {
+  // A creator machine's share, as the importing machine receives it: the
+  // decoded blob from the link's fragment.
+  function received(key = 'CART') {
+    const creator = state()
+    const share = createOrRearmShare(creator, 'proj_on_creator', key, AT)
+    const fragment = shareLink(share, 'http://localhost:43000').split('#')[1]!
+    return { creator, share, blob: parseShareBlob(fragment, AT) }
+  }
+
+  it('persists an importer-side record from the blob, keyed by the shared project UUID', () => {
+    const { share, blob } = received()
+    const s = state()
+    const imported = recordImportedShare(s, blob, 'proj_on_importer', AT)
+
+    expect(s.shares).toEqual([imported])
+    expect(imported.projectId).toBe('proj_on_importer')
+    expect(imported.projectUuid).toBe(share.projectUuid)
+    expect(imported.sharedKey).toBe('CART')
+    expect(imported.roomId).toBe(share.roomId)
+    expect(imported.roomSecret).toBe(share.roomSecret)
+    expect(imported.side).toBe('importer')
+    expect(imported.expiresAt).toBe(share.expiresAt)
+    expect(imported.revokedAt).toBeNull()
+  })
+
+  it('re-importing a re-armed link updates the record in place — same project, fresh room', () => {
+    const { creator, blob } = received()
+    const s = state()
+    const first = recordImportedShare(s, blob, 'proj_on_importer', AT)
+
+    const rearmed = createOrRearmShare(creator, 'proj_on_creator', 'CART', '2026-08-24T15:00:00.000Z')
+    const fragment = shareLink(rearmed, 'http://localhost:43000').split('#')[1]!
+    const again = recordImportedShare(
+      s,
+      parseShareBlob(fragment, '2026-08-24T15:00:00.000Z'),
+      'proj_on_importer',
+      '2026-08-24T15:00:00.000Z',
+    )
+
+    expect(s.shares).toHaveLength(1)
+    expect(again.id).toBe(first.id)
+    expect(again.projectId).toBe('proj_on_importer')
+    expect(again.roomId).toBe(rearmed.roomId)
+    expect(again.roomSecret).toBe(rearmed.roomSecret)
+    expect(again.expiresAt).toBe('2026-08-24T17:00:00.000Z')
+    expect(again.revokedAt).toBeNull()
+  })
+
+  it('projectId is authoritative — a record whose local project died adopts the fresh one', () => {
+    const { blob } = received()
+    const s = state()
+    const first = recordImportedShare(s, blob, 'proj_deleted_later', AT)
+    const again = recordImportedShare(s, blob, 'proj_recreated', '2026-08-24T13:00:00.000Z')
+    expect(again.id).toBe(first.id)
+    expect(again.projectId).toBe('proj_recreated')
+  })
+
+  it("rejects a key that clashes with this machine's own key prefixes — the pair renegotiates", () => {
+    const { blob } = received()
+    const forged = { ...blob, sharedKey: 'TICK' }
+    expect(importedShareError(state(), forged)).toMatch(/renegotiate/)
+  })
+
+  it("rejects a key another share on this machine already uses", () => {
+    const { blob } = received()
+    const s = state()
+    createOrRearmShare(s, 'proj_local', 'CART', AT)
+    expect(importedShareError(s, blob)).toMatch(/renegotiate/)
+    expect(() => recordImportedShare(s, blob, 'proj_on_importer', AT)).toThrowError(/renegotiate/)
+    expect(s.shares).toHaveLength(1)
+  })
+
+  it('re-importing the same shared project is not a clash', () => {
+    const { blob } = received()
+    const s = state()
+    recordImportedShare(s, blob, 'proj_on_importer', AT)
+    expect(importedShareError(s, blob)).toBeNull()
+  })
+
+  it("rejects this machine's own link — the link is for the coworker", () => {
+    const { creator, blob } = received()
+    expect(importedShareError(creator, blob)).toMatch(/own/)
+    expect(() => recordImportedShare(creator, blob, 'proj_again', AT)).toThrowError(/own/)
+  })
+
+  it('the blob arms the importing side to mint even ticket numbers', () => {
+    const { blob } = received()
+    const share = { key: blob.sharedKey, side: blob.side, peerName: 'ana' }
+    expect(sharedTicketKey(share, [])).toBe('CART-2')
+    expect(sharedTicketKey(share, [{ key: 'CART-2' }, { key: 'CART-3' }])).toBe('CART-4')
   })
 })
 

@@ -196,6 +196,81 @@ export function shareLink(share: Share, base: string): string {
   return `${base.replace(/\/$/, '')}/import#${fragment}`
 }
 
+// ── Importing (the peer side of the link) ───────────────────────────────────
+
+export function findShareByUuid(state: ShareState, projectUuid: string): Share | undefined {
+  return state.shares.find((s) => s.projectUuid === projectUuid)
+}
+
+/**
+ * Why a parsed blob can't be imported on this machine — null when it can.
+ * Two refusals: the link is this machine's own (the record for that UUID holds
+ * the opposite side), or the shared key collides with local keys — the peer's
+ * half of DOC-30's "free on both machines"; the pair renegotiates the key and
+ * re-shares. A record already holding the blob's side is a re-import, never a
+ * clash.
+ */
+export function importedShareError(state: ShareState, blob: ShareBlob): string | null {
+  const existing = findShareByUuid(state, blob.projectUuid)
+  if (existing) {
+    return existing.side === blob.side
+      ? null
+      : 'this is your own share link — paste it to your coworker instead'
+  }
+  if (RESERVED_KEYS.has(blob.sharedKey) || state.shares.some((s) => s.sharedKey === blob.sharedKey)) {
+    return `shared key ${blob.sharedKey} is already in use on this machine — renegotiate the key and re-share`
+  }
+  return null
+}
+
+/**
+ * Persist a share from an imported link blob — the importer-side twin of
+ * createOrRearmShare, keyed by the shared project's UUID. A re-imported
+ * (re-armed) link updates the existing record's room and expiry in place.
+ * projectId is authoritative on every call: the local project this record
+ * serves — pass the record's own project on a plain re-arm, a fresh one when
+ * the old local project is gone.
+ */
+export function recordImportedShare(
+  state: ShareState,
+  blob: ShareBlob,
+  projectId: string,
+  at: string = now(),
+): Share {
+  const error = importedShareError(state, blob)
+  if (error) throw new Error(error)
+  const existing = findShareByUuid(state, blob.projectUuid)
+  if (existing) {
+    existing.projectId = projectId
+    existing.roomId = blob.roomId
+    existing.roomSecret = blob.roomSecret
+    existing.expiresAt = blob.expiresAt
+    existing.revokedAt = null
+    existing.updatedAt = at
+    return existing
+  }
+  const share: Share = {
+    id: newId('share'),
+    projectId,
+    projectUuid: blob.projectUuid,
+    sharedKey: blob.sharedKey,
+    roomId: blob.roomId,
+    roomSecret: blob.roomSecret,
+    side: blob.side,
+    expiresAt: blob.expiresAt,
+    revokedAt: null,
+    createdAt: at,
+    updatedAt: at,
+  }
+  state.shares.push(share)
+  return share
+}
+
+// An expired link is its own refusal — the import screen maps it to 410 while
+// everything malformed stays a 400 — so it gets a type instead of leaving
+// callers to sniff the message.
+export class ShareLinkExpiredError extends Error {}
+
 /**
  * Decode and validate a link fragment. Throws on anything unusable —
  * malformed base64/JSON, missing fields, wrong version — so the import
@@ -220,7 +295,7 @@ export function parseShareBlob(fragment: string, at: string = now()): ShareBlob 
   ) {
     throw new Error('not a share link')
   }
-  if (shareIsExpired({ expiresAt: b.expiresAt }, at)) throw new Error('share link expired')
+  if (shareIsExpired({ expiresAt: b.expiresAt }, at)) throw new ShareLinkExpiredError('share link expired')
   return {
     v: 1,
     projectUuid: b.projectUuid,
