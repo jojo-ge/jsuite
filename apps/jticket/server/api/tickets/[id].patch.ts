@@ -5,6 +5,17 @@ export default defineEventHandler(async (event) => {
   const ticket = store.tickets.find((t) => t.id === id || t.key === id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
 
+  // The peer's half of a shared project is read-only here — sync is the only
+  // writer. Refused at the API, not just hidden in the UI.
+  const project = store.projects.find((p) => p.id === ticket.projectId)
+  // A ticket mid-transfer is frozen on both machines until the transferee
+  // accepts or declines (spec DOC-30). Checked before the peer guard: the
+  // transferor's pending copy is peer-owned too, and "frozen" is why.
+  const frozen = transferFreezeError(ticket, project?.share)
+  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
+  const refused = peerWriteError(ticket, project?.share)
+  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+
   if (body.title !== undefined) ticket.title = body.title.trim()
   if (body.description !== undefined) ticket.description = body.description.trim()
   if (body.acceptanceCriteria !== undefined) {
@@ -30,13 +41,18 @@ export default defineEventHandler(async (event) => {
   }
 
   if (body.projectId !== undefined) {
-    if (body.projectId === null || body.projectId === '') {
-      ticket.projectId = null
-    } else {
-      const project = store.projects.find((p) => p.id === body.projectId || p.key === body.projectId)
-      if (!project) throw createError({ statusCode: 400, statusMessage: `unknown project: ${body.projectId}` })
-      ticket.projectId = project.id
+    let target: Project | null = null
+    if (body.projectId !== null && body.projectId !== '') {
+      target = store.projects.find((p) => p.id === body.projectId || p.key === body.projectId) ?? null
+      if (!target) throw createError({ statusCode: 400, statusMessage: `unknown project: ${body.projectId}` })
     }
+    // An actual move across the share boundary would smuggle in an unstamped,
+    // non-parity entity — see projectMoveError. Same-project no-ops pass.
+    if ((target?.id ?? null) !== ticket.projectId) {
+      const moveRefused = projectMoveError(project?.share, target?.share)
+      if (moveRefused) throw createError({ statusCode: 403, statusMessage: moveRefused })
+    }
+    ticket.projectId = target?.id ?? null
   }
 
   if (body.blockedBy !== undefined) {

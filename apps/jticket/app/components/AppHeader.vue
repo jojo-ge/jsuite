@@ -117,6 +117,9 @@ const links = computed(() => [
         </nav>
       </div>
       <div class="flex items-center gap-2">
+        <!-- Pending pull approvals (sync) — deliberately outside the codebase
+             gate: a coworker's request is urgent from any page, in any scope. -->
+        <SyncPullIndicator />
         <!-- Client-only: the stream only exists in the browser, so the server
              has no honest value to render here. -->
         <ClientOnly>

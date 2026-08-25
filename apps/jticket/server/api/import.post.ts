@@ -58,6 +58,8 @@ export default defineEventHandler(async (event) => {
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
       starred: p.starred === true,
+      // Local-only until the share flow arms it — never set at creation.
+      share: null,
       createdAt: ts,
       updatedAt: ts,
     }
@@ -73,15 +75,21 @@ export default defineEventHandler(async (event) => {
   for (const t of body.tickets ?? []) {
     if (!t?.title?.trim()) continue
     const status = isStatus(t.status) ? t.status : 'todo'
+    const project = findProject(t.project)
+    const projectId = project?.id ?? null
     const ticket: Ticket = {
       id: newId('tick'),
-      key: nextKey(store, 'ticket'),
+      // Shared projects mint under the shared key with the side's parity
+      // (identical keys on both machines); everything else takes the next TICK.
+      key: project?.share
+        ? sharedTicketKey(project.share, store.tickets.filter((x) => x.projectId === projectId))
+        : nextKey(store, 'ticket'),
       title: t.title.trim(),
       description: t.description?.trim() ?? '',
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
       type: t.type === 'HITL' ? 'HITL' : 'AFK',
       status,
-      projectId: findProject(t.project)?.id ?? null,
+      projectId,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
       labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
@@ -90,6 +98,7 @@ export default defineEventHandler(async (event) => {
       branch: '',
       // A breakdown imported with work already done finishes as of the import.
       completedAt: isFinishedStatus(status) ? ts : null,
+      ...entityOwnership(project?.share),
       createdAt: ts,
       updatedAt: ts,
     }

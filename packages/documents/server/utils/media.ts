@@ -2,6 +2,7 @@ import { copyFile, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
+import { sanitizeDocKey } from './store'
 
 // Image blocks carry bytes, not text, so they can't live inside the document
 // JSON like every other block's payload. Instead each document gets a media

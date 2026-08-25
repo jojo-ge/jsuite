@@ -14,11 +14,13 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
 
   let projectId: string | null = null
+  let share: ProjectShare | null = null
   const ref = body.project ?? body.projectId
   if (ref) {
     const project = findProjectRef(store, ref)
     if (!project) throw createError({ statusCode: 400, statusMessage: `unknown project: ${ref}` })
     projectId = project.id
+    share = project.share
   }
 
   const ts = now()
@@ -54,6 +56,7 @@ export default defineEventHandler(async (event) => {
     projectId,
     labels: cleanLabels(body.labels),
     status: isDocStatus(body.status) ? body.status : 'draft',
+    ...entityOwnership(share),
     createdAt: ts,
     updatedAt: ts,
   }

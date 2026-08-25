@@ -5,6 +5,14 @@ export default defineEventHandler(async (event) => {
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
+  // On a shared project the title/description/mode belong to the link creator
+  // (spec DOC-30). Machine-local fields — repo, integration branch, starred —
+  // stay editable on both sides and never cross the wire.
+  if (body.title !== undefined || body.description !== undefined || body.mode !== undefined) {
+    const refused = projectMetadataError(project.share)
+    if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+  }
+
   if (body.title !== undefined) project.title = body.title.trim()
   if (body.description !== undefined) project.description = body.description.trim()
   if (body.mode !== undefined) project.mode = coerceProjectMode(body.mode)

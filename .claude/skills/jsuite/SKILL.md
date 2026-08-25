@@ -38,8 +38,16 @@ here *locally first* for human review. It also carries **local pull requests** �
 GitHub for the local repo: a ticket branch squash-merged onto the project's
 integration branch by jTicket itself (`POST /api/prs`, merge button in the UI;
 no push, no diffs — jDiff renders those; only the integration branch ever syncs
-to origin). Drive it via its HTTP API on :43000 —
-never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
+to origin). It can also **sync a project between two machines** (jTicket
+sync): the project page's Share panel makes a 2-hour capability link the
+coworker imports; from then on either side pulls a snapshot of the peer's
+half, and **the serving human approves every pull in their UI** before any
+data moves. Data travels peer-to-peer over WebRTC; a tiny Cloudflare relay
+(deployed once via `packages/relay/wizard.sh`, same URL wired on both
+machines) ferries only handshake blobs. Peer-owned tickets/docs are read-only
+and never dispatchable, and peer-authored text is wrapped in
+untrusted-content framing before it enters any prompt. Drive it via its HTTP
+API on :43000 — never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
 anything, query the board), `to-jspec` (write a spec as a doc — block format),
 `to-jdoc` (draft a doc page locally), `jwayfinder` (map work too big for one
 session as investigation tickets), `jimplement` (claim a ticket, build it,
@@ -151,6 +159,7 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | be grilled about a plan, answering in a UI | `j-grilling` |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
+| share/sync a jTicket project with a coworker | the project page's Share panel; one-time relay deploy via `packages/relay/wizard.sh` (both machines wire the same relay URL) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then
 `./jsuite start` (it refuses ports held by processes it didn't launch — a stale

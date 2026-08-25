@@ -74,6 +74,7 @@ jsuite/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     ├── herdr/          # @jsuite/herdr — shared herdr (terminal workspace) adapter
+    ├── relay/          # @jsuite/relay — jTicket sync signaling relay (Cloudflare Worker + deploy wizard)
     └── data/           # @jsuite/data — shared .data resolver
 ```
 
@@ -165,6 +166,41 @@ ESM, no layer; failures throw `HerdrError` with an HTTP-ish `statusCode`.
 jTicket dispatches all ticket work through it (including jMap-mode mapping
 tickets), and jDiff dispatches its review-guidance sessions (the
 `jdiff-review` / `jdiff-ask` skills, pinned to Opus 5).
+
+## @jsuite/relay — jTicket project sync
+
+`packages/relay` is the signaling relay behind **jTicket sync**: two people,
+each running jSuite on their own machine, collaborating on one jTicket
+project. Sync is pull-only, human-approved, and snapshot-based:
+
+- One user opens the project's **Share** panel, picks the shared 1–4 char key
+  and names their coworker; the link they paste over their own chat channel
+  opens the peer's import screen. **Links are valid 2 hours** — re-sharing
+  re-arms the same share with a fresh room and window; stop-sharing kills the
+  room instantly. Expiry gates new requests only: an in-flight pull completes.
+- While both apps run, either side can click **Sync**; the serving side
+  **approves each pull in their UI** (named: who's asking, for what) before
+  any data moves. The link creator mints odd ticket numbers, the importer
+  even, so the shared project needs no coordination — and is hard-locked to
+  exactly two peers.
+- Security model: project data travels **peer-to-peer over WebRTC data
+  channels** (DTLS-encrypted); the relay is a Cloudflare Worker + Durable
+  Object that only ferries opaque handshake blobs by room id + secret — it
+  never sees project data and stores nothing but a secret hash and expiry.
+  There is no write path between machines: peer-owned entities are read-only
+  and never dispatchable (enforced at the API), peer-authored text entering a
+  locally-built prompt is wrapped in untrusted-content framing, and
+  machine-local fields (`repo`, integration branch) never leave the machine.
+
+**Deploying**: `packages/relay/wizard.sh` walks the one-time Cloudflare
+deploy (free plan; account → `wrangler login` → deploy → verify) and writes
+the URL to `.data/jticket/sync.json`, which a running jTicket picks up
+without a restart. **Both machines must wire the same relay URL** — the
+coworker runs the wizard too and chooses option 2 (wire an existing URL).
+`JTICKET_RELAY_URL` overrides the file (tests, one-off runs); with neither
+set, sharing warns in the panel and pulls refuse with a 503 naming the
+wizard. Local development and tests never touch Cloudflare — the same worker
+runs on workerd via `startLocalRelay()` (Miniflare).
 
 ## jSkills
 

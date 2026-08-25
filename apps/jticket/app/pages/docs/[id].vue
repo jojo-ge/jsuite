@@ -23,6 +23,9 @@ const { data: sharedDoc, refresh: refreshDocument } = await useAsyncData<Explain
 const editing = ref(false)
 const railOpen = ref(false)
 const status = computed(() => (doc.value ? DOC_STATUS_META[doc.value.status] : null))
+// Peer-owned = the other side of a shared project's doc — badged with the
+// peer's name; the API refuses writes on it.
+const peerName = computed(() => (doc.value ? peerNameOf(doc.value, project.value) : null))
 
 async function onSave(payload: Partial<Doc>) {
   if (!doc.value) return
@@ -68,6 +71,9 @@ onMounted(() => {
         <UButton icon="i-lucide-arrow-left" size="xs" color="neutral" variant="ghost" to="/docs" aria-label="All documents" />
         <span class="font-mono text-xs text-muted">{{ doc.key }}</span>
         <UBadge v-if="status" :color="status.color" variant="subtle" size="sm">{{ status.label }}</UBadge>
+        <UBadge v-if="peerName" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
+          {{ peerName }} · read-only
+        </UBadge>
         <NuxtLink v-if="project" :to="`/projects/${project.key}`">
           <UBadge color="secondary" variant="outline" size="sm" class="font-mono">{{ project.key }}</UBadge>
         </NuxtLink>

@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
+import type { ProjectShare, ShareSide } from './ownership'
+import type { Share } from './shares'
+
+export type { ProjectShare, ShareSide } from './ownership'
 
 // ── Types ─────────────────────────────────────────────────────────────────
 export type TicketType = 'AFK' | 'HITL'
@@ -8,6 +12,14 @@ export type TicketType = 'AFK' | 'HITL'
 // on the integration branch. Both count as finished — see isFinishedStatus.
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
+// Where a ticket stands in an ownership transfer (spec DOC-30): '' = not in
+// transfer. 'pending' = offered to the peer and frozen — the record is
+// identical on both machines (owner already names the transferee) until the
+// transferee accepts (their copy becomes a normal owned ticket) or declines.
+// 'declined' exists only on the decliner's machine: ownership is already
+// bounced back (owner = the original side) and the marker travels to the
+// transferor as a snapshot transferDecline until they revert and re-export.
+export type TicketTransfer = '' | 'pending' | 'declined'
 // A local PR's lifecycle. 'conflicted' is a failed merge attempt — the repo was
 // left untouched; rebase the head branch and merge again.
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
@@ -51,6 +63,10 @@ export interface Project {
   // project is unaffected — its tickets still appear on /running, /finished
   // and the board.
   starred: boolean
+  // Two-party sync (spec DOC-30): null = local-only, and everything behaves
+  // exactly as before. When set, the project's entities are partitioned by
+  // owner side and the peer's half is read-only here — see ownership.ts.
+  share: ProjectShare | null
   createdAt: string
   updatedAt: string
 }
@@ -63,6 +79,11 @@ export interface TicketComment {
   author: string // free-form name, same convention as assignee
   body: string // GFM markdown
   createdAt: string
+  // Which side of a shared project wrote this comment ('' on local-only
+  // projects). Comment sets merge per ticket during sync — each side may
+  // comment on any ticket, but only its own comments are its to delete.
+  origin: ShareSide | ''
+  owner: ShareSide | ''
 }
 
 export interface Ticket {
@@ -88,6 +109,19 @@ export interface Ticket {
   // separate from updatedAt, which any edit bumps — this is what /finished
   // orders by. Never set directly by callers; see stampCompletion.
   completedAt: string | null
+  // Ownership on a shared project ('' / '' on local-only ones). `origin` is
+  // the side that minted the ticket — immutable, it fixes the key's parity;
+  // `owner` is whose half it lives in now (mutable only by ownership
+  // transfer). Peer-owned = read-only and undispatchable here. Stamped at
+  // creation (entityOwnership), never writable through PATCH.
+  origin: ShareSide | ''
+  owner: ShareSide | ''
+  // Ownership-transfer state (see TicketTransfer). While 'pending' the ticket
+  // is frozen — no edits, no dispatch, on either machine — and immune to
+  // absence-deletion in sync. transferAt stamps the initiate and identifies
+  // the offer: a decline names it, so a stale decline can't kill a re-offer.
+  transfer: TicketTransfer
+  transferAt: string
   createdAt: string
   updatedAt: string
 }
@@ -105,6 +139,10 @@ export interface Doc {
   projectId: string | null // optional parent project
   labels: string[]
   status: DocStatus
+  // Ownership on a shared project ('' / '' on local-only ones) — same
+  // partition as tickets, minus transfer (docs never change sides).
+  origin: ShareSide | ''
+  owner: ShareSide | ''
   createdAt: string
   updatedAt: string
 }
@@ -153,6 +191,7 @@ export interface Store {
   docs: Doc[]
   prs: LocalPr[]
   repos: KnownRepo[] // repos used before — see rememberRepo
+  shares: Share[] // at most one per shared project — see shares.ts
   counters: { project: number; ticket: number; doc: number; pr: number }
 }
 
@@ -169,6 +208,7 @@ function emptyStore(): Store {
     docs: [],
     prs: [],
     repos: [],
+    shares: [],
     counters: { project: 0, ticket: 0, doc: 0, pr: 0 },
   }
 }
@@ -222,6 +262,8 @@ export function loadStore(): Store {
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
         starred: p.starred ?? false,
+        // Projects predating (or never entering) sync are local-only.
+        share: p.share ?? null,
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -232,13 +274,24 @@ export function loadStore(): Store {
         assignee: t.assignee ?? '',
         labels: t.labels ?? [],
         resolution: t.resolution ?? '',
-        comments: t.comments ?? [],
+        // Entities predating sync are unowned ('') — local, editable here.
+        comments: (t.comments ?? []).map((c) => ({ ...c, origin: c.origin ?? '', owner: c.owner ?? '' })),
         branch: t.branch ?? '',
         completedAt: t.completedAt ?? (isFinishedStatus(t.status) ? t.updatedAt : null),
+        origin: t.origin ?? '',
+        owner: t.owner ?? '',
+        // Tickets predating ownership transfer aren't in one.
+        transfer: t.transfer ?? '',
+        transferAt: t.transferAt ?? '',
       })),
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).
-      docs: (parsed.docs ?? []).map((d) => ({ ...d, documentKey: d.documentKey ?? '' })),
+      docs: (parsed.docs ?? []).map((d) => ({
+        ...d,
+        documentKey: d.documentKey ?? '',
+        origin: d.origin ?? '',
+        owner: d.owner ?? '',
+      })),
       // Local PRs postdate everything else; absent = none yet.
       prs: (parsed.prs ?? []).map((pr) => ({
         ...pr,
@@ -256,6 +309,14 @@ export function loadStore(): Store {
         defaultBranch: r.defaultBranch ?? '',
         lastUsedAt: r.lastUsedAt ?? '',
       })).filter((r) => r.path),
+      // Shares postdate everything else; absent = nothing shared yet. Records
+      // from before two-way sync have no reverse room — that direction
+      // refuses until the share is re-armed (shares.ts serveRoom/pullRoom).
+      shares: (parsed.shares ?? []).map((s) => ({
+        ...s,
+        reverseRoomId: s.reverseRoomId ?? '',
+        reverseRoomSecret: s.reverseRoomSecret ?? '',
+      })),
       counters: {
         project: parsed.counters?.project ?? 0,
         ticket: parsed.counters?.ticket ?? 0,
@@ -396,9 +457,10 @@ export function ticketIsBlocked(ticket: Ticket, all: Ticket[]): boolean {
   })
 }
 
-// The frontier: the takeable edge of a map — open, unblocked, and unclaimed.
+// The frontier: the takeable edge of a map — open, unblocked, unclaimed, and
+// not mid-ownership-transfer (a pending offer is frozen and undispatchable).
 export function ticketIsFrontier(ticket: Ticket, all: Ticket[]): boolean {
-  return ticket.status === 'todo' && !ticket.assignee && !ticketIsBlocked(ticket, all)
+  return ticket.status === 'todo' && !ticket.assignee && !ticket.transfer && !ticketIsBlocked(ticket, all)
 }
 
 export interface TicketDerived {

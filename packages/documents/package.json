@@ -9,6 +9,7 @@
     ".": "./nuxt.config.ts",
     "./types": "./types.ts",
     "./store": "./server/utils/store.ts",
+    "./media": "./server/utils/media.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {

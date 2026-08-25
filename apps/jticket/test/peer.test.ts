@@ -1,0 +1,242 @@
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { startLocalRelay, type LocalRelay } from '@jsuite/relay'
+import { createPeerManager, type PeerManager, type PeerStatus } from '../server/utils/peer'
+import { createRoom, openSocket, waitFor } from './helpers'
+
+// Two peer managers in one process, one local relay between them — the
+// in-process half of TICK-289. The two-instance harness covers the same flow
+// across real server processes.
+//
+// Messages are delivered to the dialer's onMessage callback (TICK-294): the
+// received[] buffer and the echo option were harness affordances, replaced by
+// real message handling once pull traffic existed.
+
+// Everything here talks to itself, so keep ICE on loopback: on real interfaces
+// (VPN subnets, rotating IPv6 privacy addresses) self-connections flake with
+// EADDRNOTAVAIL mid-DTLS under suite-wide load (TICK-300).
+const LOOPBACK = { bindAddress: '127.0.0.1' }
+
+let relay: LocalRelay
+let a: PeerManager
+let b: PeerManager
+
+beforeAll(async () => {
+  relay = await startLocalRelay()
+})
+
+afterAll(async () => {
+  await relay.dispose()
+})
+
+afterEach(() => {
+  a?.closeAll()
+  b?.closeAll()
+})
+
+function waitForPeer(
+  manager: PeerManager,
+  id: string,
+  predicate: (status: PeerStatus) => boolean,
+  options?: { label?: string },
+) {
+  return waitFor(
+    () => manager.get(id),
+    (status) => {
+      if (predicate(status)) return true
+      // 'failed' is terminal — polling on would only burn the whole timeout.
+      if (status.state === 'failed') {
+        throw new Error(`peer failed while waiting for ${options?.label ?? 'condition'}: ${status.reason}`)
+      }
+      return false
+    },
+    options,
+  )
+}
+
+/**
+ * The relay frees a member slot only once it has processed that socket's
+ * close — joining before then races its bookkeeping (refused as room full, or
+ * paired with the departing socket and the handshake blobs lost).
+ * signalingClosed flips when the close handshake completes, by which point the
+ * relay has already dropped the member in every observed ordering (the
+ * connectInRoom retry covers a miss). No fail-fast here: the peer being waited
+ * on is usually closed or failed already.
+ */
+function waitForSlotFreed(manager: PeerManager, id: string, label: string) {
+  return waitFor(() => manager.get(id), (s) => s.signalingClosed, { label })
+}
+
+/** Tear a pair down and wait until the relay can accept a re-dial. */
+async function closePairAndFreeSlots(idA: string, idB: string) {
+  a.close(idA)
+  b.close(idB)
+  await waitForSlotFreed(a, idA, 'A slot freed')
+  await waitForSlotFreed(b, idB, 'B slot freed')
+}
+
+/**
+ * Dial a and b into the room until both connect. Same-host handshakes can
+ * abort mid-DTLS (libdatachannel treats the first UDP I/O hiccup as fatal), so
+ * a failed pair is torn down and re-dialed rather than failing the test.
+ */
+async function connectInRoom(
+  roomId: string,
+  secret: string,
+  options?: { onMessageA?: (data: string) => void; onMessageB?: (data: string) => void },
+  attempts = 5,
+) {
+  const relayUrl = relay.url.href
+  let lastError: unknown
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const { id: idB } = b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, onMessage: options?.onMessageB })
+    const { id: idA } = a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true, onMessage: options?.onMessageA })
+    try {
+      await waitForPeer(a, idA, (s) => s.state === 'connected', { label: 'A connected' })
+      await waitForPeer(b, idB, (s) => s.state === 'connected', { label: 'B connected' })
+      return { idA, idB }
+    } catch (error) {
+      lastError = error
+      await closePairAndFreeSlots(idA, idB)
+    }
+  }
+  throw lastError
+}
+
+interface Pair {
+  idA: string
+  idB: string
+  roomId: string
+  secret: string
+  atA: string[]
+  atB: string[]
+}
+
+/** Connect a pair; each side collects incoming messages into an array. */
+async function connectPair(): Promise<Pair> {
+  const { roomId, secret } = await createRoom(relay)
+  a = createPeerManager()
+  b = createPeerManager()
+  const atA: string[] = []
+  const atB: string[] = []
+  const { idA, idB } = await connectInRoom(roomId, secret, {
+    onMessageA: (d) => atA.push(d),
+    onMessageB: (d) => atB.push(d),
+  })
+  return { idA, idB, roomId, secret, atA, atB }
+}
+
+describe('peer manager', () => {
+  it('connects two peers through the relay and delivers messages both ways, in order', async () => {
+    const { idA, idB, atA, atB } = await connectPair()
+
+    a.send(idA, 'one')
+    a.send(idA, 'two')
+    a.send(idA, 'three')
+    await waitFor(() => atB, (m) => m.length === 3, { label: 'three messages at B' })
+    expect(atB).toEqual(['one', 'two', 'three'])
+
+    b.send(idB, 'reply')
+    await waitFor(() => atA, (m) => m.length === 1, { label: 'reply at A' })
+    expect(atA).toEqual(['reply'])
+  })
+
+  it('fires onOpen on both sides once the channel opens', async () => {
+    const { roomId, secret } = await createRoom(relay)
+    a = createPeerManager()
+    b = createPeerManager()
+    const relayUrl = relay.url.href
+    const opened: string[] = []
+    b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, onOpen: () => opened.push('b') })
+    a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true, onOpen: () => opened.push('a') })
+    await waitFor(() => opened, (o) => o.length === 2, { label: 'both onOpen fired' })
+    expect(opened.sort()).toEqual(['a', 'b'])
+  })
+
+  it('no longer exposes a received buffer on status', async () => {
+    const { idA } = await connectPair()
+    expect(a.get(idA)).not.toHaveProperty('received')
+  })
+})
+
+describe('teardown and re-dial', () => {
+  it('close() tears the connection down and the far side observes it via onClose', async () => {
+    const { roomId, secret } = await createRoom(relay)
+    a = createPeerManager()
+    b = createPeerManager()
+    const relayUrl = relay.url.href
+    let bClosed = 0
+    const { id: idB } = b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, onClose: () => bClosed++ })
+    const { id: idA } = a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true })
+    await waitForPeer(a, idA, (s) => s.state === 'connected', { label: 'A connected' })
+    await waitForPeer(b, idB, (s) => s.state === 'connected', { label: 'B connected' })
+
+    a.close(idA)
+    expect(a.get(idA)?.state).toBe('closed')
+    expect(() => a.send(idA, 'after close')).toThrow()
+    await waitForPeer(b, idB, (s) => s.state === 'closed', { label: 'B sees the close' })
+    await waitFor(() => bClosed, (n) => n === 1, { label: 'B onClose fired once' })
+  })
+
+  it('re-dials the same room with a fresh handshake after teardown', async () => {
+    const first = await connectPair()
+    await closePairAndFreeSlots(first.idA, first.idB)
+
+    // Same room, same secret — a brand-new handshake through the relay.
+    const atB2: string[] = []
+    const { idA: idA2 } = await connectInRoom(first.roomId, first.secret, {
+      onMessageB: (d) => atB2.push(d),
+    })
+
+    a.send(idA2, 'again')
+    await waitFor(() => atB2, (m) => m.length === 1, { label: 'message after re-dial' })
+    expect(atB2).toEqual(['again'])
+  })
+})
+
+describe('relay refusals', () => {
+  it('fails with the relay reason when the secret is wrong, and onClose fires', async () => {
+    const { roomId } = await createRoom(relay)
+    a = createPeerManager()
+    let closes = 0
+    const { id } = a.dial({
+      ...LOOPBACK,
+      relayUrl: relay.url.href,
+      roomId,
+      secret: 'not-the-secret',
+      initiator: true,
+      onClose: () => closes++,
+    })
+    const status = await waitForPeer(a, id, (s) => s.state === 'failed', { label: 'refusal' })
+    expect(status.reason).toContain('wrong secret')
+    await waitFor(() => closes, (n) => n === 1, { label: 'onClose fired on failure' })
+  })
+
+  it('fails with the relay reason for an unknown room', async () => {
+    a = createPeerManager()
+    const { id } = a.dial({
+      ...LOOPBACK,
+      relayUrl: relay.url.href,
+      roomId: 'no-such-room',
+      secret: 'whatever',
+      initiator: true,
+    })
+    const status = await waitForPeer(a, id, (s) => s.state === 'failed', { label: 'refusal' })
+    expect(status.reason).toContain('unknown room')
+  })
+
+  it('fails with the relay reason when the room is full', async () => {
+    const { roomId, secret } = await createRoom(relay)
+    // Occupy both member slots with raw sockets, then try to dial in.
+    const first = await openSocket(relay, roomId, secret)
+    const second = await openSocket(relay, roomId, secret)
+    try {
+      a = createPeerManager()
+      const { id } = a.dial({ ...LOOPBACK, relayUrl: relay.url.href, roomId, secret, initiator: true })
+      const status = await waitForPeer(a, id, (s) => s.state === 'failed', { label: 'refusal' })
+      expect(status.reason).toContain('room full')
+    } finally {
+      first.close()
+      second.close()
+    }
+  })
+})

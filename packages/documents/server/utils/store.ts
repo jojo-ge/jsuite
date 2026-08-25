@@ -2,6 +2,7 @@ import { readFile, writeFile, readdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
+import { mediaDir } from './media'
 import type { Block, Explainer, DocNote, DocNotes, ExplainerMeta } from '../../types'
 
 // The shared document pool: one document per pretty-printed file in
@@ -64,19 +65,25 @@ export async function deleteDoc(key: string): Promise<void> {
   for (const p of [docPath(key), docNotesPath(key)]) {
     if (existsSync(p)) await rm(p)
   }
+  // The doc's media dir (note attachments included) goes with it — media is
+  // doc-owned, unlike charts, and a later doc landing on the freed key must
+  // not inherit stale files. A key that sanitizes to '' would resolve
+  // mediaDir to the media ROOT — never rm that.
+  if (sanitizeDocKey(key)) await rm(mediaDir(key), { recursive: true, force: true })
 }
 
 export async function readDocNotes(key: string): Promise<DocNotes> {
   const p = docNotesPath(key)
-  if (!existsSync(p)) return { general: '', notes: [] }
+  if (!existsSync(p)) return { general: '', notes: [], generalAttachments: [] }
   try {
     const parsed = JSON.parse(await readFile(p, 'utf8')) as Partial<DocNotes>
     return {
       general: typeof parsed.general === 'string' ? parsed.general : '',
       notes: Array.isArray(parsed.notes) ? (parsed.notes as DocNote[]) : [],
+      generalAttachments: Array.isArray(parsed.generalAttachments) ? parsed.generalAttachments : [],
     }
   } catch {
-    return { general: '', notes: [] }
+    return { general: '', notes: [], generalAttachments: [] }
   }
 }
 

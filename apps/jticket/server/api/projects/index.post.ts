@@ -15,6 +15,8 @@ export default defineEventHandler(async (event) => {
     integrationBranch: body.integrationBranch?.trim() ?? '',
     // Unstarred by default — a new project earns its /next slot explicitly.
     starred: body.starred === true,
+    // Local-only until the share flow arms it — never set at creation.
+    share: null,
     createdAt: ts,
     updatedAt: ts,
   }

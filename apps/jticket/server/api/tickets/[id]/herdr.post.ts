@@ -21,6 +21,27 @@ export default defineEventHandler(async (event) => {
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
+
+  // Hard invariant (spec DOC-30): no remote-originated content ever reaches a
+  // dispatch endpoint. A peer-owned ticket is refused here at the API — if its
+  // work is yours to do, mint your own ticket (a human rewrite in between).
+  // Transfer is the one point where remote-authored text would become
+  // runnable by local agents — a pending offer stays undispatchable until the
+  // human has reviewed and accepted it (spec DOC-30). Before the peer guard:
+  // the transferor's pending copy is peer-owned too, and "frozen" is why.
+  const frozen = transferFreezeError(ticket, project.share)
+  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
+  const refused = peerDispatchError(ticket, project.share)
+  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+
+  // Untrusted-content framing (spec DOC-30): dispatching a local ticket on a
+  // shared project still puts peer-authored text in front of the agent — the
+  // project's description (creator-owned metadata) and any peer-owned doc the
+  // ticket links. It rides along wrapped as collaborator content: data, not
+  // instructions. Local-only projects pass the prompt through byte-identical.
+  const framing = await collaboratorFramingFor(ticket, project, store.docs, readDoc)
+  const framedPrompt = framedDispatchPrompt(prompt, framing)
+
   const cwd = resolveRepoDir(project.repo)
 
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
@@ -36,7 +57,7 @@ export default defineEventHandler(async (event) => {
   } else {
     ;({ tabId, paneId } = await acquireTicketPane(workspaceId, project.key, cwd, freshTab))
   }
-  const agent = await startClaudeIn(paneId, ticket.key, prompt)
+  const agent = await startClaudeIn(paneId, ticket.key, framedPrompt)
 
   return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
 })

@@ -16,6 +16,16 @@ export default defineEventHandler(async (event) => {
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — branches are cut in a project's repo` })
 
+  // Cutting a branch writes ticket.branch and is the first step of working a
+  // ticket — peer-owned work isn't yours to start.
+  // Mid-transfer = frozen: starting work on an unanswered offer would put a
+  // branch on a ticket that may bounce back or change hands (spec DOC-30).
+  // Before the peer guard — the transferor's pending copy is peer-owned too.
+  const frozen = transferFreezeError(ticket, project.share)
+  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
+  const refused = peerWriteError(ticket, project.share)
+  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+
   const path = resolveRepoDir(project.repo)
   const base = project.integrationBranch.trim()
   if (!base) throw createError({ statusCode: 400, statusMessage: `${project.key} has no integration branch — cut that first` })

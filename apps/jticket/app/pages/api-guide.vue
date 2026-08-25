@@ -194,6 +194,9 @@ const methodColor: Record<string, string> = {
           <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" to="/">Board</UButton>
           <h1 class="text-lg font-semibold">API guide</h1>
         </div>
+        <!-- The one page without AppHeader still surfaces pending pull
+             approvals — they must be noticeable from any page. -->
+        <SyncPullIndicator />
       </UContainer>
     </header>
 

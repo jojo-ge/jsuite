@@ -1,0 +1,374 @@
+import { randomBytes, randomUUID } from 'node:crypto'
+import { newId, now } from './store'
+
+// ── Share model ─────────────────────────────────────────────────────────────
+// A share exposes one project to exactly one peer (jTicket sync, DOC-30). The
+// record lives in jTicket state on the machine that created it; the peer gets
+// a capability link whose *fragment* carries the blob — fragments never reach
+// server logs, so the room secret stays between the two humans.
+
+// Which parity of ticket numbers this machine mints for the shared project:
+// the link creator mints odd numbers, the importer even.
+export type ShareSide = 'creator' | 'importer'
+
+export interface Share {
+  id: string
+  projectId: string // local project this share exposes
+  // Stable cross-machine identity of the shared project. Minted on first
+  // share and kept through every re-arm and revoke — both peers key the
+  // shared project by this, never by their local ids.
+  projectUuid: string
+  sharedKey: string // 1–4 char key the shared project uses on both machines
+  roomId: string // signaling-relay room …
+  roomSecret: string // … and the secret that opens it
+  // The second room of the pair, serving the opposite direction: the creator
+  // waits in roomId and pulls via reverseRoomId; the importer the other way
+  // around. Minted with the main room and carried in the same link, so one
+  // share arms pulls both ways (the transfer protocol needs both — DOC-30's
+  // "the transferor's next pull"). '' on records from before two-way sync:
+  // that direction refuses until the share is re-armed and re-imported.
+  reverseRoomId: string
+  reverseRoomSecret: string
+  side: ShareSide // parity THIS machine holds for the shared project
+  expiresAt: string // links are valid 2 hours; re-sharing re-arms
+  revokedAt: string | null // stop-sharing stamps this; re-sharing clears it
+  createdAt: string
+  updatedAt: string
+}
+
+// Anything holding a shares array — the real Store qualifies structurally.
+export interface ShareState {
+  shares: Share[]
+}
+
+export const SHARE_TTL_MS = 2 * 60 * 60 * 1000
+
+// The shared project's key on both machines: 1–4 chars, TICK-shaped — a
+// letter, then letters/digits. Chosen at share time; the import screen
+// rejects a clash with the peer's local keys so the pair renegotiates.
+export function isValidSharedKey(v: unknown): v is string {
+  return typeof v === 'string' && /^[A-Z][A-Z0-9]{0,3}$/.test(v)
+}
+
+// ── Lifecycle ───────────────────────────────────────────────────────────────
+
+export function findShare(state: ShareState, projectId: string): Share | undefined {
+  return state.shares.find((s) => s.projectId === projectId)
+}
+
+// Prefixes this machine's own entity keys already use — a shared key equal to
+// one of these would collide with local TICK-n / PROJ-n / DOC-n / PR-n keys.
+const RESERVED_KEYS = new Set(['TICK', 'PROJ', 'DOC', 'PR'])
+
+/**
+ * Create a project's share, or re-arm the existing one. A project has at most
+ * one share record for its lifetime: the first call mints the projectUuid, and
+ * every later call keeps it while rotating the room, the secret, and the
+ * expiry — so a re-shared link dials a fresh room but lands on the same shared
+ * project, and a revoked share comes back to life instead of duplicating.
+ */
+export function createOrRearmShare(
+  state: ShareState,
+  projectId: string,
+  sharedKey: string,
+  at: string = now(),
+  // Test affordance, like the relay's: a shorter window only — the 2h product
+  // rule is the ceiling.
+  ttlMs: number = SHARE_TTL_MS,
+): Share {
+  const ttl = Math.min(Math.max(1, ttlMs), SHARE_TTL_MS)
+  // "Must be free on both machines" (DOC-30) — this is the creator's half;
+  // the peer's half is the import screen's clash check.
+  if (RESERVED_KEYS.has(sharedKey) || state.shares.some((s) => s.projectId !== projectId && s.sharedKey === sharedKey)) {
+    throw new Error(`shared key already in use on this machine: ${sharedKey}`)
+  }
+  const existing = findShare(state, projectId)
+  if (existing) {
+    // Only the side that made the share re-arms it: an importer-side record's
+    // room is the creator's to rotate — re-arming it here would kill the live
+    // room and hand out a link claiming the creator side.
+    if (existing.side !== 'creator') {
+      throw new Error('this project was imported from a share link — only its creator can re-share it')
+    }
+    // Re-arm never renames: the key is the shared project's identity on both
+    // machines, fixed when the share is first cut (DOC-30 lists only the room
+    // and expiry as rotating).
+    if (existing.sharedKey !== sharedKey) {
+      throw new Error(`shared key is fixed for the share's lifetime: ${existing.sharedKey}`)
+    }
+    existing.roomId = newRoomId()
+    existing.roomSecret = newRoomSecret()
+    existing.reverseRoomId = newRoomId()
+    existing.reverseRoomSecret = newRoomSecret()
+    existing.expiresAt = expiryFrom(at, ttl)
+    existing.revokedAt = null
+    existing.updatedAt = at
+    return existing
+  }
+  const share: Share = {
+    id: newId('share'),
+    projectId,
+    projectUuid: randomUUID(),
+    sharedKey,
+    roomId: newRoomId(),
+    roomSecret: newRoomSecret(),
+    reverseRoomId: newRoomId(),
+    reverseRoomSecret: newRoomSecret(),
+    side: 'creator',
+    expiresAt: expiryFrom(at, ttl),
+    revokedAt: null,
+    createdAt: at,
+    updatedAt: at,
+  }
+  state.shares.push(share)
+  return share
+}
+
+/**
+ * Stop sharing a project. The record stays (it anchors the projectUuid for a
+ * later re-share) but serving refuses from this instant — revocation doesn't
+ * wait for the expiry clock.
+ */
+export function revokeShare(state: ShareState, projectId: string, at: string = now()): Share | undefined {
+  const share = findShare(state, projectId)
+  if (!share || share.revokedAt) return share
+  share.revokedAt = at
+  share.updatedAt = at
+  return share
+}
+
+export function shareIsExpired(share: Pick<Share, 'expiresAt'>, at: string = now()): boolean {
+  return Date.parse(at) >= Date.parse(share.expiresAt)
+}
+
+/**
+ * The serving-side gate: every path that would answer for a project's share —
+ * opening the room, exporting a snapshot — asks this first. Refuses unless the
+ * share exists and reads active. (In-flight pulls complete; this guards the
+ * *start* of serving.)
+ */
+export function assertServable(share: Share | undefined, at: string = now()): Share {
+  if (!share) throw new Error('project is not shared')
+  const status = shareStatus(share, at)
+  if (status !== 'active') throw new Error(`share ${status}`)
+  return share
+}
+
+// What the share UI renders and the serving gate refuses on: revocation trumps
+// the clock (a revoked share reads 'revoked' even past its expiry).
+export type ShareStatus = 'active' | 'revoked' | 'expired'
+
+export function shareStatus(share: Share, at: string = now()): ShareStatus {
+  if (share.revokedAt) return 'revoked'
+  if (shareIsExpired(share, at)) return 'expired'
+  return 'active'
+}
+
+// ── Room directions ─────────────────────────────────────────────────────────
+// One share = one room pair. Each machine WAITS (serves) in one room and
+// DIALS (pulls) the other: the creator serves the main room, the importer the
+// reverse one. Null when the record predates two-way sync and that direction
+// has no room yet — re-sharing mints the pair.
+
+export interface RelayRoomRef {
+  roomId: string
+  roomSecret: string
+  expiresAt: string
+}
+
+/** The room this machine's serve loop waits in for the share, if armed. */
+export function serveRoom(share: Share): RelayRoomRef | null {
+  const [roomId, roomSecret] = share.side === 'creator'
+    ? [share.roomId, share.roomSecret]
+    : [share.reverseRoomId, share.reverseRoomSecret]
+  return roomId ? { roomId, roomSecret, expiresAt: share.expiresAt } : null
+}
+
+/** The peer's serving room — the one a pull from this machine dials. */
+export function pullRoom(share: Share): RelayRoomRef | null {
+  const [roomId, roomSecret] = share.side === 'creator'
+    ? [share.reverseRoomId, share.reverseRoomSecret]
+    : [share.roomId, share.roomSecret]
+  return roomId ? { roomId, roomSecret, expiresAt: share.expiresAt } : null
+}
+
+function expiryFrom(at: string, ttlMs: number = SHARE_TTL_MS): string {
+  return new Date(Date.parse(at) + ttlMs).toISOString()
+}
+
+function newRoomId(): string {
+  return randomBytes(12).toString('base64url')
+}
+
+function newRoomSecret(): string {
+  return randomBytes(24).toString('base64url')
+}
+
+// What the share endpoints return: the record plus its derived status, and —
+// only while active — the capability link to hand to the peer. The share UI
+// imports this type, so the panel and the endpoints can't drift apart.
+export interface ShareViewDto extends Share {
+  status: ShareStatus
+  link: string | null
+}
+
+export function shareView(share: Share, base: string, at: string = now()): ShareViewDto {
+  const status = shareStatus(share, at)
+  return { ...share, status, link: status === 'active' ? shareLink(share, base) : null }
+}
+
+// ── Capability link ─────────────────────────────────────────────────────────
+// The blob a link's fragment carries: everything the peer's import screen
+// needs to create the shared project and dial the room. The side it names is
+// the RECIPIENT's — the opposite of the record's.
+
+export interface ShareBlob {
+  v: 1
+  projectUuid: string
+  sharedKey: string
+  roomId: string
+  roomSecret: string
+  // The reverse-direction room pair ('' from links cut before two-way sync —
+  // then only creator-serves-importer pulls work until a fresh share).
+  reverseRoomId: string
+  reverseRoomSecret: string
+  side: ShareSide
+  expiresAt: string
+}
+
+export function shareLink(share: Share, base: string): string {
+  const blob: ShareBlob = {
+    v: 1,
+    projectUuid: share.projectUuid,
+    sharedKey: share.sharedKey,
+    roomId: share.roomId,
+    roomSecret: share.roomSecret,
+    reverseRoomId: share.reverseRoomId,
+    reverseRoomSecret: share.reverseRoomSecret,
+    side: share.side === 'creator' ? 'importer' : 'creator',
+    expiresAt: share.expiresAt,
+  }
+  const fragment = Buffer.from(JSON.stringify(blob), 'utf8').toString('base64url')
+  return `${base.replace(/\/$/, '')}/import#${fragment}`
+}
+
+// ── Importing (the peer side of the link) ───────────────────────────────────
+
+export function findShareByUuid(state: ShareState, projectUuid: string): Share | undefined {
+  return state.shares.find((s) => s.projectUuid === projectUuid)
+}
+
+/**
+ * Why a parsed blob can't be imported on this machine — null when it can.
+ * Two refusals: the link is this machine's own (the record for that UUID holds
+ * the opposite side), or the shared key collides with local keys — the peer's
+ * half of DOC-30's "free on both machines"; the pair renegotiates the key and
+ * re-shares. A record already holding the blob's side is a re-import, never a
+ * clash.
+ */
+export function importedShareError(state: ShareState, blob: ShareBlob): string | null {
+  const existing = findShareByUuid(state, blob.projectUuid)
+  if (existing) {
+    return existing.side === blob.side
+      ? null
+      : 'this is your own share link — paste it to your coworker instead'
+  }
+  if (RESERVED_KEYS.has(blob.sharedKey) || state.shares.some((s) => s.sharedKey === blob.sharedKey)) {
+    return `shared key ${blob.sharedKey} is already in use on this machine — renegotiate the key and re-share`
+  }
+  return null
+}
+
+/**
+ * Persist a share from an imported link blob — the importer-side twin of
+ * createOrRearmShare, keyed by the shared project's UUID. A re-imported
+ * (re-armed) link updates the existing record's room and expiry in place.
+ * projectId is authoritative on every call: the local project this record
+ * serves — pass the record's own project on a plain re-arm, a fresh one when
+ * the old local project is gone.
+ */
+export function recordImportedShare(
+  state: ShareState,
+  blob: ShareBlob,
+  projectId: string,
+  at: string = now(),
+): Share {
+  const error = importedShareError(state, blob)
+  if (error) throw new Error(error)
+  const existing = findShareByUuid(state, blob.projectUuid)
+  if (existing) {
+    existing.projectId = projectId
+    existing.roomId = blob.roomId
+    existing.roomSecret = blob.roomSecret
+    existing.reverseRoomId = blob.reverseRoomId
+    existing.reverseRoomSecret = blob.reverseRoomSecret
+    existing.expiresAt = blob.expiresAt
+    existing.revokedAt = null
+    existing.updatedAt = at
+    return existing
+  }
+  const share: Share = {
+    id: newId('share'),
+    projectId,
+    projectUuid: blob.projectUuid,
+    sharedKey: blob.sharedKey,
+    roomId: blob.roomId,
+    roomSecret: blob.roomSecret,
+    reverseRoomId: blob.reverseRoomId,
+    reverseRoomSecret: blob.reverseRoomSecret,
+    side: blob.side,
+    expiresAt: blob.expiresAt,
+    revokedAt: null,
+    createdAt: at,
+    updatedAt: at,
+  }
+  state.shares.push(share)
+  return share
+}
+
+// An expired link is its own refusal — the import screen maps it to 410 while
+// everything malformed stays a 400 — so it gets a type instead of leaving
+// callers to sniff the message.
+export class ShareLinkExpiredError extends Error {}
+
+/**
+ * Decode and validate a link fragment. Throws on anything unusable —
+ * malformed base64/JSON, missing fields, wrong version — so the import
+ * screen can show one honest error instead of half-importing.
+ */
+export function parseShareBlob(fragment: string, at: string = now()): ShareBlob {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(Buffer.from(fragment, 'base64url').toString('utf8'))
+  } catch {
+    throw new Error('not a share link')
+  }
+  const b = parsed as Partial<ShareBlob>
+  if (
+    !b || b.v !== 1
+    || typeof b.projectUuid !== 'string' || !b.projectUuid
+    || !isValidSharedKey(b.sharedKey)
+    || typeof b.roomId !== 'string' || !b.roomId
+    || typeof b.roomSecret !== 'string' || !b.roomSecret
+    || (b.side !== 'creator' && b.side !== 'importer')
+    || typeof b.expiresAt !== 'string' || Number.isNaN(Date.parse(b.expiresAt))
+  ) {
+    throw new Error('not a share link')
+  }
+  if (shareIsExpired({ expiresAt: b.expiresAt }, at)) throw new ShareLinkExpiredError('share link expired')
+  // Links cut before two-way sync carry no reverse room; the pair still
+  // imports (one direction), so an absent/half pair degrades to '' not 400.
+  const hasReverse = typeof b.reverseRoomId === 'string' && !!b.reverseRoomId
+    && typeof b.reverseRoomSecret === 'string' && !!b.reverseRoomSecret
+  return {
+    v: 1,
+    projectUuid: b.projectUuid,
+    sharedKey: b.sharedKey,
+    roomId: b.roomId,
+    roomSecret: b.roomSecret,
+    reverseRoomId: hasReverse ? b.reverseRoomId! : '',
+    reverseRoomSecret: hasReverse ? b.reverseRoomSecret! : '',
+    side: b.side,
+    expiresAt: b.expiresAt,
+  }
+}

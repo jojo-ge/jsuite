@@ -46,6 +46,7 @@ export default defineEventHandler(async (event) => {
     docs,
     charts,
     attachments: [],
+    media: [],
   }
 
   // Sweep every markdown surface (descriptions, resolutions, comments, doc
@@ -53,6 +54,14 @@ export default defineEventHandler(async (event) => {
   for (const name of attachmentRefs(JSON.stringify(bundle))) {
     const p = join(ATTACHMENTS_DIR, name)
     if (existsSync(p)) bundle.attachments.push({ name, base64: readFileSync(p).toString('base64') })
+  }
+
+  // Same sweep for the documents media store: doc image-block images and note
+  // attachments live at /api/media/<docKey>/[notes/]<name>, with the bytes in
+  // .data/jexplain/media/ — without them an imported doc renders broken images.
+  for (const ref of docMediaRefs(JSON.stringify(bundle))) {
+    const p = ref.notes ? notesMediaPath(ref.docKey, ref.name) : mediaPath(ref.docKey, ref.name)
+    if (existsSync(p)) bundle.media!.push({ ...ref, base64: readFileSync(p).toString('base64') })
   }
 
   const slug = sanitizeDocKey(project.title) || 'project'
