@@ -1,10 +1,10 @@
 // Shared plumbing for driving the relay from tests with plain HTTP and
 // Node's built-in WebSocket client.
 
-export async function createRoom(relay, body) {
+export async function createRoom(relay, body, headers = {}) {
   return fetch(new URL('/rooms', relay.url), {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 }
