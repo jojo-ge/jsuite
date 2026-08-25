@@ -24,5 +24,6 @@ export default defineEventHandler(async (event) => {
     secret,
     initiator,
     ...(Array.isArray(iceServers) ? { iceServers } : {}),
+    bindAddress: iceBindAddress(),
   })
 })

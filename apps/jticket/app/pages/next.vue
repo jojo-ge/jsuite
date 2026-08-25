@@ -38,15 +38,19 @@ function byKey(a: Ticket, b: Ticket) {
   return n(a.key) - n(b.key)
 }
 
-// The frontier is computed the same way everywhere — the same helper the cards
-// ring with and the same rule `?frontier=true` serves to agents.
-const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, allTickets.value)).sort(byKey))
-
 const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))
 
 function projectOf(ticket: Ticket): Project | null {
   return ticket.projectId ? (projectById.value.get(ticket.projectId) ?? null) : null
 }
+
+// The frontier the UI computes: the same helper the cards ring with, and the
+// same rule `?frontier=true` serves to agents — takeable *here*, so the peer's
+// half of a shared project and anything frozen mid-transfer stay off this page
+// rather than being offered a hand-off the API would refuse (TICK-312).
+const frontier = computed(() =>
+  tickets.value.filter((t) => isFrontier(t, allTickets.value, projectOf(t))).sort(byKey),
+)
 
 // Only starred projects surface here — starring is how a project earns its
 // /next slot. This page alone applies the star; /running and /finished show
@@ -135,17 +139,41 @@ function toggleAll() {
   else collapseAll(groups.value.map(groupKey))
 }
 
-// Why the frontier is empty, when it is: everything left is either waiting on a
-// blocker or already in someone's hands, and saying which is the difference
-// between "nothing to do" and "nothing you can do *yet*".
+// Why the frontier is empty, when it is: everything left is waiting on a
+// blocker, already in someone's hands, or the peer's — and saying which is the
+// difference between "nothing to do" and "nothing you can do *yet*". Without
+// the last of those, a shared project whose remaining work is all the peer's
+// empties this page with nothing to show for it.
 const stalled = computed(() => {
   const open = tickets.value.filter((t) => !isFinished(t.status))
   return {
     blocked: open.filter((t) => t.status === 'todo' && isBlocked(t, allTickets.value)).length,
     claimed: open.filter((t) => t.status === 'todo' && t.assignee && !isBlocked(t, allTickets.value)).length,
     running: open.filter((t) => t.status === 'in_progress').length,
+    notTakeable: open.filter((t) => bucketOf(t, allTickets.value, projectOf(t)) === 'notTakeable').length,
   }
 })
+
+// The reasons as phrases, so the sentence below doesn't need a separator
+// conditional per pair. Empty reasons drop out.
+const stalledParts = computed(() =>
+  [
+    [stalled.value.running, 'in progress'],
+    [stalled.value.blocked, 'blocked'],
+    [stalled.value.claimed, 'claimed'],
+    [stalled.value.notTakeable, 'not takeable here'],
+  ]
+    .filter(([n]) => n)
+    .map(([n, label]) => `${n} ${label}`)
+    .join(' · '),
+)
+// Only a shared project can put anything in the last bucket, so a local-only
+// tracker reads exactly the sentence it always did.
+const stalledLead = computed(() =>
+  stalled.value.notTakeable
+    ? 'Everything open is moving, waiting, or the peer’s —'
+    : 'Everything open is already moving or waiting —',
+)
 
 const counts = computed(() => ({
   afk: onDeck.value.filter((t) => t.type === 'AFK').length,
@@ -370,14 +398,7 @@ async function dispatchMerge(q: MergeQueue) {
               {{ hiddenByStar }} takeable {{ hiddenByStar === 1 ? 'ticket is' : 'tickets are' }} in unstarred
               projects — star a project to bring its tickets here.
             </template>
-            <template v-else-if="stalled.blocked || stalled.claimed || stalled.running">
-              Everything open is already moving or waiting —
-              <template v-if="stalled.running">{{ stalled.running }} in progress</template>
-              <template v-if="stalled.running && (stalled.blocked || stalled.claimed)"> · </template>
-              <template v-if="stalled.blocked">{{ stalled.blocked }} blocked</template>
-              <template v-if="stalled.blocked && stalled.claimed"> · </template>
-              <template v-if="stalled.claimed">{{ stalled.claimed }} claimed</template>.
-            </template>
+            <template v-else-if="stalledParts">{{ stalledLead }} {{ stalledParts }}.</template>
             <template v-else>Every ticket is done. Break down some more work to fill the board.</template>
           </p>
         </div>

@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import type { Ticket, WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, TicketBucket, WayfinderType } from '~/composables/useTracker'
 
 // Map mode for a wayfinder project: tickets as nodes in dependency layers
 // flowing left → right toward the destination, blocking edges drawn between
 // them, and the un-ticketable parts of the journey — fog and destination —
 // read straight out of the map body (the project description) so the picture
 // matches what the body says.
-const props = defineProps<{ body: string; tickets: Ticket[]; allTickets: Ticket[] }>()
+// `project` carries the share the node states are judged against — the peer's
+// half of a shared map is not takeable here, so it must not be drawn as the
+// frontier the walk aims at.
+const props = defineProps<{
+  body: string
+  tickets: Ticket[]
+  allTickets: Ticket[]
+  project?: Project | null
+}>()
 const emit = defineEmits<{ 'edit-ticket': [Ticket] }>()
 
-type NodeState = 'frontier' | 'claimed' | 'blocked' | 'done'
+type NodeState = TicketBucket
 
 const NODE_W = 216
 const NODE_H = 74
@@ -24,10 +32,7 @@ const PAD_BOTTOM = 24
 const byId = computed(() => new Map(props.allTickets.map((t) => [t.id, t])))
 
 function stateOf(t: Ticket): NodeState {
-  if (isFinished(t.status)) return 'done'
-  if (isBlocked(t, props.allTickets)) return 'blocked'
-  if (isFrontier(t, props.allTickets)) return 'frontier'
-  return 'claimed'
+  return bucketOf(t, props.allTickets, props.project)
 }
 
 // Blockers of t that are themselves tickets on this map — the drawable edges.
@@ -191,6 +196,13 @@ const STATE_META: Record<NodeState, { label: string; icon: string; node: string;
     iconClass: 'text-info',
     dot: 'bg-info',
   },
+  notTakeable: {
+    label: 'Not takeable here',
+    icon: 'i-lucide-user-lock',
+    node: 'border-warning/50 bg-warning/5 opacity-90',
+    iconClass: 'text-warning',
+    dot: 'bg-warning',
+  },
   blocked: {
     label: 'Blocked',
     icon: 'i-lucide-lock',
@@ -207,18 +219,22 @@ const STATE_META: Record<NodeState, { label: string; icon: string; node: string;
   },
 }
 
-const counts = computed(() => {
-  const c: Record<NodeState, number> = { frontier: 0, claimed: 0, blocked: 0, done: 0 }
-  for (const t of props.tickets) c[stateOf(t)]++
-  return c
-})
+const counts = computed(() => bucketCountsOf(props.tickets, props.allTickets, props.project))
+
+// The four flow states are always legended, zero or not — they describe the
+// map itself. The fifth only exists on a shared one, so it appears only when
+// it has something in it and a local-only map reads exactly as before.
+const legend = computed(() =>
+  (Object.entries(STATE_META) as [NodeState, (typeof STATE_META)[NodeState]][])
+    .filter(([state]) => state !== 'notTakeable' || counts.value.notTakeable > 0),
+)
 </script>
 
 <template>
   <div>
     <!-- Legend -->
     <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
-      <span v-for="(meta, state) in STATE_META" :key="state" class="flex items-center gap-1.5">
+      <span v-for="[state, meta] in legend" :key="state" class="flex items-center gap-1.5">
         <span class="size-2 rounded-full" :class="meta.dot" />
         {{ meta.label }} · {{ counts[state] }}
       </span>

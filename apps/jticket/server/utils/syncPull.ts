@@ -7,7 +7,7 @@ import { ensureRelayRoom } from './relayRooms'
 import { performSyncApply } from './syncIo'
 import type { SyncChangeSummary, SyncSnapshot } from './sync'
 import { SnapshotAssembler, encodeWireMessage, parseWireMessage } from './syncWire'
-import { handshakeTimeoutMs as configHandshakeTimeoutMs, pullTimeoutMs, syncRelayUrl } from './syncConfig'
+import { handshakeTimeoutMs as configHandshakeTimeoutMs, iceBindAddress, pullTimeoutMs, syncRelayUrl } from './syncConfig'
 
 // The importing side of the pull flow (TICK-294, spec DOC-30): one Sync click
 // is one attempt — dial the share's room as initiator, send the request, wait
@@ -45,6 +45,15 @@ export interface SyncPullerOptions {
   applySnapshot: (projectId: string, snapshot: SyncSnapshot) => Promise<{ summary: SyncChangeSummary; dropped: string[] }>
   timeoutMs?: number
   handshakeTimeoutMs?: number
+  /**
+   * Local address to bind ICE to (see DialOptions.bindAddress). Unset in
+   * production — real pulls cross machines. In-process tests bind 127.0.0.1
+   * so self-connections stay off real interfaces (TICK-300's EADDRNOTAVAIL);
+   * the two-instance harness gets there through JTICKET_ICE_BIND_ADDRESS,
+   * which syncConfig reads into the process singleton (TICK-311). '' is
+   * treated as unset.
+   */
+  bindAddress?: string
   nowMs?: () => number
 }
 
@@ -63,7 +72,7 @@ interface Attempt extends PullAttemptView {
 let nextAttempt = 1
 
 export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
-  const { peers, relayUrl, loadState, applySnapshot, timeoutMs = 180_000, handshakeTimeoutMs, nowMs = Date.now } = options
+  const { peers, relayUrl, loadState, applySnapshot, timeoutMs = 180_000, handshakeTimeoutMs, bindAddress, nowMs = Date.now } = options
   const attempts = new Map<string, Attempt>()
 
   const view = (a: Attempt): PullAttemptView => ({
@@ -195,6 +204,7 @@ export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
         secret: room.roomSecret,
         initiator: true,
         ...(handshakeTimeoutMs ? { handshakeTimeoutMs } : {}),
+        ...(bindAddress ? { bindAddress } : {}),
         onMessage: handleMessage,
         onClose: () => {
           if (TERMINAL.has(attempt.state) || attempt.state === 'applying') return
@@ -248,6 +258,7 @@ export function useSyncPuller(): SyncPuller {
     applySnapshot: performSyncApply,
     timeoutMs: pullTimeoutMs(),
     handshakeTimeoutMs: configHandshakeTimeoutMs(),
+    bindAddress: iceBindAddress(),
   })
   return singleton
 }

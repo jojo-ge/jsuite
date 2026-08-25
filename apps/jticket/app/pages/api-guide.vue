@@ -105,7 +105,7 @@ const blockTypes = [
   { s: 'timeline', d: 'Chronology of events' },
   { s: 'takeaway', d: 'Closing key-points card' },
 ]
-const frontierExample = `# The takeable edge of a map: todo + all blockers done + unassigned, in order
+const frontierExample = `# The takeable edge of a map: todo + all blockers done + unassigned + yours, in order
 curl -s 'http://localhost:43000/api/tickets?projectId=PROJ-14&frontier=true'
 
 # Claim the first one, do the work, then resolve it
@@ -291,7 +291,12 @@ const methodColor: Record<string, string> = {
             ticket keeps the original stamp; leaving <code>done</code> clears it
           </li>
           <li><code>comments</code> — discussion thread; append via <code>POST /api/tickets/:id/comments</code>, not PATCH</li>
-          <li class="text-dimmed">GET adds derived <code>blocked</code> · <code>claimed</code> · <code>frontier</code> flags (not stored)</li>
+          <li class="text-dimmed">
+            GET adds derived <code>blocked</code> · <code>claimed</code> · <code>frontier</code> flags (not stored).
+            <code>frontier</code> means takeable <em>here</em>: on a shared project the peer's tickets, and any
+            ticket mid-ownership-transfer, are read-only and undispatchable on this machine, so they never read
+            as frontier
+          </li>
         </ul>
       </section>
 

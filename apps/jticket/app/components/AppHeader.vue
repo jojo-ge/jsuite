@@ -3,7 +3,7 @@
 // so a new ticket lands in the project you're looking at).
 const props = defineProps<{ defaultProjectId?: string | null }>()
 
-const { tickets } = useTracker()
+const { tickets, projects } = useTracker()
 const { openCreate } = useTrackerModals()
 
 // The codebase scope — the switcher next to the logo, and the gate on the
@@ -27,10 +27,16 @@ const codebaseItems = computed(() => [
 // narrow (jTicket lives on a vertical monitor), so anything that doesn't help
 // you choose a destination stays off it. Scoped: the badge answers "in this
 // codebase", like every page behind the links does.
+const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))
+function projectOf(t: { projectId: string | null }) {
+  return t.projectId ? (projectById.value.get(t.projectId) ?? null) : null
+}
+
 const counts = computed(() => ({
   running: scopedTickets.value.filter((t) => t.status === 'in_progress').length,
   // The takeable edge across the codebase's projects — what /next lists.
-  next: scopedTickets.value.filter((t) => isFrontier(t, tickets.value)).length,
+  // Ownership is per-project, so each ticket is judged against its own.
+  next: scopedTickets.value.filter((t) => isFrontier(t, tickets.value, projectOf(t))).length,
 }))
 
 // Whether the live stream is actually delivering. Shown rather than hidden: a

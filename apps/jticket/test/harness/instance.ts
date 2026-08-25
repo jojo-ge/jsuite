@@ -47,6 +47,12 @@ export async function startInstance({
     PORT: String(port),
     HOST: '127.0.0.1',
     JSUITE_DATA_DIR: dataDir,
+    // Both instances live on this host, so their ICE has no business on the
+    // machine's real interfaces — binding loopback keeps self-connections off
+    // the VPN subnets and rotating IPv6 privacy addresses that die mid-DTLS
+    // with EADDRNOTAVAIL (TICK-300, TICK-308). Test-only: production leaves
+    // JTICKET_ICE_BIND_ADDRESS unset. A test's own env still wins.
+    JTICKET_ICE_BIND_ADDRESS: '127.0.0.1',
     ...env,
   })
   const child: ChildProcess = spawn('node', [serverEntry], {

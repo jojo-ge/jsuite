@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One project as a card on the projects grid: key, title, description preview,
-// ticket count and the four-state progress bar. Finished projects (every
+// ticket count and the flow-state progress bar. Finished projects (every
 // ticket done) render dimmed — the grid sinks them to the bottom.
 import type { Project, Ticket } from '~/composables/useTracker'
 
@@ -68,7 +68,7 @@ defineEmits<{ edit: [project: Project]; delete: [project: Project]; star: [proje
       <div class="flex items-center gap-3 text-xs text-muted">
         <span class="inline-flex items-center gap-1"><UIcon name="i-lucide-ticket" class="size-3.5" />{{ tickets.length }} tickets</span>
       </div>
-      <TicketProgress :tickets="tickets" :all-tickets="allTickets" legend />
+      <TicketProgress :tickets="tickets" :all-tickets="allTickets" :project="project" legend />
     </div>
   </NuxtLink>
 </template>

@@ -191,6 +191,12 @@ project. Sync is pull-only, human-approved, and snapshot-based:
   and never dispatchable (enforced at the API), peer-authored text entering a
   locally-built prompt is wrapped in untrusted-content framing, and
   machine-local fields (`repo`, integration branch) never leave the machine.
+- The public worker bounds anonymous callers: frames over 64 KiB eject the
+  sender (close code 4006), room creation and room traffic are rate-limited
+  per IP (120 per minute each — close code 4007 for joins, HTTP 429
+  otherwise; `RELAY_*` env vars override), and an expired room's metadata is
+  deleted by a Durable Object alarm 30 minutes after expiry once its members
+  are gone.
 
 **Deploying**: `packages/relay/wizard.sh` walks the one-time Cloudflare
 deploy (free plan; account → `wrangler login` → deploy → verify) and writes

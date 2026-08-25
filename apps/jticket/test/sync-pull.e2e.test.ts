@@ -136,6 +136,13 @@ describe('pull flow end-to-end', () => {
     expect(updated.repo).toBe('')
     expect(updated.integrationBranch).toBe('')
 
+    // The peer's half is not the importer's to take (TICK-310): both settled
+    // creator-owned tickets are read-only and undispatchable here, so B's
+    // frontier is empty and every derived flag says so.
+    expect(await api(B, 'GET', `/api/tickets?projectId=${projectB.id}&frontier=true`)).toEqual([])
+    expect(ticketsOnB.map((t: { frontier: boolean }) => t.frontier)).toEqual([false, false])
+    expect((await api(B, 'GET', `/api/tickets/${ticketsOnB[0].key}`)).frontier).toBe(false)
+
     // A second pull is idempotent — the presence loop re-armed, nothing changes.
     const again = await runPull(projectB.id)
     await waitFor(

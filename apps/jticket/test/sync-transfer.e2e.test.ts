@@ -122,6 +122,10 @@ describe('ownership transfer end-to-end', () => {
     const finalized = await ticketOn(A, 'CART-1')
     expect(finalized).toMatchObject({ owner: 'importer', transfer: '', title: 'Persist the cart (mine)', origin: 'creator' })
     expect((await api(A, 'PATCH', '/api/tickets/CART-1', { title: 'take it back' })).status).toBe(403)
+    // Settled on the far side is still not takeable here (TICK-310): nothing
+    // but ownership marks it now, and it stays off the transferor's frontier.
+    expect(finalized.frontier).toBe(false)
+    expect(await frontierKeys(A, projectA.id)).not.toContain('CART-1')
   })
 
   it('a decline returns ownership to the original side on the next pull', async () => {
@@ -149,9 +153,13 @@ describe('ownership transfer end-to-end', () => {
     expect((await ok(A, 'PATCH', '/api/tickets/CART-3', { title: 'Totals endpoint (kept)' })).title)
       .toBe('Totals endpoint (kept)')
 
-    // And Blake's next pull clears the decline marker into a plain peer copy.
+    // And Blake's next pull clears the decline marker into a plain peer copy —
+    // settled, and off the importer's frontier because it is Avery's (TICK-310).
     await pull(B, A, projectB.id)
     expect(await ticketOn(B, 'CART-3')).toMatchObject({ owner: 'creator', transfer: '', title: 'Totals endpoint (kept)' })
+    expect(await frontierKeys(B, projectB.id)).not.toContain('CART-3')
+    // A's own copy is back to being takeable — the decline undid the transfer.
+    expect(await frontierKeys(A, projectA.id)).toContain('CART-3')
   })
 
   it('transfer endpoints refuse the wrong side and the wrong state', async () => {

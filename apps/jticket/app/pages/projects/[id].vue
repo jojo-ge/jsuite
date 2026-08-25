@@ -25,7 +25,7 @@ const projectDocs = computed(() =>
   project.value ? docs.value.filter((d) => d.projectId === project.value!.id) : [],
 )
 // Every ticket under this project — the header's rollup line and its
-// done / in progress / blocked / not started bar.
+// flow-state bar.
 const projectTickets = computed(() =>
   project.value ? tickets.value.filter((t) => t.projectId === project.value!.id) : [],
 )
@@ -162,6 +162,7 @@ async function removeProject() {
               v-if="projectTickets.length"
               :tickets="projectTickets"
               :all-tickets="tickets"
+              :project="project"
               legend
               class="mt-3 max-w-md"
             />

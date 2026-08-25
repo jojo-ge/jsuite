@@ -13,10 +13,13 @@ const workerRoot = dirname(workerPath)
  * account involved. Used by the relay's own tests and by the two-instance
  * sync harness.
  *
- * @param {{ port?: number }} [options] port 0 (default) picks a free port
+ * @param {{ port?: number, bindings?: Record<string, string> }} [options]
+ *   port 0 (default) picks a free port; bindings become the worker's env —
+ *   the RELAY_* hardening knobs (see worker.mjs config). Unset = production
+ *   defaults, which is what the sync harness should run against.
  * @returns {Promise<{ url: URL, dispose: () => Promise<void> }>}
  */
-export async function startLocalRelay({ port = 0 } = {}) {
+export async function startLocalRelay({ port = 0, bindings } = {}) {
   const mf = new Miniflare({
     modulesRoot: workerRoot,
     // Miniflare takes an explicit module list — every file the worker imports
@@ -25,7 +28,8 @@ export async function startLocalRelay({ port = 0 } = {}) {
       { type: 'ESModule', path: workerPath },
       { type: 'ESModule', path: join(workerRoot, 'closeCodes.mjs') },
     ],
-    durableObjects: { ROOMS: 'RelayRoom' },
+    durableObjects: { ROOMS: 'RelayRoom', LIMITS: 'RateLimiter' },
+    ...(bindings ? { bindings } : {}),
     compatibilityDate: '2026-08-01',
     port,
   })

@@ -38,7 +38,7 @@ GET /api/tickets?projectId=PROJ-2   # project id or key
                 &status=todo|in_progress|done|merged
                 &assignee=<exact name>
                 &label=<exact label>
-                &frontier=true      # todo + unblocked + unassigned, key-ordered
+                &frontier=true      # todo + unblocked + unassigned + yours, key-ordered
                 &finished=true      # done + merged tickets, newest completedAt first
                 &since=<ISO>        # completedAt >= this (pairs with finished=true)
 GET /api/projects?repo=<path|slug>
@@ -58,7 +58,9 @@ Every ticket in a GET response is augmented with three **read-only derived** boo
 
 - `blocked` — some ticket in `blockedBy` is not finished (`done` or `merged`)
 - `claimed` — `assignee` is non-empty
-- `frontier` — `status === "todo"` && !claimed && !blocked
+- `frontier` — `status === "todo"` && !claimed && !blocked && takeable on this machine:
+  a ticket mid-ownership-transfer, or one owned by the peer of a shared project, is
+  read-only and undispatchable here, so it never reads as frontier
 
 `completedAt` is also read-only, but it **is** persisted: the server stamps it when a
 ticket moves into `done` or `merged` and clears it when it moves out. Sending it in a

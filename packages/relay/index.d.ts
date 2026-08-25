@@ -9,4 +9,8 @@ export interface LocalRelay {
  * account involved. Used by the relay's own tests and by the two-instance
  * sync harness.
  */
-export function startLocalRelay(options?: { port?: number }): Promise<LocalRelay>
+export function startLocalRelay(options?: {
+  port?: number
+  /** Worker env vars — the RELAY_* hardening knobs; unset = production defaults. */
+  bindings?: Record<string, string>
+}): Promise<LocalRelay>

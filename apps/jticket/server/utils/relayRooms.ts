@@ -8,6 +8,14 @@ import type { Share } from './shares'
 
 type RelayRoom = Pick<Share, 'roomId' | 'roomSecret' | 'expiresAt'>
 
+/**
+ * How long a room registration may take before it counts as a refusal. The
+ * presence loop runs one tick at a time (syncServe), so an unbounded POST to
+ * an unreachable-but-not-refusing relay would stall serving for every share,
+ * not just this one — a timeout keeps the loop turning (TICK-311).
+ */
+const ENSURE_TIMEOUT_MS = 10_000
+
 /** Register (or expiry-refresh) a share's room. Throws when the relay refuses. */
 export async function ensureRelayRoom(relayUrl: string, room: RelayRoom, nowMs: () => number = Date.now): Promise<void> {
   const ttlMs = Date.parse(room.expiresAt) - nowMs()
@@ -16,6 +24,7 @@ export async function ensureRelayRoom(relayUrl: string, room: RelayRoom, nowMs: 
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ roomId: room.roomId, secret: room.roomSecret, ttlMs }),
+    signal: AbortSignal.timeout(ENSURE_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`relay refused the room: ${res.status} ${await res.text()}`)
 }

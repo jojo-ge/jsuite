@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { syncRelayUrl } from './syncConfig'
+import { iceBindAddress, syncRelayUrl } from './syncConfig'
 
 // The relay URL resolves env-first (the harness boots instances with
 // per-process env), then the wizard-written .data/jticket/sync.json, then ''.
@@ -69,5 +69,33 @@ describe('syncRelayUrl', () => {
   ])('falls back to unconfigured on %s — never throws', (_name, content) => {
     writeConfig(content)
     expect(syncRelayUrl()).toBe('')
+  })
+})
+
+// The ICE bind address is harness plumbing: the two-instance harness sets it
+// so its same-host dials stay on loopback, and production must never see it —
+// real pulls cross machines and need the real interfaces (TICK-311).
+
+describe('iceBindAddress', () => {
+  const saved = process.env.JTICKET_ICE_BIND_ADDRESS
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.JTICKET_ICE_BIND_ADDRESS
+    else process.env.JTICKET_ICE_BIND_ADDRESS = saved
+  })
+
+  it('is empty unset — production dials gather the real interfaces', () => {
+    delete process.env.JTICKET_ICE_BIND_ADDRESS
+    expect(iceBindAddress()).toBe('')
+  })
+
+  it('reads the address the harness boots instances with', () => {
+    process.env.JTICKET_ICE_BIND_ADDRESS = '127.0.0.1'
+    expect(iceBindAddress()).toBe('127.0.0.1')
+  })
+
+  it('treats a blank value as unset, not as a binding', () => {
+    process.env.JTICKET_ICE_BIND_ADDRESS = '   '
+    expect(iceBindAddress()).toBe('')
   })
 })

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { startLocalRelay, type LocalRelay } from '@jsuite/relay'
-import { createPeerManager, type PeerManager } from '../server/utils/peer'
+import { createPeerManager, type DialOptions, type PeerManager, type PeerStatus } from '../server/utils/peer'
 import { createSyncServer, type SyncServer } from '../server/utils/syncServe'
 import { createSyncPuller, type SyncPuller } from '../server/utils/syncPull'
 import type { SyncSnapshot } from '../server/utils/sync'
@@ -188,6 +188,10 @@ function startPair(
     // Short handshake reclaim: transient WebRTC failures recover fast enough
     // to stay inside the suite's wait windows.
     handshakeTimeoutMs: 3_000,
+    // Both ends are this process, so keep ICE on loopback — self-connections
+    // over real interfaces flake with EADDRNOTAVAIL mid-DTLS under suite-wide
+    // load (TICK-300; this suite's residual flake was TICK-308).
+    bindAddress: '127.0.0.1',
   })
   puller = createSyncPuller({
     peers: pullPeers,
@@ -195,6 +199,7 @@ function startPair(
     loadState: () => pullStore,
     timeoutMs,
     handshakeTimeoutMs: 3_000,
+    bindAddress: '127.0.0.1',
     applySnapshot: async (projectId, snapshot) => {
       if (applyError) throw new Error(applyError)
       applied.push({ projectId, snapshot })
@@ -360,5 +365,110 @@ describe('pull flow — request, approve, snapshot, apply', () => {
     const done = await waitFor(() => puller!.get(attempt.id), (a) => terminal(a.state), { label: 'failed apply' })
     expect(done.state).toBe('failed')
     expect(done.reason).toContain('disk full')
+  })
+})
+
+// The presence loop's own arithmetic on the room's two member slots. The
+// serving side is entitled to exactly one of them; taking both is what locked
+// the importer out with 'room full' under load (TICK-311). Both paths to two
+// dials are exercised against a counting stub — no relay, no handshake, just
+// what tick() decides to dial.
+
+describe('presence loop — one member slot per share', () => {
+  function countingPeers(status: Partial<PeerStatus> = {}) {
+    const dials: DialOptions[] = []
+    const state: PeerStatus = {
+      id: 'peer_1', state: 'closed', reason: '', signalingClosed: true, ...status,
+    }
+    const peers: PeerManager = {
+      dial(options) {
+        dials.push(options)
+        return { id: state.id }
+      },
+      get: () => (dials.length ? state : undefined),
+      send: () => {},
+      close: () => {},
+      closeAll: () => {},
+    }
+    return { peers, dials, state }
+  }
+
+  // The window the gate waits out, named here rather than inherited from the
+  // module's default so the clock arithmetic below reads against it.
+  const RECLAIM_GRACE_MS = 2_000
+
+  function serverOver(store: Store, peers: PeerManager, nowMs: () => number) {
+    return createSyncServer({
+      peers,
+      relayUrl: () => relay.url.href,
+      loadState: () => store,
+      reclaimGraceMs: RECLAIM_GRACE_MS,
+      nowMs,
+    })
+  }
+
+  it('ticks that overlap the relay round-trip dial the room once, not once each', async () => {
+    const fixture = makeFixture()
+    const { peers, dials } = countingPeers()
+    // No await between them: the second enters while the first is suspended
+    // on ensureRelayRoom, exactly as an interval driver produces.
+    const s = serverOver(fixture.creatorStore, peers, Date.now)
+    await Promise.all([s.tick(), s.tick(), s.tick()])
+    expect(dials).toHaveLength(1)
+    s.stop()
+  })
+
+  it('waits for the relay to reclaim a closed dial before re-dialing its room', async () => {
+    const fixture = makeFixture()
+    const { peers, dials, state } = countingPeers()
+    let now = 1_000_000
+    const s = serverOver(fixture.creatorStore, peers, () => now)
+
+    await s.tick()
+    expect(dials).toHaveLength(1)
+
+    // The dial ended, but the relay has not acknowledged our socket's close —
+    // re-dialing now would put both slots in this side's hands.
+    state.state = 'closed'
+    state.signalingClosed = false
+    await s.tick()
+    now += RECLAIM_GRACE_MS - 1
+    await s.tick()
+    expect(dials).toHaveLength(1)
+
+    // Acknowledged: the slot is free and the share re-arms.
+    state.signalingClosed = true
+    await s.tick()
+    expect(dials).toHaveLength(2)
+    s.stop()
+  })
+
+  it('does not dial after stop(), even when stop lands mid round-trip', async () => {
+    const fixture = makeFixture()
+    const { peers, dials } = countingPeers()
+    const s = serverOver(fixture.creatorStore, peers, Date.now)
+
+    const inFlight = s.tick()
+    s.stop()
+    await inFlight
+    expect(dials).toHaveLength(0)
+  })
+
+  it('re-dials anyway once the reclaim grace expires — a lost ack must not strand the share', async () => {
+    const fixture = makeFixture()
+    const { peers, dials, state } = countingPeers()
+    let now = 1_000_000
+    const s = serverOver(fixture.creatorStore, peers, () => now)
+
+    await s.tick()
+    state.state = 'failed'
+    state.signalingClosed = false
+    await s.tick()
+    expect(dials).toHaveLength(1)
+
+    now += RECLAIM_GRACE_MS
+    await s.tick()
+    expect(dials).toHaveLength(2)
+    s.stop()
   })
 })

@@ -45,7 +45,9 @@ curl -s "$JTICKET/api/tickets?projectId=PROJ-2&frontier=true" | jq '.[0]'
 curl -s "$JTICKET/api/projects"
 ```
 
-The **frontier** is `todo` + unblocked + unclaimed, and jTicket computes it for you.
+The **frontier** is `todo` + unblocked + unclaimed + takeable on this machine (on a
+shared project the peer's tickets are read-only here, so they never surface), and jTicket
+computes it for you.
 Never start a ticket whose `blocked` is `true` — its blockers hold facts you need. If the
 frontier is empty but tickets remain, say so and stop; something is blocked or claimed.
 

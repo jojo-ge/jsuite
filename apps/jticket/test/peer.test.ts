@@ -74,25 +74,46 @@ async function closePairAndFreeSlots(idA: string, idB: string) {
   await waitForSlotFreed(b, idB, 'B slot freed')
 }
 
+interface SideCallbacks {
+  onOpen?: () => void
+  onMessage?: (data: string) => void
+  onClose?: () => void
+}
+
 /**
  * Dial a and b into the room until both connect. Same-host handshakes can
  * abort mid-DTLS (libdatachannel treats the first UDP I/O hiccup as fatal), so
  * a failed pair is torn down and re-dialed rather than failing the test.
+ *
+ * Callbacks are buffered per attempt and delivered only once that attempt's
+ * pair proves out — a failed attempt's opens and closes must not leak into the
+ * test's counters. Every test that asserts on dial callbacks goes through
+ * here: a lone direct dial was the residual flake (TICK-308).
  */
 async function connectInRoom(
   roomId: string,
   secret: string,
-  options?: { onMessageA?: (data: string) => void; onMessageB?: (data: string) => void },
+  options?: { a?: SideCallbacks; b?: SideCallbacks },
   attempts = 5,
 ) {
   const relayUrl = relay.url.href
   let lastError: unknown
   for (let attempt = 0; attempt < attempts; attempt++) {
-    const { id: idB } = b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, onMessage: options?.onMessageB })
-    const { id: idA } = a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true, onMessage: options?.onMessageA })
+    let won = false
+    const buffered: Array<() => void> = []
+    const fire = (event: () => void) => (won ? event() : buffered.push(event))
+    const gated = (side?: SideCallbacks): SideCallbacks => ({
+      ...(side?.onOpen && { onOpen: () => fire(() => side.onOpen!()) }),
+      ...(side?.onMessage && { onMessage: (d: string) => fire(() => side.onMessage!(d)) }),
+      ...(side?.onClose && { onClose: () => fire(() => side.onClose!()) }),
+    })
+    const { id: idB } = b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, ...gated(options?.b) })
+    const { id: idA } = a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true, ...gated(options?.a) })
     try {
       await waitForPeer(a, idA, (s) => s.state === 'connected', { label: 'A connected' })
       await waitForPeer(b, idB, (s) => s.state === 'connected', { label: 'B connected' })
+      won = true
+      for (const event of buffered.splice(0)) event()
       return { idA, idB }
     } catch (error) {
       lastError = error
@@ -119,8 +140,8 @@ async function connectPair(): Promise<Pair> {
   const atA: string[] = []
   const atB: string[] = []
   const { idA, idB } = await connectInRoom(roomId, secret, {
-    onMessageA: (d) => atA.push(d),
-    onMessageB: (d) => atB.push(d),
+    a: { onMessage: (d) => atA.push(d) },
+    b: { onMessage: (d) => atB.push(d) },
   })
   return { idA, idB, roomId, secret, atA, atB }
 }
@@ -144,10 +165,11 @@ describe('peer manager', () => {
     const { roomId, secret } = await createRoom(relay)
     a = createPeerManager()
     b = createPeerManager()
-    const relayUrl = relay.url.href
     const opened: string[] = []
-    b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, onOpen: () => opened.push('b') })
-    a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true, onOpen: () => opened.push('a') })
+    await connectInRoom(roomId, secret, {
+      a: { onOpen: () => opened.push('a') },
+      b: { onOpen: () => opened.push('b') },
+    })
     await waitFor(() => opened, (o) => o.length === 2, { label: 'both onOpen fired' })
     expect(opened.sort()).toEqual(['a', 'b'])
   })
@@ -163,12 +185,8 @@ describe('teardown and re-dial', () => {
     const { roomId, secret } = await createRoom(relay)
     a = createPeerManager()
     b = createPeerManager()
-    const relayUrl = relay.url.href
     let bClosed = 0
-    const { id: idB } = b.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: false, onClose: () => bClosed++ })
-    const { id: idA } = a.dial({ ...LOOPBACK, relayUrl, roomId, secret, initiator: true })
-    await waitForPeer(a, idA, (s) => s.state === 'connected', { label: 'A connected' })
-    await waitForPeer(b, idB, (s) => s.state === 'connected', { label: 'B connected' })
+    const { idA, idB } = await connectInRoom(roomId, secret, { b: { onClose: () => bClosed++ } })
 
     a.close(idA)
     expect(a.get(idA)?.state).toBe('closed')
@@ -184,7 +202,7 @@ describe('teardown and re-dial', () => {
     // Same room, same secret — a brand-new handshake through the relay.
     const atB2: string[] = []
     const { idA: idA2 } = await connectInRoom(first.roomId, first.secret, {
-      onMessageB: (d) => atB2.push(d),
+      b: { onMessage: (d) => atB2.push(d) },
     })
 
     a.send(idA2, 'again')
