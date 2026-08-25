@@ -40,8 +40,8 @@ async function importBundle(e: Event) {
   }
 }
 
-// Every ticket under a project. TicketProgress turns these into the
-// done / in progress / blocked / not started bar on each card.
+// Every ticket under a project. TicketProgress buckets these into the
+// flow-state bar on each card.
 function ticketsFor(projectId: string | null) {
   return tickets.value.filter((t) => t.projectId === projectId)
 }

@@ -219,11 +219,7 @@ const STATE_META: Record<NodeState, { label: string; icon: string; node: string;
   },
 }
 
-const counts = computed(() => {
-  const c: Record<NodeState, number> = { frontier: 0, claimed: 0, notTakeable: 0, blocked: 0, done: 0 }
-  for (const t of props.tickets) c[stateOf(t)]++
-  return c
-})
+const counts = computed(() => bucketCountsOf(props.tickets, props.allTickets, props.project))
 
 // The four flow states are always legended, zero or not — they describe the
 // map itself. The fifth only exists on a shared one, so it appears only when

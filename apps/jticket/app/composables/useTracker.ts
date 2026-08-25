@@ -385,6 +385,21 @@ export function bucketOf(
   return 'claimed'
 }
 
+// The same precedence as a tally: every bucket present, zeros included, so a
+// summary view — the stacked bar on project cards, the wayfinder graph's
+// legend — can lay its own segments out over it without re-deriving which
+// bucket a ticket falls in. Lifted out of the components because there is no
+// component test harness, and this rule is one the views must not restate.
+export function bucketCountsOf(
+  tickets: Ticket[],
+  all: Ticket[],
+  project: Pick<Project, 'share'> | null | undefined,
+): Record<TicketBucket, number> {
+  const counts: Record<TicketBucket, number> = { frontier: 0, claimed: 0, notTakeable: 0, blocked: 0, done: 0 }
+  for (const t of tickets) counts[bucketOf(t, all, project)]++
+  return counts
+}
+
 // ── Wayfinder labels ──
 export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task'
 export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bucketOf, isFrontier, type Project, type ProjectShare, type Ticket } from '../app/composables/useTracker'
+import { bucketCountsOf, bucketOf, isFrontier, type Project, type ProjectShare, type Ticket } from '../app/composables/useTracker'
 
 // The client twin of server/utils/store.test.ts's ticketIsFrontier suite. The
 // two rules have to agree ticket-for-ticket: the board rings and dispatches
@@ -150,5 +150,58 @@ describe('bucketOf', () => {
     const stray = ticket({ transfer: 'pending' })
     expect(isFrontier(stray, [stray], local)).toBe(false)
     expect(bucketOf(stray, [stray], local)).toBe('notTakeable')
+  })
+})
+
+describe('bucketCountsOf', () => {
+  it('reports every bucket, zeros included, and accounts for every ticket', () => {
+    // A summary view lays its own segments out over this, so a bucket it never
+    // sees has to read 0 rather than undefined.
+    const dep = ticket({ id: 'dep', key: 'CART-3', status: 'in_progress' })
+    const tickets = [ticket(), ticket({ id: 't2', status: 'in_progress' }), ticket({ id: 't3', blockedBy: ['dep'] })]
+    const counts = bucketCountsOf(tickets, [...tickets, dep], local)
+    expect(counts).toEqual({ frontier: 1, claimed: 1, notTakeable: 0, blocked: 1, done: 0 })
+    expect(Object.values(counts).reduce((a, b) => a + b, 0)).toBe(tickets.length)
+  })
+
+  it('does not count the peer’s todo ticket as work this side has not started', () => {
+    // TICK-313: the stacked bar carried its own four states and filed this
+    // under "not started", which on a shared project reads as though the
+    // peer's half were ours to pick up.
+    const mine = ticket({ id: 'mine', origin: 'importer', owner: 'importer' })
+    const theirs = ticket({ id: 'theirs', origin: 'creator', owner: 'creator' })
+    const frozen = ticket({ id: 'frozen', origin: 'importer', owner: 'importer', transfer: 'pending' })
+    const all = [mine, theirs, frozen]
+    expect(bucketCountsOf(all, all, shared(importerShare))).toEqual({
+      frontier: 1,
+      claimed: 0,
+      notTakeable: 2,
+      blocked: 0,
+      done: 0,
+    })
+  })
+
+  it('leaves notTakeable empty on a local-only project', () => {
+    // Nothing without a share is peer-owned, so the bucket stays zero and the
+    // segment a summary view feeds from it never renders.
+    const all = [ticket(), ticket({ id: 't2', origin: 'creator', owner: 'creator' }), ticket({ id: 't3', status: 'done' })]
+    for (const project of [local, null, undefined]) {
+      expect(bucketCountsOf(all, all, project).notTakeable).toBe(0)
+    }
+  })
+
+  it('counts an assigned todo ticket as claimed, not as unstarted work', () => {
+    // The one place the stacked bar's answer moved. Its old four states only
+    // asked `status === 'in_progress'`, so an assigned todo ticket fell
+    // through to "not started"; `bucketOf` calls it claimed, which is what
+    // the board has always called it. Local-only, so nothing else is in play.
+    const assigned = ticket({ assignee: 'claude' })
+    expect(bucketCountsOf([assigned], [assigned], local)).toEqual({
+      frontier: 0,
+      claimed: 1,
+      notTakeable: 0,
+      blocked: 0,
+      done: 0,
+    })
   })
 })
