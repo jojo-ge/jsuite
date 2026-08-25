@@ -74,7 +74,7 @@ jsuite/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
     ├── herdr/          # @jsuite/herdr — shared herdr (terminal workspace) adapter
-    ├── relay/          # @jsuite/relay — jTicket sync signaling relay (Cloudflare Worker + deploy wizard)
+    ├── relay/          # @jsuite/relay — jTicket sync relay (Supabase setup wizard + local broadcast server)
     └── data/           # @jsuite/data — shared .data resolver
 ```
 
@@ -169,44 +169,55 @@ tickets), and jDiff dispatches its review-guidance sessions (the
 
 ## @jsuite/relay — jTicket project sync
 
-`packages/relay` is the signaling relay behind **jTicket sync**: two people,
-each running jSuite on their own machine, collaborating on one jTicket
-project. Sync is pull-only, human-approved, and snapshot-based:
+`packages/relay` is the setup half of **jTicket sync**: two people, each
+running jSuite on their own machine, collaborating on one jTicket project.
+Sync is pull-only, human-approved, and snapshot-based:
 
 - One user opens the project's **Share** panel, picks the shared 1–4 char key
   and names their coworker; the link they paste over their own chat channel
   opens the peer's import screen. **Links are valid 2 hours** — re-sharing
-  re-arms the same share with a fresh room and window; stop-sharing kills the
-  room instantly. Expiry gates new requests only: an in-flight pull completes.
+  re-arms the same share with a fresh room and window; stop-sharing revokes it
+  instantly and tells the peer why. Expiry gates new requests only: an
+  in-flight pull completes.
 - While both apps run, either side can click **Sync**; the serving side
   **approves each pull in their UI** (named: who's asking, for what) before
   any data moves. The link creator mints odd ticket numbers, the importer
   even, so the shared project needs no coordination — and is hard-locked to
   exactly two peers.
-- Security model: project data travels **peer-to-peer over WebRTC data
-  channels** (DTLS-encrypted); the relay is a Cloudflare Worker + Durable
-  Object that only ferries opaque handshake blobs by room id + secret — it
-  never sees project data and stores nothing but a secret hash and expiry.
-  There is no write path between machines: peer-owned entities are read-only
-  and never dispatchable (enforced at the API), peer-authored text entering a
-  locally-built prompt is wrapped in untrusted-content framing, and
+- Transport: **Supabase Realtime Broadcast**. Each machine opens one outbound
+  WSS connection to `<project>.supabase.co` and joins a broadcast topic named
+  by the share's room id. Nothing is deployed into Supabase — no functions, no
+  tables, no SQL. Because it is one ordinary outbound HTTPS connection, sync
+  works on networks where nothing peer-to-peer can be established: symmetric
+  NAT, blocked UDP, corporate proxies.
+- Security model: frames are **sealed end-to-end** before they leave the
+  machine — AES-256-GCM under a key derived (HKDF) from the share's room
+  secret, which only ever travels in the link's URL *fragment*. Supabase
+  relays ciphertext it cannot read, and a forged frame fails the auth tag, so
+  the relay is data-blind exactly as the old signaling worker was. The room
+  id is 96 random bits, so the topic is unguessable — but nothing rests on
+  that. There is no write path between machines: peer-owned entities are
+  read-only and never dispatchable (enforced at the API), peer-authored text
+  entering a locally-built prompt is wrapped in untrusted-content framing, and
   machine-local fields (`repo`, integration branch) never leave the machine.
-- The public worker bounds anonymous callers: frames over 64 KiB eject the
-  sender (close code 4006), room creation and room traffic are rate-limited
-  per IP (120 per minute each — close code 4007 for joins, HTTP 429
-  otherwise; `RELAY_*` env vars override), and an expired room's metadata is
-  deleted by a Durable Object alarm 30 minutes after expiry once its members
-  are gone.
+- Quotas, on Supabase's free plan: 256 KB per broadcast payload and 100
+  messages/second. Snapshots are chunked to 96k characters and sent one
+  server-acknowledged frame at a time, which doubles as flow control — a
+  megabyte board crosses in about a dozen frames.
 
-**Deploying**: `packages/relay/wizard.sh` walks the one-time Cloudflare
-deploy (free plan; account → `wrangler login` → deploy → verify) and writes
-the URL to `.data/jticket/sync.json`, which a running jTicket picks up
-without a restart. **Both machines must wire the same relay URL** — the
-coworker runs the wizard too and chooses option 2 (wire an existing URL).
-`JTICKET_RELAY_URL` overrides the file (tests, one-off runs); with neither
-set, sharing warns in the panel and pulls refuse with a 503 naming the
-wizard. Local development and tests never touch Cloudflare — the same worker
-runs on workerd via `startLocalRelay()` (Miniflare).
+**Setting up**: `packages/relay/wizard.sh` walks the one-time Supabase setup
+(create a free project → copy its URL and publishable key → verify → wire) and
+writes them to `.data/jticket/sync.json`, which a running jTicket picks up
+without a restart. **Both machines must point at the same Supabase project** —
+the coworker runs the wizard too and chooses option 2 (wire an existing
+project). Wire the **publishable (anon)** key, never a secret/service_role key;
+jTicket has no use for one. `JTICKET_SUPABASE_URL` / `JTICKET_SUPABASE_KEY`
+override the file; with nothing set, sharing warns in the panel and pulls
+refuse with a 503 naming the wizard.
+
+Local development and tests never touch Supabase: `startLocalRelay()` runs a
+small WebSocket broadcast server with the same topic fan-out semantics, and
+`JTICKET_SYNC_RELAY_URL` points an instance at it.
 
 ## jSkills
 

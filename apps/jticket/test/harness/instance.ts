@@ -7,7 +7,8 @@ import { dirname, join } from 'node:path'
 
 // Boot a real jTicket server process from the .output build, isolated behind
 // its own temp JSUITE_DATA_DIR. This is the instance half of the two-instance
-// harness; the relay half is @jsuite/relay's startLocalRelay().
+// harness; the relay half is @jsuite/relay's startLocalRelay(), a local
+// stand-in for Supabase Realtime Broadcast.
 
 const appDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const serverEntry = join(appDir, '.output', 'server', 'index.mjs')
@@ -36,23 +37,17 @@ export async function startInstance({
 } = {}): Promise<Instance> {
   const port = await freePort()
   const dataDir = mkdtempSync(join(tmpdir(), `jticket-harness-${label}-`))
-  // pnpm run sets NODE_PATH to its hidden hoist dir, which would let the
-  // node-datachannel platform addon resolve from the workspace store even when
-  // the build didn't package it. Strip the inherited value so instances boot
-  // exactly like a deployed `node .output/server/index.mjs` from a clean shell
-  // (TICK-306); a test that passes its own NODE_PATH via `env` still wins.
+  // pnpm run sets NODE_PATH to its hidden hoist dir, which would let modules
+  // the build failed to package resolve from the workspace store anyway.
+  // Strip the inherited value so instances boot exactly like a deployed
+  // `node .output/server/index.mjs` from a clean shell (TICK-306); a test that
+  // passes its own NODE_PATH via `env` still wins.
   const childEnv: Record<string, string | undefined> = { ...process.env }
   delete childEnv.NODE_PATH
   Object.assign(childEnv, {
     PORT: String(port),
     HOST: '127.0.0.1',
     JSUITE_DATA_DIR: dataDir,
-    // Both instances live on this host, so their ICE has no business on the
-    // machine's real interfaces — binding loopback keeps self-connections off
-    // the VPN subnets and rotating IPv6 privacy addresses that die mid-DTLS
-    // with EADDRNOTAVAIL (TICK-300, TICK-308). Test-only: production leaves
-    // JTICKET_ICE_BIND_ADDRESS unset. A test's own env still wins.
-    JTICKET_ICE_BIND_ADDRESS: '127.0.0.1',
     ...env,
   })
   const child: ChildProcess = spawn('node', [serverEntry], {

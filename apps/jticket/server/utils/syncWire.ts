@@ -1,20 +1,28 @@
 // The pull flow's wire protocol (TICK-294, spec DOC-30): what actually
-// travels over the data channel. Typed JSON frames, one per message; a
-// snapshot is split into bounded chunks because libdatachannel messages have
-// a size ceiling and a whole board's JSON can pass it. Pure — no networking,
-// no clock — so framing and reassembly are unit-testable.
+// travels over the relay, inside the seal. Typed JSON frames, one per
+// message; a snapshot is split into bounded chunks because a broadcast
+// payload has a size ceiling and a whole board's JSON can pass it. Pure — no
+// networking, no clock — so framing and reassembly are unit-testable.
 
 export type PullWireMessage =
-  // The serving side's hello, sent once its message handler is attached. The
-  // importer sends nothing before seeing it: the receiving side of a fresh
-  // channel can miss messages that arrive before onDataChannel has run, and
-  // this direction cannot race (the initiator attaches handlers in dial()).
-  | { v: 1; kind: 'serve-ready' }
+  // The importer speaks first and re-sends until acknowledged: on a broadcast
+  // topic there is no way to know whether the serving side has joined yet, and
+  // a request that lands before it does is simply not delivered. Retrying is
+  // the whole synchronisation mechanism, which is why the serving side keys
+  // pending requests by requestId and answers a repeat with another ack.
   | { v: 1; kind: 'pull-request'; requestId: string; projectUuid: string }
+  // "I have your request and I am asking my human." Turns the importer's
+  // spinner from 'dialing' to 'awaiting-approval' and stops the retries.
+  | { v: 1; kind: 'pull-received'; requestId: string }
   | { v: 1; kind: 'pull-denied'; requestId: string }
   | { v: 1; kind: 'pull-refused'; requestId: string; reason: string }
   | { v: 1; kind: 'pull-expired'; requestId: string }
   | { v: 1; kind: 'snapshot-chunk'; requestId: string; seq: number; total: number; data: string }
+  // Stop-sharing, announced to whoever is listening. The Cloudflare relay used
+  // to kill the room out from under both peers; with no room registry to kill,
+  // the serving side says so itself on its way out, so a waiting importer
+  // fails fast with the real reason instead of timing out.
+  | { v: 1; kind: 'room-closed'; reason: string }
 
 export type SnapshotChunk = Extract<PullWireMessage, { kind: 'snapshot-chunk' }>
 
@@ -30,14 +38,30 @@ export function parseWireMessage(raw: string): PullWireMessage | null {
   } catch {
     return null
   }
-  const m = parsed as Partial<SnapshotChunk> & { kind?: string; reason?: string; projectUuid?: string }
+  // Deliberately loose: the guards below are what turn this into a typed
+  // message. Narrowing the cast to one variant's shape (as it once was) made
+  // every other kind's case unreachable to the compiler.
+  const m = parsed as {
+    v?: unknown
+    kind?: string
+    requestId?: unknown
+    reason?: unknown
+    projectUuid?: unknown
+    seq?: unknown
+    total?: unknown
+    data?: unknown
+  } | null
   if (!m || typeof m !== 'object' || m.v !== 1) return null
-  if (m.kind === 'serve-ready') return { v: 1, kind: 'serve-ready' }
+  if (m.kind === 'room-closed') {
+    return typeof m.reason === 'string' ? { v: 1, kind: 'room-closed', reason: m.reason } : null
+  }
   if (typeof m.requestId !== 'string' || !m.requestId) return null
   switch (m.kind) {
     case 'pull-request':
       if (typeof m.projectUuid !== 'string' || !m.projectUuid) return null
       return { v: 1, kind: 'pull-request', requestId: m.requestId, projectUuid: m.projectUuid }
+    case 'pull-received':
+      return { v: 1, kind: 'pull-received', requestId: m.requestId }
     case 'pull-denied':
       return { v: 1, kind: 'pull-denied', requestId: m.requestId }
     case 'pull-refused':
@@ -58,23 +82,27 @@ export function parseWireMessage(raw: string): PullWireMessage | null {
   }
 }
 
-// Chunk size in JSON-string characters. Worst-case UTF-8 expansion keeps a
-// frame safely under the 64KB floor every libdatachannel peer accepts.
-export const SNAPSHOT_CHUNK_CHARS = 16_000
+// Chunk size in JSON-string characters. The budget is a Supabase broadcast
+// payload: 256 KB on the free plan, and a chunk is inflated twice on the way
+// there — worst-case UTF-8 expansion, then base64 of the sealed bytes (+33%).
+// 96k chars leaves room for both plus the frame's own JSON, and cuts a
+// megabyte board from 60-odd frames to 11, which matters against the
+// messages-per-second quota.
+export const SNAPSHOT_CHUNK_CHARS = 96_000
 
-/** Split a snapshot's JSON into ready-to-send chunk frames. */
-export function snapshotFrames(requestId: string, snapshotJson: string, chunkChars = SNAPSHOT_CHUNK_CHARS): string[] {
+/** Split a snapshot's JSON into ready-to-send chunk messages. */
+export function snapshotFrames(requestId: string, snapshotJson: string, chunkChars = SNAPSHOT_CHUNK_CHARS): SnapshotChunk[] {
   const total = Math.max(1, Math.ceil(snapshotJson.length / chunkChars))
-  const frames: string[] = []
+  const frames: SnapshotChunk[] = []
   for (let seq = 0; seq < total; seq++) {
-    frames.push(encodeWireMessage({
+    frames.push({
       v: 1,
       kind: 'snapshot-chunk',
       requestId,
       seq,
       total,
       data: snapshotJson.slice(seq * chunkChars, (seq + 1) * chunkChars),
-    }))
+    })
   }
   return frames
 }

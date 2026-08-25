@@ -17,8 +17,8 @@ const result = ref<PullAttemptView | null>(null)
 const peerName = computed(() => props.project.share?.peerName || 'your coworker')
 
 // Mirrors syncPull.ts's TERMINAL set — duplicated on purpose: a value import
-// from server/utils would drag the peer/node-datachannel chain into the
-// client bundle (the PullAttemptView import above is type-only and erased).
+// from server/utils would drag the whole sync/transport chain into the client
+// bundle (the PullAttemptView import above is type-only and erased).
 const TERMINAL = ['applied', 'denied', 'expired', 'failed']
 
 async function sync() {

@@ -1,1 +1,1 @@
-export { startLocalRelay } from './src/local.mjs'
+export { startLocalRelay } from './src/localRelay.mjs'

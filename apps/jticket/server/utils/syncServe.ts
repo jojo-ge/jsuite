@@ -1,21 +1,26 @@
-import type { PeerManager } from './peer'
-import { usePeerManager } from './peer'
+import type { ChannelManager } from './syncChannel'
+import { useChannelManager } from './syncChannel'
 import type { Store } from './store'
 import { loadStore } from './store'
+import type { Share } from './shares'
 import { serveRoom, shareStatus } from './shares'
-import { ensureRelayRoom } from './relayRooms'
 import { assembleSyncSnapshot } from './syncIo'
 import type { PullWireMessage } from './syncWire'
-import { encodeWireMessage, parseWireMessage, snapshotFrames } from './syncWire'
-import { handshakeTimeoutMs as configHandshakeTimeoutMs, iceBindAddress, pullRequestTtlMs, syncRelayUrl } from './syncConfig'
+import { snapshotFrames } from './syncWire'
+import { pullRequestTtlMs, syncRelayConfig } from './syncConfig'
 
 // The serving side of the pull flow (TICK-294, spec DOC-30). While a share is
-// active, a presence dial waits in the room this side serves (creator: the
-// main room, importer: the reverse one — TICK-295 made pulls bidirectional);
-// the peer's pull-request becomes a pending approval the human answers in the
-// UI. Approve builds the snapshot and streams it over the channel; deny and
-// expiry send a refusal and transfer nothing. Framework-free — the Nitro
-// plugin drives tick() on an interval, tests drive it directly.
+// active, this side sits joined to the channel it serves (creator: the main
+// room, importer: the reverse one — TICK-295 made pulls bidirectional); the
+// peer's pull-request becomes a pending approval the human answers in the UI.
+// Approve builds the snapshot and streams it over the channel; deny and expiry
+// send a refusal and transfer nothing. Framework-free — the Nitro plugin
+// drives tick() on an interval, tests drive it directly.
+//
+// Since sync moved off WebRTC (TICK-3xx) this loop is much duller: joining a
+// broadcast topic has no handshake to fail, so there is no redial ladder, no
+// reclaim grace, and no way for both of a room's slots to end up ours. A
+// channel that is joined stays joined; one that fails is re-joined next tick.
 
 export interface PendingPullView {
   id: string
@@ -31,7 +36,7 @@ export interface PendingPullView {
 interface PendingPull {
   id: string
   shareId: string
-  peerId: string
+  channelId: string
   requestedAt: number
   expiresAt: number
 }
@@ -44,28 +49,19 @@ export class PullAnswerError extends Error {
 }
 
 export interface SyncServerOptions {
-  peers: PeerManager
-  relayUrl: () => string
+  /** Null when no relay is configured — the loop then does nothing at all. */
+  channels: () => ChannelManager | null
   loadState: () => Store
   requestTtlMs?: number
-  handshakeTimeoutMs?: number
   /**
-   * How long the presence loop waits for the relay to acknowledge a closed
-   * dial's socket before re-dialing that room anyway (see the re-dial gate in
-   * tick()). Long enough that the ack wins the race in practice, short enough
-   * that a share whose ack is lost re-arms while its human still has the
-   * board open.
+   * How long a channel outlives its share going inactive, measured from the
+   * last frame the peer sent. The share is already refused at the gate — this
+   * only keeps us on the topic long enough to SAY so, so an importer who asked
+   * as the clock ran out reads 'share expired' instead of waiting out their
+   * ack timeout in silence. Revocation doesn't wait for it (announceRevoked
+   * leaves immediately), and a channel nobody is talking on is dropped at once.
    */
-  reclaimGraceMs?: number
-  /**
-   * Local address to bind ICE to (see DialOptions.bindAddress). Unset in
-   * production — real pulls cross machines. In-process tests bind 127.0.0.1
-   * so self-connections stay off real interfaces (TICK-300's EADDRNOTAVAIL);
-   * the two-instance harness gets there through JTICKET_ICE_BIND_ADDRESS,
-   * which syncConfig reads into the process singleton (TICK-311). '' is
-   * treated as unset.
-   */
-  bindAddress?: string
+  inactiveLingerMs?: number
   nowMs?: () => number
 }
 
@@ -75,65 +71,74 @@ export interface SyncServer {
   pending(): PendingPullView[]
   approve(requestId: string): Promise<void>
   deny(requestId: string): void
+  /** Tell a share's peers it is revoked, then drop its channel. */
+  announceRevoked(share: Share, reason?: string): Promise<void>
   stop(): void
 }
 
 export function createSyncServer(options: SyncServerOptions): SyncServer {
-  const { peers, relayUrl, loadState, requestTtlMs = 120_000, handshakeTimeoutMs, bindAddress, reclaimGraceMs = 5_000, nowMs = Date.now } = options
-  const conns = new Map<string, string>() // share id → waiting/serving peer id
-  const closedSince = new Map<string, number>() // share id → when its dial ended, while we wait out the reclaim
+  const { channels, loadState, requestTtlMs = 120_000, inactiveLingerMs = 60_000, nowMs = Date.now } = options
+  // share id → the channel serving it, and the room it was joined for. The
+  // room matters: re-sharing rotates a share's room ids in place, keeping the
+  // record (and its id), so a channel still sitting on the old topic would
+  // serve a room nobody dials any more. Under WebRTC this could not happen —
+  // channels died after every pull and were re-dialed against fresh state.
+  const conns = new Map<string, { channelId: string; roomId: string }>()
+  const lastHeard = new Map<string, number>() // share id → when its peer last spoke
   const pendings = new Map<string, PendingPull>()
   let stopped = false
   let ticking = false
 
   const nowIso = () => new Date(nowMs()).toISOString()
 
-  const sendSafe = (peerId: string, message: PullWireMessage) => {
-    try {
-      peers.send(peerId, encodeWireMessage(message))
-    } catch {}
+  const sendSafe = (channelId: string, message: PullWireMessage) => {
+    const manager = channels()
+    if (!manager) return
+    // Fire and forget: a refusal the peer never hears is exactly the silence
+    // they would get from a crashed app, and every path here has a timeout.
+    void manager.send(channelId, message).catch(() => {})
   }
-  const refuse = (peerId: string, requestId: string, reason: string) =>
-    sendSafe(peerId, { v: 1, kind: 'pull-refused', requestId, reason })
+  const refuse = (channelId: string, requestId: string, reason: string) =>
+    sendSafe(channelId, { v: 1, kind: 'pull-refused', requestId, reason })
 
-  function handleMessage(shareId: string, peerId: () => string, raw: string) {
-    const msg = parseWireMessage(raw)
-    if (!msg || msg.kind !== 'pull-request') return // the importer speaks first and only asks
+  function handleMessage(shareId: string, channelId: () => string, msg: PullWireMessage) {
+    if (msg.kind !== 'pull-request') return // the importer speaks first and only asks
+    // A repeat of a request we already hold is the importer's retry — it never
+    // saw our ack. Re-ack instead of ignoring, or their spinner never moves off
+    // 'dialing' and the pull dies at the ack timeout with the human still
+    // staring at an approval prompt.
+    if (pendings.has(msg.requestId)) {
+      sendSafe(channelId(), { v: 1, kind: 'pull-received', requestId: msg.requestId })
+      return
+    }
     const store = loadState()
     const share = store.shares.find((s) => s.id === shareId)
     if (!share || share.projectUuid !== msg.projectUuid) {
-      refuse(peerId(), msg.requestId, 'this room does not serve that project')
+      refuse(channelId(), msg.requestId, 'this room does not serve that project')
       return
     }
     // The start-of-serving gate (DOC-30): expiry and revocation refuse new
     // requests; requests already pending ride out expiry (not revocation).
     const status = shareStatus(share, nowIso())
     if (status !== 'active') {
-      refuse(peerId(), msg.requestId, `share ${status}`)
+      refuse(channelId(), msg.requestId, `share ${status}`)
       return
     }
     if (!store.projects.some((p) => p.id === share.projectId)) {
-      refuse(peerId(), msg.requestId, 'the shared project no longer exists')
+      refuse(channelId(), msg.requestId, 'the shared project no longer exists')
       return
     }
-    if (pendings.has(msg.requestId)) return
     pendings.set(msg.requestId, {
       id: msg.requestId,
       shareId,
-      peerId: peerId(),
+      channelId: channelId(),
       requestedAt: nowMs(),
       expiresAt: nowMs() + requestTtlMs,
     })
+    sendSafe(channelId(), { v: 1, kind: 'pull-received', requestId: msg.requestId })
   }
 
-  /**
-   * One tick at a time. Whether to dial is decided before the awaited relay
-   * round-trip that records the dial, so a second tick entering that window
-   * re-decides on stale state and dials the same room again — both of the
-   * room's two member slots then belong to this side, and the importer's pull
-   * is refused 'room full' (TICK-311). Interval drivers never await us, and
-   * the round-trip outlasts the interval whenever the relay is slow.
-   */
+  /** One tick at a time: joining is async, and a second pass would double-join. */
   async function tick(): Promise<void> {
     if (stopped || ticking) return
     ticking = true
@@ -145,82 +150,73 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
   }
 
   async function runTick(): Promise<void> {
+    const manager = channels()
+
     // Sweep pending requests: gone when their channel died, expired when the
     // human never answered — either way nothing transfers.
     for (const [id, p] of [...pendings]) {
-      if (peers.get(p.peerId)?.state !== 'connected') {
+      if (!manager || manager.get(p.channelId)?.state !== 'joined') {
         pendings.delete(id)
         continue
       }
       if (nowMs() >= p.expiresAt) {
-        sendSafe(p.peerId, { v: 1, kind: 'pull-expired', requestId: id })
+        sendSafe(p.channelId, { v: 1, kind: 'pull-expired', requestId: id })
         pendings.delete(id)
       }
     }
 
-    // Presence: one waiting dial per active share, in the room this side
-    // serves — the creator waits in the main room, the importer in the
-    // reverse one, so pulls work in both directions (shares.ts serveRoom).
+    if (!manager) return // no relay configured — sync is off on this machine
+
+    // Presence: one joined channel per active share, in the room this side
+    // serves — the creator serves the main room, the importer the reverse one,
+    // so pulls work in both directions (shares.ts serveRoom).
     const store = loadState()
-    const url = relayUrl()
     for (const share of store.shares) {
       const room = serveRoom(share)
       if (!room) continue // pre-two-way record: nothing to serve from this side yet
       const active = shareStatus(share, nowIso()) === 'active' && store.projects.some((p) => p.id === share.projectId)
-      const peerId = conns.get(share.id)
-      const existing = peerId ? peers.get(peerId) : undefined
-      const state = existing?.state
+      const conn = conns.get(share.id)
+      const channelId = conn?.channelId
+      const state = channelId ? manager.get(channelId)?.state : undefined
       if (!active) {
-        // Close only a *waiting* dial — a connected one may be mid-pull, and
-        // in-flight pulls complete across expiry.
-        if (peerId && state === 'connecting') {
-          peers.close(peerId)
+        // Leave, unless something is still in flight: a pending request may be
+        // mid-approval (in-flight pulls complete across expiry), or a peer may
+        // be mid-conversation and owed the refusal the gate has for them.
+        const heard = lastHeard.get(share.id) ?? 0
+        const busy = hasPendingOn(channelId ?? '') || nowMs() - heard < inactiveLingerMs
+        if (channelId && !busy) {
+          manager.close(channelId)
           conns.delete(share.id)
+          lastHeard.delete(share.id)
         }
-        closedSince.delete(share.id)
         continue
       }
-      if (!url || state === 'connecting' || state === 'connected') continue
-      // The relay frees this room's member slot only once it has processed
-      // our socket's close (PeerStatus.signalingClosed). Re-dial before that
-      // and the fresh dial sits beside the old one — both slots ours again,
-      // and the importer's pull is refused 'room full' (TICK-311). So wait
-      // for the ack, bounded: a close that never acks must not strand the
-      // share, and by then the relay has long since reaped the socket.
-      if (existing && !existing.signalingClosed) {
-        // The clock belongs to the dial being waited out — every path that
-        // replaces or abandons that dial drops it, so an entry read here is
-        // always this dial's own. A relay that refuses in between keeps it:
-        // the wait must not restart each time the round-trip fails.
-        const since = closedSince.get(share.id) ?? nowMs()
-        closedSince.set(share.id, since)
-        if (nowMs() - since < reclaimGraceMs) continue
+      if (conn && conn.roomId !== room.roomId) {
+        // The share was re-armed: leave the rotated-away room and take the new
+        // one below, so the link that was just handed out is the one served.
+        manager.close(conn.channelId)
+        conns.delete(share.id)
+        lastHeard.delete(share.id)
+      } else if (state === 'joining' || state === 'joined') {
+        continue
       }
-      try {
-        await ensureRelayRoom(url, room, nowMs)
-      } catch {
-        continue // relay down or refusing — retry next tick
-      }
-      // stop() may have run while the round-trip was in flight; dialing now
-      // would leave a peer nothing owns, holding a slot in the room.
-      if (stopped) return
-      const holder = { id: '' }
-      holder.id = peers.dial({
-        relayUrl: url,
+      conns.set(share.id, { roomId: room.roomId, channelId: manager.join({
         roomId: room.roomId,
-        secret: room.roomSecret,
-        initiator: false,
-        ...(handshakeTimeoutMs ? { handshakeTimeoutMs } : {}),
-        ...(bindAddress ? { bindAddress } : {}),
-        // The hello tells the importer this side is listening — its request
-        // would race the fresh channel's handler attachment otherwise.
-        onOpen: () => sendSafe(holder.id, { v: 1, kind: 'serve-ready' }),
-        onMessage: (raw) => handleMessage(share.id, () => holder.id, raw),
-      }).id
-      conns.set(share.id, holder.id)
-      closedSince.delete(share.id)
+        roomSecret: room.roomSecret,
+        onMessage: (msg) => {
+          // Any readable frame means a peer holding this room's secret is on
+          // the topic — that, not the share clock, is what the linger above
+          // measures.
+          lastHeard.set(share.id, nowMs())
+          handleMessage(share.id, () => conns.get(share.id)?.channelId ?? '', msg)
+        },
+      }).id })
+      if (stopped) return
     }
   }
+
+  const hasPendingOn = (channelId: string) =>
+    [...pendings.values()].some((p) => p.channelId === channelId)
 
   return {
     tick,
@@ -246,6 +242,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     async approve(requestId) {
       const p = pendings.get(requestId)
       if (!p) throw new PullAnswerError(`unknown pull request: ${requestId}`, 404)
+      const manager = channels()
       const store = loadState()
       const share = store.shares.find((s) => s.id === p.shareId)
       if (!share) {
@@ -255,35 +252,81 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       // Revocation is a hard stop; expiry is not — this request arrived while
       // the link was alive, and in-flight pulls complete (DOC-30).
       if (shareStatus(share, nowIso()) === 'revoked') {
-        refuse(p.peerId, requestId, 'share revoked')
+        refuse(p.channelId, requestId, 'share revoked')
         pendings.delete(requestId)
         throw new PullAnswerError('share revoked — stop-sharing halts serving immediately', 409)
       }
-      if (peers.get(p.peerId)?.state !== 'connected') {
+      if (!manager || manager.get(p.channelId)?.state !== 'joined') {
         pendings.delete(requestId)
         throw new PullAnswerError('the requester is no longer connected', 409)
       }
       const snapshot = await assembleSyncSnapshot(store, share, nowIso())
+      // Sequentially, and awaited: with broadcast acks on, each send resolves
+      // only once the relay has taken the frame, which doubles as flow control
+      // against the project's messages-per-second quota. A frame that fails
+      // fails the approval — better a visible error than half a board.
       for (const frame of snapshotFrames(requestId, JSON.stringify(snapshot))) {
-        peers.send(p.peerId, frame)
+        await manager.send(p.channelId, frame)
       }
       pendings.delete(requestId)
     },
     deny(requestId) {
       const p = pendings.get(requestId)
       if (!p) throw new PullAnswerError(`unknown pull request: ${requestId}`, 404)
-      sendSafe(p.peerId, { v: 1, kind: 'pull-denied', requestId })
+      sendSafe(p.channelId, { v: 1, kind: 'pull-denied', requestId })
       pendings.delete(requestId)
+    },
+    async announceRevoked(share, reason = 'share revoked') {
+      const manager = channels()
+      if (!manager) return
+      // Say it on the channel we already serve, so a peer waiting on us hears
+      // the reason; then drop it so nothing answers for this share again.
+      const conn = conns.get(share.id)
+      if (conn && manager.get(conn.channelId)?.state === 'joined') {
+        await manager.send(conn.channelId, { v: 1, kind: 'room-closed', reason }).catch(() => {})
+        manager.close(conn.channelId)
+      }
+      conns.delete(share.id)
+      lastHeard.delete(share.id)
+      // And on the room the OTHER side serves, in case they are the ones
+      // waiting there — a short-lived join purely to deliver the notice.
+      const peerRoom = share.side === 'creator'
+        ? { roomId: share.reverseRoomId, roomSecret: share.reverseRoomSecret }
+        : { roomId: share.roomId, roomSecret: share.roomSecret }
+      if (!peerRoom.roomId) return
+      await new Promise<void>((resolve) => {
+        const id = manager.join({
+          roomId: peerRoom.roomId,
+          roomSecret: peerRoom.roomSecret,
+          onJoined: () => {
+            void manager.send(id, { v: 1, kind: 'room-closed', reason })
+              .catch(() => {})
+              .finally(() => {
+                manager.close(id)
+                resolve()
+              })
+          },
+        }).id
+        // Never let stop-sharing hang on a relay that won't answer: the local
+        // revocation has already taken effect, this is only the courtesy note.
+        setTimeout(() => {
+          try {
+            manager.close(id)
+          } catch {}
+          resolve()
+        }, 5_000).unref?.()
+      })
     },
     stop() {
       stopped = true
-      for (const peerId of conns.values()) {
+      const manager = channels()
+      for (const { channelId } of conns.values()) {
         try {
-          peers.close(peerId)
+          manager?.close(channelId)
         } catch {}
       }
       conns.clear()
-      closedSince.clear()
+      lastHeard.clear()
       pendings.clear()
     },
   }
@@ -293,12 +336,14 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
 let singleton: SyncServer | undefined
 export function useSyncServer(): SyncServer {
   singleton ??= createSyncServer({
-    peers: usePeerManager(),
-    relayUrl: syncRelayUrl,
+    channels: useChannelManager,
     loadState: loadStore,
     requestTtlMs: pullRequestTtlMs(),
-    handshakeTimeoutMs: configHandshakeTimeoutMs(),
-    bindAddress: iceBindAddress(),
   })
   return singleton
+}
+
+/** Whether this machine can serve at all — the revoke path checks before announcing. */
+export function syncServingEnabled(): boolean {
+  return syncRelayConfig() !== null
 }

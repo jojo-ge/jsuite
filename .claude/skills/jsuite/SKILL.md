@@ -42,9 +42,10 @@ to origin). It can also **sync a project between two machines** (jTicket
 sync): the project page's Share panel makes a 2-hour capability link the
 coworker imports; from then on either side pulls a snapshot of the peer's
 half, and **the serving human approves every pull in their UI** before any
-data moves. Data travels peer-to-peer over WebRTC; a tiny Cloudflare relay
-(deployed once via `packages/relay/wizard.sh`, same URL wired on both
-machines) ferries only handshake blobs. Peer-owned tickets/docs are read-only
+data moves. Frames travel over Supabase Realtime Broadcast, sealed end-to-end
+with the share's room secret, so the relay carries ciphertext it cannot read
+(one-time setup via `packages/relay/wizard.sh`; both machines wire the same
+free Supabase project). Peer-owned tickets/docs are read-only
 and never dispatchable, and peer-authored text is wrapped in
 untrusted-content framing before it enters any prompt. Drive it via its HTTP
 API on :43000 — never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD

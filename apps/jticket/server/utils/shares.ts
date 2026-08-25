@@ -19,10 +19,10 @@ export interface Share {
   // shared project by this, never by their local ids.
   projectUuid: string
   sharedKey: string // 1–4 char key the shared project uses on both machines
-  roomId: string // signaling-relay room …
-  roomSecret: string // … and the secret that opens it
+  roomId: string // the relay's broadcast topic for this share …
+  roomSecret: string // … and the secret that seals its frames
   // The second room of the pair, serving the opposite direction: the creator
-  // waits in roomId and pulls via reverseRoomId; the importer the other way
+  // serves roomId and pulls via reverseRoomId; the importer the other way
   // around. Minted with the main room and carried in the same link, so one
   // share arms pulls both ways (the transfer protocol needs both — DOC-30's
   // "the transferor's next pull"). '' on records from before two-way sync:

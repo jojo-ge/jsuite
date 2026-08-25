@@ -1,16 +1,13 @@
 export interface LocalRelay {
-  /** Base URL of the locally-running relay (http://127.0.0.1:<port>/). */
-  url: URL
+  /** ws:// URL of the locally-running relay — what JTICKET_SYNC_RELAY_URL takes. */
+  url: string
+  port: number
   dispose(): Promise<void>
 }
 
 /**
- * Run the relay worker locally on workerd (via Miniflare) — no Cloudflare
- * account involved. Used by the relay's own tests and by the two-instance
- * sync harness.
+ * Run a local stand-in for Supabase Realtime Broadcast: join a topic, and every
+ * frame you send reaches that topic's other members. Used by the two-instance
+ * sync harness so e2e sync runs offline, with no Supabase account involved.
  */
-export function startLocalRelay(options?: {
-  port?: number
-  /** Worker env vars — the RELAY_* hardening knobs; unset = production defaults. */
-  bindings?: Record<string, string>
-}): Promise<LocalRelay>
+export function startLocalRelay(options?: { port?: number; host?: string }): Promise<LocalRelay>

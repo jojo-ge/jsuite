@@ -20,11 +20,12 @@ let B: Instance // importer — pulls
 beforeAll(async () => {
   relay = await startLocalRelay()
   const env = {
-    JTICKET_RELAY_URL: relay.url.href,
+    JTICKET_SYNC_RELAY_URL: relay.url,
     JTICKET_PULL_REQUEST_TTL_MS: '30000',
     JTICKET_PULL_TIMEOUT_MS: '15000',
     JTICKET_SYNC_TICK_MS: '200',
-    JTICKET_HANDSHAKE_TIMEOUT_MS: '3000',
+    JTICKET_PULL_ACK_TIMEOUT_MS: '10000',
+    JTICKET_PULL_RETRY_MS: '250',
   }
   ;[A, B] = await Promise.all([startInstance({ label: 'a', env }), startInstance({ label: 'b', env })])
 })
@@ -37,11 +38,12 @@ const terminal = (state: string) => ['applied', 'denied', 'expired', 'failed'].i
 const fragmentOf = (link: string) => link.split('#')[1]!
 
 /**
- * One approved pull: `to` asks, `from`'s human approves, `to` applies. The
- * WebRTC handshake can miss on a cold channel (documented flakiness — bounded
- * re-dials sometimes exhaust before connecting), so the whole approved pull is
- * retried a few times. These are transport retries, not assertion softening:
- * the security tests downstream all need a real baseline sync to exist.
+ * One approved pull: `to` asks, `from`'s human approves, `to` applies. Retried
+ * a few times: the serving side joins its topic on a presence tick, so a pull
+ * fired before it gets there waits on the importer's own request retries and
+ * can still run out of ack window on a cold start. These are transport
+ * retries, not assertion softening — the security tests downstream all need a
+ * real baseline sync to exist.
  */
 async function approvedPull(to: Instance, from: Instance, projectId: string, attempts = 4) {
   let lastState = 'never-started'

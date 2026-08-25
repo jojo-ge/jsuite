@@ -21,7 +21,7 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
 | block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
 | dispatching terminal claude sessions into herdr | shared pool | `packages/herdr` (`ensureHerdrWorkspace`, `acquirePackedPane`, `startClaudeIn`) — jTicket, jMap and jDiff all dispatch through it (jDiff's review sessions run the `jdiff-review`/`jdiff-ask` skills on Opus 5); jTicket's Run-review buttons proxy to jDiff's dispatch with ticket/project context, and the review session reports findings back into jTicket (fix tickets / ticket comments) |
-| sync/share a jTicket project with a coworker's machine | `apps/jticket` | the project page's Share panel — pull-only snapshot sync over WebRTC, 2-hour capability links, every pull approved in the serving side's UI; peer-owned entities are read-only and never dispatchable. One-time relay deploy: `packages/relay/wizard.sh` (Cloudflare); both machines wire the same relay URL into `.data/jticket/sync.json` (`JTICKET_RELAY_URL` overrides). See README "@jsuite/relay" |
+| sync/share a jTicket project with a coworker's machine | `apps/jticket` | the project page's Share panel — pull-only snapshot sync over Supabase Realtime Broadcast (frames sealed end-to-end with the share's room secret), 2-hour capability links, every pull approved in the serving side's UI; peer-owned entities are read-only and never dispatchable. One-time setup: `packages/relay/wizard.sh` (creates/wires a free Supabase project); both machines wire the same project into `.data/jticket/sync.json` (`JTICKET_SUPABASE_URL`/`_KEY` override). See README "@jsuite/relay" |
 
 When a request spans apps (e.g. "spec this, then diagram it"), do each part with
 that app's own skill rather than improvising one app's job in another.
@@ -60,6 +60,6 @@ Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
 apps/             # jticket jdiff jchart jexplain jgrilling jmap
-packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter), @jsuite/relay (sync signaling relay worker + deploy wizard)
+packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter), @jsuite/relay (sync setup wizard + local broadcast relay)
 .data/<app>/      # ALL app state, gitignored
 ```

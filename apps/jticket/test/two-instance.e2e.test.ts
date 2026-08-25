@@ -1,26 +1,30 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startLocalRelay, type LocalRelay } from '@jsuite/relay'
-import type { PeerStatus } from '../server/utils/peer'
-import { createRoom, waitFor } from './helpers'
+import { newRoom, waitFor } from './helpers'
 import { startInstance, type Instance } from './harness/instance'
 
-// The two-instance harness — TICK-289's end-to-end slice. Two real jTicket
-// server processes and a local relay in one run: instance A dials instance B
-// through the relay and opens a data channel, driven entirely through each
-// instance's local HTTP API. No browser anywhere. Real traffic over the
-// channel is the pull flow's job (sync-pull.e2e.test.ts) — the raw peer API
-// carries no message affordances since TICK-294.
+// The two-instance harness — TICK-289's end-to-end slice, rebuilt for the
+// broadcast transport. Two real jTicket server processes and a local relay in
+// one run: A and B join the same room and a frame really crosses between them,
+// driven entirely through each instance's local HTTP API. No browser anywhere.
+// The pull flow's own traffic is sync-pull.e2e.test.ts's job; this proves the
+// pipe underneath it, including the part the relay can't see.
 
 let relay: LocalRelay
 let A: Instance
 let B: Instance
 
 beforeAll(async () => {
-  ;[relay, A, B] = await Promise.all([startLocalRelay(), startInstance({ label: 'a' }), startInstance({ label: 'b' })])
+  relay = await startLocalRelay()
+  ;[A, B] = await Promise.all([
+    startInstance({ label: 'a', env: { JTICKET_SYNC_RELAY_URL: relay.url } }),
+    startInstance({ label: 'b', env: { JTICKET_SYNC_RELAY_URL: relay.url } }),
+  ])
 })
 
 afterAll(async () => {
-  await Promise.all([relay?.dispose(), A?.dispose(), B?.dispose()])
+  await Promise.all([A?.dispose(), B?.dispose()])
+  await relay?.dispose()
 })
 
 async function api(instance: Instance, method: string, path: string, body?: unknown) {
@@ -33,60 +37,75 @@ async function api(instance: Instance, method: string, path: string, body?: unkn
   return res.json()
 }
 
-function waitForPeer(
-  instance: Instance,
-  id: string,
-  predicate: (status: { state: string }) => boolean,
-  options?: { label?: string },
-) {
-  return waitFor(() => api(instance, 'GET', `/api/sync/peer/${id}`), predicate, { intervalMs: 100, ...options })
+const join = (instance: Instance, roomId: string, secret: string) =>
+  api(instance, 'POST', '/api/sync/channel', { roomId, secret })
+
+const status = (instance: Instance, id: string) => api(instance, 'GET', `/api/sync/channel/${id}`)
+
+/** Both sides joined and settled — a send now has somebody to reach. */
+async function joinPair(roomId: string, secretA: string, secretB: string) {
+  const [{ id: idA }, { id: idB }] = await Promise.all([join(A, roomId, secretA), join(B, roomId, secretB)])
+  await Promise.all([
+    waitFor(() => status(A, idA), (s) => s.state === 'joined', { intervalMs: 100, label: 'A joined' }),
+    waitFor(() => status(B, idB), (s) => s.state === 'joined', { intervalMs: 100, label: 'B joined' }),
+  ])
+  return { idA, idB }
 }
 
-/**
- * One connected pair, retried — the two-instance mirror of peer.test.ts's
- * connectInRoom (TICK-308). A same-host dial can die mid-DTLS, and a re-dial
- * can land on a room slot the relay has not reclaimed yet; either way the
- * attempt is transient, so drop both halves and ask for a fresh room rather
- * than failing the test on one unlucky handshake (TICK-300, TICK-311). The
- * initiator is the side with a definite verdict — its handshake timer fires —
- * so its status decides whether the attempt proved out.
- */
-async function connectPair(attempts = 5) {
-  let lastA: PeerStatus | undefined
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const { roomId, secret } = await createRoom(relay)
-    const relayUrl = relay.url.href
-    const { id: idB } = await api(B, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: false })
-    const { id: idA } = await api(A, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: true })
-    lastA = await waitForPeer(A, idA, (s) => s.state !== 'connecting', { label: `A settled (attempt ${attempt})` })
-    if (lastA.state === 'connected') {
-      await waitForPeer(B, idB, (s) => s.state === 'connected', { label: `B connected (attempt ${attempt})` })
-      return { idA, idB, roomId, secret }
-    }
-    await Promise.all([
-      api(A, 'DELETE', `/api/sync/peer/${idA}`),
-      api(B, 'DELETE', `/api/sync/peer/${idB}`),
-    ])
-  }
-  throw new Error(`no connected pair after ${attempts} attempts; last A status: ${JSON.stringify(lastA)}`)
-}
+const request = (requestId: string) =>
+  ({ v: 1, kind: 'pull-request', requestId, projectUuid: 'uuid-under-test' })
 
 describe('two jTicket instances over the local relay', () => {
-  it('A dials B and both sides open the data channel', async () => {
-    const { idA, idB } = await connectPair()
-    expect((await api(A, 'GET', `/api/sync/peer/${idA}`)).state).toBe('connected')
-    expect((await api(B, 'GET', `/api/sync/peer/${idB}`)).state).toBe('connected')
+  it('carries a wire message from A to B', async () => {
+    const room = newRoom()
+    const { idA, idB } = await joinPair(room.roomId, room.secret, room.secret)
+
+    await api(A, 'POST', `/api/sync/channel/${idA}/send`, { message: request('req-1') })
+
+    const seen = await waitFor(
+      () => status(B, idB),
+      (s) => s.received.length > 0,
+      { intervalMs: 100, label: 'B to receive the frame' },
+    )
+    expect(seen.received[0]).toEqual(request('req-1'))
+
+    // The sender never hears its own frame — the pull protocol depends on it,
+    // since both sides sit on one topic.
+    expect((await status(A, idA)).received).toEqual([])
   })
 
-  it('tears down over the API and re-dials through a fresh handshake', async () => {
-    const first = await connectPair()
+  it('a joiner with the wrong room secret cannot read the traffic', async () => {
+    const room = newRoom()
+    const wrong = newRoom()
+    // Same room id, different secret: the eavesdropper is on the topic and the
+    // relay hands it every frame. It still gets nothing, because the seal is
+    // keyed by the secret and it does not have it.
+    const { idA, idB } = await joinPair(room.roomId, room.secret, wrong.secret)
 
-    await api(A, 'DELETE', `/api/sync/peer/${first.idA}`)
-    const closedA = await api(A, 'GET', `/api/sync/peer/${first.idA}`)
-    expect(closedA.state).toBe('closed')
-    await waitForPeer(B, first.idB, (s) => s.state === 'closed', { label: 'B sees the close' })
+    await api(A, 'POST', `/api/sync/channel/${idA}/send`, { message: request('req-2') })
 
-    const again = await connectPair()
-    expect((await api(A, 'GET', `/api/sync/peer/${again.idA}`)).state).toBe('connected')
+    // Give the frame every chance to arrive before concluding it didn't.
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+    expect((await status(B, idB)).received).toEqual([])
+  })
+
+  it('tears down over the API and re-joins the same room', async () => {
+    const room = newRoom()
+    const first = await joinPair(room.roomId, room.secret, room.secret)
+
+    await api(A, 'DELETE', `/api/sync/channel/${first.idA}`)
+    await expect(status(A, first.idA)).rejects.toThrow(/404/)
+
+    // No member slots and no room registry any more: re-joining is immediate,
+    // with nothing to reclaim first (the old relay's 'room full' class of
+    // failure has no analogue here).
+    const again = await joinPair(room.roomId, room.secret, room.secret)
+    await api(A, 'POST', `/api/sync/channel/${again.idA}/send`, { message: request('req-3') })
+    const seen = await waitFor(
+      () => status(B, again.idB),
+      (s) => s.received.some((m: { requestId?: string }) => m.requestId === 'req-3'),
+      { intervalMs: 100, label: 'B to receive the post-rejoin frame' },
+    )
+    expect(seen.received.at(-1)).toEqual(request('req-3'))
   })
 })

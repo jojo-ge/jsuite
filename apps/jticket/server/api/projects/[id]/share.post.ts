@@ -51,19 +51,8 @@ export default defineEventHandler(async (event) => {
 
   saveStore(store)
 
-  // Register the room on the relay right away so the link is dialable the
-  // moment it's pasted — both rooms of the pair, so the peer can serve pulls
-  // back the moment they import. Best effort — the presence loop re-ensures
-  // its own room every tick, so a briefly unreachable relay doesn't fail the
-  // share.
-  if (syncRelayUrl()) {
-    void ensureRelayRoom(syncRelayUrl(), share).catch(() => {})
-    void ensureRelayRoom(syncRelayUrl(), {
-      roomId: share.reverseRoomId,
-      roomSecret: share.reverseRoomSecret,
-      expiresAt: share.expiresAt,
-    }).catch(() => {})
-  }
-
+  // Nothing to register: a room is just a broadcast topic named by its id, so
+  // the link is usable the moment it is pasted. The serving side joins its own
+  // topic on the next presence tick.
   return { share: shareView(share, getRequestURL(event).origin) }
 })

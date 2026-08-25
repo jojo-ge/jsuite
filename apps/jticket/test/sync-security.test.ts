@@ -1,23 +1,29 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { startLocalRelay, type LocalRelay } from '@jsuite/relay'
-import { createPeerManager, type PeerManager } from '../server/utils/peer'
+import { createChannelManager, roomTopic, type ChannelManager } from '../server/utils/syncChannel'
+import { createLocalTransport } from '../server/utils/syncTransport'
+import { openFrame, roomKey, sealFrame } from '../server/utils/syncCrypto'
 import { createSyncServer, type SyncServer } from '../server/utils/syncServe'
 import { createSyncPuller, type SyncPuller } from '../server/utils/syncPull'
 import type { SyncSnapshot } from '../server/utils/sync'
 import type { Doc, Project, Store, Ticket } from '../server/utils/store'
 import { serveRoom, type RelayRoomRef, type Share } from '../server/utils/shares'
-import { ensureRelayRoom } from '../server/utils/relayRooms'
 import { encodeWireMessage, parseWireMessage, type PullWireMessage } from '../server/utils/syncWire'
 import { sleep, waitFor } from './helpers'
 
 // TICK-297: the adversarial security & privacy pass over the finished sync
 // feature (spec DOC-30). Each test *attacks* one invariant rather than
 // exercising a happy path. This half runs in-process — a real sync server, a
-// real puller, real peer managers over a local relay — because the attacks
+// real puller, real channel managers over a local relay — because the attacks
 // here need frame-level control the two-instance HTTP surface can't give:
 // forging a pull-request for a project the token doesn't serve, watching the
-// signaling socket for plaintext leaks, capturing the exact snapshot payload.
+// relay socket for plaintext leaks, capturing the exact snapshot payload.
+//
+// Since sync moved to a broadcast relay (TICK-3xx) the attacker model changed
+// in an important way: joining a room's topic is no longer gated at all —
+// anyone who knows the topic name is on it. What confines them is the seal.
+// The tests below attack from inside the room accordingly.
 // The HTTP-level attacks (revoked/expired links, dispatch refusals post-sync)
 // live in sync-security.e2e.test.ts.
 
@@ -30,9 +36,9 @@ const INTEGRATION_BRANCH = 'proj/secret-integration-branch'
 const WORK_BRANCH = 'tick/secret-work-branch'
 
 let relay: LocalRelay
-let servePeers: PeerManager
-let pullPeers: PeerManager
-let attackPeers: PeerManager | undefined
+let serveChannels: ChannelManager
+let pullChannels: ChannelManager
+let attacker: Attacker | undefined
 let server: SyncServer | undefined
 let puller: SyncPuller | undefined
 let tickTimer: ReturnType<typeof setInterval> | undefined
@@ -50,10 +56,10 @@ afterEach(() => {
   tickTimer = undefined
   server?.stop()
   puller?.stop()
-  servePeers?.closeAll()
-  pullPeers?.closeAll()
-  attackPeers?.closeAll()
-  attackPeers = undefined
+  serveChannels?.closeAll()
+  pullChannels?.closeAll()
+  attacker?.leave()
+  attacker = undefined
 })
 
 const ts = () => new Date().toISOString()
@@ -173,22 +179,19 @@ function addImportedProject(store: Store, source: SharedProject, { id, key }: { 
 
 /** Start a serving side + a legit puller wired across the local relay. */
 function startPair(serveStore: Store, pullStore: Store) {
-  servePeers = createPeerManager()
-  pullPeers = createPeerManager()
+  serveChannels = createChannelManager({ kind: 'local', url: relay.url })
+  pullChannels = createChannelManager({ kind: 'local', url: relay.url })
   const applied: Array<{ projectId: string; snapshot: SyncSnapshot }> = []
   server = createSyncServer({
-    peers: servePeers,
-    relayUrl: () => relay.url.href,
+    channels: () => serveChannels,
     loadState: () => serveStore,
     requestTtlMs: 30_000,
-    handshakeTimeoutMs: 3_000,
   })
   puller = createSyncPuller({
-    peers: pullPeers,
-    relayUrl: () => relay.url.href,
+    channels: () => pullChannels,
     loadState: () => pullStore,
     timeoutMs: 30_000,
-    handshakeTimeoutMs: 3_000,
+    retryMs: 100,
     applySnapshot: async (projectId, snapshot) => {
       applied.push({ projectId, snapshot })
       return {
@@ -206,69 +209,85 @@ function startPair(serveStore: Store, pullStore: Store) {
   return { applied }
 }
 
-/** Start only the serving side — for the raw-peer attacks (no legit puller). */
+/** Start only the serving side — for the raw-frame attacks (no legit puller). */
 function startServer(serveStore: Store) {
-  servePeers = createPeerManager()
+  serveChannels = createChannelManager({ kind: 'local', url: relay.url })
   server = createSyncServer({
-    peers: servePeers,
-    relayUrl: () => relay.url.href,
+    channels: () => serveChannels,
     loadState: () => serveStore,
     requestTtlMs: 30_000,
-    handshakeTimeoutMs: 3_000,
   })
   tickTimer = setInterval(() => void server!.tick(), 100)
 }
 
+interface Attacker {
+  received: PullWireMessage[]
+  /** Seal and send a well-formed wire message. */
+  send: (message: PullWireMessage) => Promise<void>
+  /** Seal and send arbitrary text — readable by the room, not a valid message. */
+  sendRaw: (raw: string) => Promise<void>
+  /** Send text that is NOT sealed with this room's key at all. */
+  sendUnsealed: (raw: string) => Promise<void>
+  /**
+   * Re-send until the far side answers, the way the real puller does. Nothing
+   * announces that the serving side has joined the topic — a frame sent before
+   * it does is simply never delivered — so every attack that needs an answer
+   * has to keep asking.
+   */
+  sendUntil: (message: PullWireMessage, done: () => boolean, label: string) => Promise<void>
+  kinds: () => PullWireMessage['kind'][]
+  firstOf: (kind: PullWireMessage['kind']) => PullWireMessage | undefined
+  leave: () => void
+}
+
 /**
- * A hostile peer that holds a room's credentials and speaks the wire protocol
- * by hand. It records every frame the serving side sends it, and lets the test
- * send arbitrary frames the moment the server says it's ready.
+ * A hostile peer on a room's topic, speaking the wire protocol by hand. It
+ * bypasses the channel manager entirely — straight onto the transport with its
+ * own key — so it can forge frames the typed API would never emit, seal
+ * garbage, or send bytes sealed with the wrong key.
+ *
+ * `key` defaults to the room's real secret; pass a different one to attack as
+ * somebody who found the topic but not the link.
  */
-async function mountAttacker(room: RelayRoomRef) {
-  attackPeers = createPeerManager()
+function mountAttacker(room: RelayRoomRef, secret = room.roomSecret): Attacker {
+  const key = roomKey(secret)
   const received: PullWireMessage[] = []
-  let ready = false
-  // Register the room before dialing (the room's own credentials), exactly as
-  // the real puller does — otherwise the attacker can beat the serving side's
-  // registration and get refused with nothing to retry against.
-  await ensureRelayRoom(relay.url.href, room)
-  const peers = attackPeers
-  let id = ''
-  const dial = () => {
-    id = peers.dial({
-      relayUrl: relay.url.href,
-      roomId: room.roomId,
-      secret: room.roomSecret,
-      initiator: true,
-      // No bindAddress: the serving side (createSyncServer) gathers the
-      // machine's real interfaces, so the attacker must too or ICE never pairs.
-      // Short timeout so a cold-start handshake miss recovers via onClose fast,
-      // matching the server's own 3s reclaim (WebRTC dials do intermittently
-      // fail — TICK-294/300 — so the attack must ride through flakiness).
-      handshakeTimeoutMs: 3_000,
-      onMessage: (raw) => {
-        const msg = parseWireMessage(raw)
-        if (!msg) return
-        if (msg.kind === 'serve-ready') ready = true
-        received.push(msg)
-      },
-      onClose: () => {
-        // A transient WebRTC handshake failure before serve-ready: re-dial, so
-        // the attack isn't foiled by flakiness rather than by the guard.
-        if (!ready) setTimeout(dial, 300)
-      },
-    }).id
-  }
-  dial()
+  const transport = createLocalTransport(relay.url)
+  const topic = transport.join(roomTopic(room.roomId), {
+    onJoined: () => {},
+    onError: () => {},
+    onFrame: (sealed) => {
+      const plaintext = openFrame(key, sealed)
+      if (plaintext === null) return // not sealed for us — exactly what a stranger sees
+      const msg = parseWireMessage(plaintext)
+      if (msg) received.push(msg)
+    },
+  })
+
+  const sendRaw = (raw: string) => topic.send(sealFrame(key, raw))
+  const send = (message: PullWireMessage) => sendRaw(encodeWireMessage(message))
+
   return {
     received,
-    /** Resolves once the server's serve-ready hello has arrived. */
-    whenReady: () => waitFor(() => (ready ? true : undefined), (v) => v, { label: 'serve-ready', timeoutMs: 25_000 }),
-    send: (message: PullWireMessage) => peers.send(id, encodeWireMessage(message)),
-    /** Send an arbitrary string down the channel — forged or malformed frames. */
-    sendRaw: (raw: string) => peers.send(id, raw),
+    send,
+    sendRaw,
+    sendUnsealed: (raw: string) => topic.send(raw),
+    async sendUntil(message, done, label) {
+      await waitFor(
+        async () => {
+          await send(message)
+          return done() ? true : undefined
+        },
+        (v) => v,
+        { label, intervalMs: 150, timeoutMs: 20_000 },
+      )
+    },
     kinds: () => received.map((m) => m.kind),
-    firstOf: (kind: PullWireMessage['kind']) => received.find((m) => m.kind === kind),
+    firstOf: (kind) => received.find((m) => m.kind === kind),
+    leave: () => {
+      topic.leave()
+      transport.dispose()
+    },
   }
 }
 
@@ -295,11 +314,14 @@ describe('capability confinement — a share token cannot read beyond its own pr
     })
     startServer(store)
 
-    const attacker = await mountAttacker(serveRoom(p1.share)!)
-    await attacker.whenReady()
-    attacker.send({ v: 1, kind: 'pull-request', requestId: 'atk-1', projectUuid: p2.share.projectUuid })
+    attacker = mountAttacker(serveRoom(p1.share)!)
+    await attacker.sendUntil(
+      { v: 1, kind: 'pull-request', requestId: 'atk-1', projectUuid: p2.share.projectUuid },
+      () => !!attacker!.firstOf('pull-refused'),
+      'refusal',
+    )
 
-    const refused = await waitFor(() => attacker.firstOf('pull-refused'), (m) => !!m, { label: 'refusal' })
+    const refused = attacker.firstOf('pull-refused')
     expect(refused).toMatchObject({ kind: 'pull-refused', requestId: 'atk-1' })
     expect((refused as { reason: string }).reason).toMatch(/does not serve that project/i)
 
@@ -310,26 +332,56 @@ describe('capability confinement — a share token cannot read beyond its own pr
     expect(server!.pending()).toHaveLength(0)
   })
 
-  it('an unknown room secret cannot even join the share\'s room', async () => {
+  it('a stranger on the room\'s topic can neither read its traffic nor be heard', async () => {
+    // The topic is no longer a door with a lock on it: anyone who learns a
+    // room id is on it, and the relay hands them every frame. What confines
+    // them is the seal — so this attacker joins the real room with the wrong
+    // secret and finds it can do nothing at all.
     const store = emptyStore()
-    const p1 = addSharedProject(store, { id: 'proj_p1', key: 'PROJ-1', sharedKey: 'AA' })
+    const p1 = addSharedProject(store, {
+      id: 'proj_p1',
+      key: 'PROJ-1',
+      sharedKey: 'AA',
+      tickets: [makeTicket({ id: 'tick_p1', key: 'AA-1', title: 'p1 ticket', description: TICKET_SECRET })],
+    })
     startServer(store)
 
     const room = serveRoom(p1.share)!
-    attackPeers = createPeerManager()
-    let closed = false
-    const id = attackPeers.dial({
-      relayUrl: relay.url.href,
-      roomId: room.roomId,
-      secret: 'not-the-secret',
-      initiator: true,
-      bindAddress: '127.0.0.1',
-      handshakeTimeoutMs: 3_000,
-      onClose: () => (closed = true),
-    }).id
+    // Same room id, a secret they guessed rather than were given.
+    attacker = mountAttacker(room, 'not-the-secret')
 
-    await waitFor(() => (closed ? true : undefined), (v) => v, { label: 'wrong-secret rejected', timeoutMs: 15_000 })
-    expect(attackPeers.get(id)?.state).not.toBe('connected')
+    // A legitimate-looking request, sealed with the wrong key: the serving
+    // side cannot open it, so it is dropped as noise — no pending approval,
+    // and no refusal either (there is nothing to answer).
+    for (let i = 0; i < 10; i++) {
+      await attacker.send({ v: 1, kind: 'pull-request', requestId: 'atk-w', projectUuid: p1.share.projectUuid })
+      await sleep(100)
+    }
+    expect(server!.pending()).toHaveLength(0)
+    expect(attacker.received).toEqual([])
+
+    // Unsealed plaintext fares no better.
+    await attacker.sendUnsealed(
+      JSON.stringify({ v: 1, kind: 'pull-request', requestId: 'atk-p', projectUuid: p1.share.projectUuid }),
+    )
+    await sleep(300)
+    expect(server!.pending()).toHaveLength(0)
+
+    // Meanwhile a legitimate peer on the same topic is served normally — the
+    // room works, this attacker simply isn't in it.
+    const legit = mountAttacker(room)
+    try {
+      await legit.sendUntil(
+        { v: 1, kind: 'pull-request', requestId: 'atk-ok', projectUuid: p1.share.projectUuid },
+        () => server!.pending().some((p) => p.id === 'atk-ok'),
+        'the legitimate request to queue',
+      )
+      // …and the stranger, sitting on the very same topic throughout, saw
+      // none of the traffic that just crossed it.
+      expect(attacker.received).toEqual([])
+    } finally {
+      legit.leave()
+    }
   })
 })
 
@@ -345,14 +397,15 @@ describe('no data without approval', () => {
     })
     startServer(store)
 
-    const attacker = await mountAttacker(serveRoom(p1.share)!)
-    await attacker.whenReady()
+    attacker = mountAttacker(serveRoom(p1.share)!)
     // A legitimate request for the attacker's OWN shared project.
-    attacker.send({ v: 1, kind: 'pull-request', requestId: 'atk-2', projectUuid: p1.share.projectUuid })
-
     // It becomes a pending approval — and stays there. Without a human approve,
     // no snapshot is ever sent.
-    await waitFor(() => server!.pending(), (p) => p.length === 1, { label: 'pending approval' })
+    await attacker.sendUntil(
+      { v: 1, kind: 'pull-request', requestId: 'atk-2', projectUuid: p1.share.projectUuid },
+      () => server!.pending().length === 1,
+      'pending approval',
+    )
     await sleep(500)
     expect(attacker.kinds()).not.toContain('snapshot-chunk')
 
@@ -376,24 +429,34 @@ describe('no data without approval', () => {
     })
     startServer(store)
 
-    const attacker = await mountAttacker(serveRoom(p1.share)!)
-    await attacker.whenReady()
-    // Every non-request frame the protocol defines, plus malformed junk.
-    attacker.send({ v: 1, kind: 'serve-ready' })
-    attacker.send({ v: 1, kind: 'snapshot-chunk', requestId: 'forged', seq: 0, total: 1, data: 'give me the board' })
-    attacker.send({ v: 1, kind: 'pull-denied', requestId: 'forged' })
-    attacker.send({ v: 1, kind: 'pull-refused', requestId: 'forged', reason: 'x' })
-    attacker.sendRaw('{"not":"a wire message"}')
-    attacker.sendRaw('this is not even json {{{')
+    attacker = mountAttacker(serveRoom(p1.share)!)
+    // Every non-request frame the protocol defines, plus malformed junk — sent
+    // repeatedly, since nothing tells us when the serving side is listening and
+    // a frame that lands before it joins proves nothing.
+    const junk = async () => {
+      await attacker!.send({ v: 1, kind: 'pull-received', requestId: 'forged' })
+      await attacker!.send({ v: 1, kind: 'snapshot-chunk', requestId: 'forged', seq: 0, total: 1, data: 'give me the board' })
+      await attacker!.send({ v: 1, kind: 'pull-denied', requestId: 'forged' })
+      await attacker!.send({ v: 1, kind: 'pull-refused', requestId: 'forged', reason: 'x' })
+      await attacker!.send({ v: 1, kind: 'room-closed', reason: 'stop serving' })
+      await attacker!.sendRaw('{"not":"a wire message"}')
+      await attacker!.sendRaw('this is not even json {{{')
+    }
+    for (let i = 0; i < 8; i++) {
+      await junk()
+      await sleep(100)
+    }
 
     // None of it created work or produced output.
-    await sleep(500)
     expect(server!.pending()).toHaveLength(0)
-    expect(attacker.kinds()).toEqual(['serve-ready']) // only the server's own hello
+    expect(attacker.received).toEqual([]) // the serving side said nothing back
 
     // And the server is still alive: a genuine request still queues.
-    attacker.send({ v: 1, kind: 'pull-request', requestId: 'atk-real', projectUuid: p1.share.projectUuid })
-    await waitFor(() => server!.pending(), (p) => p.some((x) => x.id === 'atk-real'), { label: 'still serving' })
+    await attacker.sendUntil(
+      { v: 1, kind: 'pull-request', requestId: 'atk-real', projectUuid: p1.share.projectUuid },
+      () => server!.pending().some((x) => x.id === 'atk-real'),
+      'still serving',
+    )
   })
 })
 
@@ -417,12 +480,19 @@ describe('an expired share refuses to serve', () => {
     // handshake), then expire it by hand — the server reads the live store each
     // tick. A connected channel survives the lapse (in-flight completes), so the
     // post-expiry request is what actually hits the start-of-serving gate.
-    const attacker = await mountAttacker(serveRoom(p1.share)!)
-    await attacker.whenReady()
+    attacker = mountAttacker(serveRoom(p1.share)!)
+    // Prove the room is live and being served BEFORE expiring it, so the
+    // refusal below is the start-of-serving gate talking and not silence.
+    await attacker.sendUntil(
+      { v: 1, kind: 'pull-request', requestId: 'atk-live', projectUuid: p1.share.projectUuid },
+      () => server!.pending().some((p) => p.id === 'atk-live'),
+      'the share to be served',
+    )
+    server!.deny('atk-live')
     p1.share.expiresAt = new Date(Date.now() - 1_000).toISOString()
 
-    attacker.send({ v: 1, kind: 'pull-request', requestId: 'atk-exp', projectUuid: p1.share.projectUuid })
-    const refused = await waitFor(() => attacker.firstOf('pull-refused'), (m) => !!m, { label: 'expiry refusal' })
+    await attacker.send({ v: 1, kind: 'pull-request', requestId: 'atk-exp', projectUuid: p1.share.projectUuid })
+    const refused = await waitFor(() => attacker!.firstOf('pull-refused'), (m) => !!m, { label: 'expiry refusal' })
     expect((refused as { reason: string }).reason).toMatch(/expired/i)
     await sleep(300)
     expect(attacker.kinds()).not.toContain('snapshot-chunk')
@@ -432,7 +502,7 @@ describe('an expired share refuses to serve', () => {
 
 // ── AC 3: relay traffic carries no plaintext project data ────────────────────
 describe('the relay is data-blind', () => {
-  it('a full approved sync leaves no ticket/doc plaintext on the signaling socket', async () => {
+  it('a full approved sync leaves no ticket/doc plaintext on the relay socket', async () => {
     const serveStore = emptyStore()
     const source = addSharedProject(serveStore, {
       id: 'proj_p1',
@@ -466,10 +536,12 @@ describe('the relay is data-blind', () => {
     const pullStore = emptyStore()
     const importer = addImportedProject(pullStore, source, { id: 'proj_p1_imp', key: 'PROJ-9' })
 
-    // Record every frame that crosses the relay's WebSocket in either direction
-    // by wrapping the process-global WebSocket both peer managers construct.
-    // Project data travels the node-datachannel DTLS channel, never a
-    // WebSocket, so anything captured here is signaling — and must stay clean.
+    // Record every frame that crosses the relay's WebSocket in either
+    // direction by wrapping the process-global WebSocket both channel managers
+    // construct. This is now the WHOLE conversation — since sync moved off
+    // WebRTC there is no second, private channel the board could be travelling
+    // on instead. Everything the relay handles is captured here, and every
+    // byte of it must be opaque.
     const RealWebSocket = globalThis.WebSocket
     const relayFrames: string[] = []
     class RecordingWebSocket extends RealWebSocket {
@@ -497,10 +569,16 @@ describe('the relay is data-blind', () => {
     }
 
     const wire = relayFrames.join('\n')
-    // We really captured the signaling channel (so the absences below mean
-    // something): the handshake's SDP description and ICE candidates are here.
+    // We really captured the conversation (so the absences below mean
+    // something): the snapshot itself crossed this socket, in frames big
+    // enough to have carried the board.
     expect(relayFrames.length).toBeGreaterThan(0)
-    expect(wire).toMatch(/"kind":"(description|candidate)"/)
+    expect(wire.length).toBeGreaterThan(1_000)
+    // Every frame's payload is a sealed blob — no wire-protocol keyword
+    // survives on the socket, not even the harmless ones.
+    for (const marker of ['pull-request', 'snapshot-chunk', 'pull-received', '"kind"']) {
+      expect(wire).not.toContain(marker)
+    }
     // …and not a byte of project data crossed it.
     for (const secret of [TICKET_SECRET, DOC_SECRET, REPO_PATH, INTEGRATION_BRANCH, WORK_BRANCH, 'Persist the cart']) {
       expect(wire).not.toContain(secret)

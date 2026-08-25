@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { startLocalRelay, type LocalRelay } from '@jsuite/relay'
-import { createPeerManager, type DialOptions, type PeerManager, type PeerStatus } from '../server/utils/peer'
+import { createChannelManager, type ChannelManager, type ChannelStatus, type JoinOptions } from '../server/utils/syncChannel'
 import { createSyncServer, type SyncServer } from '../server/utils/syncServe'
 import { createSyncPuller, type SyncPuller } from '../server/utils/syncPull'
 import type { SyncSnapshot } from '../server/utils/sync'
@@ -11,13 +11,13 @@ import { waitFor } from './helpers'
 
 // The pull flow, in one process (TICK-294): a sync server (the serving side's
 // presence loop + pending approvals) and a sync puller (the importer's Sync
-// click) talk over real data channels through the local relay. Stores are
+// click) talk over real sealed channels through the local relay. Stores are
 // in-memory; the importer's apply is a spy — performSyncApply's real IO is the
 // two-instance e2e's job.
 
 let relay: LocalRelay
-let servePeers: PeerManager
-let pullPeers: PeerManager
+let serveChannels: ChannelManager
+let pullChannels: ChannelManager
 let server: SyncServer | undefined
 let puller: SyncPuller | undefined
 let tickTimer: ReturnType<typeof setInterval> | undefined
@@ -35,8 +35,8 @@ afterEach(() => {
   tickTimer = undefined
   server?.stop()
   puller?.stop()
-  servePeers?.closeAll()
-  pullPeers?.closeAll()
+  serveChannels?.closeAll()
+  pullChannels?.closeAll()
 })
 
 function emptyStore(): Store {
@@ -177,29 +177,22 @@ function startPair(
   // serves, the creator's pulls — the transfer protocol needs both directions.
   const serveStore = reverse ? fixture.importerStore : fixture.creatorStore
   const pullStore = reverse ? fixture.creatorStore : fixture.importerStore
-  servePeers = createPeerManager()
-  pullPeers = createPeerManager()
+  serveChannels = createChannelManager({ kind: 'local', url: relay.url })
+  pullChannels = createChannelManager({ kind: 'local', url: relay.url })
   const applied: Applied[] = []
   server = createSyncServer({
-    peers: servePeers,
-    relayUrl: () => relay.url.href,
+    channels: () => serveChannels,
     loadState: () => serveStore,
     requestTtlMs,
-    // Short handshake reclaim: transient WebRTC failures recover fast enough
-    // to stay inside the suite's wait windows.
-    handshakeTimeoutMs: 3_000,
-    // Both ends are this process, so keep ICE on loopback — self-connections
-    // over real interfaces flake with EADDRNOTAVAIL mid-DTLS under suite-wide
-    // load (TICK-300; this suite's residual flake was TICK-308).
-    bindAddress: '127.0.0.1',
   })
   puller = createSyncPuller({
-    peers: pullPeers,
-    relayUrl: () => relay.url.href,
+    channels: () => pullChannels,
     loadState: () => pullStore,
     timeoutMs,
-    handshakeTimeoutMs: 3_000,
-    bindAddress: '127.0.0.1',
+    // The importer re-asks until the serving side acknowledges; keep both
+    // windows tight so the suite's waits stay short.
+    retryMs: 100,
+    ackTimeoutMs: 10_000,
     applySnapshot: async (projectId, snapshot) => {
       if (applyError) throw new Error(applyError)
       applied.push({ projectId, snapshot })
@@ -368,107 +361,117 @@ describe('pull flow — request, approve, snapshot, apply', () => {
   })
 })
 
-// The presence loop's own arithmetic on the room's two member slots. The
-// serving side is entitled to exactly one of them; taking both is what locked
-// the importer out with 'room full' under load (TICK-311). Both paths to two
-// dials are exercised against a counting stub — no relay, no handshake, just
-// what tick() decides to dial.
+// The presence loop's own bookkeeping, against a counting stub — no relay, no
+// traffic, just what tick() decides to join. The WebRTC-era hazard this guards
+// was a room's two member slots both ending up on the serving side, locking
+// the importer out with 'room full' (TICK-311). A broadcast topic has no
+// slots, so what is left to protect is simpler: one channel per share, and
+// none at all after stop().
 
-describe('presence loop — one member slot per share', () => {
-  function countingPeers(status: Partial<PeerStatus> = {}) {
-    const dials: DialOptions[] = []
-    const state: PeerStatus = {
-      id: 'peer_1', state: 'closed', reason: '', signalingClosed: true, ...status,
-    }
-    const peers: PeerManager = {
-      dial(options) {
-        dials.push(options)
+describe('presence loop — one channel per share', () => {
+  function countingChannels(status: Partial<ChannelStatus> = {}) {
+    const joins: JoinOptions[] = []
+    const state: ChannelStatus = { id: 'chan_1', state: 'joined', reason: '', ...status }
+    const channels: ChannelManager = {
+      join(options) {
+        joins.push(options)
         return { id: state.id }
       },
-      get: () => (dials.length ? state : undefined),
-      send: () => {},
+      get: () => (joins.length ? state : undefined),
+      send: async () => {},
       close: () => {},
       closeAll: () => {},
     }
-    return { peers, dials, state }
+    return { channels, joins, state }
   }
 
-  // The window the gate waits out, named here rather than inherited from the
-  // module's default so the clock arithmetic below reads against it.
-  const RECLAIM_GRACE_MS = 2_000
-
-  function serverOver(store: Store, peers: PeerManager, nowMs: () => number) {
-    return createSyncServer({
-      peers,
-      relayUrl: () => relay.url.href,
-      loadState: () => store,
-      reclaimGraceMs: RECLAIM_GRACE_MS,
-      nowMs,
-    })
+  function serverOver(store: Store, channels: ChannelManager, nowMs: () => number = Date.now) {
+    return createSyncServer({ channels: () => channels, loadState: () => store, nowMs })
   }
 
-  it('ticks that overlap the relay round-trip dial the room once, not once each', async () => {
+  it('overlapping ticks join the share room once, not once each', async () => {
     const fixture = makeFixture()
-    const { peers, dials } = countingPeers()
-    // No await between them: the second enters while the first is suspended
-    // on ensureRelayRoom, exactly as an interval driver produces.
-    const s = serverOver(fixture.creatorStore, peers, Date.now)
+    const { channels, joins } = countingChannels()
+    // No await between them, exactly as an interval driver produces.
+    const s = serverOver(fixture.creatorStore, channels)
     await Promise.all([s.tick(), s.tick(), s.tick()])
-    expect(dials).toHaveLength(1)
+    expect(joins).toHaveLength(1)
     s.stop()
   })
 
-  it('waits for the relay to reclaim a closed dial before re-dialing its room', async () => {
+  it('leaves a joined channel alone across ticks', async () => {
     const fixture = makeFixture()
-    const { peers, dials, state } = countingPeers()
-    let now = 1_000_000
-    const s = serverOver(fixture.creatorStore, peers, () => now)
-
+    const { channels, joins } = countingChannels({ state: 'joined' })
+    const s = serverOver(fixture.creatorStore, channels)
     await s.tick()
-    expect(dials).toHaveLength(1)
-
-    // The dial ended, but the relay has not acknowledged our socket's close —
-    // re-dialing now would put both slots in this side's hands.
-    state.state = 'closed'
-    state.signalingClosed = false
     await s.tick()
-    now += RECLAIM_GRACE_MS - 1
     await s.tick()
-    expect(dials).toHaveLength(1)
-
-    // Acknowledged: the slot is free and the share re-arms.
-    state.signalingClosed = true
-    await s.tick()
-    expect(dials).toHaveLength(2)
+    expect(joins).toHaveLength(1)
     s.stop()
   })
 
-  it('does not dial after stop(), even when stop lands mid round-trip', async () => {
+  it('re-joins on the next tick once a channel has failed', async () => {
     const fixture = makeFixture()
-    const { peers, dials } = countingPeers()
-    const s = serverOver(fixture.creatorStore, peers, Date.now)
-
-    const inFlight = s.tick()
-    s.stop()
-    await inFlight
-    expect(dials).toHaveLength(0)
-  })
-
-  it('re-dials anyway once the reclaim grace expires — a lost ack must not strand the share', async () => {
-    const fixture = makeFixture()
-    const { peers, dials, state } = countingPeers()
-    let now = 1_000_000
-    const s = serverOver(fixture.creatorStore, peers, () => now)
-
+    const { channels, joins, state } = countingChannels({ state: 'joined' })
+    const s = serverOver(fixture.creatorStore, channels)
     await s.tick()
+    expect(joins).toHaveLength(1)
+
+    // Nothing to reclaim first: a dropped channel is re-joined immediately,
+    // where the old relay made us wait out its member-slot bookkeeping.
     state.state = 'failed'
-    state.signalingClosed = false
     await s.tick()
-    expect(dials).toHaveLength(1)
+    expect(joins).toHaveLength(2)
+    s.stop()
+  })
 
-    now += RECLAIM_GRACE_MS
+  it('moves to the new room when the share is re-armed', async () => {
+    // Re-sharing rotates the room ids in place, keeping the share record. A
+    // channel left on the rotated-away topic would serve a room nobody dials —
+    // the link the human just handed out would connect to silence.
+    const fixture = makeFixture()
+    const { channels, joins } = countingChannels({ state: 'joined' })
+    const closed: string[] = []
+    channels.close = (id) => closed.push(id)
+    const s = serverOver(fixture.creatorStore, channels)
     await s.tick()
-    expect(dials).toHaveLength(2)
+    expect(joins).toHaveLength(1)
+    expect(joins[0]!.roomId).toBe(fixture.creatorShare.roomId)
+
+    fixture.creatorShare.roomId = 'rotated-room-id'
+    fixture.creatorShare.roomSecret = 'rotated-room-secret'
+    await s.tick()
+    expect(closed).toHaveLength(1) // left the old topic
+    expect(joins).toHaveLength(2)
+    expect(joins[1]!.roomId).toBe('rotated-room-id')
+
+    // And settles again — a rotation is not a reason to re-join every tick.
+    await s.tick()
+    expect(joins).toHaveLength(2)
+    s.stop()
+  })
+
+  it('does not join after stop()', async () => {
+    const fixture = makeFixture()
+    const { channels, joins } = countingChannels()
+    const s = serverOver(fixture.creatorStore, channels)
+    s.stop()
+    await s.tick()
+    expect(joins).toHaveLength(0)
+  })
+
+  it('leaves the channel once the share is no longer active', async () => {
+    const fixture = makeFixture()
+    const { channels, joins, state } = countingChannels({ state: 'joined' })
+    const closed: string[] = []
+    channels.close = (id) => closed.push(id)
+    const s = serverOver(fixture.creatorStore, channels)
+    await s.tick()
+    expect(joins).toHaveLength(1)
+
+    fixture.creatorShare.revokedAt = new Date().toISOString()
+    await s.tick()
+    expect(closed).toEqual([state.id])
     s.stop()
   })
 })

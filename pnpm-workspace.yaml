@@ -7,4 +7,3 @@ patchedDependencies:
 
 onlyBuiltDependencies:
   - esbuild
-  - workerd

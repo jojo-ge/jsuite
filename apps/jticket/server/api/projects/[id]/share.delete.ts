@@ -11,13 +11,13 @@ export default defineEventHandler((event) => {
   if (!share) throw createError({ statusCode: 404, statusMessage: 'project is not shared' })
   saveStore(store)
 
-  // "Stop-sharing kills the room instantly" (DOC-30) — both directions; best
-  // effort; the serving gate refuses regardless, this just cuts signaling too.
-  if (syncRelayUrl()) {
-    void killRelayRoom(syncRelayUrl(), share)
-    if (share.reverseRoomId) {
-      void killRelayRoom(syncRelayUrl(), { roomId: share.reverseRoomId, roomSecret: share.reverseRoomSecret })
-    }
+  // "Stop-sharing kills the room instantly" (DOC-30). There is no room
+  // registry to kill any more, so this side says so on the channel and leaves:
+  // a peer waiting on us fails fast with the reason instead of timing out.
+  // Best effort and never awaited — the serving gate above already refuses
+  // regardless, this is only the courtesy note.
+  if (syncServingEnabled()) {
+    void useSyncServer().announceRevoked(share).catch(() => {})
   }
 
   return { share: shareView(share, getRequestURL(event).origin) }

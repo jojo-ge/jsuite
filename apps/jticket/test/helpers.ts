@@ -1,4 +1,4 @@
-import type { LocalRelay } from '@jsuite/relay'
+import { randomBytes } from 'node:crypto'
 import type { Instance } from './harness/instance'
 
 /** Raw HTTP call against a harness instance → { status, body } — for asserting refusals. */
@@ -19,11 +19,13 @@ export async function ok(instance: Instance, method: string, path: string, body?
   return res.body
 }
 
-/** Mint a room on the local relay → { roomId, secret }. */
-export async function createRoom(relay: LocalRelay): Promise<{ roomId: string; secret: string }> {
-  const res = await fetch(new URL('/rooms', relay.url), { method: 'POST' })
-  if (!res.ok) throw new Error(`room creation failed: ${res.status}`)
-  return res.json()
+/**
+ * A fresh room — the same shape shares.ts mints. Nothing registers it
+ * anywhere: since sync moved to broadcast topics a room is just a name plus
+ * the secret that seals its frames, so minting one is pure local randomness.
+ */
+export function newRoom(): { roomId: string; secret: string } {
+  return { roomId: randomBytes(12).toString('base64url'), secret: randomBytes(24).toString('base64url') }
 }
 
 /**
@@ -45,19 +47,6 @@ export async function waitFor<S>(
     }
     await sleep(intervalMs)
   }
-}
-
-/** Open a raw member socket into a relay room (to occupy a slot in tests). */
-export async function openSocket(relay: LocalRelay, roomId: string, secret: string): Promise<WebSocket> {
-  const url = new URL(`/rooms/${roomId}/ws`, relay.url)
-  url.protocol = 'ws:'
-  url.searchParams.set('secret', secret)
-  const ws = new WebSocket(url)
-  await new Promise<void>((resolve, reject) => {
-    ws.addEventListener('open', () => resolve(), { once: true })
-    ws.addEventListener('error', () => reject(new Error('socket failed to open')), { once: true })
-  })
-  return ws
 }
 
 export function sleep(ms: number): Promise<void> {

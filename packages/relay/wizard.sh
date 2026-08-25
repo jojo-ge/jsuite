@@ -180,14 +180,25 @@ finish() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────
-# STAGES: deploy the jTicket sync signaling relay and wire jTicket to it.
+# STAGES: point jTicket sync at a Supabase project.
 #
-# The relay (src/worker.mjs) is a Cloudflare Worker + Durable Object that
-# ferries opaque WebRTC handshake blobs between the two peers of a share; it
-# never sees project data. One of the two coworkers deploys it once (path 1);
-# then BOTH machines wire the same URL into .data/jticket/sync.json (path 2
-# is the wire-only run for the second machine). jTicket reads the file fresh,
-# so a running app picks the URL up without a restart.
+# Sync rides Supabase Realtime Broadcast: both machines open one outbound WSS
+# connection to <project>.supabase.co and join a broadcast topic named by the
+# share's room id. Nothing is deployed to Supabase — no functions, no tables,
+# no SQL — so this wizard only creates a project (path 1) or takes one you
+# already have (path 2), then wires its URL and publishable key into
+# .data/jticket/sync.json. jTicket reads that file fresh, so a running app
+# picks it up without a restart.
+#
+# BOTH machines must point at the SAME Supabase project: a broadcast topic
+# only exists within one project, so two projects means two rooms that never
+# meet. The second machine runs this wizard and chooses option 2.
+#
+# The key wired here is the publishable (anon) key — the one meant to ship in
+# browsers. It grants nothing but the right to join a topic, and frames are
+# sealed with the share's room secret before they leave the machine, so
+# Supabase relays ciphertext it cannot read. Never wire the secret/service_role
+# key here; jTicket has no use for it.
 # ──────────────────────────────────────────────────────────────────────────
 
 RELAY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -202,132 +213,127 @@ ENV_FILE="$DATA_DIR/jticket/relay-wizard.env"
 
 die() { warn "$1"; exit 1; }
 
-# wrangler however it's available: a real install first (also how the test
-# stubs it), else fetched on the fly.
-run_wrangler() {
-  if command -v wrangler >/dev/null 2>&1; then wrangler "$@"
-  elif command -v pnpm >/dev/null 2>&1; then pnpm dlx wrangler "$@"
-  else npx -y wrangler "$@"
-  fi
-}
+TOTAL_STAGES=5 # the create path; the wire-only path trims this after the choice
 
-TOTAL_STAGES=6 # the deploy path; the wire-only path trims this after the choice
-
-banner "jTicket sync — signaling relay"
+banner "jTicket sync — Supabase relay"
 
 # ── Stage 1: which run is this? ───────────────────────────────────────────
 stage "Choose your path"
-say "jTicket sync needs a signaling relay: a tiny Cloudflare Worker both"
-say "machines use to exchange WebRTC handshakes. It never sees project data."
-say "One of you deploys it once; then BOTH machines wire the same URL."
+say "jTicket sync needs a Supabase project to relay through. Nothing gets"
+say "deployed into it — sync only uses Realtime Broadcast, which is on by"
+say "default. The free plan is plenty."
 say ""
-say "  1) Deploy a new relay to my Cloudflare account"
-say "  2) Wire a relay that's already deployed (you have its URL)"
+say "One of you creates the project; then BOTH machines wire the same one."
+say ""
+say "  1) Create a new Supabase project"
+say "  2) Wire a project that already exists (you have its URL and key)"
 ask WIZ_PATH "1 or 2:"
 JOIN=""
 case "$WIZ_PATH" in
   1) ;;
-  2) JOIN=1; TOTAL_STAGES=4 ;;
+  2) JOIN=1; TOTAL_STAGES=3 ;;
   *) die "answer 1 or 2" ;;
 esac
 
 if [[ -z "$JOIN" ]]; then
-  # ── Stage 2: Cloudflare account ─────────────────────────────────────────
-  stage "Cloudflare account"
-  say "The relay deploys as a Worker with one Durable Object — Cloudflare's"
-  say "free plan covers it (SQLite-backed DO; no card needed)."
-  step "Sign in to the Cloudflare dashboard, or create a free account."
-  open_url "https://dash.cloudflare.com/"
-  pause "Press Enter once you're signed in."
+  # ── Stage 2: create the project ─────────────────────────────────────────
+  stage "Create the Supabase project"
+  say "Sign in (GitHub works), then create a project. Any name; pick the"
+  say "region closest to the two of you — every sync frame round-trips"
+  say "through it."
+  step "Create a new project and wait for it to finish provisioning (~2 min)."
+  open_url "https://supabase.com/dashboard/projects"
+  pause "Press Enter once the project is up."
 
-  # ── Stage 3: authorize wrangler ─────────────────────────────────────────
-  stage "Authorize wrangler"
-  say "wrangler is Cloudflare's deploy CLI; it deploys from packages/relay/."
-  if WHOAMI=$(run_wrangler whoami 2>&1) && [[ "$WHOAMI" != *"not authenticated"* ]]; then
-    note "already authorized — wrangler whoami answered."
-  else
-    step "A browser tab opens — click 'Allow' to authorize wrangler."
-    run_wrangler login || die "wrangler login failed — re-run the wizard to retry"
-    run_wrangler whoami >/dev/null 2>&1 || die "wrangler still isn't authorized"
-  fi
-
-  # ── Stage 4: deploy ─────────────────────────────────────────────────────
-  stage "Deploy the relay worker"
-  say "Deploying the 'jsuite-relay' worker (wrangler.jsonc)…"
-  DEPLOY_LOG=$(mktemp)
-  if ! (cd "$RELAY_DIR" && run_wrangler deploy 2>&1 | tee "$DEPLOY_LOG"); then
-    die "wrangler deploy failed — fix the error above and re-run the wizard"
-  fi
-  DETECTED=$(grep -oE 'https://[A-Za-z0-9._-]+\.workers\.dev' "$DEPLOY_LOG" | head -1 || true)
-  if [[ -n "$DETECTED" ]]; then
-    say "Detected the deployed URL from the output:"
-    write_env RELAY_URL "$DETECTED"
-  else
-    step "Copy the https://…workers.dev URL from the deploy output above."
-  fi
-  ask RELAY_URL "Relay URL:"
+  # ── Stage 3: copy the credentials ───────────────────────────────────────
+  stage "Copy the project's URL and key"
+  say "In the project: Settings → API Keys (or Project Settings → API)."
+  step "Copy the Project URL — https://<ref>.supabase.co"
+  step "Copy the publishable key (labelled 'anon' on older dashboards)."
+  say ""
+  warn "NOT the secret / service_role key — jTicket never needs it."
+  ask SUPABASE_URL "Project URL:"
+  ask SUPABASE_KEY "Publishable (anon) key:"
 else
-  # ── Stage 2 (wire-only): the URL to wire ────────────────────────────────
-  stage "The relay URL"
-  say "Ask whoever deployed the relay for its URL — both machines must use"
-  say "the same one, or your rooms will never meet."
-  ask RELAY_URL "Relay URL (https://…workers.dev):"
+  # ── Stage 2 (wire-only): the credentials to wire ────────────────────────
+  stage "The project's URL and key"
+  say "Ask whoever created the project for its URL and publishable key —"
+  say "both machines must use the same project, or your rooms never meet."
+  ask SUPABASE_URL "Project URL (https://<ref>.supabase.co):"
+  ask SUPABASE_KEY "Publishable (anon) key:"
 fi
 
-[[ -n "${RELAY_URL:-}" ]] || die "no relay URL — nothing to wire"
-RELAY_URL="${RELAY_URL%/}"
-[[ "$RELAY_URL" =~ ^https?:// ]] || die "that doesn't look like a URL: $RELAY_URL"
+[[ -n "${SUPABASE_URL:-}" ]] || die "no project URL — nothing to wire"
+[[ -n "${SUPABASE_KEY:-}" ]] || die "no publishable key — nothing to wire"
+SUPABASE_URL="${SUPABASE_URL%/}"
+[[ "$SUPABASE_URL" =~ ^https?:// ]] || die "that doesn't look like a URL: $SUPABASE_URL"
 
-# ── Verify: the relay must actually answer before it gets wired ───────────
+# ── Verify: the project must actually relay before it gets wired ──────────
 stage "Verify the relay"
-say "Minting (and immediately killing) a probe room on $RELAY_URL …"
-PROBE=$(curl -sS --max-time 10 -X POST "$RELAY_URL/rooms" -H 'content-type: application/json' -d '{}' 2>&1) || true
-if [[ "${PROBE:-}" == *'"roomId"'* ]]; then
-  ROOM_ID=$(sed -n 's/.*"roomId":"\([^"]*\)".*/\1/p' <<<"$PROBE")
-  ROOM_SECRET=$(sed -n 's/.*"secret":"\([^"]*\)".*/\1/p' <<<"$PROBE")
-  if [[ -n "$ROOM_ID" && -n "$ROOM_SECRET" ]]; then
-    curl -sS --max-time 10 -X DELETE "$RELAY_URL/rooms/$ROOM_ID?secret=$ROOM_SECRET" >/dev/null 2>&1 || true
-  fi
-  printf '  %s✓ relay answered%s — probe room minted and killed, nothing left behind\n' "$GREEN" "$RESET"
+say "Broadcasting a probe frame through $SUPABASE_URL …"
+# Realtime's REST broadcast endpoint takes the same messages the websocket
+# does, so a 202 proves the URL, the key and Realtime itself are all good —
+# without opening a socket. The probe topic is nobody's room and the payload
+# is meaningless; no listener, nothing stored.
+PROBE_CODE=$(curl -sS -o /tmp/jticket-relay-probe.$$ -w '%{http_code}' --max-time 15 \
+  -X POST "$SUPABASE_URL/realtime/v1/api/broadcast" \
+  -H "apikey: $SUPABASE_KEY" \
+  -H 'content-type: application/json' \
+  --data '{"messages":[{"topic":"jticket-wizard-probe","event":"frame","payload":{},"private":false}]}' \
+  2>/dev/null) || PROBE_CODE="000"
+PROBE_BODY=$(cat "/tmp/jticket-relay-probe.$$" 2>/dev/null || true)
+rm -f "/tmp/jticket-relay-probe.$$"
+if [[ "$PROBE_CODE" == "2"* ]]; then
+  printf '  %s✓ Supabase relayed the probe%s (HTTP %s) — nothing left behind\n' "$GREEN" "$RESET" "$PROBE_CODE"
+elif [[ "$PROBE_CODE" == "401" || "$PROBE_CODE" == "403" ]]; then
+  warn "Supabase rejected the key (HTTP $PROBE_CODE)."
+  note "  Check you copied the publishable/anon key, not a secret key."
+  confirm "Wire these values anyway?" || die "not wiring an unverified project"
 else
-  warn "the relay at $RELAY_URL did not answer with a room:"
-  note "  ${PROBE:-<no response>}"
-  confirm "Wire this URL anyway?" || die "not wiring an unverified relay URL"
+  warn "the probe did not succeed (HTTP $PROBE_CODE):"
+  note "  ${PROBE_BODY:-<no response>}"
+  confirm "Wire these values anyway?" || die "not wiring an unverified project"
 fi
 
-# ── Wire: land the URL where jTicket reads it ─────────────────────────────
+# ── Wire: land the credentials where jTicket reads them ───────────────────
 stage "Wire jTicket"
 node -e '
 const fs = require("fs"), path = require("path")
-const [file, url] = process.argv.slice(1)
+const [file, url, key] = process.argv.slice(1)
 let cfg = {}
 try {
   const parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) cfg = parsed
 } catch {}
-cfg.relayUrl = url
+cfg.supabaseUrl = url
+cfg.supabaseKey = key
+// The Cloudflare worker this replaced. Leaving it behind would only confuse
+// the next reader — jTicket ignores it either way.
+delete cfg.relayUrl
 fs.mkdirSync(path.dirname(file), { recursive: true })
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + "\n")
-' "$SYNC_FILE" "$RELAY_URL" || die "could not write $SYNC_FILE"
-printf '  %s✓ wrote%s relayUrl → %s\n' "$GREEN" "$RESET" "$SYNC_FILE"
-write_env RELAY_URL "$RELAY_URL"
+' "$SYNC_FILE" "$SUPABASE_URL" "$SUPABASE_KEY" || die "could not write $SYNC_FILE"
+printf '  %s✓ wrote%s supabaseUrl + supabaseKey → %s\n' "$GREEN" "$RESET" "$SYNC_FILE"
+write_env SUPABASE_URL "$SUPABASE_URL"
+write_env SUPABASE_KEY "$SUPABASE_KEY"
 
 LIVE=$(curl -s --max-time 2 "$JTICKET/api/sync/relay" 2>/dev/null) || true
-if [[ "${LIVE:-}" == *'"configured":true'* && "${LIVE:-}" == *"$RELAY_URL"* ]]; then
+if [[ "${LIVE:-}" == *'"configured":true'* && "${LIVE:-}" == *"$SUPABASE_URL"* ]]; then
   say "jTicket is running and already sees the relay — no restart needed."
 elif [[ "${LIVE:-}" == *'"configured"'* ]]; then
   # The endpoint answered but with another URL — only an env var can shadow
   # the file we just wrote.
-  warn "jTicket is running but reports a different relay — a JTICKET_RELAY_URL"
-  warn "env var overrides sync.json; unset it or restart without it."
+  warn "jTicket is running but reports a different relay — JTICKET_SUPABASE_URL"
+  warn "or JTICKET_SYNC_RELAY_URL overrides sync.json; unset it and restart."
 else
   note "jTicket isn't running (or predates /api/sync/relay) — sync.json is"
   note "read fresh, so this lands as soon as a current build is up."
 fi
 say ""
-say "Your coworker's machine must wire the SAME relay URL:"
+say "Your coworker's machine must wire the SAME project:"
 note "  they run packages/relay/wizard.sh, choose option 2, and paste:"
-note "  $RELAY_URL"
+note "  $SUPABASE_URL"
+note "  (and the same publishable key)"
 # ──────────────────────────────────────────────────────────────────────────
 
 finish

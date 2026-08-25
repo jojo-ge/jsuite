@@ -17,9 +17,9 @@ const open = ref(false)
 const loading = ref(false)
 const busy = ref(false)
 const share = ref<ShareView | null>(null)
-// Sharing works end to end only with a signaling relay configured; without
-// one the link imports fine but no pull can ever connect. Fetched with the
-// share so the panel can say so up front instead of failing at pull time.
+// Sharing works end to end only with a sync relay configured; without one the
+// link imports fine but no pull can ever connect. Fetched with the share so
+// the panel can say so up front instead of failing at pull time.
 const relayConfigured = ref(true)
 // The 1–4 char key the shared project uses on both machines. Fixed for the
 // share's lifetime once a share exists — the input locks to the record's key.
@@ -148,8 +148,8 @@ async function copyLink() {
           color="warning"
           variant="subtle"
           icon="i-lucide-satellite-dish"
-          title="No signaling relay configured"
-          description="Links can be created and imported, but pulls won't connect. Run packages/relay/wizard.sh — both machines must use the same relay URL."
+          title="No sync relay configured"
+          description="Links can be created and imported, but pulls won't connect. Run packages/relay/wizard.sh — both machines must point at the same Supabase project."
         />
 
         <div v-if="share" class="flex items-center gap-2">
