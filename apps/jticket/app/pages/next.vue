@@ -38,8 +38,11 @@ function byKey(a: Ticket, b: Ticket) {
   return n(a.key) - n(b.key)
 }
 
-// The frontier is computed the same way everywhere — the same helper the cards
-// ring with and the same rule `?frontier=true` serves to agents.
+// The frontier the UI computes: the same helper the cards ring with. It is not
+// quite the rule `?frontier=true` serves to agents — the server also excludes
+// tickets that are not takeable on this machine (the peer's half of a shared
+// project, and anything mid-ownership-transfer), which this side still shows.
+// See TICK-312.
 const frontier = computed(() => tickets.value.filter((t) => isFrontier(t, allTickets.value)).sort(byKey))
 
 const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))

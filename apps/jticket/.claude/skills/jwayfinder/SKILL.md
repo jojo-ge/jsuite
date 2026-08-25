@@ -126,8 +126,9 @@ before any work, so concurrent sessions skip it. That assignee *is* the claim: a
 unassigned ticket is unclaimed.
 
 A ticket is **unblocked** when every ticket in its `blockedBy` is `done`; the **frontier**
-is the `todo`, unblocked, unclaimed tickets. jTicket computes all three for you —
-`blocked`, `claimed`, `frontier` come back on every GET.
+is the `todo`, unblocked, unclaimed tickets that are takeable on this machine (on a shared
+project the peer's half is read-only here, so it stays off). jTicket computes all three
+for you — `blocked`, `claimed`, `frontier` come back on every GET.
 
 ## Ticket types
 

@@ -45,7 +45,7 @@ pnpm dev          # http://localhost:43000
   - `resolution`: the answer recorded when the ticket resolves (GFM markdown); `""` until then.
   - `blockedBy`: ids of tickets that must finish first
   - `completedAt`: ISO timestamp of when the ticket last became `done`; `null` while unfinished. **Set by the server on the status change, never by the caller** — PATCHing it is ignored. Re-saving an already-done ticket keeps the original stamp, so fixing a resolution doesn't move it up `/finished`; moving a ticket out of `done` clears it, and moving it back stamps afresh. Tickets finished before the field existed were backfilled from `updatedAt`.
-  - GET responses also attach derived booleans **`blocked`**, **`claimed`**, **`frontier`** (never persisted).
+  - GET responses also attach derived booleans **`blocked`**, **`claimed`**, **`frontier`** (never persisted). `frontier` means takeable *here*: on a shared project a ticket the peer owns, or one mid-ownership-transfer, is read-only and undispatchable on this machine, so it never reads as frontier.
 Every `description` / `resolution` field is **plain GFM markdown** and is
 rendered as such in the UI (via the shared `@jsuite/documents` renderer). Card
 summaries are the exception — they show a flattened plain-text preview so the
@@ -254,7 +254,7 @@ Set a project's `mode` to `wayfinder` and it becomes a home for [wayfinder](http
 | AFK / HITL | the ticket **`type`** |
 | Blocking | **`blockedBy`** |
 | Claim | set **`assignee`** (an assigned ticket leaves the frontier) |
-| Frontier | `GET /api/tickets?projectId=<project>&frontier=true` — todo + all `blockedBy` done + unassigned, key-ordered |
+| Frontier | `GET /api/tickets?projectId=<project>&frontier=true` — todo + all `blockedBy` done + unassigned + takeable on this machine, key-ordered |
 | Resolve | set `status: "done"`, fill **`resolution`**, add a gist to the map's *Decisions so far* |
 
 In the UI, **every** project — wayfinder or standard — renders its tickets grouped into **Frontier · In progress · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. What a wayfinder project adds on top is the map body (behind the board's Brief button) and the `wayfinder:<type>` sub-type badge on each card.

@@ -18,9 +18,10 @@ export default defineEventHandler((event) => {
   if (q.status) tickets = tickets.filter((t) => t.status === q.status)
   if (q.assignee) tickets = tickets.filter((t) => t.assignee === q.assignee)
   if (q.label) tickets = tickets.filter((t) => t.labels.includes(String(q.label)))
-  // ?frontier=true → the takeable edge: open, unblocked, unclaimed; key-ordered.
+  // ?frontier=true → the takeable edge: open, unblocked, unclaimed, ours;
+  // key-ordered. The share says which tickets are the peer's on a shared project.
   if (q.frontier === 'true' || q.frontier === '1') {
-    tickets = tickets.filter((t) => ticketIsFrontier(t, all)).sort(byKeyNumber)
+    tickets = tickets.filter((t) => ticketIsFrontier(t, all, shareForTicket(store, t))).sort(byKeyNumber)
   }
   // ?finished=true → what just landed: done + merged tickets, newest completion first.
   if (q.finished === 'true' || q.finished === '1') {
@@ -33,5 +34,5 @@ export default defineEventHandler((event) => {
     const since = String(q.since)
     tickets = tickets.filter((t) => !!t.completedAt && t.completedAt >= since)
   }
-  return tickets.map((t) => withDerived(t, all))
+  return tickets.map((t) => withDerived(t, all, shareForTicket(store, t)))
 })

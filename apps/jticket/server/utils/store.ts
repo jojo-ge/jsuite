@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
+import { isPeerOwned } from './ownership'
 import type { ProjectShare, ShareSide } from './ownership'
 import type { Share } from './shares'
 
@@ -457,10 +458,32 @@ export function ticketIsBlocked(ticket: Ticket, all: Ticket[]): boolean {
   })
 }
 
-// The frontier: the takeable edge of a map — open, unblocked, unclaimed, and
-// not mid-ownership-transfer (a pending offer is frozen and undispatchable).
-export function ticketIsFrontier(ticket: Ticket, all: Ticket[]): boolean {
+// The frontier: the takeable edge of a map — open, unblocked, unclaimed, not
+// mid-ownership-transfer (a pending offer is frozen and undispatchable), and
+// ours. The peer's half of a shared project is read-only and undispatchable
+// here, so a settled peer-owned ticket is not takeable either — without its
+// project's share to judge ownership against, an agent would pick one up and
+// bounce straight off the API's 403. The share is required, like everywhere
+// else ownership is judged — null (a backlog ticket, a local-only project)
+// means there is no peer and the answer is exactly what it was before.
+export function ticketIsFrontier(
+  ticket: Ticket,
+  all: Ticket[],
+  share: ProjectShare | null | undefined,
+): boolean {
+  if (isPeerOwned(ticket, share)) return false
   return ticket.status === 'todo' && !ticket.assignee && !ticket.transfer && !ticketIsBlocked(ticket, all)
+}
+
+// The share a ticket's ownership is judged against — its project's, or null
+// for the backlog and for local-only projects. Takes only what it reads, like
+// the ownership helpers it feeds, so callers and tests can pass a slice.
+export function shareForTicket(
+  store: { projects: Array<Pick<Project, 'id' | 'share'>> },
+  ticket: Pick<Ticket, 'projectId'>,
+): ProjectShare | null {
+  if (!ticket.projectId) return null
+  return store.projects.find((p) => p.id === ticket.projectId)?.share ?? null
 }
 
 export interface TicketDerived {
@@ -471,12 +494,16 @@ export interface TicketDerived {
 
 // GET responses augment each ticket with derived flags so callers (agents)
 // never have to recompute the frontier. Never persisted — computed per request.
-export function withDerived(ticket: Ticket, all: Ticket[]): Ticket & TicketDerived {
+export function withDerived(
+  ticket: Ticket,
+  all: Ticket[],
+  share: ProjectShare | null | undefined,
+): Ticket & TicketDerived {
   return {
     ...ticket,
     blocked: ticketIsBlocked(ticket, all),
     claimed: !!ticket.assignee,
-    frontier: ticketIsFrontier(ticket, all),
+    frontier: ticketIsFrontier(ticket, all, share),
   }
 }
 
