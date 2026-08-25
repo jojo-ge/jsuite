@@ -7,7 +7,7 @@ import { ensureRelayRoom } from './relayRooms'
 import { assembleSyncSnapshot } from './syncIo'
 import type { PullWireMessage } from './syncWire'
 import { encodeWireMessage, parseWireMessage, snapshotFrames } from './syncWire'
-import { handshakeTimeoutMs as configHandshakeTimeoutMs, pullRequestTtlMs, syncRelayUrl } from './syncConfig'
+import { handshakeTimeoutMs as configHandshakeTimeoutMs, iceBindAddress, pullRequestTtlMs, syncRelayUrl } from './syncConfig'
 
 // The serving side of the pull flow (TICK-294, spec DOC-30). While a share is
 // active, a presence dial waits in the room this side serves (creator: the
@@ -50,9 +50,20 @@ export interface SyncServerOptions {
   requestTtlMs?: number
   handshakeTimeoutMs?: number
   /**
+   * How long the presence loop waits for the relay to acknowledge a closed
+   * dial's socket before re-dialing that room anyway (see the re-dial gate in
+   * tick()). Long enough that the ack wins the race in practice, short enough
+   * that a share whose ack is lost re-arms while its human still has the
+   * board open.
+   */
+  reclaimGraceMs?: number
+  /**
    * Local address to bind ICE to (see DialOptions.bindAddress). Unset in
    * production — real pulls cross machines. In-process tests bind 127.0.0.1
-   * so self-connections stay off real interfaces (TICK-300's EADDRNOTAVAIL).
+   * so self-connections stay off real interfaces (TICK-300's EADDRNOTAVAIL);
+   * the two-instance harness gets there through JTICKET_ICE_BIND_ADDRESS,
+   * which syncConfig reads into the process singleton (TICK-311). '' is
+   * treated as unset.
    */
   bindAddress?: string
   nowMs?: () => number
@@ -68,10 +79,12 @@ export interface SyncServer {
 }
 
 export function createSyncServer(options: SyncServerOptions): SyncServer {
-  const { peers, relayUrl, loadState, requestTtlMs = 120_000, handshakeTimeoutMs, bindAddress, nowMs = Date.now } = options
+  const { peers, relayUrl, loadState, requestTtlMs = 120_000, handshakeTimeoutMs, bindAddress, reclaimGraceMs = 5_000, nowMs = Date.now } = options
   const conns = new Map<string, string>() // share id → waiting/serving peer id
+  const closedSince = new Map<string, number>() // share id → when its dial ended, while we wait out the reclaim
   const pendings = new Map<string, PendingPull>()
   let stopped = false
+  let ticking = false
 
   const nowIso = () => new Date(nowMs()).toISOString()
 
@@ -113,9 +126,25 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
     })
   }
 
+  /**
+   * One tick at a time. Whether to dial is decided before the awaited relay
+   * round-trip that records the dial, so a second tick entering that window
+   * re-decides on stale state and dials the same room again — both of the
+   * room's two member slots then belong to this side, and the importer's pull
+   * is refused 'room full' (TICK-311). Interval drivers never await us, and
+   * the round-trip outlasts the interval whenever the relay is slow.
+   */
   async function tick(): Promise<void> {
-    if (stopped) return
+    if (stopped || ticking) return
+    ticking = true
+    try {
+      await runTick()
+    } finally {
+      ticking = false
+    }
+  }
 
+  async function runTick(): Promise<void> {
     // Sweep pending requests: gone when their channel died, expired when the
     // human never answered — either way nothing transfers.
     for (const [id, p] of [...pendings]) {
@@ -139,7 +168,8 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
       if (!room) continue // pre-two-way record: nothing to serve from this side yet
       const active = shareStatus(share, nowIso()) === 'active' && store.projects.some((p) => p.id === share.projectId)
       const peerId = conns.get(share.id)
-      const state = peerId ? peers.get(peerId)?.state : undefined
+      const existing = peerId ? peers.get(peerId) : undefined
+      const state = existing?.state
       if (!active) {
         // Close only a *waiting* dial — a connected one may be mid-pull, and
         // in-flight pulls complete across expiry.
@@ -147,14 +177,33 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
           peers.close(peerId)
           conns.delete(share.id)
         }
+        closedSince.delete(share.id)
         continue
       }
       if (!url || state === 'connecting' || state === 'connected') continue
+      // The relay frees this room's member slot only once it has processed
+      // our socket's close (PeerStatus.signalingClosed). Re-dial before that
+      // and the fresh dial sits beside the old one — both slots ours again,
+      // and the importer's pull is refused 'room full' (TICK-311). So wait
+      // for the ack, bounded: a close that never acks must not strand the
+      // share, and by then the relay has long since reaped the socket.
+      if (existing && !existing.signalingClosed) {
+        // The clock belongs to the dial being waited out — every path that
+        // replaces or abandons that dial drops it, so an entry read here is
+        // always this dial's own. A relay that refuses in between keeps it:
+        // the wait must not restart each time the round-trip fails.
+        const since = closedSince.get(share.id) ?? nowMs()
+        closedSince.set(share.id, since)
+        if (nowMs() - since < reclaimGraceMs) continue
+      }
       try {
         await ensureRelayRoom(url, room, nowMs)
       } catch {
         continue // relay down or refusing — retry next tick
       }
+      // stop() may have run while the round-trip was in flight; dialing now
+      // would leave a peer nothing owns, holding a slot in the room.
+      if (stopped) return
       const holder = { id: '' }
       holder.id = peers.dial({
         relayUrl: url,
@@ -169,6 +218,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
         onMessage: (raw) => handleMessage(share.id, () => holder.id, raw),
       }).id
       conns.set(share.id, holder.id)
+      closedSince.delete(share.id)
     }
   }
 
@@ -233,6 +283,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
         } catch {}
       }
       conns.clear()
+      closedSince.clear()
       pendings.clear()
     },
   }
@@ -247,6 +298,7 @@ export function useSyncServer(): SyncServer {
     loadState: loadStore,
     requestTtlMs: pullRequestTtlMs(),
     handshakeTimeoutMs: configHandshakeTimeoutMs(),
+    bindAddress: iceBindAddress(),
   })
   return singleton
 }

@@ -47,3 +47,16 @@ export function syncTickMs(): number {
 export function handshakeTimeoutMs(): number {
   return intEnv('JTICKET_HANDSHAKE_TIMEOUT_MS', 10_000)
 }
+
+/**
+ * Local address this process's sync dials bind ICE to; '' = unset, the
+ * production default — real pulls cross machines, so ICE must gather the
+ * machine's real interfaces (see DialOptions.bindAddress). The two-instance
+ * harness sets 127.0.0.1: both instances live on one host, and self-connections
+ * over real interfaces intermittently die mid-DTLS with EADDRNOTAVAIL
+ * (TICK-300, TICK-308) — a dial lost that way inside the awaiting-approval
+ * window is what made test:e2e flake when the build shared its invocation.
+ */
+export function iceBindAddress(): string {
+  return process.env.JTICKET_ICE_BIND_ADDRESS?.trim() ?? ''
+}

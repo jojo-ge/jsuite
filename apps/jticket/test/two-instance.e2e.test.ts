@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { startLocalRelay, type LocalRelay } from '@jsuite/relay'
+import type { PeerStatus } from '../server/utils/peer'
 import { createRoom, waitFor } from './helpers'
 import { startInstance, type Instance } from './harness/instance'
 
@@ -41,14 +42,33 @@ function waitForPeer(
   return waitFor(() => api(instance, 'GET', `/api/sync/peer/${id}`), predicate, { intervalMs: 100, ...options })
 }
 
-async function connectPair() {
-  const { roomId, secret } = await createRoom(relay)
-  const relayUrl = relay.url.href
-  const { id: idB } = await api(B, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: false })
-  const { id: idA } = await api(A, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: true })
-  await waitForPeer(A, idA, (s) => s.state === 'connected', { label: 'A connected' })
-  await waitForPeer(B, idB, (s) => s.state === 'connected', { label: 'B connected' })
-  return { idA, idB, roomId, secret }
+/**
+ * One connected pair, retried — the two-instance mirror of peer.test.ts's
+ * connectInRoom (TICK-308). A same-host dial can die mid-DTLS, and a re-dial
+ * can land on a room slot the relay has not reclaimed yet; either way the
+ * attempt is transient, so drop both halves and ask for a fresh room rather
+ * than failing the test on one unlucky handshake (TICK-300, TICK-311). The
+ * initiator is the side with a definite verdict — its handshake timer fires —
+ * so its status decides whether the attempt proved out.
+ */
+async function connectPair(attempts = 5) {
+  let lastA: PeerStatus | undefined
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const { roomId, secret } = await createRoom(relay)
+    const relayUrl = relay.url.href
+    const { id: idB } = await api(B, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: false })
+    const { id: idA } = await api(A, 'POST', '/api/sync/peer', { relayUrl, roomId, secret, initiator: true })
+    lastA = await waitForPeer(A, idA, (s) => s.state !== 'connecting', { label: `A settled (attempt ${attempt})` })
+    if (lastA.state === 'connected') {
+      await waitForPeer(B, idB, (s) => s.state === 'connected', { label: `B connected (attempt ${attempt})` })
+      return { idA, idB, roomId, secret }
+    }
+    await Promise.all([
+      api(A, 'DELETE', `/api/sync/peer/${idA}`),
+      api(B, 'DELETE', `/api/sync/peer/${idB}`),
+    ])
+  }
+  throw new Error(`no connected pair after ${attempts} attempts; last A status: ${JSON.stringify(lastA)}`)
 }
 
 describe('two jTicket instances over the local relay', () => {
