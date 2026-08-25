@@ -188,6 +188,10 @@ function startPair(
     // Short handshake reclaim: transient WebRTC failures recover fast enough
     // to stay inside the suite's wait windows.
     handshakeTimeoutMs: 3_000,
+    // Both ends are this process, so keep ICE on loopback — self-connections
+    // over real interfaces flake with EADDRNOTAVAIL mid-DTLS under suite-wide
+    // load (TICK-300; this suite's residual flake was TICK-308).
+    bindAddress: '127.0.0.1',
   })
   puller = createSyncPuller({
     peers: pullPeers,
@@ -195,6 +199,7 @@ function startPair(
     loadState: () => pullStore,
     timeoutMs,
     handshakeTimeoutMs: 3_000,
+    bindAddress: '127.0.0.1',
     applySnapshot: async (projectId, snapshot) => {
       if (applyError) throw new Error(applyError)
       applied.push({ projectId, snapshot })

@@ -49,6 +49,12 @@ export interface SyncServerOptions {
   loadState: () => Store
   requestTtlMs?: number
   handshakeTimeoutMs?: number
+  /**
+   * Local address to bind ICE to (see DialOptions.bindAddress). Unset in
+   * production — real pulls cross machines. In-process tests bind 127.0.0.1
+   * so self-connections stay off real interfaces (TICK-300's EADDRNOTAVAIL).
+   */
+  bindAddress?: string
   nowMs?: () => number
 }
 
@@ -62,7 +68,7 @@ export interface SyncServer {
 }
 
 export function createSyncServer(options: SyncServerOptions): SyncServer {
-  const { peers, relayUrl, loadState, requestTtlMs = 120_000, handshakeTimeoutMs, nowMs = Date.now } = options
+  const { peers, relayUrl, loadState, requestTtlMs = 120_000, handshakeTimeoutMs, bindAddress, nowMs = Date.now } = options
   const conns = new Map<string, string>() // share id → waiting/serving peer id
   const pendings = new Map<string, PendingPull>()
   let stopped = false
@@ -156,6 +162,7 @@ export function createSyncServer(options: SyncServerOptions): SyncServer {
         secret: room.roomSecret,
         initiator: false,
         ...(handshakeTimeoutMs ? { handshakeTimeoutMs } : {}),
+        ...(bindAddress ? { bindAddress } : {}),
         // The hello tells the importer this side is listening — its request
         // would race the fresh channel's handler attachment otherwise.
         onOpen: () => sendSafe(holder.id, { v: 1, kind: 'serve-ready' }),
