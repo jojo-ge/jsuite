@@ -25,16 +25,18 @@ const moved = computed(() => !!changed.value[props.ticket.id])
 const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
 const diffUrl = computed(() => ticketDiffUrl(props.ticket, projects.value, prs.value, jdiffBase))
 
+// The ticket's project — resolved once: it carries the share that decides
+// ownership, and so both the peer badge and the frontier ring below.
+const project = computed(() => projects.value.find((p) => p.id === props.ticket.projectId) ?? null)
+
 // Peer-owned = the other side of a shared project's ticket: visibly badged
 // with the peer's name (the API refuses writes and dispatch on it anyway).
-const peerName = computed(() =>
-  peerNameOf(props.ticket, projects.value.find((p) => p.id === props.ticket.projectId)),
-)
+const peerName = computed(() => peerNameOf(props.ticket, project.value))
 
 // Mid-ownership-transfer: an offer travelling one way or the other (frozen
 // either way), or a decline waiting for the peer's next pull.
 const transferBadge = computed(() => {
-  const share = projects.value.find((p) => p.id === props.ticket.projectId)?.share
+  const share = project.value?.share
   if (!share || !props.ticket.transfer) return null
   if (props.ticket.transfer === 'declined') return { label: 'Transfer declined', icon: 'i-lucide-undo-2' }
   return props.ticket.owner === share.side
@@ -46,7 +48,7 @@ const blocked = computed(() => isBlocked(props.ticket, props.tickets))
 // Frontier highlighting is independent of wayfinder mode — every board groups by
 // flow state, so the takeable edge is worth ringing everywhere. The wayfinder
 // sub-type badge below stays gated, since only maps carry those labels.
-const frontier = computed(() => isFrontier(props.ticket, props.tickets))
+const frontier = computed(() => isFrontier(props.ticket, props.tickets, project.value))
 const wfType = computed(() => (props.wayfinder ? wayfinderType(props.ticket) : null))
 const wfMeta = computed(() => (wfType.value ? WAYFINDER_TYPE_META[wfType.value] : null))
 // Architect candidates carry the scan's judgment as labels; the badges are how

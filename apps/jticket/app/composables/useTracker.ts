@@ -333,9 +333,56 @@ export function isBlocked(ticket: Ticket, all: Ticket[]): boolean {
   })
 }
 
-// The frontier: takeable edge of a map — open, unblocked, unclaimed.
-export function isFrontier(ticket: Ticket, all: Ticket[]): boolean {
+// Open work: takeable by flow state alone — todo, unblocked, unclaimed. What
+// the frontier meant before ownership entered it. A ticket that passes this but
+// fails isFrontier is real, ready work that only the other side can start.
+export function isOpenWork(ticket: Ticket, all: Ticket[]): boolean {
   return ticket.status === 'todo' && !ticket.assignee && !isBlocked(ticket, all)
+}
+
+// The frontier: takeable edge of a map — open work that is takeable *here*.
+// The client twin of the server's ticketIsFrontier, and it has to stay one:
+// the board rings and dispatches whatever this calls frontier, while agents
+// take whatever `?frontier=true` serves, and TICK-312 is what the drift cost.
+// The project is required and nullable, like every other ownership guard, so a
+// new call site cannot quietly drop it and reopen the gap.
+export function isFrontier(
+  ticket: Ticket,
+  all: Ticket[],
+  project: Pick<Project, 'share'> | null | undefined,
+): boolean {
+  if (peerNameOf(ticket, project)) return false
+  if (ticket.transfer) return false
+  return isOpenWork(ticket, all)
+}
+
+// ── Flow-state buckets ──
+// The one precedence every view groups by: the board's buckets, the wayfinder
+// graph's node states, the digest's row order. Kept here rather than in each
+// component because they must agree — a ticket the board calls takeable and
+// the graph calls something else is the bug TICK-312 was.
+//
+// `notTakeable` is real, ready work that only the other side can start: the
+// peer's half of a shared project, or a ticket frozen mid-ownership-transfer.
+// It sits between frontier and claimed because it is neither — calling it
+// takeable offers a hand-off the API refuses, and calling it in progress says
+// someone is working it when nobody is. On a local-only project it is always
+// empty, so every view that drops empty buckets looks exactly as it did.
+export type TicketBucket = 'frontier' | 'claimed' | 'notTakeable' | 'blocked' | 'done'
+
+export function bucketOf(
+  ticket: Ticket,
+  all: Ticket[],
+  project: Pick<Project, 'share'> | null | undefined,
+): TicketBucket {
+  if (isFinished(ticket.status)) return 'done'
+  if (isBlocked(ticket, all)) return 'blocked'
+  if (isFrontier(ticket, all, project)) return 'frontier'
+  // Open work that isFrontier just refused: the refusal was about ownership,
+  // not flow state. Anything else really is claimed and moving — including the
+  // peer's in-progress tickets, which are honestly in progress.
+  if (isOpenWork(ticket, all)) return 'notTakeable'
+  return 'claimed'
 }
 
 // ── Wayfinder labels ──

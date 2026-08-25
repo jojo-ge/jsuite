@@ -9,7 +9,7 @@
 // that opens the project's body — the map (destination / decisions / fog) or a
 // plain description — in a modal, so it never buries the tickets. The page
 // around this component owns the project header; this is just the tickets.
-import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
+import type { Project, ProjectMode, Ticket, TicketBucket } from '~/composables/useTracker'
 
 const props = defineProps<{
   tickets: Ticket[]
@@ -49,44 +49,40 @@ function byKey(a: Ticket, b: Ticket) {
   return n(a.key) - n(b.key)
 }
 
-type BucketKey = 'frontier' | 'claimed' | 'blocked' | 'done'
+type BucketKey = TicketBucket
+const BUCKET_ORDER: BucketKey[] = ['frontier', 'claimed', 'notTakeable', 'blocked', 'done']
 const BUCKET_META: Record<BucketKey, { label: string; icon: string; dot: string; text: string; hint: string }> = {
   frontier: { label: 'Frontier', icon: 'i-lucide-flag', dot: 'bg-primary', text: 'text-primary', hint: 'takeable now' },
   claimed: { label: 'In progress', icon: 'i-lucide-loader', dot: 'bg-info', text: 'text-info', hint: 'claimed' },
+  // Only ever non-empty on a shared project — the peer's open work and
+  // anything frozen mid-transfer. Muted like Blocked: it is not yours to act
+  // on, and the card underneath already says whose it is.
+  notTakeable: { label: 'Not takeable here', icon: 'i-lucide-user-lock', dot: 'bg-warning', text: 'text-warning', hint: 'the peer’s, or frozen mid-transfer' },
   blocked: { label: 'Blocked', icon: 'i-lucide-lock', dot: 'bg-error', text: 'text-error', hint: 'waiting on a blocker' },
   done: { label: 'Resolved', icon: 'i-lucide-check', dot: 'bg-success', text: 'text-success', hint: 'decided' },
 }
 
 const bucketed = computed(() => {
-  const done: Ticket[] = [], blocked: Ticket[] = [], frontier: Ticket[] = [], claimed: Ticket[] = []
-  for (const t of props.tickets) {
-    if (isFinished(t.status)) done.push(t)
-    else if (isBlocked(t, props.allTickets)) blocked.push(t)
-    else if (isFrontier(t, props.allTickets)) frontier.push(t)
-    else claimed.push(t)
-  }
-  for (const g of [done, blocked, frontier, claimed]) g.sort(byKey)
-  return { frontier, claimed, blocked, done }
+  const groups: Record<BucketKey, Ticket[]> = { frontier: [], claimed: [], notTakeable: [], blocked: [], done: [] }
+  for (const t of props.tickets) groups[bucketOf(t, props.allTickets, props.project)].push(t)
+  for (const g of Object.values(groups)) g.sort(byKey)
+  return groups
 })
 const counts = computed(() => ({
   frontier: bucketed.value.frontier.length,
   claimed: bucketed.value.claimed.length,
+  notTakeable: bucketed.value.notTakeable.length,
   blocked: bucketed.value.blocked.length,
   done: bucketed.value.done.length,
 }))
 const boardGroups = computed(() =>
-  (['frontier', 'claimed', 'blocked', 'done'] as BucketKey[])
+  BUCKET_ORDER
     .map((key) => ({ key, ...BUCKET_META[key], tickets: bucketed.value[key] }))
     .filter((g) => g.tickets.length),
 )
-const digestRows = computed(() => [
-  ...bucketed.value.frontier,
-  ...bucketed.value.claimed,
-  ...bucketed.value.blocked,
-  ...bucketed.value.done,
-])
+const digestRows = computed(() => BUCKET_ORDER.flatMap((key) => bucketed.value[key]))
 
-const folded = reactive(new Set<BucketKey>(['blocked', 'done']))
+const folded = reactive(new Set<BucketKey>(['notTakeable', 'blocked', 'done']))
 function toggleFold(key: BucketKey) {
   if (folded.has(key)) folded.delete(key)
   else folded.add(key)
@@ -107,10 +103,7 @@ function regrillable(t: Ticket) {
   return mode.value === 'architect' && isArchCandidate(t) && !!props.project && herdrUp.value
 }
 function stateOf(t: Ticket): BucketKey {
-  if (isFinished(t.status)) return 'done'
-  if (isBlocked(t, props.allTickets)) return 'blocked'
-  if (isFrontier(t, props.allTickets)) return 'frontier'
-  return 'claimed'
+  return bucketOf(t, props.allTickets, props.project)
 }
 
 // ── Hand-off + herdr — the same machinery /next runs, via useHerdrDispatch ──
@@ -169,6 +162,10 @@ function dispatchFor(t: Ticket) {
         <span class="text-muted">·</span>
         <span :class="counts.claimed ? 'text-info' : 'text-muted'">{{ counts.claimed }} in progress</span>
         <span class="text-muted">·</span>
+        <template v-if="counts.notTakeable">
+          <span class="text-warning">{{ counts.notTakeable }} not takeable here</span>
+          <span class="text-muted">·</span>
+        </template>
         <span :class="counts.blocked ? 'text-error/80' : 'text-muted'">{{ counts.blocked }} blocked</span>
         <span class="text-muted">·</span>
         <span class="text-muted">{{ counts.done }} decided</span>
@@ -289,6 +286,7 @@ function dispatchFor(t: Ticket) {
       :body="props.body ?? ''"
       :tickets="tickets"
       :all-tickets="allTickets"
+      :project="project"
       @edit-ticket="emit('edit-ticket', $event)"
     />
 
