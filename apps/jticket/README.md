@@ -257,7 +257,7 @@ Set a project's `mode` to `wayfinder` and it becomes a home for [wayfinder](http
 | Frontier | `GET /api/tickets?projectId=<project>&frontier=true` — todo + all `blockedBy` done + unassigned + takeable on this machine, key-ordered |
 | Resolve | set `status: "done"`, fill **`resolution`**, add a gist to the map's *Decisions so far* |
 
-In the UI, **every** project — wayfinder or standard — renders its tickets grouped into **Frontier · In progress · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. What a wayfinder project adds on top is the map body (behind the board's Brief button) and the `wayfinder:<type>` sub-type badge on each card.
+In the UI, **every** project — wayfinder or standard — renders its tickets grouped into **Frontier · In progress · Not takeable here · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. *Not takeable here* holds the peer's open work and anything frozen mid-ownership-transfer, so it is only ever non-empty on a shared project; empty groups aren't rendered, so a local-only board still reads as the four it always did. What a wayfinder project adds on top is the map body (behind the board's Brief button) and the `wayfinder:<type>` sub-type badge on each card.
 
 **Authoring a whole map** via `POST /api/import`: give the project `"mode": "wayfinder"` and a map-body `description`, and each ticket a `"wayfinderType": "research"` (shorthand that adds the `wayfinder:<type>` label) — e.g.:
 
