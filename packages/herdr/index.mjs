@@ -158,16 +158,57 @@ export async function acquirePackedPane(workspaceId, baseLabel, cwd, freshTab) {
     return { tabId: created.result.tab.tab_id, paneId: created.result.root_pane.pane_id }
   }
 
-  // Pack toward a 2×2 grid: 1 → split right; 2 → split the first down;
-  // 3 → split the second down.
+  // Pack toward a 2×2 grid by always splitting whichever pane still owns the
+  // most screen: 1 pane ⇒ split it right; 2 ⇒ the left column splits down;
+  // 3 ⇒ the still-full-height right column splits down. Picking the target by
+  // geometry matters — `pane list` comes back in spatial order, not creation
+  // order, so indexing into it stacked the third split on the left column and
+  // gave 3 panes left / 1 right.
   const paneList = await herdrJson(['pane', 'list', '--workspace', workspaceId])
   const panes = (paneList?.result?.panes ?? []).filter((p) => p.tab_id === open.tab_id)
   if (!panes.length) throw new HerdrError(`herdr: tab ${open.tab_id} has no panes`, 502)
-  const target = panes.length === 3 ? panes[1] : panes[0]
+  const target = await largestPane(panes)
   const direction = panes.length === 1 ? 'right' : 'down'
   const split = await herdrJson(['pane', 'split', target.pane_id, '--direction', direction, '--cwd', cwd, '--no-focus'])
   invalidateHerdrState()
   return { tabId: open.tab_id, paneId: split.result.pane.pane_id }
+}
+
+/**
+ * The pane holding the biggest rectangle in its tab — the one a 2×2 pack
+ * splits next. Ties (two equal halves) go to the first in spatial order, i.e.
+ * the left/top one. Falls back to spatial position if herdr can't hand over a
+ * layout: with two panes the left one is first, otherwise the un-split column
+ * is last.
+ */
+async function largestPane(panes) {
+  if (panes.length === 1) return panes[0]
+  let rects = []
+  try {
+    const layout = await herdrJson(['pane', 'layout', '--pane', panes[0].pane_id])
+    rects = layout?.result?.layout?.panes ?? []
+  } catch { /* no geometry — fall back below */ }
+  const area = new Map(rects.map((p) => [p.pane_id, (p.rect?.width ?? 0) * (p.rect?.height ?? 0)]))
+  if (!area.size) return panes.length === 2 ? panes[0] : panes[panes.length - 1]
+  return panes.reduce((best, p) => ((area.get(p.pane_id) ?? 0) > (area.get(best.pane_id) ?? 0) ? p : best))
+}
+
+/**
+ * Label a pane after the work running in it (a ticket key + summary), so a
+ * packed 2×2 tab reads as four named jobs rather than four claude spinners.
+ * Best-effort and cosmetic: herdr falls back to the terminal title, so a
+ * rename failure must never sink an otherwise-good dispatch.
+ */
+export async function renamePane(paneId, label) {
+  const text = String(label ?? '').trim().slice(0, 48)
+  if (!text) return false
+  try {
+    await herdrJson(['pane', 'rename', paneId, text])
+    invalidateHerdrState()
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** A fresh single-pane tab for a one-off job (a merge sweep, a HITL ticket). */

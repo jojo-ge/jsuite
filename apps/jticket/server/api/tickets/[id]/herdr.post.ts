@@ -57,6 +57,10 @@ export default defineEventHandler(async (event) => {
   } else {
     ;({ tabId, paneId } = await acquireTicketPane(workspaceId, project.key, cwd, freshTab))
   }
+  // Name the pane after its ticket: in a packed 2×2 tab the four panes are
+  // otherwise four identical claude spinners with nothing saying which ticket
+  // each is working. Cosmetic and best-effort — never fails the dispatch.
+  await renamePane(paneId, ticket.title ? `${ticket.key} · ${ticket.title}` : ticket.key)
   const agent = await startClaudeIn(paneId, ticket.key, framedPrompt)
 
   return { workspaceId, tabId, paneId, agent, ticket: ticket.key }

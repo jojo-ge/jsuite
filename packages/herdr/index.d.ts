@@ -54,6 +54,13 @@ export function acquirePackedPane(
   freshTab: { tabId: string; paneId: string } | null,
 ): Promise<{ tabId: string; paneId: string }>
 
+/**
+ * Label a pane after the work running in it, so a packed 2×2 tab reads as four
+ * named jobs. Best-effort and cosmetic — resolves false if herdr refuses.
+ * Labels longer than 48 chars are trimmed.
+ */
+export function renamePane(paneId: string, label: string): Promise<boolean>
+
 /** A fresh single-pane tab for a one-off job. */
 export function createJobTab(
   workspaceId: string,

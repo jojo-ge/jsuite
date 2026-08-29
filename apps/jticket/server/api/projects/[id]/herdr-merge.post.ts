@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
   } else {
     ;({ tabId, paneId } = await createJobTab(workspaceId, `${project.key} · merge`, cwd))
   }
+  await renamePane(paneId, `${project.key} · merge`)
   const agent = await startClaudeIn(paneId, `merge-${project.key}`, prompt)
 
   return { workspaceId, tabId, paneId, agent, project: project.key }

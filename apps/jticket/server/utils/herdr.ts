@@ -20,6 +20,7 @@ export {
   invalidateHerdrState,
   ensureHerdrWorkspace,
   createJobTab,
+  renamePane,
   focusHerdrWindow,
   startClaudeIn,
 } from '@jsuite/herdr'
