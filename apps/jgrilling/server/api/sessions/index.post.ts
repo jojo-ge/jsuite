@@ -6,9 +6,10 @@ import type { GrillSession } from '../../../app/utils/grillTypes'
 /**
  * Open a grilling room. Body: { title?, plan?, repoPath?, key? }
  *
- * The caller — a Claude session acting as the interviewer — owns the whole
- * interview: it posts questions to /:key/questions and watches the session
- * file for answers. `plan` is the markdown under interrogation, shown to the
+ * The caller — a Claude session grilling the user in a terminal — opens a room
+ * when the operator escalates one question into the browser: it posts to
+ * /:key/questions and watches the session file for the answer, then goes back
+ * to the terminal. `plan` is the markdown under interrogation, shown to the
  * user for context. Returns { key, title, path: "/g/<key>" }.
  */
 export default defineEventHandler(async (event) => {
@@ -32,7 +33,7 @@ export default defineEventHandler(async (event) => {
   const now = new Date().toISOString()
   const session: GrillSession = {
     format: 'j-grilling',
-    version: 2,
+    version: 3,
     key,
     title,
     plan,

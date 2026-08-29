@@ -32,6 +32,7 @@ export default defineEventHandler(async (event) => {
     integrationBranch: '',
     starred: false,
     share: null,
+    prompts: {},
     createdAt: ts,
     updatedAt: ts,
   }
@@ -60,6 +61,8 @@ export default defineEventHandler(async (event) => {
     blockedBy: [],
     comments: [],
     branch: '',
+    prompt: '',
+    promptMode: '',
     completedAt: null,
     origin: '',
     owner: '',

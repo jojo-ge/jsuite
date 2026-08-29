@@ -31,7 +31,7 @@ const endpoints = [
   { m: 'POST', p: '/api/projects/todo', d: "Get-or-create a codebase's TODO project { repo } — idempotent, one todo-mode project per codebase" },
   { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch?, starred? } — starred defaults false; only starred projects surface on /next' },
   { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its tickets' },
-  { m: 'PATCH', p: '/api/projects/:id', d: 'Update a project' },
+  { m: 'PATCH', p: '/api/projects/:id', d: "Update a project; `prompts` merges per kind (a kind set to '' falls back to the global default)" },
   { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (tickets → backlog)' },
   { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, attachments)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
@@ -51,6 +51,8 @@ const endpoints = [
   { m: 'POST', p: '/api/herdr/focus', d: 'Focus a herdr workspace or tab { workspace?, tab? } — the "go to herdr" buttons' },
   { m: 'POST', p: '/api/tickets/:id/herdr', d: 'Run a hand-off prompt in herdr { prompt } — claude pane packed ≤4 per PROJ-n tab, no focus steal' },
   { m: 'POST', p: '/api/projects/:id/herdr-merge', d: 'Run the merge sweep in herdr { prompt } — new single-pane "PROJ-n · merge" tab' },
+  { m: 'GET', p: '/api/prompts', d: 'The suite-wide hand-off prompt defaults — only overridden kinds are present' },
+  { m: 'PATCH', p: '/api/prompts', d: "Edit them { prompts: { 'standard:local': '…' } } — merged per kind; '' drops one back to the built-in" },
   { m: 'GET', p: '/api/repos', d: 'Known repos = codebases — path, slug, default branch, which projects use each' },
   { m: 'POST', p: '/api/repos', d: 'Remember a repo { path } (validates it is a clone, resolves its slug)' },
   { m: 'DELETE', p: '/api/repos?path=', d: 'Forget a repo (the list only; projects and disk are untouched)' },
@@ -59,7 +61,7 @@ const endpoints = [
   { m: 'GET', p: '/api/tickets', d: 'List tickets (?projectId= &repo= &status= &assignee= &label= &frontier=true &finished=true &since=<ISO>) — ?repo= excludes backlog tickets' },
   { m: 'POST', p: '/api/tickets', d: 'Create a ticket' },
   { m: 'GET', p: '/api/tickets/:id', d: 'Get one ticket (id or key)' },
-  { m: 'PATCH', p: '/api/tickets/:id', d: 'Update a ticket' },
+  { m: 'PATCH', p: '/api/tickets/:id', d: "Update a ticket; `prompt` + `promptMode` ('append'|'replace'|'') override its hand-off" },
   { m: 'DELETE', p: '/api/tickets/:id', d: 'Delete a ticket (cleans blocked-by edges)' },
   { m: 'POST', p: '/api/tickets/:id/comments', d: 'Add a comment { author, body }' },
   { m: 'DELETE', p: '/api/tickets/:id/comments/:cid', d: 'Delete one comment' },
@@ -114,6 +116,15 @@ curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
 curl -s -X PATCH http://localhost:43000/api/tickets/TICK-31 \\
   -H 'content-type: application/json' \\
   -d '{ "status": "done", "resolution": "Chose X because…" }'`
+
+const predeployExample = `# A predeploy board: one suspected bug per ticket
+curl -s http://localhost:43000/api/projects \\
+  -H 'content-type: application/json' \\
+  -d '{ "title": "Predeploy — 4.2 release", "repo": "~/code/my-repo", "mode": "predeploy" }'
+
+# Its tickets dispatch /jreproduce, and come back carrying the verdict
+curl -s 'http://localhost:43000/api/tickets?projectId=PROJ-9' | jq '.[] | {key, title, status, labels}'
+curl -s 'http://localhost:43000/api/tickets?label=predeploy:reproduced' | jq '.[].key'`
 
 const streamExample = `# Follow the tracker: one message whenever the store changes
 curl -N http://localhost:43000/api/stream
@@ -372,6 +383,24 @@ const methodColor: Record<string, string> = {
           The board groups them into <strong>Frontier · In progress · Blocked · Resolved</strong>.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ frontierExample }}</code></pre>
+      </section>
+
+      <section>
+        <h2 class="mb-2 flex items-center gap-2 text-base font-semibold">
+          <UIcon name="i-lucide-bug" class="size-4 text-primary" />Predeploy mode
+        </h2>
+        <p class="mb-3 text-sm text-muted">
+          Set a project's <code>mode</code> to <code>predeploy</code> and its tickets are
+          <strong>suspected bugs standing between a codebase and a deploy</strong> — one report per
+          ticket, its <code>description</code> written by whoever saw it. A ticket's herdr hand-off
+          fires <code>/jreproduce</code> instead of <code>/jimplement</code>: the agent reproduces the
+          bug in a throwaway git worktree as a <strong>failing test</strong>, writes that test verbatim
+          into the <code>resolution</code> with its verdict and a blocks-the-deploy call, appends a
+          <code>predeploy:&lt;reproduced|flaky|not-reproduced|already-fixed|invalid|unclear|blocked&gt;</code>
+          label, and tears the worktree down. It never fixes anything — no branch, no PR; the
+          resolution is the hand-off to whoever writes the fix.
+        </p>
+        <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ predeployExample }}</code></pre>
       </section>
     </UContainer>
   </div>

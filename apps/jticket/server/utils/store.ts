@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
 import { isPeerOwned } from './ownership'
+import { cleanPromptOverrides, cleanPromptText, coercePromptMode } from './prompts'
 import type { ProjectShare, ShareSide } from './ownership'
+import type { PromptOverrides, TicketPromptMode } from './prompts'
 import type { Share } from './shares'
 
 export type { ProjectShare, ShareSide } from './ownership'
@@ -25,7 +27,8 @@ export type TicketTransfer = '' | 'pending' | 'declined'
 // left untouched; rebase the head branch and merge again.
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 // A project is a plain tracker, a wayfinder effort, a jMap codebase-mapping
-// effort, a codebase's TODO list, or an architecture review. In 'wayfinder'
+// effort, a codebase's TODO list, an architecture review, or a pre-deploy
+// bug sweep. In 'wayfinder'
 // mode the project description is the wayfinder *map* body and its tickets are
 // grouped into frontier / blocked / done. In 'jmap' mode the tickets are
 // mapping jobs dispatched to herdr with /jmap-* commands (no branches, no PRs)
@@ -38,11 +41,17 @@ export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 // which fills the board with HITL arch:candidate tickets — deepening
 // opportunities whose herdr button dispatches /jarchitect-grill (no branches,
 // no PRs; dispatching the grilling is the triage decision and moves the
-// candidate to done).
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect'
+// candidate to done). In 'predeploy' mode every ticket is one suspected bug
+// standing between the repo and a deploy: its herdr button dispatches
+// /jreproduce, which reproduces the bug in a throwaway worktree, records the
+// failing test and the verdict on the ticket, and never implements the fix (no
+// branches, no PRs — the worktree is torn down when it finishes).
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy'
+
+const PROJECT_MODES: ProjectMode[] = ['wayfinder', 'jmap', 'todo', 'architect', 'predeploy']
 
 export function coerceProjectMode(mode: unknown): ProjectMode {
-  return mode === 'wayfinder' || mode === 'jmap' || mode === 'todo' || mode === 'architect' ? mode : 'standard'
+  return PROJECT_MODES.includes(mode as ProjectMode) ? (mode as ProjectMode) : 'standard'
 }
 
 export interface Project {
@@ -68,6 +77,11 @@ export interface Project {
   // exactly as before. When set, the project's entities are partitioned by
   // owner side and the peer's half is read-only here — see ownership.ts.
   share: ProjectShare | null
+  // Per-project hand-off prompts, keyed by PromptKind — only the kinds this
+  // project overrides are present; the rest fall through to the editable
+  // global defaults and then to the code default (prompts.ts). Machine-local
+  // like `repo`: never on the sync wire, editable on both sides of a share.
+  prompts: PromptOverrides
   createdAt: string
   updatedAt: string
 }
@@ -105,6 +119,12 @@ export interface Ticket {
   // integration branch (POST /api/tickets/:id/branch) and never pushed; a local
   // PR's default head. '' until cut.
   branch: string
+  // This ticket's own hand-off text and what to do with it: 'append' adds it
+  // after the prompt its project/kind resolves to, 'replace' makes it the whole
+  // prompt, '' leaves the resolved prompt alone (the text is kept either way,
+  // so switching back doesn't lose the draft). Machine-local — see prompts.ts.
+  prompt: string
+  promptMode: TicketPromptMode
   // When the ticket last became done. Stamped on the todo/in_progress → done
   // transition and cleared when it moves back out; null while unfinished. Kept
   // separate from updatedAt, which any edit bumps — this is what /finished
@@ -193,6 +213,9 @@ export interface Store {
   prs: LocalPr[]
   repos: KnownRepo[] // repos used before — see rememberRepo
   shares: Share[] // at most one per shared project — see shares.ts
+  // Suite-wide hand-off prompts (GET/PATCH /api/prompts): the layer projects
+  // override and the code defaults back. Only overridden kinds are present.
+  promptDefaults: PromptOverrides
   counters: { project: number; ticket: number; doc: number; pr: number }
 }
 
@@ -210,6 +233,7 @@ function emptyStore(): Store {
     prs: [],
     repos: [],
     shares: [],
+    promptDefaults: {},
     counters: { project: 0, ticket: 0, doc: 0, pr: 0 },
   }
 }
@@ -265,6 +289,8 @@ export function loadStore(): Store {
         starred: p.starred ?? false,
         // Projects predating (or never entering) sync are local-only.
         share: p.share ?? null,
+        // Projects predating prompt overrides use the defaults for everything.
+        prompts: cleanPromptOverrides(p.prompts),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -278,6 +304,9 @@ export function loadStore(): Store {
         // Entities predating sync are unowned ('') — local, editable here.
         comments: (t.comments ?? []).map((c) => ({ ...c, origin: c.origin ?? '', owner: c.owner ?? '' })),
         branch: t.branch ?? '',
+        // Tickets predating prompt overrides use their project's prompt.
+        prompt: cleanPromptText(t.prompt),
+        promptMode: coercePromptMode(t.promptMode),
         completedAt: t.completedAt ?? (isFinishedStatus(t.status) ? t.updatedAt : null),
         origin: t.origin ?? '',
         owner: t.owner ?? '',
@@ -318,6 +347,9 @@ export function loadStore(): Store {
         reverseRoomId: s.reverseRoomId ?? '',
         reverseRoomSecret: s.reverseRoomSecret ?? '',
       })),
+      // Editable global defaults postdate everything else; absent = every kind
+      // still falls through to its code default.
+      promptDefaults: cleanPromptOverrides(parsed.promptDefaults),
       counters: {
         project: parsed.counters?.project ?? 0,
         ticket: parsed.counters?.ticket ?? 0,

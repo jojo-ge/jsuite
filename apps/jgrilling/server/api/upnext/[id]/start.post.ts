@@ -1,8 +1,9 @@
 /**
  * Start a grilling ticket: dispatch it into herdr through jTicket's own
- * dispatch endpoint, with a prompt that routes the interview back through
- * this app (the j-grilling skill). HITL work gets its own tab, so ownTab
- * is always set — same as jTicket's /next page does for HITL rows.
+ * dispatch endpoint. The interview runs in the herdr terminal — the human
+ * answers there — and only a question they ask for escalates into this app.
+ * HITL work gets its own tab, so ownTab is always set — same as jTicket's
+ * /next page does for HITL rows.
  */
 export default defineEventHandler(async (event) => {
   const id = String(getRouterParam(event, 'id'))
@@ -22,9 +23,9 @@ export default defineEventHandler(async (event) => {
   // /jwayfinder, everything else via /jimplement — plus the grilling routing.
   const base = project.mode === 'wayfinder' ? `/jwayfinder ${ticket.key}` : `/jimplement ${ticket.key}`
   const prompt =
-    `${base} — a HITL grilling ticket. Run the interview through /j-grilling: ` +
-    `post each question to the jGrilling room and monitor the session file for the answer — ` +
-    `don't ask in the terminal. No branch, no PR.`
+    `${base} — a HITL grilling ticket. Run the interview with /grilling here in the terminal; ` +
+    `I answer in this pane. Only if I ask for one question in the browser, escalate that ` +
+    `single question with /j-grilling. No branch, no PR.`
 
   try {
     return await $fetch<{ agent: string; tabId: string }>(jticketUrl(`/api/tickets/${ticket.id}/herdr`), {

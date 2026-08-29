@@ -62,6 +62,8 @@ function makeTicket(over: Partial<Ticket> = {}): Ticket {
     blockedBy: [],
     comments: [],
     branch: '',
+    prompt: '',
+    promptMode: '',
     completedAt: null,
     origin: 'creator',
     owner: 'creator',
@@ -369,6 +371,22 @@ describe('applySyncSnapshot — wholesale replace and deletion by absence', () =
     expect(res.summary.tickets.deleted).toEqual(['AB-2'])
     expect(res.summary.docs.deleted).toEqual(['DOC-9'])
     expect(res.documentDeletes).toEqual(['their-doc'])
+  })
+
+  it('a peer ticket whose fields only differ in key order is not reported as changed', () => {
+    // A ticket migrated from an older store carries its new fields at the end
+    // of the object; one built by ingest carries them mid-object. Same values,
+    // different order — and reporting that as a change would light up every
+    // peer ticket on the first pull after any field is added.
+    const t = theirTicket()
+    const local = Object.fromEntries(
+      Object.entries({ ...t, projectId: 'proj_local' }).sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0)),
+    ) as Ticket
+    const res = applySyncSnapshot(applyInput({
+      tickets: [local],
+      snapshot: makeSnapshot({ tickets: [t] }),
+    }))
+    expect(res.summary.tickets).toEqual({ added: [], changed: [], deleted: [] })
   })
 
   it('an unchanged peer ticket is not reported as changed', () => {

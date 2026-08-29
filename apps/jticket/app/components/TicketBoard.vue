@@ -113,6 +113,7 @@ const {
   herdrUp,
   promptTarget,
   commandLabel,
+  isCustomPrompt,
   workspaceFor,
   projectTabs,
   focusHerdr,
@@ -131,18 +132,59 @@ const mode = computed<ProjectMode>(() => props.project?.mode ?? 'standard')
 const herdrWorkspace = computed(() => (props.project ? workspaceFor(props.project) : null))
 const herdrTabs = computed(() => (props.project ? projectTabs(props.project) : []))
 
-function runAllFrontier() {
+// ── Picking which frontier tickets run ──
+// Run-all fires the whole frontier by default; tick a card's checkbox and it
+// fires only the ticked ones. The selection is a filter over the live frontier,
+// never a second source of truth: a ticket that leaves the frontier (dispatched,
+// claimed, blocked) drops out of the picks on its own, so run-all can never
+// dispatch something the board has stopped calling takeable.
+const picked = ref(new Set<string>())
+const pickedFrontier = computed(() => bucketed.value.frontier.filter((t) => picked.value.has(t.id)))
+// Prune ids the frontier no longer holds, so "3 picked" can't outlive its rows.
+watch(bucketed, (groups) => {
+  if (!picked.value.size) return
+  const live = new Set(groups.frontier.map((t) => t.id))
+  const kept = new Set([...picked.value].filter((id) => live.has(id)))
+  if (kept.size !== picked.value.size) picked.value = kept
+})
+function pick(t: Ticket, on: boolean) {
+  const next = new Set(picked.value)
+  if (on) next.add(t.id)
+  else next.delete(t.id)
+  picked.value = next
+}
+const allPicked = computed(() => !!counts.value.frontier && pickedFrontier.value.length === counts.value.frontier)
+// The header box is tri-state, and Nuxt UI carries that in the model value
+// itself ('indeterminate'), not a separate prop.
+const pickAllState = computed<boolean | 'indeterminate'>(() =>
+  allPicked.value ? true : pickedFrontier.value.length ? 'indeterminate' : false,
+)
+function pickAll(on: boolean) {
+  picked.value = on ? new Set(bucketed.value.frontier.map((t) => t.id)) : new Set()
+}
+
+// What run-all would dispatch right now: the picks if there are any, else the
+// whole frontier.
+const runRows = computed(() => (pickedFrontier.value.length ? pickedFrontier.value : bucketed.value.frontier))
+async function runAllFrontier() {
   if (!props.project) return
-  runAll(
+  await runAll(
     props.project,
-    bucketed.value.frontier.map((ticket) => ({ ticket, mode: mode.value })),
+    runRows.value.map((ticket) => ({ ticket, mode: mode.value })),
   )
+  // A pick is a one-shot batch choice — clear it once the batch has gone, so
+  // the next Run all means the whole frontier again and not a stale subset.
+  picked.value = new Set()
 }
 
 // The per-card control state — the card itself stays presentational.
 function dispatchFor(t: Ticket) {
   return {
     commandLabel: commandLabel(mode.value, t),
+    // Badged when anything above the built-in template shaped this prompt —
+    // the label names the kind, so without this the card can't tell you the
+    // text has been customised.
+    custom: isCustomPrompt(t, mode.value),
     copied: copied.value === t.id,
     dispatching: dispatching.value === t.id,
     herdr: herdrUp.value,
@@ -187,7 +229,11 @@ function dispatchFor(t: Ticket) {
           />
           <UTooltip
             v-if="herdrUp"
-            :text="`Dispatch all ${counts.frontier} takeable ${counts.frontier === 1 ? 'ticket' : 'tickets'} into herdr — HITL tickets get their own tab`"
+            :text="
+              pickedFrontier.length
+                ? `Dispatch the ${pickedFrontier.length} ticked ${pickedFrontier.length === 1 ? 'ticket' : 'tickets'} into herdr — untick them all to run the whole frontier`
+                : `Dispatch all ${counts.frontier} takeable ${counts.frontier === 1 ? 'ticket' : 'tickets'} into herdr — tick cards to run only those. HITL tickets get their own tab`
+            "
           >
             <UButton
               icon="i-lucide-terminal"
@@ -197,7 +243,9 @@ function dispatchFor(t: Ticket) {
               :disabled="!!runningAll && runningAll !== project.id"
               @click="runAllFrontier"
             >
-              {{ runningAll === project.id ? `Running ${runAllProgress}…` : `Run all (${counts.frontier})` }}
+              <template v-if="runningAll === project.id">Running {{ runAllProgress }}…</template>
+              <template v-else-if="pickedFrontier.length">Run selected ({{ pickedFrontier.length }})</template>
+              <template v-else>Run all ({{ counts.frontier }})</template>
             </UButton>
           </UTooltip>
         </template>
@@ -333,6 +381,16 @@ function dispatchFor(t: Ticket) {
             <UIcon :name="g.icon" class="size-4" :class="g.key === 'frontier' ? 'text-primary' : 'text-muted'" />
             <h4 class="text-sm font-semibold" :class="g.key === 'frontier' ? 'text-primary' : ''">{{ g.label }}</h4>
             <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
+            <template v-if="g.key === 'frontier' && project && herdrUp">
+              <UCheckbox
+                :model-value="pickAllState"
+                class="ml-2"
+                :aria-label="allPicked ? 'Untick every frontier ticket' : 'Tick every frontier ticket'"
+                @update:model-value="pickAll($event === true)"
+              />
+              <span v-if="pickedFrontier.length" class="text-xs text-primary">{{ pickedFrontier.length }} picked</span>
+              <span v-else class="text-xs text-muted">tick to run only some</span>
+            </template>
           </div>
           <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             <TicketCard
@@ -343,10 +401,13 @@ function dispatchFor(t: Ticket) {
               :wayfinder="wayfinder"
               :architect="mode === 'architect'"
               :dispatch="project ? dispatchFor(t) : null"
+              :selectable="g.key === 'frontier' && !!project && herdrUp"
+              :selected="picked.has(t.id)"
               @edit="emit('edit-ticket', $event)"
               @delete="emit('delete-ticket', $event)"
               @copy="copyCommand($event, mode)"
               @run="dispatchTicket($event, mode)"
+              @select="pick"
             />
           </div>
         </template>

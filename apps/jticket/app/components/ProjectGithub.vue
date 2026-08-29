@@ -217,9 +217,12 @@ const queueKeys = computed(() => {
   return localPrs.value.map((pr) => pr.key).sort((a, b) => n(a) - n(b))
 })
 
+// The sweep's prompt is the 'merge' kind — overridable per project.
+const { mergePrompt } = usePrompts()
+
 const copiedMergePrompt = ref(false)
 async function copyMergePrompt() {
-  const command = mergeSweepPrompt(props.project, queueKeys.value)
+  const command = mergePrompt(props.project, queueKeys.value)
   try {
     await navigator.clipboard.writeText(command)
     copiedMergePrompt.value = true
@@ -235,7 +238,7 @@ async function dispatchMergeSweep() {
   try {
     const res = await $fetch<{ agent: string }>(`/api/projects/${props.project.id}/herdr-merge`, {
       method: 'POST',
-      body: { prompt: mergeSweepPrompt(props.project, queueKeys.value) },
+      body: { prompt: mergePrompt(props.project, queueKeys.value) },
     })
     toast.add({
       title: 'Merge sweep running in herdr',

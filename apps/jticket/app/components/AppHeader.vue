@@ -136,6 +136,15 @@ const links = computed(() => [
             </span>
           </UTooltip>
         </ClientOnly>
+        <UTooltip text="Hand-off prompts — the defaults every project inherits">
+          <UButton
+            icon="i-lucide-message-square-code"
+            color="neutral"
+            variant="ghost"
+            to="/prompts"
+            aria-label="Hand-off prompts"
+          />
+        </UTooltip>
         <UButton icon="i-lucide-book-open" color="neutral" variant="ghost" to="/api-guide" aria-label="API guide" />
         <!-- The icon depends on the resolved color mode, which only exists on the
              client (localStorage/system pref) — rendering it during SSR guarantees a

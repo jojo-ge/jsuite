@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     title: 'TODO',
     description:
       "The codebase's running todo list — one human-written line per todo. " +
-      "Exercise a todo with its Grill button: a jGrilling interview whose " +
+      "Exercise a todo with its Grill button: a herdr terminal interview whose " +
       "decisions land back in the ticket's resolution. No branches, no PRs.",
     mode: 'todo',
     repo: probe.path,
@@ -27,6 +27,7 @@ export default defineEventHandler(async (event) => {
     // Never starred: /next is for dispatchable work, todos are grilled instead.
     starred: false,
     share: null,
+    prompts: {},
     createdAt: ts,
     updatedAt: ts,
   }

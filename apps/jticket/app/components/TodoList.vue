@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // The codebase's TODO list — the board renders this instead of TicketBoard for
 // the todo-mode project. A todo is a lightweight ticket: one human-written
-// line, added inline, ticked done inline, and exercised with Grill (a
-// jGrilling interview whose decisions land back in the ticket's resolution).
+// line, added inline, ticked done inline, and exercised with Grill (a herdr
+// terminal interview whose decisions land back in the ticket's resolution).
 import type { Project, Ticket } from '~/composables/useTracker'
 
 const props = defineProps<{ project: Project; tickets: Ticket[] }>()
@@ -99,7 +99,7 @@ async function toggle(t: Ticket) {
             @click="onDeleteTicket(t)"
           />
         </div>
-        <UTooltip :text="herdrUp ? 'Grill this todo — a jGrilling interview in a herdr tab' : 'herdr is not running — copy the prompt instead'">
+        <UTooltip :text="herdrUp ? 'Grill this todo — an interview in its own herdr tab' : 'herdr is not running — copy the prompt instead'">
           <UButton
             icon="i-lucide-flame"
             color="warning"

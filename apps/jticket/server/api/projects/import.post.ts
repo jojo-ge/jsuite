@@ -80,6 +80,9 @@ export default defineEventHandler(async (event) => {
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
     // Starring is a local "what's on deck" flag, so it doesn't travel.
     starred: false,
+    // Nor do the hand-off prompts: like `repo`, they describe how the
+    // exporting machine dispatches agents, not what the project is.
+    prompts: {},
     // A bundle import is a plain copy, not a sync share — local-only.
     share: null,
     createdAt: bundle.project.createdAt || ts,
@@ -118,6 +121,8 @@ export default defineEventHandler(async (event) => {
           owner: '' as const,
         })),
       branch: typeof t.branch === 'string' ? t.branch.trim() : '',
+      prompt: '',
+      promptMode: '',
       // The bundle carries the original completion stamp; bundles exported
       // before completedAt existed fall back to updatedAt, as loadStore does.
       completedAt: isFinishedStatus(t.status) ? (t.completedAt ?? t.updatedAt ?? ts) : null,

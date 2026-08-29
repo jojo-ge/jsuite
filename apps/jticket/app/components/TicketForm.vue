@@ -3,7 +3,8 @@
 // modal and the ticket detail modal fill in the same fields the same way.
 // The parent owns the save button (modal footers are sticky) and drives it
 // through the exposed save()/saving/canSave.
-import type { Project, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
+import type { Project, ProjectMode, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
+import type { TicketPromptMode } from '~/utils/prompts'
 
 const props = withDefaults(
   defineProps<{
@@ -40,6 +41,8 @@ interface FormState {
   wfType: WayfinderType | null
   resolution: string
   blockedBy: string[]
+  prompt: string
+  promptMode: TicketPromptMode
 }
 
 function blank(): FormState {
@@ -54,6 +57,8 @@ function blank(): FormState {
     wfType: null,
     resolution: '',
     blockedBy: [],
+    prompt: '',
+    promptMode: '',
   }
 }
 
@@ -77,6 +82,8 @@ function reset() {
       wfType: wayfinderType(t),
       resolution: t.resolution ?? '',
       blockedBy: [...t.blockedBy],
+      prompt: t.prompt ?? '',
+      promptMode: t.promptMode ?? '',
     })
   } else {
     Object.assign(form, blank())
@@ -108,6 +115,58 @@ const blockerOptions = computed(() =>
     .map((t) => ({ label: `${t.key} — ${t.title}`, value: t.id })),
 )
 
+// ── This ticket's own hand-off prompt ──
+// The last of the four layers (see ~/utils/prompts.ts): whatever the project
+// resolves for this ticket's kind, plus what you write here — appended after
+// it, or in place of it. The box keeps its text when the mode goes back to
+// "use the project prompt", so switching back and forth loses nothing.
+const { ticketPrompt, templateFor } = usePrompts()
+// The board's PR-target preference, read (not owned) — it picks which
+// standard:* kind a standard ticket's preview resolves to.
+const promptTarget = useState<PromptTarget>('jticket-prompt-target', () => 'local')
+
+const promptModeOptions = [
+  { label: 'Use the project prompt', value: '' as TicketPromptMode },
+  { label: 'Add extra instructions', value: 'append' as TicketPromptMode },
+  { label: 'Replace the prompt entirely', value: 'replace' as TicketPromptMode },
+]
+
+const promptProject = computed(() => props.projects.find((p) => p.id === form.projectId) ?? null)
+const projectMode = computed<ProjectMode>(() => promptProject.value?.mode ?? 'standard')
+const promptKind = computed(() =>
+  promptKindFor(projectMode.value, { labels: live.value?.labels ?? [] }, promptTarget.value),
+)
+// What the project resolves to before this ticket has its say — the reference
+// text above the box, and what 'append' appends to.
+const projectPrompt = computed(() =>
+  renderPrompt(
+    templateFor(promptKind.value, promptProject.value).template,
+    ticketPromptVars(
+      { key: live.value?.key ?? 'TICK-?', title: form.title || 'Untitled' },
+      promptProject.value,
+      live.value?.branch ?? '',
+    ),
+  ),
+)
+// The whole thing, exactly as it would be dispatched right now.
+const resolvedPrompt = computed(() =>
+  ticketPrompt(
+    {
+      ...(live.value ?? ({} as Ticket)),
+      key: live.value?.key ?? 'TICK-?',
+      title: form.title || 'Untitled',
+      labels: live.value?.labels ?? [],
+      branch: live.value?.branch ?? '',
+      prompt: form.prompt,
+      promptMode: form.prompt.trim() ? form.promptMode : '',
+    } as Ticket,
+    promptProject.value,
+    projectMode.value,
+    promptTarget.value,
+  ),
+)
+const promptOpen = ref(false)
+
 function addCriterion() {
   form.acceptanceCriteria.push('')
 }
@@ -134,6 +193,9 @@ async function save() {
       labels,
       resolution: form.resolution.trim(),
       blockedBy: form.blockedBy,
+      prompt: form.prompt,
+      // A mode with nothing to say is off — the box is a draft until it has text.
+      promptMode: form.prompt.trim() ? form.promptMode : '',
     }
     if (props.ticket) await updateTicket(props.ticket.id, payload)
     else await createTicket(payload)
@@ -214,6 +276,58 @@ defineExpose({ save, reset, saving, canSave })
         class="w-full font-mono text-sm"
       />
     </UFormField>
+
+    <!-- The ticket's own prompt — folded away unless it has one. Overrides are
+         machine-local: they change what this jTicket dispatches, not the work. -->
+    <div class="rounded-lg border border-default">
+      <button
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-2 text-left"
+        :aria-expanded="promptOpen"
+        @click="promptOpen = !promptOpen"
+      >
+        <UIcon :name="promptOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 text-dimmed" />
+        <span class="text-sm font-medium">Hand-off prompt</span>
+        <UBadge v-if="form.prompt.trim() && form.promptMode" color="primary" variant="subtle" size="sm">
+          {{ form.promptMode === 'replace' ? 'Replaced' : 'Extended' }}
+        </UBadge>
+        <span v-else class="text-xs text-muted">{{ PROMPT_KIND_META[promptKind].label }}</span>
+      </button>
+
+      <div v-if="promptOpen" class="space-y-3 border-t border-default px-3 py-3">
+        <div>
+          <p class="mb-1 text-xs text-dimmed">
+            {{ promptProject ? `${promptProject.key} fires this for a ${PROMPT_KIND_META[promptKind].label.toLowerCase()} hand-off:` : 'This hand-off currently fires:' }}
+          </p>
+          <pre class="max-h-28 overflow-auto whitespace-pre-wrap rounded border border-default bg-elevated/40 p-2 font-mono text-xs text-muted">{{ projectPrompt }}</pre>
+        </div>
+
+        <UFormField label="This ticket">
+          <USelect v-model="form.promptMode" :items="promptModeOptions" class="w-full" />
+        </UFormField>
+
+        <UFormField
+          v-if="form.promptMode"
+          :label="form.promptMode === 'replace' ? 'The whole prompt' : 'Extra instructions'"
+          :help="`Placeholders work here too: ${promptVarTokens(promptKind)}`"
+        >
+          <UTextarea
+            v-model="form.prompt"
+            :rows="3"
+            autoresize
+            :maxrows="12"
+            class="w-full font-mono"
+            :ui="{ base: 'text-xs' }"
+            :placeholder="form.promptMode === 'replace' ? '/jimplement {key} however you like…' : 'e.g. Skip the changelog. Land it behind a flag.'"
+          />
+        </UFormField>
+
+        <div v-if="form.promptMode && form.prompt.trim()">
+          <p class="mb-1 text-xs text-dimmed">What actually gets dispatched:</p>
+          <pre class="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-default bg-default p-2 font-mono text-xs">{{ resolvedPrompt.text }}</pre>
+        </div>
+      </div>
+    </div>
 
     <UFormField label="Blocked by" help="Tickets that must finish before this one can start.">
       <USelectMenu

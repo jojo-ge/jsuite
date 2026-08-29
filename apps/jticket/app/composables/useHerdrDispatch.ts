@@ -10,32 +10,23 @@ import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
 // wants every PR pointed at an integration branch. So the prompt is a choice,
 // and it sticks between sessions — it changes rarely, and re-picking it on
 // every visit is exactly the friction these controls exist to remove.
-export const HANDOFF_PROMPTS = [
-  {
-    label: 'Local PR (merged in jTicket)',
-    value: 'local',
-    command: (key: string, branch?: string) =>
-      `/jimplement ${key} in a worktree${branch ? ` on the existing branch ${branch}` : ''}. When done open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and tear down the worktree.`,
-  },
-  {
-    label: 'PR to master',
-    value: 'master',
-    command: (key: string) =>
-      `/jimplement ${key} in a worktree. When done open a PR to master and tear down the worktree.`,
-  },
-  {
-    label: 'PR to integration branch',
-    value: 'integration',
-    command: (key: string) =>
-      `/jimplement ${key} in a worktree and open a PR to the integration branch. When done tear down the worktree.`,
-  },
-] as const
-export type PromptTarget = (typeof HANDOFF_PROMPTS)[number]['value']
-export const HANDOFF_PROMPT_OPTIONS = HANDOFF_PROMPTS.map((p) => ({ label: p.label, value: p.value }))
+//
+// The picker chooses a prompt *kind*; the text that kind fires resolves
+// through the four layers in ~/utils/prompts.ts (ticket → project → editable
+// global default → built-in), so the labels here name the standard:* kinds and
+// nothing more.
+export type PromptTarget = 'local' | 'master' | 'integration'
+export const HANDOFF_PROMPT_OPTIONS: Array<{ label: string; value: PromptTarget }> = [
+  { label: PROMPT_KIND_META['standard:local'].label, value: 'local' },
+  { label: PROMPT_KIND_META['standard:master'].label, value: 'master' },
+  { label: PROMPT_KIND_META['standard:integration'].label, value: 'integration' },
+]
 
 export function useHerdrDispatch() {
   const toast = useToast()
   const { available: herdrUp, refresh: refreshHerdr, workspaceByLabel, focus } = useHerdr()
+  const { projects } = useTracker()
+  const { ticketPrompt, templateFor } = usePrompts()
 
   const promptTarget = useState<PromptTarget>('jticket-prompt-target', () => 'local')
   // The preference is per-browser; load it once on the client and write on
@@ -47,53 +38,46 @@ export function useHerdrDispatch() {
   })
   watch(promptTarget, (value) => localStorage.setItem('jticket-next-prompt', value))
 
-  const prompt = computed(() => HANDOFF_PROMPTS.find((p) => p.value === promptTarget.value) ?? HANDOFF_PROMPTS[0])
+  // The picked standard:* kind, and a sample of the text it currently fires —
+  // /next prints it under the header so you can see what you're about to send.
+  const promptKind = computed<PromptKind>(() => `standard:${promptTarget.value}` as PromptKind)
+  const prompt = computed(() => ({
+    label: PROMPT_KIND_META[promptKind.value].label,
+    value: promptTarget.value,
+    command: (key: string, branch = '') =>
+      renderPrompt(templateFor(promptKind.value).template, {
+        ...ticketPromptVars({ key, title: '' }, null, branch),
+      }),
+  }))
 
-  // Wayfinder and jMap tickets are not implementation work — a wayfinder
-  // frontier is research/prototypes/grillings and /jwayfinder is the skill that
-  // reads one; a jMap frontier is mapping jobs, and the ticket's jmap:* label
-  // picks its skill: jmap:scope → /jmap-scope, jmap:synthesize →
-  // /jmap-synthesize, everything else → /jmap-domain. In both modes the
-  // hand-off is the bare command: no worktree, no PR target, which is why the
-  // prompt picker does not apply to those rows.
-  function jmapCommand(t: Ticket) {
-    if (t.labels.includes('jmap:scope')) return '/jmap-scope'
-    if (t.labels.includes('jmap:synthesize')) return '/jmap-synthesize'
-    return '/jmap-domain'
+  // Which prompt a ticket fires is its project's mode plus, inside jMap and
+  // architect mode, its own label — see promptKindFor. Only standard mode
+  // consults the hand-off picker, which is why the picker is hidden on the
+  // other boards. Wayfinder, jMap, todo, architect and predeploy hand-offs are
+  // the bare command: no PR target (a predeploy reproduction makes its own
+  // throwaway worktree and tears it down again).
+  function projectOf(t: Ticket) {
+    return t.projectId ? (projects.value.find((p) => p.id === t.projectId) ?? null) : null
   }
-  // An architect frontier is one scan job plus the candidates it created: the
-  // arch:scan label picks /jarchitect-scan, everything else is a candidate
-  // whose hand-off is its grilling (/jarchitect-grill).
-  function archCommand(t: Ticket) {
-    return t.labels.includes('arch:scan') ? '/jarchitect-scan' : '/jarchitect-grill'
+  function kindFor(t: Ticket, mode: ProjectMode) {
+    return promptKindFor(mode, t, promptTarget.value)
   }
+  // What the copy button says. Still the command a stock prompt starts with —
+  // an overridden prompt keeps the label (it is the kind's name, not a
+  // preview) and gets a badge on the card instead.
   function commandLabel(mode: ProjectMode, t: Ticket) {
-    if (mode === 'wayfinder') return '/jwayfinder'
-    if (mode === 'jmap') return jmapCommand(t)
-    if (mode === 'todo') return '/j-grilling'
-    if (mode === 'architect') return archCommand(t)
-    return '/jimplement'
+    return PROMPT_KIND_META[kindFor(t, mode)].command
+  }
+  // The text itself, resolved through all four layers.
+  function resolveFor(t: Ticket, mode: ProjectMode, branch = t.branch) {
+    return ticketPrompt(t, projectOf(t), mode, promptTarget.value, branch)
   }
   function commandFor(t: Ticket, mode: ProjectMode, branch = t.branch) {
-    if (mode === 'wayfinder') return `/jwayfinder ${t.key}`
-    if (mode === 'jmap') return `${jmapCommand(t)} ${t.key}`
-    if (mode === 'todo') return grillCommand(t)
-    if (mode === 'architect') return `${archCommand(t)} ${t.key}`
-    return prompt.value.command(t.key, branch)
+    return resolveFor(t, mode, branch).text
   }
-
-  // A todo's hand-off is an interview, not an implementation — the same shape
-  // jGrilling's own dispatch uses (apps/jgrilling .../upnext/[id]/start.post.ts):
-  // route the questions through /j-grilling, and land the outcome back on the
-  // ticket. The skill is the interviewer's playbook; the prompt stays terse.
-  function grillCommand(t: Ticket) {
-    return (
-      `Grill me about this todo — ${t.key}: "${t.title}". Read the ticket first ` +
-      `(GET http://localhost:43000/api/tickets/${t.key}), then run the interview through /j-grilling: ` +
-      `post each question to the jGrilling room and monitor the session file for the answer — ` +
-      `don't ask in the terminal. When the grilling finishes, write the decisions into ` +
-      `${t.key}'s resolution. No branch, no PR.`
-    )
+  /** Whether anything above the built-in template shaped this ticket's prompt. */
+  function isCustomPrompt(t: Ticket, mode: ProjectMode) {
+    return resolveFor(t, mode).custom
   }
 
   // The local-PR hand-off names the ticket's branch, so jTicket cuts it the
@@ -101,7 +85,8 @@ export function useHerdrDispatch() {
   // branch, local only. A failed cut (no repo, no integration branch) still
   // hands off; the agent will be told to cut a branch itself via POST
   // /api/prs's error. Wayfinder and jMap tickets never get branches — their
-  // work is research/docs, not code.
+  // work is research/docs, not code; a predeploy ticket cuts none either — the
+  // reproduction lives and dies in its own worktree.
   async function resolveBranch(t: Ticket, mode: ProjectMode): Promise<string> {
     if (mode !== 'standard' || promptTarget.value !== 'local' || t.branch) return t.branch
     try {
@@ -257,11 +242,11 @@ export function useHerdrDispatch() {
     try {
       const res = await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
         method: 'POST',
-        body: { prompt: grillCommand(t), ownTab: true },
+        body: { prompt: commandFor(t, 'todo'), ownTab: true },
       })
       toast.add({
         title: `${t.key} grilling in herdr`,
-        description: `Agent ${res.agent} — answer the questions at https://jgrilling.local.`,
+        description: `Agent ${res.agent} — answer the questions in its herdr tab.`,
         icon: 'i-lucide-messages-square',
         color: 'success',
       })
@@ -294,9 +279,11 @@ export function useHerdrDispatch() {
     herdrUp,
     refreshHerdr,
     promptTarget,
+    promptKind,
     prompt,
     commandLabel,
     commandFor,
+    isCustomPrompt,
     workspaceFor,
     projectTabs,
     focusHerdr,

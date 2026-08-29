@@ -22,6 +22,8 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
   blockedBy: [],
   comments: [],
   branch: '',
+  prompt: '',
+  promptMode: '',
   completedAt: null,
   origin: '',
   owner: '',

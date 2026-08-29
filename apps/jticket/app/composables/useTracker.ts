@@ -1,9 +1,11 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
+import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
+
 export type TicketType = 'AFK' | 'HITL'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect'
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy'
 export type ShareSide = 'creator' | 'importer'
 
 // Two-party sync (see server/utils/ownership.ts): which side this machine is
@@ -29,6 +31,10 @@ export interface Project {
   // unaffected everywhere else (/running, /finished, the board).
   starred: boolean
   share: ProjectShare | null
+  // This project's hand-off prompt overrides, keyed by PromptKind — only the
+  // kinds it overrides are present. Machine-local (never on the sync wire);
+  // see ~/utils/prompts.ts for the four layers that resolve a prompt.
+  prompts: PromptOverrides
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,
@@ -63,6 +69,11 @@ export interface Ticket {
   comments: TicketComment[]
   // The ticket's local work branch ('' until cut) — a local PR's default head.
   branch: string
+  // This ticket's own hand-off text and what to do with it — 'append' adds it
+  // after the prompt its project resolves to, 'replace' makes it the whole
+  // prompt, '' leaves the resolved prompt alone (keeping the draft).
+  prompt: string
+  promptMode: TicketPromptMode
   // When the ticket last became done; null while unfinished. Stamped by the
   // server on the status change, not by callers — see /finished.
   completedAt: string | null
@@ -285,20 +296,10 @@ export function mergeQueueOf<T extends Pick<LocalPr, 'projectId' | 'status' | 'k
     .sort((a, b) => n(a.key) - n(b.key))
 }
 
-// The hand-off that lands the queue: one prompt an agent can follow to merge
-// every PR, rebasing through conflicts. Used verbatim by the copy buttons and
-// the herdr dispatch on /next and the project page.
-export function mergeSweepPrompt(
-  project: Pick<Project, 'key' | 'repo' | 'integrationBranch'>,
-  prKeys: string[],
-): string {
-  return [
-    `Merge ${project.key}'s open local jTicket PRs into its integration branch ${project.integrationBranch}, oldest first: ${prKeys.join(', ')}.`,
-    'For each one: POST http://localhost:43000/api/prs/<key>/merge.',
-    `On a 409 conflict: in the repo at ${project.repo}, rebase that PR's head branch onto ${project.integrationBranch}, resolve the conflicts preserving both sides' intent, then POST the merge again.`,
-    'Everything stays local — do not push or touch GitHub.',
-  ].join(' ')
-}
+// The hand-off that lands the queue — one prompt an agent can follow to merge
+// every PR, rebasing through conflicts — is the 'merge' prompt kind, and like
+// every other kind it is overridable per project. Both the copy buttons and
+// the herdr dispatch build it with usePrompts().mergePrompt().
 
 // ── Where "see this ticket's changes" points in jDiff ──
 // Prefer the ticket's newest non-closed local PR — the server already derived

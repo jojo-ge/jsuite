@@ -40,6 +40,12 @@ export default defineEventHandler(async (event) => {
     ticket.branch = branch
   }
 
+  // This ticket's own hand-off text, and whether it appends to or replaces the
+  // prompt its project resolves to. The two are independent: emptying the text
+  // leaves the mode alone, and setting the mode to '' keeps the draft.
+  if (body.prompt !== undefined) ticket.prompt = cleanPromptText(body.prompt)
+  if (body.promptMode !== undefined) ticket.promptMode = coercePromptMode(body.promptMode)
+
   if (body.projectId !== undefined) {
     let target: Project | null = null
     if (body.projectId !== null && body.projectId !== '') {

@@ -10,9 +10,14 @@ const props = defineProps<{
   // cards when the board around this card supplies them. The card stays
   // presentational: the board owns the dispatch state and handles the events,
   // so a hundred cards don't each poll herdr.
-  dispatch?: { commandLabel: string; copied: boolean; dispatching: boolean; herdr: boolean } | null
+  dispatch?: { commandLabel: string; custom?: boolean; copied: boolean; dispatching: boolean; herdr: boolean } | null
+  // Run-all picking: a frontier card gets a checkbox so the board's run-all can
+  // fire a chosen subset instead of the whole frontier. Like `dispatch`, the
+  // board owns the state — the card only shows the box and reports the click.
+  selectable?: boolean
+  selected?: boolean
 }>()
-const emit = defineEmits<{ edit: [Ticket]; delete: [Ticket]; copy: [Ticket]; run: [Ticket] }>()
+const emit = defineEmits<{ edit: [Ticket]; delete: [Ticket]; copy: [Ticket]; run: [Ticket]; select: [Ticket, boolean] }>()
 
 // Did this ticket just move under us? `changed` is filled by the live stream,
 // and entries expire on their own — so the ring is only ever about the last few
@@ -84,6 +89,14 @@ const ring = computed(() => {
     @click="emit('edit', ticket)"
   >
     <div class="flex items-start justify-between gap-3">
+      <UCheckbox
+        v-if="selectable"
+        :model-value="!!selected"
+        class="mt-0.5 shrink-0"
+        :aria-label="`Include ${ticket.key} in run all`"
+        @click.stop
+        @update:model-value="emit('select', ticket, $event === true)"
+      />
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-mono text-xs text-muted">{{ ticket.key }}</span>
@@ -171,6 +184,14 @@ const ring = computed(() => {
 
       <!-- The hand-off, right on the card — same controls as /next's rows -->
       <div v-if="dispatch && frontier" class="ml-auto flex items-center gap-1.5">
+        <!-- The hand-off text isn't the stock one — the command label alone
+             would not say so. See the project's Prompts panel / the ticket. -->
+        <UTooltip
+          v-if="dispatch.custom"
+          text="This hand-off uses a customised prompt (project or ticket override)"
+        >
+          <UIcon name="i-lucide-message-square-code" class="size-3.5 text-primary" />
+        </UTooltip>
         <UButton
           :icon="dispatch.copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
           :color="dispatch.copied ? 'success' : 'neutral'"

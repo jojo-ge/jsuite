@@ -39,6 +39,8 @@ export default defineEventHandler(async (event) => {
     integrationBranch: '',
     starred: false,
     share: { key: blob.sharedKey, side: blob.side, peerName },
+    // Hand-off prompts are machine-local — never shared, never pulled.
+    prompts: {},
     createdAt: ts,
     updatedAt: ts,
   }

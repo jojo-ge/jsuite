@@ -68,7 +68,7 @@ jsuite/
 │   ├── jdiff/          # diff / PR review workbench
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
-│   ├── jgrilling/      # browser grilling sessions (claude interrogates your plan)
+│   ├── jgrilling/      # one escalated grilling question, argued in the browser
 │   └── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)

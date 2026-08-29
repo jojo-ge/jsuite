@@ -23,6 +23,7 @@ JSKILLS=(
   to-jdoc
   jarchitect-scan
   jarchitect-grill
+  jreproduce
 )
 
 POCOCK_SOURCE="mattpocock/skills"

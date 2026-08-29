@@ -25,6 +25,7 @@ pnpm dev          # http://localhost:43000
 | --- | --- |
 | `/` | Board — every project and its tickets, plus docs and the backlog |
 | `/next` | **Up next** — the frontier across every project: open, unblocked, unclaimed tickets, each with its `/jimplement` hand-off command |
+| `/prompts` | **Prompts** — the suite-wide hand-off prompt defaults every project inherits and can override |
 | `/running` | **Running now** — every in-progress ticket grouped by its project, with a link through to the project |
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
@@ -34,7 +35,7 @@ pnpm dev          # http://localhost:43000
 ## Data model
 
 - **Project** — `{ key: "PROJ-1", title, description, mode, repo, integrationBranch }`. Top-level grouping; contains tickets.
-  - `mode`: `standard` (plain tracker) or `wayfinder` (see **Wayfinder mode** below). In a wayfinder project the `description` *is* the map body.
+  - `mode`: `standard` (plain tracker) · `wayfinder` (see **Wayfinder mode** below — the `description` *is* the map body) · `jmap` (codebase-mapping jobs) · `todo` (a codebase's todo list, one per repo) · `architect` (one architecture scan) · `predeploy` (suspected bugs reproduced before a deploy). The mode picks which prompt a ticket's herdr hand-off fires — `/jimplement`, `/jwayfinder`, `/jmap-*`, `/jarchitect-*`, `/jreproduce`.
   - `repo` / `integrationBranch`: the optional GitHub link — see **GitHub** below. Both `""` when unset.
 - **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
@@ -241,6 +242,37 @@ grows a **herdr** twin that builds the terminal itself over Herdr's socket CLI
 All of it degrades: no `herdr` binary or no running server and the buttons
 simply don't render (`GET /api/herdr` → `available: false`). If the binary
 lives somewhere unusual, point `HERDR_BIN` at it.
+
+### Hand-off prompts
+
+Every hand-off — dispatched or copied — is one string built from a template,
+and which template resolves through four layers, first answer winning:
+
+```
+ticket.prompt (promptMode 'append' | 'replace')     the ticket's own text
+  → project.prompts[kind]                           the project page's Prompts panel
+    → store.promptDefaults[kind]                    /prompts, GET/PATCH /api/prompts
+      → the built-in text                           app/utils/prompts.ts
+```
+
+There are eleven **kinds**, each picked by what fires it — the three
+`standard:*` PR targets of the hand-off picker, `wayfinder`, `jmap:scope` /
+`jmap:domain` / `jmap:synthesize` (by the ticket's `jmap:` label), `todo`,
+`architect:scan` / `architect:grill`, and the project-level `merge` sweep.
+A kind is stored only when overridden, so an untouched jTicket fires exactly
+the strings it always has (`tests/prompts.test.ts` pins them).
+
+Templates interpolate `{key}`, `{title}`, `{branch}`, `{onBranch}`,
+`{projectKey}`, `{projectTitle}`, `{repo}`, `{integrationBranch}` and — for the
+sweep — `{prs}`; an unknown placeholder is left standing rather than blanked,
+so a typo shows up in the prompt instead of vanishing from it. A ticket's own
+box takes placeholders too, and keeps its text when you switch back to "use the
+project prompt", so a draft survives.
+
+Overrides are **machine-local**, like `repo` and the ticket branches: they say
+how *this* machine dispatches agents, not what the work is. They never ride the
+sync wire, they don't travel in a project bundle, and they stay editable on
+both sides of a shared project.
 
 ## Wayfinder mode
 

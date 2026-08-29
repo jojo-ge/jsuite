@@ -31,6 +31,12 @@ export default defineEventHandler(async (event) => {
     }
     project.integrationBranch = branch
   }
+  // Hand-off prompt overrides, merged per kind: send a kind to set it, send ''
+  // to drop back to the global default. Machine-local like the repo link — no
+  // creator-owned guard, and never on the sync wire.
+  if (body.prompts !== undefined) {
+    project.prompts = mergePromptOverrides(project.prompts, body.prompts)
+  }
   project.updatedAt = now()
 
   saveStore(store)

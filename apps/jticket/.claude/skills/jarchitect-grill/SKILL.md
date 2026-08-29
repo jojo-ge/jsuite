@@ -1,6 +1,6 @@
 ---
 name: jarchitect-grill
-description: Grill one architecture candidate — a per-candidate go/no-go stress test run through the jGrilling browser UI, hardening the candidate into an implementation-ready spec doc (or an ADR-recorded rejection). Use when "/jarchitect-grill <TICK-n>" is invoked (jTicket dispatches these into herdr when the human sends an arch:candidate ticket to its grilling).
+description: Grill one architecture candidate — a per-candidate go/no-go stress test run as a terminal interview, hardening the candidate into an implementation-ready spec doc (or an ADR-recorded rejection). Use when "/jarchitect-grill <TICK-n>" is invoked (jTicket dispatches these into herdr when the human sends an arch:candidate ticket to its grilling).
 disable-model-invocation: true
 ---
 
@@ -10,9 +10,9 @@ You were dispatched because the human picked ONE `arch:candidate` ticket of an
 architect-mode jTicket project and clicked its grilling button. That click was
 the triage decision — **the ticket is already `done`; leave its status
 alone**. Your job is the standalone `improve-codebase-architecture` skill's
-step 3, browser-flavoured: walk the decision tree of this one candidate with
-the human answering in jGrilling, and leave the ticket implementation-ready
-(or honestly rejected).
+step 3: walk the decision tree of this one candidate with the human answering
+**in this terminal**, and leave the ticket implementation-ready (or honestly
+rejected).
 
 Invocation: `/jarchitect-grill <TICK-n>`
 
@@ -21,10 +21,9 @@ Invocation: `/jarchitect-grill <TICK-n>`
 ```bash
 JTICKET="${JTICKET_URL:-http://localhost:43000}"
 curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
-curl -sk --max-time 3 https://jgrilling.local/api/upnext >/dev/null && echo up || echo down
 ```
 
-If either is down: say so (`./jsuite start` from the jsuite repo) and STOP.
+If jTicket is down: say so (`./jsuite start` from the jsuite repo) and STOP.
 
 ## 1. Read the candidate cold
 
@@ -41,14 +40,14 @@ the exploration. Skim the named files in the repo (you are cd'd into it) only
 to ground the questions. Read `CONTEXT.md` and the relevant ADRs; call the
 Skill tool with **"codebase-design"** for the vocabulary and keep to it.
 
-## 2. Run the interview — through the browser
+## 2. Run the interview — in this terminal
 
-Call the Skill tool with **"j-grilling"** and follow it: YOU are the
-interviewer, questions go to the jGrilling room as jspec blocks, answers land
-in the session file. Key the session after the ticket
-(`tick-<n>-<short-slug>`), set `repoPath` to the project's repo, and put the
-candidate write-up (plus the assessment excerpt) in `plan` so the questions
-make sense on their own.
+Call the Skill tool with **"grilling"** and follow it: YOU are the interviewer,
+the human answers here in the herdr pane. If they want one question argued
+properly — tabbed options with their own tables and charts — call the Skill
+tool with **"j-grilling"** to escalate *that single question* into the
+jGrilling room, key the session after the ticket (`tick-<n>-<short-slug>`), and
+come back here for the next one. Never route the whole interview to the room.
 
 This grilling is a **go/no-go stress test of this one candidate**. Walk its
 decision tree — with a recommendation on every question:
@@ -77,8 +76,8 @@ the repo (unlike the scan, this session makes decisions):
 
 ## 3. Finish and write back
 
-When the frontier is empty, publish the debrief and `finish` the session (the
-j-grilling skill carries the calls). Then land the outcome in jTicket:
+When the frontier is empty, close any jGrilling room you opened (the
+j-grilling skill carries the `finish` call). Then land the outcome in jTicket:
 
 **Pursued** — publish the candidate's implementation-ready spec as a doc on
 the project (the `to-jspec` skill has the field formats; `/to-spec` the
@@ -104,8 +103,8 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/jso
 ```
 
 The resolution: verdict (pursue / reject), the load-bearing decisions, and
-links — the grilling session (`https://jgrilling.local/g/<key>`), the spec
-doc key or ADR path, the debrief. End by telling the user where the spec doc
+links — the spec doc key or ADR path, plus any jGrilling room
+(`https://jgrilling.local/g/<key>`) and debrief an escalated question produced. End by telling the user where the spec doc
 lives — **the workflow ends here**; whatever comes next (implementation via
 `/jimplement`, a new project, nothing) is the human's move, made from that
 spec.
@@ -116,6 +115,6 @@ spec.
 - Never change the ticket's status — dispatch already finished it; a
   re-grilling arrives the same way.
 - Never answer a grilling question yourself or proceed on a guessed answer —
-  the human decides, in the browser.
+  the human decides.
 - Never auto-create follow-up tickets or projects — the spec doc is the
   hand-off, not a new pipeline.

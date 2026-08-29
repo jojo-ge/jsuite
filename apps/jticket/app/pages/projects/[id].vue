@@ -154,6 +154,15 @@ async function removeProject() {
               >
                 Architect
               </UBadge>
+              <UBadge
+                v-else-if="project.mode === 'predeploy'"
+                color="error"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-bug"
+              >
+                Predeploy
+              </UBadge>
               <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
               <span class="text-xs text-muted">{{ stats.done }}/{{ stats.tickets }} tickets done</span>
             </div>
@@ -317,6 +326,9 @@ async function removeProject() {
 
         <!-- GitHub — the project's integration branch and its open PRs -->
         <ProjectGithub :project="project" @configure="openEditProject(project)" />
+
+        <!-- Prompts — what this project's hand-offs say to an agent -->
+        <ProjectPrompts :project="project" />
 
         <!-- Tickets. The TODO project gets its checklist instead of a board —
              same rendering the board page pins at the top. -->

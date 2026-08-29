@@ -52,10 +52,10 @@ Never start a ticket whose `blocked` is `true` — its blockers hold facts you n
 frontier is empty but tickets remain, say so and stop; something is blocked or claimed.
 
 A **HITL** ticket needs the human in the loop. Confirm they're here for it before
-claiming, and never answer their side of it. Run its questions through
-**`/j-grilling`**: post each question to the jGrilling room as jspec blocks and
-monitor the session file for the answer — don't interrogate the human in the
-terminal. **AFK** tickets you can take cold.
+claiming, and never answer their side of it. Put its questions to them **in this
+terminal** (`/grilling`) — they come to the herdr pane to answer. Only when they
+ask for one question in the browser do you escalate it with **`/j-grilling`**;
+never route the whole interview there. **AFK** tickets you can take cold.
 
 ## 2. Claim it — before any work
 

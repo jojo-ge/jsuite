@@ -329,8 +329,21 @@ function byCommentOrder(a: TicketComment, b: TicketComment): number {
 
 // Ticket equality for the change summary, comments aside — comment changes
 // are counted as comment events, not as a "changed" ticket.
+//
+// Key order is not meaning. A ticket read off disk and one just built by
+// ingest can hold identical values in a different order — a field added in a
+// later version lands mid-object in the fresh one and at the end of the
+// migrated one — and a plain stringify would call that a change on every
+// ticket, on every pull, forever. Compare a key-sorted projection instead.
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as object).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  )
+}
 function sameTicketRecord(a: Ticket, b: Ticket): boolean {
-  return JSON.stringify({ ...a, comments: [] }) === JSON.stringify({ ...b, comments: [] })
+  return canonicalJson({ ...a, comments: [] }) === canonicalJson({ ...b, comments: [] })
 }
 
 function splitAttachmentName(name: string): { base: string; ext: string } {
@@ -573,6 +586,10 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
         .filter((c): c is TicketComment => !!c)
         .sort(byCommentOrder),
       branch: '', // the peer's work branch is machine-local to the peer
+      // Same for their hand-off prompt: a dispatch override describes their
+      // machine, and a peer-owned ticket is undispatchable here anyway.
+      prompt: '',
+      promptMode: '',
       completedAt: finished ? (t.completedAt ?? t.updatedAt ?? fallbackAt) : null,
       origin: validSide(t.origin) ? t.origin : peer,
       owner: incomingOwner,

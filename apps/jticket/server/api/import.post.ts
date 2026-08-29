@@ -58,6 +58,8 @@ export default defineEventHandler(async (event) => {
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
       starred: p.starred === true,
+      // Hand-off prompts are machine-local; a breakdown doesn't carry them.
+      prompts: {},
       // Local-only until the share flow arms it — never set at creation.
       share: null,
       createdAt: ts,
@@ -96,6 +98,8 @@ export default defineEventHandler(async (event) => {
       blockedBy: [],
       comments: [],
       branch: '',
+      prompt: '',
+      promptMode: '',
       // A breakdown imported with work already done finishes as of the import.
       completedAt: isFinishedStatus(status) ? ts : null,
       ...entityOwnership(project?.share),

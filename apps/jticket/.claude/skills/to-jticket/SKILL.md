@@ -44,8 +44,11 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 ## 2. Core model
 
 - **Project** `PROJ-n` — `{ key, title, description, mode, repo, integrationBranch }`. `mode` is
-  `standard`, `wayfinder`, `jmap`, or `todo` (a codebase's auto-created TODO list — see
-  **Codebases** below; never create one with a plain POST). `repo` (path to a local clone) +
+  `standard`, `wayfinder`, `jmap`, `predeploy` (a pre-deploy bug sweep — each ticket is one
+  suspected bug and dispatches `/jreproduce`, which reproduces it as a failing test and never
+  fixes it), or one of the two modes you must never create with a plain POST: `todo` (a
+  codebase's auto-created TODO list — see **Codebases** below) and `architect` (one
+  architecture scan, made by `POST /api/projects/architect`). `repo` (path to a local clone) +
   `integrationBranch` are the optional GitHub link — see **GitHub** below; both `""` when unset.
   `repo` is also what scopes a project to a **codebase**.
 - **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`

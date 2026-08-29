@@ -81,7 +81,7 @@ POST /api/projects
 { "title": "Checkout",                  // required
   "description": "Everything payments-related",
   "repo": "~/code/my-repo",             // the codebase this project belongs to
-  "mode": "standard" }                  // or "wayfinder" / "jmap"; anything else → "standard"
+  "mode": "standard" }                  // or "wayfinder" / "jmap" / "predeploy"; anything else → "standard"
                                         // ("todo" and "architect" have their own endpoints below — don't POST them here)
 ```
 
@@ -116,6 +116,40 @@ POST /api/projects/architect
 { "repo": "~/code/my-repo" }            // must be a real git clone (probed)
 → 201 { "project": { "key": "PROJ-8", "mode": "architect", ... },
         "ticket":  { "key": "TICK-31", "labels": ["arch", "arch:scan"], ... } }
+```
+
+### Predeploy project (a bug sweep before a deploy)
+
+A board of **suspected bugs standing between a codebase and a deploy** — one report per
+ticket, written by whoever saw it. Plain `POST /api/projects` with `"mode": "predeploy"`;
+there is no dedicated endpoint and nothing is auto-created.
+
+```jsonc
+POST /api/projects
+{ "title": "Predeploy — 4.2 release", "repo": "~/code/my-repo", "mode": "predeploy" }
+→ 201 { "key": "PROJ-9", "mode": "predeploy", ... }
+```
+
+Each ticket is one bug: the `description` is the human's report (an agent must never
+rewrite it) and the `acceptanceCriteria` are the observable, if they pinned one.
+Dispatching a ticket into herdr fires **`/jreproduce TICK-n`** instead of `/jimplement`:
+it reproduces the bug in a throwaway git worktree as a **failing test**, then writes the
+finding back and deletes the worktree. It never fixes anything, cuts no branch and opens
+no PR — the resolution IS the hand-off to `/jimplement`.
+
+What lands on the ticket when it finishes:
+
+| Field | What the reproduction puts there |
+| --- | --- |
+| `status` | `done` for every verdict; `in_progress` while `blocked` / `unclear` waits on the human |
+| `resolution` | Verdict + blocks-the-deploy call, what happens, **the failing test verbatim** with its path and run command, the failure output, where the bug lives |
+| `labels` | `predeploy:<verdict>` appended — `reproduced` · `flaky` · `not-reproduced` · `already-fixed` · `invalid` · `unclear` · `blocked` |
+| a doc | Only when the repro is too big for a resolution: labelled `predeploy` + `predeploy:repro` on the project, linked from it |
+
+```bash
+# what the sweep found, at a glance
+curl -s "$JTICKET/api/tickets?projectId=PROJ-9" | jq '.[] | {key, title, status, labels}'
+curl -s "$JTICKET/api/tickets?label=predeploy:reproduced" | jq '.[].key'
 ```
 
 ### Ticket

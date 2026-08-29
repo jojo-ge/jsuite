@@ -39,6 +39,9 @@ export default defineEventHandler(async (event) => {
     blockedBy,
     comments: [],
     branch: typeof body.branch === 'string' && isSafeRef(body.branch.trim()) ? body.branch.trim() : '',
+    // A ticket's own hand-off text is inert until promptMode says how to use it.
+    prompt: cleanPromptText(body.prompt),
+    promptMode: coercePromptMode(body.promptMode),
     // Created straight into a finished status (an already-finished ticket being
     // recorded) counts as finishing now.
     completedAt: isFinishedStatus(status) ? ts : null,

@@ -196,6 +196,7 @@ const {
   promptTarget,
   prompt,
   commandLabel,
+  isCustomPrompt,
   workspaceFor,
   projectTabs,
   focusHerdr,
@@ -234,9 +235,13 @@ const mergeQueues = computed<MergeQueue[]>(() =>
     .filter((q) => q.queue.length > 0),
 )
 
+// The sweep's prompt is the 'merge' kind — overridable per project like every
+// other hand-off (see ~/utils/prompts.ts).
+const { mergePrompt } = usePrompts()
+
 const copiedMerge = ref<string | null>(null)
 async function copyMergePrompt(q: MergeQueue) {
-  const command = mergeSweepPrompt(q.project, q.queue.map((pr) => pr.key))
+  const command = mergePrompt(q.project, q.queue.map((pr) => pr.key))
   try {
     await navigator.clipboard.writeText(command)
     copiedMerge.value = q.project.id
@@ -261,7 +266,7 @@ async function dispatchMerge(q: MergeQueue) {
   try {
     const res = await $fetch<{ agent: string }>(`/api/projects/${q.project.id}/herdr-merge`, {
       method: 'POST',
-      body: { prompt: mergeSweepPrompt(q.project, q.queue.map((pr) => pr.key)) },
+      body: { prompt: mergePrompt(q.project, q.queue.map((pr) => pr.key)) },
     })
     toast.add({
       title: `Merge sweep running in herdr`,
@@ -575,6 +580,14 @@ async function dispatchMerge(q: MergeQueue) {
                 </div>
 
                 <div class="flex shrink-0 items-center gap-1.5">
+                  <!-- The prompt is not the stock one — the command label alone
+                       would not say so. -->
+                  <UTooltip
+                    v-if="isCustomPrompt(t, mode)"
+                    text="This hand-off uses a customised prompt (project or ticket override)"
+                  >
+                    <UIcon name="i-lucide-message-square-code" class="size-3.5 text-primary" />
+                  </UTooltip>
                   <UButton
                     :icon="copied === t.id ? 'i-lucide-check' : 'i-lucide-clipboard'"
                     :color="copied === t.id ? 'success' : 'neutral'"

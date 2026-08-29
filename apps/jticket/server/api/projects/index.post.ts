@@ -17,6 +17,9 @@ export default defineEventHandler(async (event) => {
     starred: body.starred === true,
     // Local-only until the share flow arms it — never set at creation.
     share: null,
+    // Hand-off prompts start empty — every kind falls through to the global
+    // defaults (and then the code defaults) until this project overrides one.
+    prompts: cleanPromptOverrides(body.prompts),
     createdAt: ts,
     updatedAt: ts,
   }

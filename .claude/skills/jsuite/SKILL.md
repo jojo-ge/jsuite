@@ -21,7 +21,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
-| jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — an external claude session interrogates, you answer in the UI |
+| jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser — grillings themselves run in the terminal |
 | jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
@@ -58,9 +58,16 @@ the selected codebase for deepening opportunities: `/jarchitect-scan` fills
 the board with graded HITL candidate tickets (`arch:strong` /
 `arch:worth-exploring` / `arch:speculative`, one `arch:top-pick`) plus an
 assessment spec with before/after jChart diagrams; a candidate's herdr button
-dispatches its go/no-go grilling (`/jarchitect-grill`, answered in jGrilling)
+dispatches its go/no-go grilling (`/jarchitect-grill`, answered in its herdr pane)
 and finishes the ticket — the grilling hardens it into an
 implementation-ready spec doc.
+It also hosts **predeploy-mode projects** — a board of suspected bugs standing
+between a codebase and a deploy, one report per ticket. A ticket's herdr button
+dispatches `/jreproduce`: it reproduces the bug in a throwaway git worktree as a
+failing test, records that test plus a verdict (`reproduced` / `flaky` /
+`not-reproduced` / `already-fixed` / `invalid`) and a blocks-the-deploy call on
+the ticket, then tears the worktree down. It never fixes anything — the
+resolution is the hand-off to `/jimplement`.
 
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR
@@ -82,16 +89,21 @@ in place, "Open in jChart" for the full workbench. Skill: `j-explain` (author a
 JSON payload, publish via `explain.py`, read notes back, revise with
 `--replace`; also the block-vocabulary reference for jTicket docs).
 
-**jGrilling** — get grilled about a plan before building it. A passive
-question room: an external Claude session (usually in herdr, often working a
-HITL jTicket) IS the interviewer — it runs Matt Pocock's *grilling* interview,
-posts each question over the HTTP API as jspec-format blocks (one at a time,
-each with a recommended answer), and monitors the session file in
-`.data/jgrilling/` until the user's answer lands. The user answers in the
-browser (scrollable transcript, sticky answer bar). The wrap-up is a debrief
-in the shared document pool (decision table + a jChart decision-tree chart),
-readable in-app, in jExplain, or in jTicket. Skill: `j-grilling` (the
-interviewer's playbook: open a session, post questions, monitor for answers).
+**jGrilling** — one grilling question, argued in the browser. A passive
+question room: an external Claude session IS the interviewer — it posts the
+question over the HTTP API as jspec-format blocks (three phases: the question,
+why it needs answering, the candidate answers as tabbed cases) and monitors the
+session file in `.data/jgrilling/` until the user's answer lands. The user
+answers in the browser (scrollable transcript, sticky answer bar), and the
+wrap-up is a verdict, optionally a debrief in the shared document pool
+(decision table + a jChart decision-tree chart).
+
+**It never hosts a whole interview.** Matt Pocock's *grilling* interview runs
+in the terminal under the plain `grilling` skill — herdr-dispatched HITL
+jTickets included, where the human goes to the herdr pane to answer. A room
+opens only when the operator escalates one specific question into the browser
+mid-grilling: the interviewer posts that one question, waits, then returns to
+the terminal. Skill: `j-grilling` (the interviewer's playbook).
 
 **jMap** — the codebase cartographer, orchestrated entirely through jTicket.
 Creating a map creates a **jMap-mode jTicket project** (repo = the mapped
@@ -157,9 +169,10 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | a diagram the human can edit and annotate | `j-chart` |
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
-| be grilled about a plan, answering in a UI | `j-grilling` |
+| be grilled about a plan | `grilling` (in the terminal) — `j-grilling` only when the operator asks for a specific question in the browser |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
+| check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, no fix) |
 | share/sync a jTicket project with a coworker | the project page's Share panel; one-time relay deploy via `packages/relay/wizard.sh` (both machines wire the same relay URL) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then

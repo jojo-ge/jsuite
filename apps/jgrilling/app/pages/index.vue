@@ -74,7 +74,7 @@ const dateFmt = (iso: string) =>
       <img src="/favicon.svg" alt="" class="size-8 rounded-lg">
       <div class="flex-1">
         <h1 class="text-lg font-semibold">jGrilling</h1>
-        <p class="text-sm text-muted">Get grilled about a plan before you build it.</p>
+        <p class="text-sm text-muted">One grilling question, argued properly. The grilling itself stays in the terminal.</p>
       </div>
     </header>
 
@@ -166,7 +166,7 @@ const dateFmt = (iso: string) =>
         <p class="mb-1">No sessions yet.</p>
         <p class="text-sm">
           Sessions are opened by the Claude session doing the grilling — start a ticket above,
-          or ask any Claude session for one with <code>/j-grilling</code>.
+          or, mid-grilling, ask it to take one question here with <code>/j-grilling</code>.
         </p>
       </div>
 
