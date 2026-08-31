@@ -46,6 +46,14 @@ async function toggleStar() {
   }
 }
 
+// The description folds in the header: closed shows the clamped plain-text
+// preview, open renders the full markdown in place.
+const descriptionOpen = ref(false)
+const { render: renderMd } = useMarkdown()
+const renderedDescription = computed(() =>
+  project.value?.description ? renderMd(project.value.description) : '',
+)
+
 // Documents render compact — a one-line list or a pill strip — instead of full
 // cards that read like tickets. The choice is per-visitor and in-memory.
 const docsView = ref<'rows' | 'chips'>('rows')
@@ -175,9 +183,24 @@ async function removeProject() {
               legend
               class="mt-3 max-w-md"
             />
-            <p v-if="project.description" class="mt-2 line-clamp-3 max-w-3xl text-sm text-muted">
-              {{ markdownPreview(project.description) }}
-            </p>
+            <div v-if="project.description" class="mt-2 max-w-3xl">
+              <button
+                type="button"
+                class="-mx-1 flex w-full items-start gap-1.5 rounded px-1 py-0.5 text-left hover:bg-elevated/40"
+                :aria-expanded="descriptionOpen"
+                @click="descriptionOpen = !descriptionOpen"
+              >
+                <UIcon
+                  :name="descriptionOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                  class="mt-0.5 size-4 shrink-0 text-muted"
+                />
+                <span v-if="descriptionOpen" class="text-sm font-medium text-muted">Description</span>
+                <span v-else class="line-clamp-3 text-sm text-muted">
+                  {{ markdownPreview(project.description) }}
+                </span>
+              </button>
+              <div v-if="descriptionOpen" class="jx-prose jx-prose-sm mt-2 pl-6" v-html="renderedDescription" />
+            </div>
           </div>
           <div class="flex shrink-0 gap-1">
             <UTooltip :text="project.starred ? 'Starred — its takeable tickets show on Up next' : 'Star to surface this project on Up next'">

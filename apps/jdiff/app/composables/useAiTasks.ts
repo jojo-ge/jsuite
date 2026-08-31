@@ -402,12 +402,33 @@ export function useAiTasksHub(repo: Ref<string>) {
     void startAllFor(store, repo.value, { number: String(number) })
   }
 
-  function cancel(target: ReviewTarget) {
-    cancelAllFor(store, repo.value, target)
-    // Drop it from the section now rather than after the next poll.
+  function cancel(target: ReviewTarget, jobKind = 'analyze') {
+    // Non-analyze rows (detail / chains-scope / chain:*) belong to the
+    // walkthrough-mode dispatches; route their cancel with the right job so
+    // the whole chains generation clears as one.
+    if (jobKind === 'analyze') {
+      cancelAllFor(store, repo.value, target)
+    } else {
+      const job = jobKind === 'detail' ? 'detail' : 'chains'
+      $fetch('/api/ai-job-cancel', {
+        method: 'POST',
+        body: { repo: repo.value, ...targetQuery(target), job },
+      }).catch(() => { /* run may have just finished; nothing to clear */ })
+    }
+    // Drop the cancelled rows from the section now rather than after the
+    // next poll. A chains cancel clears the scope AND every chain walker.
     const id = targetId(target)
-    serverJobs.value = serverJobs.value.filter((j) => j.id !== id)
-    delete serverRunning.value[id]
+    const cancelled = (k: string) =>
+      jobKind === 'analyze'
+        ? k === 'analyze'
+        : jobKind === 'detail'
+          ? k === 'detail'
+          : k === 'chains-scope' || k.startsWith('chain:')
+    serverJobs.value = serverJobs.value.filter((j) => j.id !== id || !cancelled(j.jobKind))
+    if (serverRunning.value[id]) {
+      serverRunning.value[id] = serverRunning.value[id]!.filter((k) => !cancelled(k))
+      if (!serverRunning.value[id]!.length) delete serverRunning.value[id]
+    }
     void refresh()
   }
 

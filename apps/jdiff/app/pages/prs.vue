@@ -164,12 +164,13 @@ const filtered = computed(() => [
     <section v-if="running.length" class="jobs">
       <h2 class="jobs-label">analyzing now <span class="jobs-count">{{ running.length }}</span></h2>
       <ul class="jobs-list">
-        <li v-for="job in running" :key="job.id" class="job">
+        <li v-for="job in running" :key="job.id + ' ' + job.jobKind" class="job">
           <span class="spinner tiny" />
           <NuxtLink :to="jobLink(job)" class="job-target">{{ jobLabel(job) }}</NuxtLink>
+          <span v-if="job.jobKind !== 'analyze'" class="job-kind">{{ job.jobKind }}</span>
           <span class="job-title">{{ jobTitle(job) }}</span>
           <span class="job-elapsed">{{ elapsed(job.startedAt) }}</span>
-          <button class="job-cancel" title="stop this run" @click="cancel(job.target)">cancel</button>
+          <button class="job-cancel" title="stop this run" @click="cancel(job.target, job.jobKind)">cancel</button>
           <p v-if="job.lastLog" class="job-log">{{ job.lastLog }}</p>
         </li>
       </ul>
@@ -351,6 +352,14 @@ const filtered = computed(() => [
   font-family: var(--mono);
   font-size: 12px;
   color: var(--accent);
+}
+.job-kind {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 8px;
 }
 .job-title {
   flex: 1;

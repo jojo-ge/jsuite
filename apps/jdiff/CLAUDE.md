@@ -17,6 +17,17 @@ new guidance tool means a new artifact shape in the skill + a validator in
 in the skills, nowhere else; keep `jdiff-ask`'s question table in sync with
 `app/utils/askQuestions.ts`.
 
+Tours come in three variants: the analyze run's `overview` tour, an
+on-demand `detail` tour (`/api/tour-dispatch mode=detail` → the `jdiff-tour`
+skill), and the `chains` walkthrough — `mode=chains` dispatches a
+`jdiff-chains stage=scope` session whose manifest POST makes the server
+auto-dispatch one `jdiff-chains chain=<slug>` walker per chain
+(`server/utils/chainFanout.ts`, unfocused, 4-up packed panes). Chain tours
+may stop on unchanged code; the UI renders untouched files via
+`ContextFile.vue`. Dispatches are tracked per (repo, target, job) in
+`server/utils/herdrReview.ts` — jobs: `analyze`, `detail`, `chains-scope`,
+`chain:<slug>`.
+
 jTicket triggers reviews too: its Run-review buttons proxy to
 `POST /api/analyze-dispatch` with `ticket=`/`project=` context and
 `focus: false`. This server stays ticket-agnostic — it only relays the two

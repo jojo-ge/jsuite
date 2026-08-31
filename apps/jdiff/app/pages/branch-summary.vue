@@ -44,6 +44,20 @@ const reviewRoute = computed(() => ({
   path: '/branch',
   query: { repo: repo.value, branch: branch.value, base: base.value },
 }))
+
+// On-demand walkthrough modes (detail tour, system chains). A branch has no
+// "last pushed" moment, so nothing goes stale here.
+const modes = useTourModes(repo, target, computed(() => null))
+onMounted(() => { void modes.load() })
+const modeDetail = modes.detail
+const modeChains = modes.chains
+const detailOpen = ref(true)
+const chainsOpen = ref(true)
+const openChains = ref<Record<string, boolean>>({})
+function toggleChain(slug: string) {
+  openChains.value[slug] = !openChains.value[slug]
+  if (openChains.value[slug]) void modes.loadChainTour(slug)
+}
 function reviewAnchor(path: string): string {
   return '#f-' + path.replace(/[^a-zA-Z0-9]/g, '-')
 }
@@ -218,6 +232,91 @@ function saveAnswer(i: number) {
         </div>
       </div>
 
+      <div class="rating-card">
+        <div class="rating-head" :class="{ clickable: modeDetail.tour && !modeDetail.pending }" @click="modeDetail.tour && !modeDetail.pending && (detailOpen = !detailOpen)">
+          <span v-if="modeDetail.tour && !modeDetail.pending" class="rating-chevron">{{ detailOpen ? '▾' : '▸' }}</span>
+          <span class="card-title">{{ modeDetail.tour ? 'detail tour' : '✦ detail tour' }}</span>
+          <template v-if="modeDetail.tour">
+            <span class="rating-effort">{{ modeDetail.tour.stops.length }} stops</span>
+            <span v-if="modeDetail.at" class="rating-effort">written {{ timeAgo(modeDetail.at) }}</span>
+          </template>
+          <span class="head-actions">
+            <button v-if="!modeDetail.pending" class="log-toggle" @click.stop="modes.generate('detail')">
+              {{ modeDetail.tour ? '↻ regenerate' : '✦ generate' }}
+            </button>
+            <button v-else class="log-toggle" @click.stop="modes.cancel('detail')">cancel</button>
+            <span v-if="modeDetail.pending" class="spinner small" />
+          </span>
+        </div>
+        <div v-if="modeDetail.error" class="error-box in-card">{{ modeDetail.error }}</div>
+        <template v-if="modeDetail.tour && !modeDetail.pending && detailOpen">
+          <div class="summary-md tour-overview" v-html="renderMarkdown(modeDetail.tour.overview)" />
+          <div class="reading-title">stops — each opens the diff at that stop</div>
+          <ol class="reading-order">
+            <li v-for="(s, i) in modeDetail.tour.stops" :key="i">
+              <strong class="stop-title">{{ s.title }}</strong>
+              <div>
+                <NuxtLink :to="{ path: reviewRoute.path, query: { repo, branch, base, stop: i, tour: 'detail' } }" class="reading-path">{{ s.path }}:{{ s.line }}</NuxtLink>
+              </div>
+              <div class="item-note">{{ s.note }}</div>
+            </li>
+          </ol>
+        </template>
+        <div v-if="!modeDetail.tour && !modeDetail.pending && !modeDetail.error" class="item-note empty-note">
+          not generated yet — a dedicated session walks the change at line-by-line review depth (20-40 stops)
+        </div>
+      </div>
+
+      <div class="rating-card">
+        <div class="rating-head" :class="{ clickable: modeChains.manifest && !modeChains.scopePending }" @click="modeChains.manifest && !modeChains.scopePending && (chainsOpen = !chainsOpen)">
+          <span v-if="modeChains.manifest && !modeChains.scopePending" class="rating-chevron">{{ chainsOpen ? '▾' : '▸' }}</span>
+          <span class="card-title">{{ modeChains.manifest ? 'system chains' : '✦ system chains' }}</span>
+          <template v-if="modeChains.manifest">
+            <span class="rating-effort">{{ modeChains.manifest.chains.length }} chains</span>
+            <span v-if="modeChains.at" class="rating-effort">mapped {{ timeAgo(modeChains.at) }}</span>
+          </template>
+          <span class="head-actions">
+            <button v-if="!modeChains.scopePending && !modeChains.anyChainPending" class="log-toggle" @click.stop="modes.generate('chains')">
+              {{ modeChains.manifest ? '↻ re-map' : '✦ generate' }}
+            </button>
+            <button v-else class="log-toggle" @click.stop="modes.cancel('chains')">cancel</button>
+            <span v-if="modeChains.scopePending || modeChains.anyChainPending" class="spinner small" />
+          </span>
+        </div>
+        <div v-if="modeChains.scopeError" class="error-box in-card">{{ modeChains.scopeError }}</div>
+        <template v-if="modeChains.manifest && !modeChains.scopePending && chainsOpen">
+          <div v-if="modeChains.manifest.overview" class="summary-md tour-overview" v-html="renderMarkdown(modeChains.manifest.overview)" />
+          <ol class="reading-order">
+            <li v-for="c in modeChains.manifest.chains" :key="c.id">
+              <strong class="stop-title">
+                <button v-if="modeChains.manifest.tours[c.id]" class="chain-toggle" @click="toggleChain(c.id)">
+                  {{ openChains[c.id] ? '▾' : '▸' }} {{ c.title }}
+                </button>
+                <template v-else>{{ c.title }}</template>
+                <span v-if="modeChains.chainJobs[c.id]" class="rating-effort"> walking…</span>
+                <span v-else-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-fail"> failed</span>
+              </strong>
+              <div class="item-note">{{ c.summary }}</div>
+              <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="item-note chain-fail">
+                {{ modeChains.chainErrors[c.id] }}
+              </div>
+              <ol v-if="openChains[c.id] && modeChains.chainTours[c.id]" class="reading-order nested">
+                <li v-for="(s, i) in modeChains.chainTours[c.id]!.tour.stops" :key="i">
+                  <strong class="stop-title">{{ s.title }}</strong>
+                  <div>
+                    <NuxtLink :to="{ path: reviewRoute.path, query: { repo, branch, base, stop: i, tour: `chain:${c.id}` } }" class="reading-path">{{ s.path }}:{{ s.line }}</NuxtLink>
+                  </div>
+                  <div class="item-note">{{ s.note }}</div>
+                </li>
+              </ol>
+            </li>
+          </ol>
+        </template>
+        <div v-if="!modeChains.manifest && !modeChains.scopePending && !modeChains.scopeError" class="item-note empty-note">
+          not generated yet — one session maps the change into system chains, then jDiff walks each chain end-to-end (unchanged code included)
+        </div>
+      </div>
+
       <div id="findings-card" class="rating-card">
         <div class="rating-head" :class="{ clickable: findings && !findingsPending }" @click="findings && !findingsPending && (findingsOpen = !findingsOpen)">
           <span v-if="findings && !findingsPending" class="rating-chevron">{{ findingsOpen ? '▾' : '▸' }}</span>
@@ -378,6 +477,10 @@ a.rate-btn, a.rate-btn:hover { text-decoration: none; }
 .reading-order li::marker { color: var(--muted); }
 .reading-path { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
 span.reading-path { color: var(--text); }
+.reading-order.nested { margin-top: 8px; }
+.chain-toggle { border: none; background: none; padding: 0; font: inherit; color: var(--text); cursor: pointer; }
+.chain-toggle:hover { color: var(--accent); }
+.chain-fail { color: var(--red); }
 .summary-md :deep(> :first-child) { margin-top: 0; }
 .summary-md :deep(> :last-child) { margin-bottom: 0; }
 .summary-md :deep(p) { margin: 6px 0; }

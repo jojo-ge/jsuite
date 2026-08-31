@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { SavedAsk } from '~/utils/askQuestions'
 import type { CommentEntry } from '~/utils/comments'
+import type { TourVariant } from '~/utils/tour'
 
 export interface ReviewComment {
   id: number
@@ -204,7 +205,8 @@ const tourPending = computed(() => aiTasks.value.tour.pending)
 // Compact run status: while the herdr session works (or after a failure) the
 // page shows the run's status lines inline; the full per-tool panels live on
 // the summary page. The dispatch mirrors one log into every pending tool,
-// so the first pending tool's log is the run's log.
+// so the first pending tool's log is the run's log. This covers only the
+// analyze run — detail/chains dispatch state lives in useTourModes.
 const TOOL_KINDS = ['rating', 'risk', 'tour', 'self'] as const
 const runLog = computed(() => {
   for (const k of TOOL_KINDS) {
@@ -234,126 +236,130 @@ const summaryLine = computed(() => {
   return parts.length ? parts.join(' · ') : 'reviewability · risk heatmap · guided tour · ask yourself'
 })
 
-// null = not touring; otherwise the index of the active stop.
-const tourIndex = ref<number | null>(null)
-const currentStop = computed(() =>
-  tourIndex.value == null ? null : tour.value?.stops[tourIndex.value] ?? null,
-)
+// ---- walkthrough modes (overview / detail / chains) ----
+// The overview tour comes from the analyze run via usePrArtifacts; detail and
+// chains are on-demand dispatches owned by useTourModes. One walk serves
+// whichever tour is active.
+const modes = useTourModes(repo, computed(() => ({ number: number.value })), computed(() => pr.value?.lastPushedAt ?? null))
+onMounted(() => { void modes.load() })
+const modeDetail = modes.detail
+const modeChains = modes.chains
 
-// The tour itself lives in ~/.jdiff/tours.json; walk progress is browser
-// state, kept in localStorage keyed by repo + PR and stamped with the
-// tour's createdAt so a rewritten tour invalidates stale positions. A
-// reload (or coming back days later) resumes at the last visited stop.
-const progressKey = computed(() => `jdiff:tour-pos:${repo.value}:${number.value}`)
-const resumeIndex = ref<number | null>(null)
+type TourMode = 'overview' | 'detail' | 'chains'
+const tourMode = ref<TourMode>('overview')
+const activeChain = ref<string | null>(null)
+const modeKey = computed(() => `jdiff:tour-mode:${repo.value}:${number.value}`)
 
-function loadTourProgress() {
-  try {
-    const raw = localStorage.getItem(progressKey.value)
-    if (!raw) return
-    const saved = JSON.parse(raw)
-    if (
-      saved.tourAt === tourAt.value &&
-      Number.isInteger(saved.index) &&
-      saved.index >= 0 &&
-      saved.index < (tour.value?.stops.length ?? 0)
-    ) {
-      resumeIndex.value = saved.index
-    }
-  } catch { /* corrupt or unavailable storage: start fresh */ }
+function selectChain(slug: string) {
+  activeChain.value = slug
+  void modes.loadChainTour(slug)
 }
 
-function clearTourProgress() {
-  resumeIndex.value = null
-  try {
-    localStorage.removeItem(progressKey.value)
-  } catch { /* ignore */ }
-}
-
-// A changed stamp means a genuinely new tour: drop the active walk and any
-// remembered position, then restore whatever saved progress matches the
-// new stamp.
-watch(tourAt, () => {
-  tourIndex.value = null
-  resumeIndex.value = null
-  if (import.meta.client) loadTourProgress()
-}, { immediate: true })
-
-watch(tourIndex, (i) => {
-  if (i == null) return
-  resumeIndex.value = i
-  try {
-    localStorage.setItem(progressKey.value, JSON.stringify({ tourAt: tourAt.value, index: i }))
-  } catch { /* ignore */ }
+onMounted(() => {
+  // A ?tour= deep link outranks the remembered mode.
+  const fromQuery = String(route.query.tour ?? '')
+  if (fromQuery === 'detail' || fromQuery === 'overview') {
+    tourMode.value = fromQuery
+  } else if (fromQuery.startsWith('chain:')) {
+    tourMode.value = 'chains'
+    selectChain(fromQuery.slice('chain:'.length))
+  } else {
+    try {
+      const saved = localStorage.getItem(modeKey.value)
+      if (saved === 'overview' || saved === 'detail' || saved === 'chains') tourMode.value = saved
+    } catch { /* ignore */ }
+  }
+})
+watch(tourMode, (m) => {
+  try { localStorage.setItem(modeKey.value, m) } catch { /* ignore */ }
 })
 
-async function focusStop() {
-  const s = currentStop.value
-  if (!s) return
-  if (closedFiles.value.includes(s.path)) {
-    closedFiles.value = closedFiles.value.filter((p) => p !== s.path)
+// Entering chains mode with nothing selected: pick the first walked chain.
+watch([tourMode, () => modeChains.value.manifest, () => modeChains.value.manifest?.tours], () => {
+  if (tourMode.value !== 'chains' || activeChain.value) return
+  const m = modeChains.value.manifest
+  const first = m?.chains.find((c) => m.tours[c.id])
+  if (first) selectChain(first.id)
+}, { immediate: true })
+
+const activeVariant = computed<TourVariant>(() => {
+  if (tourMode.value === 'detail') return 'detail'
+  if (tourMode.value === 'chains' && activeChain.value) return `chain:${activeChain.value}`
+  return 'overview'
+})
+const activeTour = computed(() => {
+  if (tourMode.value === 'overview') return tour.value
+  if (tourMode.value === 'detail') return modeDetail.value.tour
+  return activeChain.value ? modeChains.value.chainTours[activeChain.value]?.tour ?? null : null
+})
+const activeTourAt = computed(() => {
+  if (tourMode.value === 'overview') return tourAt.value
+  if (tourMode.value === 'detail') return modeDetail.value.at
+  return activeChain.value ? modeChains.value.chainTours[activeChain.value]?.createdAt ?? '' : ''
+})
+const activePending = computed(() => {
+  if (tourMode.value === 'overview') return tourPending.value
+  if (tourMode.value === 'detail') return modeDetail.value.pending
+  return modeChains.value.scopePending
+    || (!!activeChain.value && !!modeChains.value.chainJobs[activeChain.value])
+})
+const activeChainTitle = computed(() =>
+  modeChains.value.manifest?.chains.find((c) => c.id === activeChain.value)?.title ?? activeChain.value ?? '')
+
+// Component handles for revealing a stop's line before scrolling to it:
+// DiffFiles expand gaps / flip to full view, ContextFiles fetch their file.
+const diffFileRefs = ref<Record<string, any>>({})
+const contextFileRefs = ref<Record<string, any>>({})
+
+// Untouched files the active tour stops in — chain tours walk the systems
+// around the change, so their stops aren't confined to the diff.
+const contextPaths = computed(() => {
+  const t = activeTour.value
+  if (!t) return [] as string[]
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const s of t.stops) {
+    if (diffPaths.value.has(s.path) || seen.has(s.path)) continue
+    seen.add(s.path)
+    out.push(s.path)
+  }
+  return out
+})
+function contextStopsFor(path: string) {
+  return activeTour.value?.stops.filter((s) => s.path === path) ?? []
+}
+
+async function beforeFocusStop(stop: { path: string; side: 'LEFT' | 'RIGHT'; line: number }) {
+  if (closedFiles.value.includes(stop.path)) {
+    closedFiles.value = closedFiles.value.filter((p) => p !== stop.path)
   }
   await nextTick()
-  const el =
-    document.getElementById(anchorFor(s.path) + '-tour') ??
-    document.getElementById(anchorFor(s.path))
-  el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-}
-
-function jumpToStop(i: number) {
-  tourIndex.value = i
-  focusStop()
-}
-
-function nextStop() {
-  if (tourIndex.value == null || !tour.value) return
-  if (tourIndex.value >= tour.value.stops.length - 1) {
-    endTour()
-    return
-  }
-  tourIndex.value++
-  focusStop()
-}
-
-function prevStop() {
-  if (tourIndex.value == null || tourIndex.value === 0) return
-  tourIndex.value--
-  focusStop()
-}
-
-function endTour() {
-  tourIndex.value = null
-}
-
-function onTourKey(e: KeyboardEvent) {
-  // Comment mode is layered over the diff and owns the keyboard while it's
-  // open — esc should close it, not end the tour underneath.
-  if (tourIndex.value == null || showCommentList.value) return
-  const t = e.target as HTMLElement | null
-  if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return
-  if (e.key === 'ArrowRight' || e.key === 'n') {
-    e.preventDefault()
-    nextStop()
-  } else if (e.key === 'ArrowLeft' || e.key === 'p') {
-    e.preventDefault()
-    prevStop()
-  } else if (e.key === 'Escape') {
-    endTour()
+  if (diffPaths.value.has(stop.path)) {
+    await diffFileRefs.value[stop.path]?.revealLine?.(stop.side, stop.line)
+  } else {
+    await contextFileRefs.value[stop.path]?.ensureLoaded?.()
   }
 }
-onMounted(() => window.addEventListener('keydown', onTourKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onTourKey))
 
-// Arriving from the summary page's stop list (?stop=i): start the walk at
-// that stop once the tour and the diff are both here to scroll into.
-onMounted(() => {
-  const requested = Number(route.query.stop)
-  if (!Number.isInteger(requested)) return
-  const unwatch = watch([tour, diff], () => {
-    if (!tour.value || !diff.value) return
-    nextTick(() => unwatch())
-    if (requested >= 0 && requested < tour.value.stops.length) jumpToStop(requested)
-  }, { immediate: true })
+const {
+  tourIndex,
+  currentStop,
+  resumeIndex,
+  jumpToStop,
+  nextStop,
+  prevStop,
+  endTour,
+  clearTourProgress,
+} = useTourWalk({
+  repo,
+  storeKey: number,
+  variant: activeVariant,
+  tour: activeTour,
+  tourAt: activeTourAt,
+  anchorFor,
+  beforeFocus: beforeFocusStop,
+  keyboardBlocked: showCommentList,
+  ready: computed(() => !!diff.value),
 })
 
 // No unmount cleanup or leave-page warning for review runs: the claude
@@ -371,42 +377,62 @@ function onFileLinkClick(e: MouseEvent, path: string) {
 // Review checklist: the sidebar's default view once guidance artifacts
 // exist. Done-flags are browser state (localStorage keyed by repo + PR),
 // stamped with each artifact's createdAt so a regenerated tour or risk map
-// resets its own section without touching the other.
+// resets its own section without touching the other. The reading-order
+// section follows the ACTIVE tour; each variant's done-flags live under
+// their own key (the overview's stay in the legacy combined entry).
 const hasChecklist = computed(() => !!(tour.value || sortedRisks.value.length || selfQs.value))
 const stopsDone = ref<boolean[]>([])
 const risksDone = ref<boolean[]>([])
 const checklistKey = computed(() => `jdiff:checklist:${repo.value}:${number.value}`)
+const stopsKey = computed(() =>
+  activeVariant.value === 'overview' ? checklistKey.value : `${checklistKey.value}:${activeVariant.value}`)
 
-function restoreChecklist() {
+function restoreStops() {
+  try {
+    const raw = localStorage.getItem(stopsKey.value)
+    if (!raw) return
+    const s = JSON.parse(raw)
+    if (s.tourAt === activeTourAt.value && Array.isArray(s.stops) && s.stops.length === stopsDone.value.length) {
+      stopsDone.value = s.stops.map(Boolean)
+    }
+  } catch { /* corrupt or unavailable storage: start unchecked */ }
+}
+
+function restoreRisks() {
   try {
     const raw = localStorage.getItem(checklistKey.value)
     if (!raw) return
     const s = JSON.parse(raw)
-    if (s.tourAt === tourAt.value && Array.isArray(s.stops) && s.stops.length === stopsDone.value.length) {
-      stopsDone.value = s.stops.map(Boolean)
-    }
     if (s.riskAt === riskAt.value && Array.isArray(s.risks) && s.risks.length === risksDone.value.length) {
       risksDone.value = s.risks.map(Boolean)
     }
   } catch { /* corrupt or unavailable storage: start unchecked */ }
 }
 
-watch([tour, tourAt], () => {
-  stopsDone.value = Array(tour.value?.stops.length ?? 0).fill(false)
-  restoreChecklist()
+watch([activeTour, activeTourAt], () => {
+  stopsDone.value = Array(activeTour.value?.stops.length ?? 0).fill(false)
+  restoreStops()
 }, { immediate: true })
 watch([sortedRisks, riskAt], () => {
   risksDone.value = Array(sortedRisks.value.length).fill(false)
-  restoreChecklist()
+  restoreRisks()
 }, { immediate: true })
 watch([stopsDone, risksDone], () => {
   try {
-    localStorage.setItem(checklistKey.value, JSON.stringify({
-      tourAt: tourAt.value,
-      riskAt: riskAt.value,
-      stops: stopsDone.value,
-      risks: risksDone.value,
-    }))
+    if (activeVariant.value === 'overview') {
+      localStorage.setItem(checklistKey.value, JSON.stringify({
+        tourAt: activeTourAt.value,
+        riskAt: riskAt.value,
+        stops: stopsDone.value,
+        risks: risksDone.value,
+      }))
+    } else {
+      localStorage.setItem(stopsKey.value, JSON.stringify({ tourAt: activeTourAt.value, stops: stopsDone.value }))
+      // Risks always live in the legacy combined entry, whichever tour shows.
+      let prev: any = {}
+      try { prev = JSON.parse(localStorage.getItem(checklistKey.value) ?? '{}') } catch { /* ignore */ }
+      localStorage.setItem(checklistKey.value, JSON.stringify({ ...prev, riskAt: riskAt.value, risks: risksDone.value }))
+    }
   } catch { /* ignore */ }
 }, { deep: true })
 
@@ -489,9 +515,14 @@ function openSelfCard() {
       </p>
 
       <div class="tour-cta">
-        <template v-if="tour && !tourPending">
+        <div class="tour-modes">
+          <button :class="{ on: tourMode === 'overview' }" :aria-pressed="tourMode === 'overview'" title="the analyze run's first-read tour" @click="tourMode = 'overview'">overview</button>
+          <button :class="{ on: tourMode === 'detail' }" :aria-pressed="tourMode === 'detail'" title="fine-grained walkthrough at review depth" @click="tourMode = 'detail'">detail</button>
+          <button :class="{ on: tourMode === 'chains' }" :aria-pressed="tourMode === 'chains'" title="each piece of behavior walked end-to-end across the systems it touches" @click="tourMode = 'chains'">chains</button>
+        </div>
+        <template v-if="activeTour && !activePending">
           <button class="tour-go" @click="jumpToStop(resumeIndex ?? 0)">
-            {{ resumeIndex ? `▶ resume tour ${resumeIndex + 1}/${tour.stops.length}` : '▶ start code tour' }}
+            {{ resumeIndex ? `▶ resume tour ${resumeIndex + 1}/${activeTour.stops.length}` : '▶ start code tour' }}
           </button>
           <button
             v-if="resumeIndex"
@@ -501,6 +532,28 @@ function openSelfCard() {
           >restart</button>
           <span class="tour-hint">← → to move · esc ends</span>
         </template>
+        <template v-else-if="tourMode === 'detail' && !activePending">
+          <button class="rate-btn" title="one herdr claude session (opus 5) walks the change at line-by-line review depth" @click="modes.generate('detail')">
+            ✦ generate detail tour
+          </button>
+          <span v-if="modeDetail.error" class="mode-error">{{ modeDetail.error }}</span>
+        </template>
+        <template v-else-if="tourMode === 'detail'">
+          <span class="spinner small" />
+          <span class="tour-hint">generating detail tour…</span>
+          <button class="log-toggle" @click="modes.cancel('detail')">cancel</button>
+        </template>
+        <template v-else-if="tourMode === 'chains' && modeChains.scopePending">
+          <span class="spinner small" />
+          <span class="tour-hint">scoping the change into chains…</span>
+          <button class="log-toggle" @click="modes.cancel('chains')">cancel</button>
+        </template>
+        <template v-else-if="tourMode === 'chains' && !modeChains.manifest">
+          <button class="rate-btn" title="one session decomposes the change into system chains, then jDiff dispatches one walker session per chain" @click="modes.generate('chains')">
+            ✦ map system chains
+          </button>
+          <span v-if="modeChains.scopeError" class="mode-error">{{ modeChains.scopeError }}</span>
+        </template>
         <button
           class="rate-btn run-all"
           :title="anyPending ? 'stop watching the run' : 'one herdr claude session (opus 5) generates reviewability, risk heatmap, guided tour, ask yourself, and findings together'"
@@ -509,6 +562,49 @@ function openSelfCard() {
           <span v-if="anyPending" class="spinner small" />
           {{ anyPending ? 'cancel run' : '✦ run all tools' }}
         </button>
+      </div>
+
+      <div v-if="tourMode === 'detail' && modeDetail.tour && modeDetail.stale && !modeDetail.pending" class="stale-banner">
+        <span class="stale-badge">out of date</span>
+        <span>the PR was pushed after the detail tour was generated</span>
+        <button class="rate-btn" @click="modes.generate('detail')">↻ regenerate</button>
+      </div>
+
+      <div v-if="tourMode === 'chains' && modeChains.manifest" class="rating-card chains-card">
+        <div class="rating-head">
+          <span class="card-title">⛓ system chains</span>
+          <span class="rating-effort">{{ modeChains.manifest.chains.length }} chains · walk each end-to-end, unchanged code included</span>
+          <span class="head-actions">
+            <span v-if="modeChains.stale" class="stale-badge">out of date</span>
+            <button v-if="modeChains.anyChainPending" class="rate-btn" @click="modes.cancel('chains')">cancel walkers</button>
+            <button v-else class="rate-btn" title="re-scope the change and re-walk every chain" @click="modes.generate('chains')">↻ re-map</button>
+          </span>
+        </div>
+        <div v-if="modeChains.manifest.overview" class="chains-overview" v-html="renderMarkdown(modeChains.manifest.overview)" />
+        <ul class="chain-list">
+          <li v-for="c in modeChains.manifest.chains" :key="c.id">
+            <button
+              class="chain-row"
+              :class="{ on: activeChain === c.id }"
+              :disabled="!modeChains.manifest.tours[c.id]"
+              @click="selectChain(c.id)"
+            >
+              <span class="chain-title">{{ c.title }}</span>
+              <span class="chain-sum">{{ c.summary }}</span>
+              <span class="chain-state">
+                <template v-if="modeChains.manifest.tours[c.id]">
+                  {{ modeChains.chainTours[c.id] ? `${modeChains.chainTours[c.id]!.tour.stops.length} stops` : 'ready' }}
+                </template>
+                <template v-else-if="modeChains.chainJobs[c.id]"><span class="spinner small" /> walking…</template>
+                <template v-else-if="modeChains.chainErrors[c.id]"><span class="chain-fail">failed</span></template>
+                <template v-else>queued</template>
+              </span>
+            </button>
+            <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-error">
+              {{ modeChains.chainErrors[c.id] }}
+            </div>
+          </li>
+        </ul>
       </div>
 
       <div v-if="anyPending || runErrors.length" class="rating-card">
@@ -633,13 +729,15 @@ function openSelfCard() {
                 >
                   <div class="todo-fill" :style="{ transform: `scaleX(${checklistPct / 100})` }" />
                 </div>
-                <button v-if="tour" class="todo-next" @click="nextUnreviewed()">next unreviewed →</button>
+                <button v-if="activeTour" class="todo-next" @click="nextUnreviewed()">next unreviewed →</button>
               </div>
 
-              <div v-if="tour" class="todo-sec">
-                <div class="todo-label">reading order</div>
+              <div v-if="activeTour" class="todo-sec">
+                <div class="todo-label">
+                  reading order<template v-if="tourMode !== 'overview'"> · {{ tourMode === 'detail' ? 'detail' : activeChainTitle }}</template>
+                </div>
                 <ol class="todo-items">
-                  <li v-for="(s, i) in tour.stops" :key="i" class="todo-item">
+                  <li v-for="(s, i) in activeTour.stops" :key="i" class="todo-item">
                     <input v-model="stopsDone[i]" type="checkbox" :aria-label="`mark stop ${i + 1} reviewed`">
                     <button
                       class="todo-link"
@@ -695,6 +793,7 @@ function openSelfCard() {
         <DiffFile
           v-for="f in visibleFiles"
           :key="f.path"
+          :ref="(el: any) => { if (el) diffFileRefs[f.path] = el; else delete diffFileRefs[f.path] }"
           :file="f"
           :anchor="anchorFor(f.path)"
           :repo="repo"
@@ -707,14 +806,28 @@ function openSelfCard() {
           @asked="refreshAsks()"
           @close="closeFile(f.path)"
         />
+        <ContextFile
+          v-for="p in contextPaths"
+          :key="'ctx-' + p"
+          :ref="(el: any) => { if (el) contextFileRefs[p] = el; else delete contextFileRefs[p] }"
+          :repo="repo"
+          :target-query="{ number }"
+          :path="p"
+          :anchor="anchorFor(p)"
+          :stops="contextStopsFor(p)"
+          :tour-stop="currentStop && currentStop.path === p ? currentStop : null"
+        />
         <div v-if="!diff.files.length" class="center muted">empty diff</div>
-        <div v-else-if="!visibleFiles.length" class="center muted">all files closed</div>
+        <div v-else-if="!visibleFiles.length && !contextPaths.length" class="center muted">all files closed</div>
       </div>
     </div>
 
-    <div v-if="currentStop && tour" class="tour-bar">
+    <div v-if="currentStop && activeTour" class="tour-bar">
       <div class="tour-bar-head">
-        <span class="tour-step">{{ tourIndex! + 1 }}/{{ tour.stops.length }}</span>
+        <span class="tour-step">
+          <template v-if="tourMode === 'detail'">detail </template>
+          <template v-else-if="tourMode === 'chains'">chain </template>{{ tourIndex! + 1 }}/{{ activeTour.stops.length }}
+        </span>
         <span class="tour-bar-title">{{ currentStop.title }}</span>
         <span class="tour-bar-path">{{ currentStop.path }}:{{ currentStop.line }}</span>
         <button class="tour-x" title="end tour (esc)" @click="endTour">×</button>
@@ -724,7 +837,7 @@ function openSelfCard() {
         <span class="tour-keys">← → to navigate · esc to end</span>
         <button class="tour-nav" :disabled="tourIndex === 0" @click="prevStop">← prev</button>
         <button class="tour-nav primary" @click="nextStop">
-          {{ tourIndex === tour.stops.length - 1 ? 'finish ✓' : 'next →' }}
+          {{ tourIndex === activeTour.stops.length - 1 ? 'finish ✓' : 'next →' }}
         </button>
       </div>
     </div>
@@ -826,6 +939,93 @@ function openSelfCard() {
   color: var(--muted);
 }
 .tour-cta .run-all { margin-left: auto; }
+/* Walkthrough mode selector: the FileNav segmented-modes idiom. */
+.tour-modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.tour-modes button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tour-modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tour-modes button.on {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.mode-error {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+}
+/* Chains panel: the manifest and one row per chain; selecting a walked
+   chain makes it the active tour. */
+.chains-card { margin-bottom: 16px; }
+.chains-overview {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 8px 12px 0;
+}
+.chain-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chain-row {
+  display: grid;
+  grid-template-columns: minmax(140px, auto) 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.chain-row:hover:not(:disabled) { border-color: var(--accent); }
+.chain-row.on { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
+.chain-row:disabled { cursor: default; opacity: 0.75; }
+.chain-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.chain-sum {
+  font-size: 12px;
+  color: var(--muted);
+}
+.chain-state {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.chain-fail { color: var(--red); }
+.chain-error {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--red);
+  padding: 2px 10px 0;
+}
 /* Same quiet register as the meta line: the badge carries the color, the
    button is the ordinary rate-btn. */
 .stale-banner {

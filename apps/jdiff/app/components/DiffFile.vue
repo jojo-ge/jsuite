@@ -215,17 +215,45 @@ function tourMatch(row: Row): boolean {
   return c.num != null && c.type !== 'empty' && c.num >= t.line && c.num <= t.endLine
 }
 
+// Gap and full-file rows carry tour highlights too — detail and chain tours
+// may stop on unchanged code, revealed via revealLine() below.
+function gapTourNum(r: GapRow): number {
+  return props.tourStop?.side === 'LEFT' ? r.leftNum : r.rightNum
+}
+
+function gapTourMatch(r: GapRow): boolean {
+  const t = props.tourStop
+  if (!t) return false
+  const n = gapTourNum(r)
+  return n >= t.line && n <= t.endLine
+}
+
+// Full view renders the head version only, so it can anchor RIGHT stops.
+function fullTourMatch(n: number): boolean {
+  const t = props.tourStop
+  return !!t && t.side === 'RIGHT' && n >= t.line && n <= t.endLine
+}
+
 const tourStartLine = computed(() => {
   const t = props.tourStop
   if (!t) return null
   let best: number | null = null
+  const consider = (n: number) => {
+    if (n >= t.line && n <= t.endLine && (best == null || n < best)) best = n
+  }
+  if (mode.value === 'full' && fullLines.value) {
+    if (t.side === 'RIGHT' && t.line <= fullLines.value.length) return t.line
+    return null
+  }
   for (const h of props.file.hunks) {
     for (const r of h.rows) {
       const c = tourCell(r)
-      if (c.num != null && c.type !== 'empty' && c.num >= t.line && c.num <= t.endLine) {
-        if (best == null || c.num < best) best = c.num
-      }
+      if (c.num != null && c.type !== 'empty') consider(c.num)
     }
+  }
+  for (const gv of gapViews.value) {
+    if (!gv) continue
+    for (const r of [...gv.topRows, ...gv.bottomRows]) consider(gapTourNum(r))
   }
   return best
 })
@@ -233,6 +261,55 @@ const tourStartLine = computed(() => {
 function tourStart(row: Row): boolean {
   return tourStartLine.value != null && tourCell(row).num === tourStartLine.value
 }
+
+function gapTourStart(r: GapRow): boolean {
+  return tourStartLine.value != null && gapTourMatch(r) && gapTourNum(r) === tourStartLine.value
+}
+
+// Which gap holds an unrendered RIGHT-side line, if any.
+function gapIndexFor(line: number): number | null {
+  const gs = gaps.value
+  for (let gi = 0; gi < gs.length; gi++) {
+    const g = gs[gi]!
+    const total = g.hidden ?? (fullLines.value ? Math.max(0, fullLines.value.length - g.rightEnd) : null)
+    if (total == null) {
+      // Trailing gap of unknown size: anything past the last hunk lands here.
+      if (line > g.rightEnd) return gi
+      continue
+    }
+    if (line > g.rightEnd && line <= g.rightEnd + total) return gi
+  }
+  return null
+}
+
+// Make a line visible before the page scrolls a tour stop to it: no-op for
+// hunk lines, expand the surrounding gap for hidden context, fall back to
+// the full-file view when the line can't be placed in a gap. LEFT-side lines
+// only exist in hunks (gaps and full view render the head version), so an
+// off-hunk LEFT stop degrades to the file header.
+async function revealLine(side: 'LEFT' | 'RIGHT', line: number): Promise<void> {
+  collapsed.value = false
+  for (const h of props.file.hunks) {
+    for (const r of h.rows) {
+      const c = side === 'LEFT' ? r.left : r.right
+      if (c.num === line && c.type !== 'empty') return
+    }
+  }
+  if (side === 'LEFT') return
+  if (mode.value !== 'full') {
+    const gi = gapIndexFor(line)
+    if (gi != null) {
+      await expandGap(gi, 'all')
+      await nextTick()
+      return
+    }
+    mode.value = 'full'
+  }
+  await ensureFullLines()
+  await nextTick()
+}
+
+defineExpose({ revealLine, path: props.file.path })
 
 // Jump targets for comment mode: every rendered hunk cell carries the line
 // it belongs to, so the page can find "RIGHT:42" inside this file and flash
@@ -517,8 +594,12 @@ async function copyAsk(a: SavedAsk) {
         <div v-if="fullBusy" class="binary">loading full file…</div>
         <div v-else-if="fullLines" class="full-grid">
           <template v-for="(html, i) in fullLines" :key="i">
-            <div class="num" :class="addedLines.has(i + 1) ? 'add' : 'ctx'">{{ i + 1 }}</div>
-            <div class="code" :class="addedLines.has(i + 1) ? 'add' : 'ctx'" v-html="html" />
+            <div
+              :id="tourStartLine === i + 1 ? anchor + '-tour' : undefined"
+              class="num"
+              :class="[addedLines.has(i + 1) ? 'add' : 'ctx', { tour: fullTourMatch(i + 1), 'tour-edge': fullTourMatch(i + 1) }]"
+            >{{ i + 1 }}</div>
+            <div class="code" :class="[addedLines.has(i + 1) ? 'add' : 'ctx', { tour: fullTourMatch(i + 1) }]" v-html="html" />
           </template>
         </div>
       </div>
@@ -526,10 +607,10 @@ async function copyAsk(a: SavedAsk) {
         <template v-for="(hunk, hi) in file.hunks" :key="hi">
           <template v-if="gapViews[hi]">
             <template v-for="r in gapViews[hi]!.topRows" :key="'gt' + r.rightNum">
-              <div class="num ctx">{{ r.leftNum }}</div>
-              <div class="code ctx" v-html="r.html" />
-              <div class="num ctx">{{ r.rightNum }}</div>
-              <div class="code ctx" v-html="r.html" />
+              <div :id="gapTourStart(r) ? anchor + '-tour' : undefined" class="num ctx" :class="{ tour: gapTourMatch(r), 'tour-edge': gapTourMatch(r) }">{{ r.leftNum }}</div>
+              <div class="code ctx" :class="{ tour: gapTourMatch(r) }" v-html="r.html" />
+              <div class="num ctx" :class="{ tour: gapTourMatch(r) }">{{ r.rightNum }}</div>
+              <div class="code ctx" :class="{ tour: gapTourMatch(r) }" v-html="r.html" />
             </template>
             <div v-if="gapViews[hi]!.remaining !== 0" class="expander">
               <button
@@ -551,10 +632,10 @@ async function copyAsk(a: SavedAsk) {
               >↑ 20</button>
             </div>
             <template v-for="r in gapViews[hi]!.bottomRows" :key="'gb' + r.rightNum">
-              <div class="num ctx">{{ r.leftNum }}</div>
-              <div class="code ctx" v-html="r.html" />
-              <div class="num ctx">{{ r.rightNum }}</div>
-              <div class="code ctx" v-html="r.html" />
+              <div :id="gapTourStart(r) ? anchor + '-tour' : undefined" class="num ctx" :class="{ tour: gapTourMatch(r), 'tour-edge': gapTourMatch(r) }">{{ r.leftNum }}</div>
+              <div class="code ctx" :class="{ tour: gapTourMatch(r) }" v-html="r.html" />
+              <div class="num ctx" :class="{ tour: gapTourMatch(r) }">{{ r.rightNum }}</div>
+              <div class="code ctx" :class="{ tour: gapTourMatch(r) }" v-html="r.html" />
             </template>
           </template>
           <div class="hunk-header">{{ hunk.header }}</div>
@@ -688,10 +769,10 @@ async function copyAsk(a: SavedAsk) {
 
         <template v-if="gapViews[file.hunks.length]">
           <template v-for="r in gapViews[file.hunks.length]!.topRows" :key="'gt' + r.rightNum">
-            <div class="num ctx">{{ r.leftNum }}</div>
-            <div class="code ctx" v-html="r.html" />
-            <div class="num ctx">{{ r.rightNum }}</div>
-            <div class="code ctx" v-html="r.html" />
+            <div :id="gapTourStart(r) ? anchor + '-tour' : undefined" class="num ctx" :class="{ tour: gapTourMatch(r), 'tour-edge': gapTourMatch(r) }">{{ r.leftNum }}</div>
+            <div class="code ctx" :class="{ tour: gapTourMatch(r) }" v-html="r.html" />
+            <div class="num ctx" :class="{ tour: gapTourMatch(r) }">{{ r.rightNum }}</div>
+            <div class="code ctx" :class="{ tour: gapTourMatch(r) }" v-html="r.html" />
           </template>
           <div v-if="gapViews[file.hunks.length]!.remaining !== 0" class="expander">
             <button

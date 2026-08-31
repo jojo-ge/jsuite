@@ -3,15 +3,17 @@
 // jDiff runs NO claude of its own: review guidance is produced by an
 // interactive claude session dispatched into herdr (one workspace per
 // reviewed repo, one single-pane job tab per run, model pinned to Opus 5).
-// The session runs the globally-installed `jdiff-review` / `jdiff-ask`
-// skills, which POST their artifacts back to this app's HTTP API
-// (/api/review-artifact, /api/ask-result, /api/review-complete).
+// The session runs the globally-installed `jdiff-review` / `jdiff-ask` /
+// `jdiff-tour` / `jdiff-chains` skills, which POST their artifacts back to
+// this app's HTTP API (/api/review-artifact, /api/ask-result,
+// /api/review-complete).
 //
 // The adapter itself lives in @jsuite/herdr (shared with jTicket and jMap).
 // Re-exported here so Nitro auto-imports pick the names up. Unlike jTicket's
 // --no-focus rule, jDiff dispatch deliberately focuses the new tab and brings
 // the herdr window forward — "run all tools" is an explicit hand-off to a
-// visible session, not background work.
+// visible session, not background work. Chain fan-out sessions are the
+// exception: they never focus (N of them would fight over the window).
 
 export {
   HerdrError,
@@ -20,6 +22,7 @@ export {
   invalidateHerdrState,
   ensureHerdrWorkspace,
   createJobTab,
+  acquirePackedPane,
   focusHerdrWindow,
   startClaudeIn,
 } from '@jsuite/herdr'
@@ -27,17 +30,30 @@ export {
 /** Every review session runs on Opus 5, per suite policy. */
 export const REVIEW_MODEL = 'claude-opus-5'
 
-export const REVIEW_TOOLS = ['rating', 'risk', 'tour', 'questions', 'findings'] as const
+export const REVIEW_TOOLS = ['rating', 'risk', 'tour', 'questions', 'findings', 'chains'] as const
 export type ReviewTool = (typeof REVIEW_TOOLS)[number]
 
-// One live dispatch per (repo, target). This registry only *tracks* work —
-// the claude process belongs to herdr and outlives jDiff restarts; losing an
-// entry loses the "running" badge, never the run. Artifacts still land via
-// the POST endpoints whether or not the dispatch is remembered.
+// A target can have several kinds of session live at once: the five-artifact
+// analyze run, an on-demand detail tour, a chains scoping session, and one
+// walker per chain. Each is its own dispatch, keyed by job id.
+export type ReviewJob = 'analyze' | 'detail' | 'chains-scope' | `chain:${string}`
+
+/** Which artifacts a job's session is expected to POST before it is done. */
+export function pendingToolsFor(job: ReviewJob): ReviewTool[] {
+  if (job === 'analyze') return ['rating', 'risk', 'tour', 'questions', 'findings']
+  if (job === 'chains-scope') return ['chains']
+  return ['tour']
+}
+
+// One live dispatch per (repo, target, job). This registry only *tracks*
+// work — the claude process belongs to herdr and outlives jDiff restarts;
+// losing an entry loses the "running" badge, never the run. Artifacts still
+// land via the POST endpoints whether or not the dispatch is remembered.
 export interface ReviewDispatch {
   repo: string
   // The target's storeKey: a bare PR number, or "branch/<name>".
   number: string
+  job: ReviewJob
   startedAt: number
   agent: string
   workspaceId: string
@@ -53,50 +69,57 @@ const dispatches = new Map<string, ReviewDispatch>()
 // this age the entry is dropped and the reason saved, so the UI shows why.
 const STALE_MS = 60 * 60 * 1000
 
-const keyOf = (repo: string, number: string) => `${repo} ${number}`
+const keyOf = (repo: string, number: string, job: ReviewJob) => `${repo} ${number} ${job}`
 
 function sweep(): void {
   const now = Date.now()
   for (const [key, d] of dispatches) {
     if (now - d.startedAt < STALE_MS) continue
     dispatches.delete(key)
-    saveFailures({
-      repo: d.repo,
-      number: d.number,
-      failures: [{
-        jobKind: 'analyze',
-        message: `the herdr review session (agent ${d.agent}) never reported back — it may have been closed or interrupted`,
-        at: new Date().toISOString(),
-      }],
-    })
+    appendFailures(d.repo, d.number, [{
+      jobKind: d.job,
+      message: `the herdr session (agent ${d.agent}) never reported back — it may have been closed or interrupted`,
+      at: new Date().toISOString(),
+    }])
   }
 }
 
-export function registerReviewDispatch(d: Omit<ReviewDispatch, 'pending'>): ReviewDispatch {
-  const entry: ReviewDispatch = { ...d, pending: new Set(REVIEW_TOOLS) }
-  dispatches.set(keyOf(d.repo, d.number), entry)
-  // This run supersedes whatever the last one failed with.
-  saveFailures({ repo: d.repo, number: d.number, failures: [] })
+export function registerReviewDispatch(d: Omit<ReviewDispatch, 'pending' | 'job'> & { job?: ReviewJob }): ReviewDispatch {
+  const job = d.job ?? 'analyze'
+  const entry: ReviewDispatch = { ...d, job, pending: new Set(pendingToolsFor(job)) }
+  dispatches.set(keyOf(d.repo, d.number, job), entry)
+  // This run supersedes whatever the last one of its kind failed with. A new
+  // scope run also supersedes the chain walkers it is about to replace.
+  clearFailures(d.repo, d.number, (kind) =>
+    kind === job || (job === 'chains-scope' && kind.startsWith('chain:')))
   return entry
 }
 
-export function getReviewDispatch(repo: string, number: string): ReviewDispatch | null {
+export function getReviewDispatch(repo: string, number: string, job: ReviewJob = 'analyze'): ReviewDispatch | null {
   sweep()
-  return dispatches.get(keyOf(repo, number)) ?? null
+  return dispatches.get(keyOf(repo, number, job)) ?? null
 }
 
 /** The session posted one artifact; the dispatch completes when none are left. */
-export function markReviewToolPosted(repo: string, number: string, tool: ReviewTool): void {
-  const d = dispatches.get(keyOf(repo, number))
+export function markReviewToolPosted(repo: string, number: string, job: ReviewJob, tool: ReviewTool): void {
+  const d = dispatches.get(keyOf(repo, number, job))
   if (!d) return
   d.pending.delete(tool)
-  if (!d.pending.size) dispatches.delete(keyOf(repo, number))
+  if (!d.pending.size) dispatches.delete(keyOf(repo, number, job))
 }
 
-export function clearReviewDispatch(repo: string, number: string): ReviewDispatch | null {
-  const d = dispatches.get(keyOf(repo, number)) ?? null
-  dispatches.delete(keyOf(repo, number))
+export function clearReviewDispatch(repo: string, number: string, job: ReviewJob = 'analyze'): ReviewDispatch | null {
+  const d = dispatches.get(keyOf(repo, number, job)) ?? null
+  dispatches.delete(keyOf(repo, number, job))
   return d
+}
+
+/** Every live dispatch for one target, analyze first. */
+export function targetDispatches(repo: string, number: string): ReviewDispatch[] {
+  sweep()
+  return [...dispatches.values()]
+    .filter((d) => d.repo === repo && d.number === number)
+    .sort((a, b) => (a.job === 'analyze' ? -1 : b.job === 'analyze' ? 1 : a.startedAt - b.startedAt))
 }
 
 export function allReviewDispatches(repo: string): ReviewDispatch[] {

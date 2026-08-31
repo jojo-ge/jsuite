@@ -1,6 +1,6 @@
 import { RISK_LEVELS, type FileRisk } from '../../app/utils/risk'
 import { FINDING_SEVERITIES, type Finding } from '../../app/utils/findings'
-import type { Tour, TourStop } from '../../app/utils/tour'
+import type { ChainsManifest, Tour, TourStop, TourVariant } from '../../app/utils/tour'
 import type { SelfQuestion } from '../../app/utils/askYourself'
 
 // Result validators for the review-guidance artifacts. The artifacts are
@@ -18,7 +18,32 @@ export interface ReviewRating {
 }
 
 export const MAX_TOUR_STOPS = 20
+export const MAX_DETAIL_STOPS = 40
+export const MAX_CHAINS = 8
 export const QUESTION_COUNT = 3
+
+// Chain ids travel from the scoping manifest into herdr prompts and tour
+// variants; the slug grammar is the sanitization boundary (like JTICKET_KEY).
+export const CHAIN_SLUG = /^[a-z][a-z0-9-]{0,39}$/
+
+/** Stop cap for a tour variant: overview 20, detail 40, 20 per chain. */
+export function maxStopsFor(variant: TourVariant): number {
+  return variant === 'detail' ? MAX_DETAIL_STOPS : MAX_TOUR_STOPS
+}
+
+// The tour POST's optional `variant` sibling field. Chain variants must name
+// a slug from the target's saved manifest — an agent posting for a chain the
+// scoping run never defined is a bug, not a new chain.
+export function parseTourVariant(raw: unknown, chainSlugs: Set<string>): TourVariant {
+  if (raw === undefined || raw === null || raw === 'overview') return 'overview'
+  if (raw === 'detail') return 'detail'
+  if (typeof raw === 'string' && raw.startsWith('chain:')) {
+    const slug = raw.slice('chain:'.length)
+    if (CHAIN_SLUG.test(slug) && chainSlugs.has(slug)) return `chain:${slug}`
+    throw createError({ statusCode: 400, message: `unknown chain "${slug}" — not in the saved chains manifest` })
+  }
+  throw createError({ statusCode: 400, message: 'unexpected tour variant' })
+}
 
 // numstat prints renames as "dir/{old => new}/file" or "old => new";
 // collapse to the new path so entries match the diff view's paths.
@@ -55,22 +80,54 @@ export function cleanRisks(parsed: any, knownPaths: Set<string>): FileRisk[] {
     .map((f: any) => ({ path: f.path, level: f.level, note: String(f.note ?? '') }))
 }
 
-export function cleanTour(parsed: any): Tour {
+export function cleanTour(parsed: any, variant: TourVariant = 'overview'): Tour {
+  // Chain tours walk unchanged code rendered head-version only, so LEFT-side
+  // stops have nothing to land on there — coerce to RIGHT.
+  const forceRight = variant.startsWith('chain:')
   const stops: TourStop[] = (Array.isArray(parsed?.stops) ? parsed.stops : [])
     .filter((s: any) => typeof s?.path === 'string' && Number.isInteger(s?.line) && s.line >= 1)
     .map((s: any) => ({
       path: s.path,
-      side: s.side === 'LEFT' ? 'LEFT' as const : 'RIGHT' as const,
+      side: !forceRight && s.side === 'LEFT' ? 'LEFT' as const : 'RIGHT' as const,
       line: s.line,
       endLine: Number.isInteger(s.endLine) && s.endLine >= s.line ? s.endLine : s.line,
       title: String(s.title ?? '').slice(0, 120),
       note: String(s.note ?? ''),
     }))
-    .slice(0, MAX_TOUR_STOPS)
+    .slice(0, maxStopsFor(variant))
   if (!stops.length || typeof parsed?.overview !== 'string') {
     throw createError({ statusCode: 400, message: 'unexpected tour shape' })
   }
   return { overview: parsed.overview, stops }
+}
+
+export function cleanChains(parsed: any): ChainsManifest {
+  if (!Array.isArray(parsed?.chains)) {
+    throw createError({ statusCode: 400, message: 'unexpected chains shape' })
+  }
+  const chains = parsed.chains
+    .filter((c: any) => typeof c?.id === 'string' && typeof c?.title === 'string' && c.title.trim())
+    .map((c: any) => ({
+      id: c.id,
+      title: String(c.title).trim().slice(0, 80),
+      summary: String(c.summary ?? '').trim(),
+      seedPaths: (Array.isArray(c.seedPaths) ? c.seedPaths : [])
+        .filter((p: any) => typeof p === 'string' && p.trim())
+        .slice(0, 10),
+    }))
+    .slice(0, MAX_CHAINS)
+  if (!chains.length) {
+    throw createError({ statusCode: 400, message: 'unexpected chains shape' })
+  }
+  for (const c of chains) {
+    if (!CHAIN_SLUG.test(c.id)) {
+      throw createError({ statusCode: 400, message: `bad chain id "${c.id}" — must match ${CHAIN_SLUG}` })
+    }
+  }
+  if (new Set(chains.map((c: any) => c.id)).size !== chains.length) {
+    throw createError({ statusCode: 400, message: 'duplicate chain ids' })
+  }
+  return { overview: String(parsed.overview ?? ''), chains }
 }
 
 export const MAX_FINDINGS = 50
