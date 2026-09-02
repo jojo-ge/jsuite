@@ -72,9 +72,18 @@ resolution is the hand-off to `/jimplement`.
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR
 exists, stores draft comments in `.data/jdiff/`, and can open the PR and post
-them in one shot. Drive it with the `jdiff` CLI: `jdiff pr 123`,
-`jdiff branch my-feature`, `--print` for a machine-readable URL. No skill — the
-CLI is the interface.
+them in one shot. A branch view also has a scope: `committed` (the default,
+`base...branch`), `staged`, `unstaged`, or `everything` — the last three read
+the index/working tree, so they need that branch checked out, and the claude
+review tools run on `committed` only. Beyond the analyze run, a review page
+offers three on-demand walkthroughs: a fine-grained **detail** tour, the
+**chains** walkthrough (each behavior traced end-to-end across the systems it
+touches), and the **hunt** — a bug-and-vulnerability review whose every
+high-severity finding gets its own walkthrough explaining the defect in depth.
+Drive it with the `jdiff` CLI:
+`jdiff pr 123`, `jdiff branch my-feature`, `jdiff branch -s unstaged` (bare
+`jdiff branch` means the current branch), `--print` for a machine-readable
+URL. No skill — the CLI is the interface.
 
 **jChart** — diagram workbench. Claude POSTs mermaid to `/api/charts`; the app
 lays it out as an Excalidraw scene; the human redraws freehand and pins notes to
@@ -142,7 +151,9 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
   packed 2×2 per tab, agent start + prompt with the retry dances, model
   overrides via agent args. jTicket dispatches ticket work; jMap dispatches
   domain mappers; jDiff dispatches its review-guidance sessions (the
-  `jdiff-review`/`jdiff-ask` skills, pinned to Opus 5) — no app runs a
+  `jdiff-review`/`jdiff-ask`/`jdiff-tour`/`jdiff-chains`/`jdiff-hunt` skills,
+  pinned to Opus 5; the chains and hunt modes fan out one walker session per
+  chain / per high-severity issue) — no app runs a
   headless claude of its own.
 - **jTicket ↔ jDiff reviews**: jTicket deep-links every branch/PR into jDiff
   (finished tickets and merged local PRs link to their exact squash diff), and
@@ -169,6 +180,7 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | a diagram the human can edit and annotate | `j-chart` |
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
+| read only my staged / unstaged / uncommitted changes | `jdiff` CLI (`jdiff branch -s staged\|unstaged\|everything`) |
 | be grilled about a plan | `grilling` (in the terminal) — `j-grilling` only when the operator asks for a specific question in the browser |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |

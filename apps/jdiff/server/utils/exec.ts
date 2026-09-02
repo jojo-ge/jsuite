@@ -16,6 +16,22 @@ export async function run(cmd: string, args: string[], cwd: string): Promise<str
   }
 }
 
+// Same, but tolerant of a non-zero exit that still produced output — git's
+// diff porcelain exits 1 for "there were differences", which is not an error
+// when we asked for a diff (`--no-index`).
+export async function runAllowFail(cmd: string, args: string[], cwd: string): Promise<string> {
+  try {
+    const { stdout } = await pExecFile(cmd, args, { cwd, maxBuffer: 64 * 1024 * 1024 })
+    return stdout
+  } catch (err: any) {
+    if (typeof err?.stdout === 'string' && err.stdout) return err.stdout
+    throw createError({
+      statusCode: 500,
+      message: (err.stderr || err.message || 'command failed').trim(),
+    })
+  }
+}
+
 export function resolveRepoPath(event: any): string {
   const repo = getQuery(event).repo
   if (typeof repo !== 'string' || !repo.trim()) {

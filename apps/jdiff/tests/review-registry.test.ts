@@ -35,6 +35,8 @@ describe('job-keyed dispatch registry', () => {
     expect(pendingToolsFor('detail')).toEqual(['tour'])
     expect(pendingToolsFor('chains-scope')).toEqual(['chains'])
     expect(pendingToolsFor('chain:x')).toEqual(['tour'])
+    expect(pendingToolsFor('hunt-scope')).toEqual(['hunt'])
+    expect(pendingToolsFor('issue:x')).toEqual(['tour'])
   })
 
   it('keeps jobs for the same target independent', () => {

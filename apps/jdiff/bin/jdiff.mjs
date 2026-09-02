@@ -28,6 +28,18 @@ function expandHome(p) {
   return p
 }
 
+// the branch currently checked out in `dir`, or '' (detached HEAD / no commits).
+function currentBranch(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'branch', '--show-current'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return ''
+  }
+}
+
 // resolve the absolute repo root. honours an explicit override, else asks git.
 function resolveRepo(override, cwd) {
   if (override) {
@@ -146,12 +158,19 @@ function usage() {
 
 usage:
   jdiff pr <number> [options]          open the PR diff page
-  jdiff branch <name> [base] [options] open the local-branch diff view
+  jdiff branch [name] [base] [options] open the local-branch diff view
+                                       (name defaults to the current branch)
   jdiff open [options]                 open the repo's PR list page
   jdiff --help                         show this help
 
 options:
   --repo, -C <path>   git repo to target (default: current repo; ~ expands)
+  --scope, -s <what>  which changes a branch view shows (default: committed)
+                        committed   base...branch — what the branch adds
+                        staged      HEAD -> index
+                        unstaged    index -> working tree (new files included)
+                        everything  merge-base -> working tree (all three)
+                      the three worktree scopes need <name> checked out.
   --print, -p         only print the resolved URL (no browser); machine-readable
 
 environment:
@@ -160,6 +179,8 @@ environment:
 examples:
   jdiff pr 123
   jdiff branch my-feature main
+  jdiff branch --scope staged                 # what's staged right now
+  jdiff branch -s unstaged --print
   jdiff open -C ~/code/other-repo
   JDIFF_URL=http://localhost:43002 jdiff pr 42 --print   # bypass the edge
 `
@@ -168,15 +189,22 @@ examples:
 // --- arg parsing -----------------------------------------------------------
 
 // pull global flags out of argv, returning the remaining positional args.
+const SCOPES = ['committed', 'staged', 'unstaged', 'everything']
+
 function parseArgs(argv) {
   const positional = []
   let repo = null
   let printOnly = false
+  let scope = null
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--repo' || a === '-C') {
       repo = argv[++i]
       if (repo == null) fail(`${a} requires a <path> argument`)
+    } else if (a === '--scope' || a === '-s') {
+      scope = argv[++i]
+      if (scope == null) fail(`${a} requires one of: ${SCOPES.join(', ')}`)
+      if (!SCOPES.includes(scope)) fail(`bad --scope ${scope} (want ${SCOPES.join(' | ')})`)
     } else if (a === '--print' || a === '-p') {
       printOnly = true
     } else if (a === '--help' || a === '-h') {
@@ -185,13 +213,13 @@ function parseArgs(argv) {
       positional.push(a)
     }
   }
-  return { positional, repo, printOnly }
+  return { positional, repo, printOnly, scope }
 }
 
 // --- main ------------------------------------------------------------------
 
 async function main() {
-  const { positional, repo, printOnly } = parseArgs(process.argv.slice(2))
+  const { positional, repo, printOnly, scope } = parseArgs(process.argv.slice(2))
   const cmd = positional[0]
 
   // help / no-arg edge: treat bare `jdiff` as `open` per spec, but a help
@@ -215,15 +243,19 @@ async function main() {
   }
 
   if (cmd === 'branch') {
-    const name = positional[1]
     const base = positional[2]
-    if (name == null) {
-      process.stderr.write(usage())
-      fail('branch requires a <name>')
-    }
     const abs = resolveRepo(repo, process.cwd())
+    // no <name>: review whatever is checked out, which is what you want when
+    // you came here to look at your staged or unstaged work.
+    const name = positional[1] ?? currentBranch(abs)
+    if (!name) {
+      process.stderr.write(usage())
+      fail('branch requires a <name> (no branch is checked out here)')
+    }
     let url = `${BASE}/branch?repo=${enc(abs)}&branch=${enc(name)}`
     if (base != null) url += `&base=${enc(base)}`
+    // 'committed' is the server default; leaving it off keeps the URL clean.
+    if (scope && scope !== 'committed') url += `&scope=${enc(scope)}`
     await emit(url, printOnly)
     return
   }

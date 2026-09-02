@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const repo = resolveRepoDir(String(body?.repo ?? ''))
   const target = resolveTargetFromBody(body)
+  requireCommittedScope(target, 'an ask')
   const filePath = String(body?.path ?? '')
   if (!filePath) throw createError({ statusCode: 400, message: 'missing path' })
   const line = Number(body?.line)

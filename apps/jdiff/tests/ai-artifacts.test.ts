@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_CHAINS,
   MAX_DETAIL_STOPS,
+  MAX_ISSUES,
   MAX_TOUR_STOPS,
   cleanChains,
+  cleanHunt,
   cleanTour,
   parseTourVariant,
 } from '../server/utils/aiArtifacts'
@@ -29,6 +31,7 @@ describe('cleanTour', () => {
     expect(cleanTour(t).stops[0]!.side).toBe('LEFT')
     expect(cleanTour(t, 'detail').stops[0]!.side).toBe('LEFT')
     expect(cleanTour(t, 'chain:x').stops[0]!.side).toBe('RIGHT')
+    expect(cleanTour(t, 'issue:x').stops[0]!.side).toBe('RIGHT')
   })
 
   it('rejects empty stops and missing overview', () => {
@@ -69,22 +72,64 @@ describe('cleanChains', () => {
   })
 })
 
+describe('cleanHunt', () => {
+  const issue = (id: string, severity = 'high') => ({
+    id, severity, kind: 'bug', title: `T ${id}`, summary: 's', path: 'a.ts', line: 4, seedPaths: ['a.ts'],
+  })
+
+  it('accepts a manifest, orders by severity and caps at MAX_ISSUES', () => {
+    const parsed = cleanHunt({
+      overview: 'md',
+      issues: [issue('low-one', 'low'), issue('hi-one'), issue('mid-one', 'medium')],
+    })
+    expect(parsed.issues.map((i) => i.id)).toEqual(['hi-one', 'mid-one', 'low-one'])
+    expect(parsed.overview).toBe('md')
+    expect(cleanHunt({
+      issues: Array.from({ length: 20 }, (_, i) => issue(`i-${i}`)),
+    }).issues).toHaveLength(MAX_ISSUES)
+  })
+
+  it('an empty hunt is a valid result, unlike an empty chains manifest', () => {
+    expect(cleanHunt({ overview: 'clean', issues: [] }).issues).toEqual([])
+    expect(() => cleanHunt({ overview: 'clean' })).toThrow()
+  })
+
+  it('rejects bad slugs and duplicates', () => {
+    expect(() => cleanHunt({ issues: [issue('Upper')] })).toThrow()
+    expect(() => cleanHunt({ issues: [issue('a'), issue('a')] })).toThrow()
+  })
+
+  it('drops issues missing a severity, title or path, and defaults kind', () => {
+    const parsed = cleanHunt({
+      issues: [
+        { ...issue('keep'), kind: 'nonsense' },
+        { ...issue('no-sev'), severity: 'critical' },
+        { ...issue('no-path'), path: '' },
+      ],
+    })
+    expect(parsed.issues.map((i) => i.id)).toEqual(['keep'])
+    expect(parsed.issues[0]!.kind).toBe('bug')
+  })
+})
+
 describe('parseTourVariant', () => {
-  const slugs = new Set(['known'])
+  const known = new Set(['chain:known', 'issue:leaky'])
 
   it('defaults to overview', () => {
-    expect(parseTourVariant(undefined, slugs)).toBe('overview')
-    expect(parseTourVariant('overview', slugs)).toBe('overview')
+    expect(parseTourVariant(undefined, known)).toBe('overview')
+    expect(parseTourVariant('overview', known)).toBe('overview')
   })
 
-  it('accepts detail and manifest-backed chain variants', () => {
-    expect(parseTourVariant('detail', slugs)).toBe('detail')
-    expect(parseTourVariant('chain:known', slugs)).toBe('chain:known')
+  it('accepts detail and manifest-backed chain and issue variants', () => {
+    expect(parseTourVariant('detail', known)).toBe('detail')
+    expect(parseTourVariant('chain:known', known)).toBe('chain:known')
+    expect(parseTourVariant('issue:leaky', known)).toBe('issue:leaky')
   })
 
-  it('rejects unknown chains and junk', () => {
-    expect(() => parseTourVariant('chain:unknown', slugs)).toThrow()
-    expect(() => parseTourVariant('chain:Bad Slug', slugs)).toThrow()
-    expect(() => parseTourVariant('other', slugs)).toThrow()
+  it('rejects variants no manifest defines, and junk', () => {
+    expect(() => parseTourVariant('chain:unknown', known)).toThrow()
+    expect(() => parseTourVariant('issue:unknown', known)).toThrow()
+    expect(() => parseTourVariant('chain:Bad Slug', known)).toThrow()
+    expect(() => parseTourVariant('other', known)).toThrow()
   })
 })

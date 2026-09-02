@@ -21,11 +21,23 @@ const { data, pending, error, refresh } = useFetch<{
 
 const defaultBranch = computed(() => data.value?.defaultBranch ?? '')
 // Reviewing the default branch against itself is an empty diff; hide it from
-// the pick list but keep everything else, newest commit first.
-const branches = computed(() => (data.value?.branches ?? []).filter((b) => !b.isDefault))
+// the pick list but keep everything else, newest commit first. The exception
+// is when the default branch is the one checked out — then its uncommitted
+// work is reviewable even though its committed diff is empty.
+const branches = computed(() =>
+  (data.value?.branches ?? []).filter((b) => !b.isDefault || b.isCurrent))
 
-function linkTo(b: BranchInfo) {
-  return { path: '/branch', query: { repo: repo.value, branch: b.name, base: defaultBranch.value } }
+// Only the checked-out branch has an index and a working tree to look at.
+const SCOPE_LINKS = ['staged', 'unstaged', 'everything'] as const
+
+function linkTo(b: BranchInfo, scope?: string) {
+  // A committed diff of the default branch against itself is empty, so send
+  // that row straight at its uncommitted work instead.
+  const s = scope ?? (b.isDefault ? 'everything' : undefined)
+  return {
+    path: '/branch',
+    query: { repo: repo.value, branch: b.name, base: defaultBranch.value, ...(s ? { scope: s } : {}) },
+  }
 }
 </script>
 
@@ -42,6 +54,7 @@ function linkTo(b: BranchInfo) {
     <p class="lede">
       review a local branch against <code>{{ defaultBranch || 'the default branch' }}</code> before
       it's ever pushed — comment as you go, then open the PR with every comment attached.
+      On the checked-out branch you can also read the staged or unstaged changes on their own.
     </p>
 
     <div v-if="pending" class="center"><span class="spinner" /></div>
@@ -54,13 +67,17 @@ function linkTo(b: BranchInfo) {
           <div class="top">
             <span class="name">{{ b.name }}</span>
             <span v-if="b.isCurrent" class="badge current">checked out</span>
-            <span class="arrow">→ {{ defaultBranch }}</span>
+            <span class="arrow">→ {{ b.isDefault ? 'working tree' : defaultBranch }}</span>
           </div>
           <div class="meta">
             <span class="subject">{{ b.subject }}</span>
             <span class="when">{{ timeAgo(b.committedAt) }}</span>
           </div>
         </NuxtLink>
+        <div v-if="b.isCurrent" class="scope-links">
+          <span class="scope-lede">uncommitted:</span>
+          <NuxtLink v-for="s in SCOPE_LINKS" :key="s" :to="linkTo(b, s)" class="scope-link">{{ s }}</NuxtLink>
+        </div>
       </li>
     </ul>
   </main>
@@ -152,6 +169,18 @@ function linkTo(b: BranchInfo) {
   color: var(--muted);
 }
 .badge.current { color: var(--accent); border-color: var(--accent); }
+/* Straight-to-scope shortcuts, offered only on the checked-out branch. */
+.scope-links {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 14px 0; font-family: var(--mono); font-size: 11px;
+}
+.scope-lede { color: var(--muted); }
+.scope-link {
+  color: var(--muted); border: 1px solid var(--border); background: var(--panel-2);
+  border-radius: 4px; padding: 1px 8px; text-decoration: none;
+}
+.scope-link:hover { color: var(--text); border-color: var(--accent); text-decoration: none; }
+.scope-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .meta {
   display: flex;
   gap: 14px;

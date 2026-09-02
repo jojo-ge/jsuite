@@ -23,4 +23,5 @@ Object.assign(globalThis, {
   appendFailures: failureStore.appendFailures,
   clearFailures: failureStore.clearFailures,
   deleteChainTours: tourStore.deleteChainTours,
+  deleteIssueTours: tourStore.deleteIssueTours,
 })

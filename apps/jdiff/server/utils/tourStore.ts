@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
+import { CHAIN_SLUG } from './aiArtifacts'
 import type { Tour, TourVariant } from '../../app/utils/tour'
 
 export interface SavedTour {
@@ -14,7 +15,8 @@ export interface SavedTour {
 
 // Latest tour per resolved repo path + target + variant; regenerating a
 // variant overwrites only that variant, so the analyze run's overview tour,
-// the detail tour, and the per-chain tours coexist and age independently.
+// the detail tour, the per-chain tours and the per-issue hunt tours coexist
+// and age independently.
 const DIR = appDataDir('jdiff')
 const FILE = join(DIR, 'tours.json')
 
@@ -41,8 +43,17 @@ export function saveTour(entry: SavedTour): void {
 
 /** A new chains manifest invalidates every prior chain tour for the target. */
 export function deleteChainTours(repo: string, number: string): void {
+  deleteVariantTours(repo, number, 'chain:')
+}
+
+/** A new hunt manifest likewise invalidates every prior issue tour. */
+export function deleteIssueTours(repo: string, number: string): void {
+  deleteVariantTours(repo, number, 'issue:')
+}
+
+function deleteVariantTours(repo: string, number: string, prefix: string): void {
   writeAll(loadAll().filter((t) =>
-    !(t.repo === repo && t.number === number && variantOf(t).startsWith('chain:'))))
+    !(t.repo === repo && t.number === number && variantOf(t).startsWith(prefix))))
 }
 
 function writeAll(rows: SavedTour[]): void {
@@ -56,4 +67,19 @@ function loadAll(): SavedTour[] {
   } catch {
     return []
   }
+}
+
+// ?variant= → a TourVariant, rejecting anything that isn't one. Distinct from
+// aiArtifacts' parseTourVariant, which additionally checks a POSTed variant
+// against the target's saved manifests; a read only needs the grammar. The
+// two must not share a name — Nitro auto-imports by name.
+export function parseVariantParam(raw: unknown): TourVariant {
+  if (raw === undefined || raw === 'overview') return 'overview'
+  if (raw === 'detail') return 'detail'
+  for (const prefix of ['chain:', 'issue:']) {
+    if (typeof raw === 'string' && raw.startsWith(prefix) && CHAIN_SLUG.test(raw.slice(prefix.length))) {
+      return raw as TourVariant
+    }
+  }
+  throw createError({ statusCode: 400, message: 'bad variant' })
 }

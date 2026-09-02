@@ -57,10 +57,14 @@ const props = defineProps<{
   targetQuery?: Record<string, string>
   // Human label for the copy-prompt text (e.g. "PR #123" or "branch feat-x").
   askLabel?: string
+  // Whether the ✦ ask composer is offered. Off for a branch's worktree
+  // scopes, whose lines have no committed head for a session to read.
+  askEnabled?: boolean
 }>()
 const emit = defineEmits<{ posted: []; asked: []; close: []; addLocal: [{ path: string; side: 'LEFT' | 'RIGHT'; line: number; body: string }]; deleteLocal: [string] }>()
 
 const isLocal = computed(() => props.commentMode === 'local')
+const canAsk = computed(() => props.askEnabled !== false)
 // Params sent to /api/file and /api/ask to identify the review target.
 const tq = computed<Record<string, string>>(() => props.targetQuery ?? { number: props.number })
 
@@ -738,9 +742,13 @@ async function copyAsk(a: SavedAsk) {
               <div v-if="newMatches(row)" class="composer">
                 <div class="mode-tabs">
                   <button :class="{ on: composerMode === 'comment' }" @click="composerMode = 'comment'">comment</button>
-                  <button :class="{ on: composerMode === 'ask' }" @click="composerMode = 'ask'">✦ ask</button>
+                  <button
+                    v-if="canAsk"
+                    :class="{ on: composerMode === 'ask' }"
+                    @click="composerMode = 'ask'"
+                  >✦ ask</button>
                 </div>
-                <form v-if="composerMode === 'comment'" @submit.prevent="submit">
+                <form v-if="composerMode === 'comment' || !canAsk" @submit.prevent="submit">
                   <textarea v-model="draft" rows="3" placeholder="leave a comment…" autofocus @keydown.meta.enter="submit" />
                   <div class="composer-actions">
                     <span v-if="postError" class="post-error">{{ postError }}</span>

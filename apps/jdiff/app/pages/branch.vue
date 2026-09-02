@@ -28,10 +28,48 @@ const { data: branchData } = useFetch<{ branches: any[]; defaultBranch: string }
 const base = computed(() => String(route.query.base ?? '') || branchData.value?.defaultBranch || '')
 const branchMeta = computed(() => branchData.value?.branches?.find((b) => b.name === branch.value) ?? null)
 
-const target = computed<ReviewTarget>(() => ({ branch: branch.value, base: base.value || undefined }))
-const diffQuery = computed(() => ({ repo: repo.value, branch: branch.value, base: base.value || undefined }))
+// ---- scope: WHICH of the branch's changes to show ----
+// `committed` is the classic base...branch diff and stays the default, so an
+// old link (or the jdiff CLI) lands exactly where it always did. The other
+// three read the index and working tree, which belong to whatever branch is
+// checked out — so they're only offered while this branch IS that branch.
+type DiffScope = 'everything' | 'committed' | 'staged' | 'unstaged'
+const SCOPES: { id: DiffScope; label: string; hint: string }[] = [
+  { id: 'everything', label: 'everything', hint: 'merge-base → working tree: committed, staged and unstaged changes together' },
+  { id: 'committed', label: 'committed', hint: 'base…branch: what the branch adds on top of base — the scope the review tools run on' },
+  { id: 'staged', label: 'staged', hint: 'HEAD → index: only what is staged for the next commit' },
+  { id: 'unstaged', label: 'unstaged', hint: 'index → working tree: only what is not staged yet, new files included' },
+]
+const scope = computed<DiffScope>(() => {
+  const q = String(route.query.scope ?? '')
+  return (SCOPES.some((s) => s.id === q) ? q : 'committed') as DiffScope
+})
+const worktreeScope = computed(() => scope.value !== 'committed')
+// Null while /api/branches is still in flight — the toggle stays disabled.
+const isCurrentBranch = computed(() =>
+  branchData.value ? branchData.value.current === branch.value : null)
+function setScope(s: DiffScope) {
+  router.replace({ query: { ...route.query, scope: s === 'committed' ? undefined : s } })
+}
 
-const { data: diff, pending, error } = useFetch<{ files: any[] }>('/api/diff', { query: diffQuery })
+const target = computed<ReviewTarget>(() => ({ branch: branch.value, base: base.value || undefined }))
+// `scope` is omitted on the committed scope so every request is byte-identical
+// to what it was before scopes existed.
+const scopeParam = computed(() => (worktreeScope.value ? scope.value : undefined))
+const diffQuery = computed(() => ({
+  repo: repo.value,
+  branch: branch.value,
+  base: base.value || undefined,
+  scope: scopeParam.value,
+}))
+// Spread into the file/graph/ask endpoint queries by the diff components.
+const fileQuery = computed(() => ({
+  branch: branch.value,
+  base: base.value,
+  ...(scopeParam.value ? { scope: scopeParam.value } : {}),
+}))
+
+const { data: diff, pending, error, refresh: refreshDiff } = useFetch<{ files: any[] }>('/api/diff', { query: diffQuery })
 const { data: savedAsks, refresh: refreshAsks } = useFetch<any[]>('/api/asks', { query: diffQuery })
 
 // Local draft comments, grouped like threads: file path → "SIDE:line".
@@ -115,6 +153,12 @@ const summaryLine = computed(() => {
   return parts.length ? parts.join(' · ') : 'reviewability · risk heatmap · guided tour · ask yourself'
 })
 
+const emptyDiffNote = computed(() => {
+  if (scope.value === 'staged') return 'empty diff — nothing is staged'
+  if (scope.value === 'unstaged') return 'empty diff — the working tree matches the index'
+  return `empty diff — nothing differs from ${base.value}`
+})
+
 function anchorFor(path: string): string {
   return 'f-' + path.replace(/[^a-zA-Z0-9]/g, '-')
 }
@@ -163,7 +207,7 @@ function jumpToComment(c: CommentEntry) {
   nextTick(() => jumpToDiffLine(anchorFor(c.path), c.side, c.line!))
 }
 
-// ---- walkthrough modes (overview / detail / chains) ----
+// ---- walkthrough modes (overview / detail / chains / hunt) ----
 // Same structure as the PR page: overview from the analyze run, detail and
 // chains on-demand via useTourModes, one walk for whichever tour is active.
 const storeKey = computed(() => `branch/${branch.value}`)
@@ -171,15 +215,44 @@ const modes = useTourModes(repo, target, computed(() => null))
 onMounted(() => { void modes.load() })
 const modeDetail = modes.detail
 const modeChains = modes.chains
+const modeHunt = modes.hunt
 
-type TourMode = 'overview' | 'detail' | 'chains'
+type TourMode = 'overview' | 'detail' | 'chains' | 'hunt'
+const TOUR_MODES: TourMode[] = ['overview', 'detail', 'chains', 'hunt']
 const tourMode = ref<TourMode>('overview')
 const activeChain = ref<string | null>(null)
+// The hunt issue being walked. Chains and issues are selected independently,
+// so switching modes returns you to where you were in each.
+const activeIssue = ref<string | null>(null)
 const modeKey = computed(() => `jdiff:tour-mode:${repo.value}:${storeKey.value}`)
 
 function selectChain(slug: string) {
   activeChain.value = slug
   void modes.loadChainTour(slug)
+}
+
+// The chain list's start button is the whole gesture: pick the chain, wait for
+// its tour to land (the walk resets itself when the tour arrives), then open
+// the walk where this chain left off.
+async function startChain(slug: string) {
+  activeChain.value = slug
+  await modes.loadChainTour(slug)
+  await nextTick()
+  jumpToStop(resumeIndex.value ?? 0)
+}
+
+function selectIssue(slug: string) {
+  activeIssue.value = slug
+  void modes.loadIssueTour(slug)
+}
+
+// Same gesture for a hunt issue: its tour walks the defect end-to-end — where
+// the bad input enters, what fails to stop it, and where it does damage.
+async function startIssue(slug: string) {
+  activeIssue.value = slug
+  await modes.loadIssueTour(slug)
+  await nextTick()
+  jumpToStop(resumeIndex.value ?? 0)
 }
 
 onMounted(() => {
@@ -189,10 +262,13 @@ onMounted(() => {
   } else if (fromQuery.startsWith('chain:')) {
     tourMode.value = 'chains'
     selectChain(fromQuery.slice('chain:'.length))
+  } else if (fromQuery.startsWith('issue:')) {
+    tourMode.value = 'hunt'
+    selectIssue(fromQuery.slice('issue:'.length))
   } else {
     try {
-      const saved = localStorage.getItem(modeKey.value)
-      if (saved === 'overview' || saved === 'detail' || saved === 'chains') tourMode.value = saved
+      const saved = localStorage.getItem(modeKey.value) as TourMode
+      if (TOUR_MODES.includes(saved)) tourMode.value = saved
     } catch { /* ignore */ }
   }
 })
@@ -207,29 +283,58 @@ watch([tourMode, () => modeChains.value.manifest, () => modeChains.value.manifes
   if (first) selectChain(first.id)
 }, { immediate: true })
 
+// Same for hunt mode: land on the first HIGH issue that has been walked.
+watch([tourMode, () => modeHunt.value.manifest, () => modeHunt.value.manifest?.tours], () => {
+  if (tourMode.value !== 'hunt' || activeIssue.value) return
+  const m = modeHunt.value.manifest
+  const first = modeHunt.value.high.find((i) => m!.tours[i.id])
+  if (first) selectIssue(first.id)
+}, { immediate: true })
+
 const activeVariant = computed<TourVariant>(() => {
   if (tourMode.value === 'detail') return 'detail'
   if (tourMode.value === 'chains' && activeChain.value) return `chain:${activeChain.value}`
+  if (tourMode.value === 'hunt' && activeIssue.value) return `issue:${activeIssue.value}`
   return 'overview'
 })
 const activeTour = computed(() => {
   if (tourMode.value === 'overview') return tour.value
   if (tourMode.value === 'detail') return modeDetail.value.tour
+  if (tourMode.value === 'hunt') {
+    return activeIssue.value ? modeHunt.value.issueTours[activeIssue.value]?.tour ?? null : null
+  }
   return activeChain.value ? modeChains.value.chainTours[activeChain.value]?.tour ?? null : null
 })
 const activeTourAt = computed(() => {
   if (tourMode.value === 'overview') return tourAt.value
   if (tourMode.value === 'detail') return modeDetail.value.at
+  if (tourMode.value === 'hunt') {
+    return activeIssue.value ? modeHunt.value.issueTours[activeIssue.value]?.createdAt ?? '' : ''
+  }
   return activeChain.value ? modeChains.value.chainTours[activeChain.value]?.createdAt ?? '' : ''
 })
 const activePending = computed(() => {
   if (tourMode.value === 'overview') return anyPending.value
   if (tourMode.value === 'detail') return modeDetail.value.pending
+  if (tourMode.value === 'hunt') {
+    return modeHunt.value.scopePending
+      || (!!activeIssue.value && !!modeHunt.value.issueJobs[activeIssue.value])
+  }
   return modeChains.value.scopePending
     || (!!activeChain.value && !!modeChains.value.chainJobs[activeChain.value])
 })
-const activeChainTitle = computed(() =>
-  modeChains.value.manifest?.chains.find((c) => c.id === activeChain.value)?.title ?? activeChain.value ?? '')
+// What the active tour is about — the chain's or the issue's own title.
+const activeTopicTitle = computed(() => {
+  if (tourMode.value === 'hunt') {
+    return modeHunt.value.manifest?.issues.find((i) => i.id === activeIssue.value)?.title
+      ?? activeIssue.value ?? ''
+  }
+  return modeChains.value.manifest?.chains.find((c) => c.id === activeChain.value)?.title
+    ?? activeChain.value ?? ''
+})
+// The active tour as a standalone HTML walkthrough: code hunk beside the
+// guide's note, one file, no jDiff and no repo needed to read it.
+const exportHref = computed(() => tourExportHref(repo.value, target.value, activeVariant.value))
 
 const diffFileRefs = ref<Record<string, any>>({})
 const contextFileRefs = ref<Record<string, any>>({})
@@ -422,6 +527,31 @@ async function createPr() {
         <span v-if="branchMeta">{{ branchMeta.subject }}</span>
         <span v-if="commentCount" class="draft-count">{{ commentCount }} draft comment{{ commentCount === 1 ? '' : 's' }}</span>
       </div>
+
+      <div class="scope-bar">
+        <span class="scope-label">show</span>
+        <div class="scope-modes">
+          <button
+            v-for="s in SCOPES"
+            :key="s.id"
+            :class="{ on: scope === s.id }"
+            :aria-pressed="scope === s.id"
+            :disabled="s.id !== 'committed' && isCurrentBranch === false"
+            :title="s.id !== 'committed' && isCurrentBranch === false
+              ? `${s.label} reads the working tree — check out ${branch} to see it`
+              : s.hint"
+            @click="setScope(s.id)"
+          >{{ s.label }}</button>
+        </div>
+        <button
+          v-if="worktreeScope"
+          class="scope-refresh"
+          title="uncommitted work changes under you — re-read the working tree"
+          :disabled="pending"
+          @click="refreshDiff()"
+        >↻ refresh</button>
+        <span class="scope-hint">{{ SCOPES.find((s) => s.id === scope)!.hint }}</span>
+      </div>
       <p v-if="rating" class="verdict">
         <span class="rating-score" :class="rating.score >= 7 ? 'good' : rating.score >= 4 ? 'mid' : 'bad'">
           {{ rating.score }}/10
@@ -429,17 +559,29 @@ async function createPr() {
         {{ rating.summary }}
       </p>
 
-      <div class="tour-cta">
+      <div v-if="worktreeScope" class="scope-tools-note">
+        ✦ review tools (rating, risk heatmap, tours, per-line asks) run on the
+        <button class="scope-inline" @click="setScope('committed')">committed</button>
+        scope — uncommitted work has no head commit for a session to read.
+      </div>
+
+      <div v-else class="tour-cta">
         <div class="tour-modes">
           <button :class="{ on: tourMode === 'overview' }" :aria-pressed="tourMode === 'overview'" title="the analyze run's first-read tour" @click="tourMode = 'overview'">overview</button>
           <button :class="{ on: tourMode === 'detail' }" :aria-pressed="tourMode === 'detail'" title="fine-grained walkthrough at review depth" @click="tourMode = 'detail'">detail</button>
           <button :class="{ on: tourMode === 'chains' }" :aria-pressed="tourMode === 'chains'" title="each piece of behavior walked end-to-end across the systems it touches" @click="tourMode = 'chains'">chains</button>
+          <button :class="{ on: tourMode === 'hunt' }" :aria-pressed="tourMode === 'hunt'" title="a bug-and-vulnerability review of the change, with a walkthrough of every high-severity issue it finds" @click="tourMode = 'hunt'">hunt</button>
         </div>
         <template v-if="activeTour && !activePending">
           <button class="tour-go" @click="jumpToStop(resumeIndex ?? 0)">
             {{ resumeIndex ? `▶ resume tour ${resumeIndex + 1}/${activeTour.stops.length}` : '▶ start code tour' }}
           </button>
           <button v-if="resumeIndex" class="log-toggle" @click="clearTourProgress(); jumpToStop(0)">restart</button>
+          <a
+            class="log-toggle export-link"
+            :href="exportHref"
+            title="download this tour as a standalone HTML walkthrough — code and notes, shareable with anyone"
+          >⤓ export html</a>
         </template>
         <template v-else-if="tourMode === 'detail' && !activePending">
           <button class="rate-btn" title="one herdr claude session (opus 5) walks the change at line-by-line review depth" @click="modes.generate('detail')">
@@ -463,6 +605,17 @@ async function createPr() {
           </button>
           <span v-if="modeChains.scopeError" class="mode-error">{{ modeChains.scopeError }}</span>
         </template>
+        <template v-else-if="tourMode === 'hunt' && modeHunt.scopePending">
+          <span class="spinner small" />
+          <span class="tour-hint">hunting for bugs and vulnerabilities…</span>
+          <button class="log-toggle" @click="modes.cancel('hunt')">cancel</button>
+        </template>
+        <template v-else-if="tourMode === 'hunt' && !modeHunt.manifest">
+          <button class="rate-btn" title="one session reviews the change for bugs and vulnerabilities, then jDiff dispatches a walkthrough session per high-severity issue" @click="modes.generate('hunt')">
+            ✦ hunt bugs &amp; vulnerabilities
+          </button>
+          <span v-if="modeHunt.scopeError" class="mode-error">{{ modeHunt.scopeError }}</span>
+        </template>
         <button
           class="rate-btn run-all"
           :title="anyPending ? 'stop the run' : 'one herdr claude session (opus 5) generates reviewability, risk heatmap, guided tour, ask yourself, and findings'"
@@ -473,7 +626,7 @@ async function createPr() {
         </button>
       </div>
 
-      <div v-if="tourMode === 'chains' && modeChains.manifest" class="rating-card chains-card">
+      <div v-if="!worktreeScope && tourMode === 'chains' && modeChains.manifest" class="rating-card chains-card">
         <div class="rating-head">
           <span class="card-title">⛓ system chains</span>
           <span class="rating-effort">{{ modeChains.manifest.chains.length }} chains · walk each end-to-end, unchanged code included</span>
@@ -484,27 +637,96 @@ async function createPr() {
         </div>
         <div v-if="modeChains.manifest.overview" class="chains-overview" v-html="renderMarkdown(modeChains.manifest.overview)" />
         <ul class="chain-list">
-          <li v-for="c in modeChains.manifest.chains" :key="c.id">
-            <button
-              class="chain-row"
-              :class="{ on: activeChain === c.id }"
-              :disabled="!modeChains.manifest.tours[c.id]"
-              @click="selectChain(c.id)"
-            >
-              <span class="chain-title">{{ c.title }}</span>
-              <span class="chain-sum">{{ c.summary }}</span>
-              <span class="chain-state">
-                <template v-if="modeChains.manifest.tours[c.id]">
-                  {{ modeChains.chainTours[c.id] ? `${modeChains.chainTours[c.id]!.tour.stops.length} stops` : 'ready' }}
-                </template>
-                <template v-else-if="modeChains.chainJobs[c.id]"><span class="spinner small" /> walking…</template>
-                <template v-else-if="modeChains.chainErrors[c.id]"><span class="chain-fail">failed</span></template>
-                <template v-else>queued</template>
-              </span>
-            </button>
-            <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-error">
-              {{ modeChains.chainErrors[c.id] }}
+          <li
+            v-for="c in modeChains.manifest.chains"
+            :key="c.id"
+            class="chain-item"
+            :class="{ on: activeChain === c.id }"
+          >
+            <div class="chain-main">
+              <div class="chain-title">{{ c.title }}</div>
+              <div class="chain-sum">{{ c.summary }}</div>
+              <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-error">
+                {{ modeChains.chainErrors[c.id] }}
+              </div>
             </div>
+            <button
+              class="chain-start"
+              :disabled="!modeChains.manifest.tours[c.id]"
+              @click="startChain(c.id)"
+            >
+              <template v-if="modeChains.manifest.tours[c.id]">
+                {{ activeChain === c.id && tourIndex !== null ? 'touring' : 'start tour' }}
+              </template>
+              <template v-else-if="modeChains.chainJobs[c.id]"><span class="spinner small" /> walking…</template>
+              <template v-else-if="modeChains.chainErrors[c.id]"><span class="chain-fail">failed</span></template>
+              <template v-else>queued</template>
+            </button>
+            <a
+              v-if="modeChains.manifest.tours[c.id]"
+              class="chain-start chain-export"
+              :href="tourExportHref(repo, target, `chain:${c.id}`)"
+              title="download this chain as a standalone HTML walkthrough"
+            >⤓ html</a>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="!worktreeScope && tourMode === 'hunt' && modeHunt.manifest" class="rating-card chains-card hunt-card">
+        <div class="rating-head">
+          <span class="card-title">🐛 bug &amp; vulnerability hunt</span>
+          <span class="rating-effort">
+            <template v-if="modeHunt.manifest.issues.length">
+              {{ modeHunt.high.length }} high · {{ modeHunt.rest.length }} lower — every high issue gets its own walkthrough
+            </template>
+            <template v-else>nothing found — the hunt came back clean</template>
+          </span>
+          <span class="head-actions">
+            <span v-if="modeHunt.stale" class="stale-badge">out of date</span>
+            <button v-if="modeHunt.anyIssuePending" class="rate-btn" @click="modes.cancel('hunt')">cancel walkers</button>
+            <button v-else class="rate-btn" title="re-run the hunt and re-walk every high-severity issue" @click="modes.generate('hunt')">↻ re-hunt</button>
+          </span>
+        </div>
+        <div v-if="modeHunt.manifest.overview" class="chains-overview" v-html="renderMarkdown(modeHunt.manifest.overview)" />
+        <ul class="chain-list">
+          <li
+            v-for="i in modeHunt.manifest.issues"
+            :key="i.id"
+            class="chain-item issue-item"
+            :class="{ on: activeIssue === i.id, low: i.severity !== 'high' }"
+          >
+            <div class="chain-main">
+              <div class="issue-head">
+                <span class="sev" :class="i.severity">{{ i.severity }}</span>
+                <span class="issue-kind">{{ i.kind }}</span>
+                <span class="chain-title">{{ i.title }}</span>
+              </div>
+              <div class="chain-sum">{{ i.summary }}</div>
+              <div class="issue-where">{{ i.path }}<template v-if="i.line">:{{ i.line }}</template></div>
+              <div v-if="i.severity === 'high' && !modeHunt.manifest.tours[i.id] && modeHunt.issueErrors[i.id]" class="chain-error">
+                {{ modeHunt.issueErrors[i.id] }}
+              </div>
+            </div>
+            <button
+              v-if="i.severity === 'high'"
+              class="chain-start"
+              :disabled="!modeHunt.manifest.tours[i.id]"
+              @click="startIssue(i.id)"
+            >
+              <template v-if="modeHunt.manifest.tours[i.id]">
+                {{ activeIssue === i.id && tourIndex !== null ? 'touring' : 'explain in depth' }}
+              </template>
+              <template v-else-if="modeHunt.issueJobs[i.id]"><span class="spinner small" /> walking…</template>
+              <template v-else-if="modeHunt.issueErrors[i.id]"><span class="chain-fail">failed</span></template>
+              <template v-else>queued</template>
+            </button>
+            <span v-else class="issue-nowalk" title="only high-severity issues get a walkthrough">no walkthrough</span>
+            <a
+              v-if="modeHunt.manifest.tours[i.id]"
+              class="chain-start chain-export"
+              :href="tourExportHref(repo, target, `issue:${i.id}`)"
+              title="download this issue's walkthrough as a standalone HTML page"
+            >⤓ html</a>
           </li>
         </ul>
       </div>
@@ -546,7 +768,7 @@ async function createPr() {
         </div>
       </div>
 
-      <div class="rating-card">
+      <div v-if="!worktreeScope" class="rating-card">
         <NuxtLink :to="summaryRoute" class="rating-head clickable card-link">
           <span class="rating-chevron">▸</span>
           <span class="card-title">✦ tool summary</span>
@@ -590,7 +812,7 @@ async function createPr() {
         <FileGraph
           :repo="repo"
           :number="''"
-          :target-query="{ branch, base }"
+          :target-query="fileQuery"
           :files="diff.files"
           :anchor-for="anchorFor"
           :risks="riskByPath"
@@ -630,7 +852,7 @@ async function createPr() {
               </div>
               <div v-if="activeTour" class="todo-sec">
                 <div class="todo-label">
-                  reading order<template v-if="tourMode !== 'overview'"> · {{ tourMode === 'detail' ? 'detail' : activeChainTitle }}</template>
+                  reading order<template v-if="tourMode !== 'overview'"> · {{ tourMode === 'detail' ? 'detail' : activeTopicTitle }}</template>
                 </div>
                 <ol class="todo-items">
                   <li v-for="(s, i) in activeTour.stops" :key="i" class="todo-item">
@@ -684,7 +906,8 @@ async function createPr() {
           :anchor="anchorFor(f.path)"
           :repo="repo"
           :number="''"
-          :target-query="{ branch, base }"
+          :target-query="fileQuery"
+          :ask-enabled="!worktreeScope"
           :ask-label="`branch ${branch}`"
           comment-mode="local"
           :threads="{}"
@@ -702,13 +925,13 @@ async function createPr() {
           :key="'ctx-' + p"
           :ref="(el: any) => { if (el) contextFileRefs[p] = el; else delete contextFileRefs[p] }"
           :repo="repo"
-          :target-query="{ branch, base }"
+          :target-query="fileQuery"
           :path="p"
           :anchor="anchorFor(p)"
           :stops="contextStopsFor(p)"
           :tour-stop="currentStop && currentStop.path === p ? currentStop : null"
         />
-        <div v-if="!diff.files.length" class="center muted">empty diff — nothing differs from {{ base }}</div>
+        <div v-if="!diff.files.length" class="center muted">{{ emptyDiffNote }}</div>
         <div v-else-if="!visibleFiles.length && !contextPaths.length" class="center muted">all files closed</div>
       </div>
     </div>
@@ -717,7 +940,8 @@ async function createPr() {
       <div class="tour-bar-head">
         <span class="tour-step">
           <template v-if="tourMode === 'detail'">detail </template>
-          <template v-else-if="tourMode === 'chains'">chain </template>{{ tourIndex! + 1 }}/{{ activeTour.stops.length }}
+          <template v-else-if="tourMode === 'chains'">chain </template>
+          <template v-else-if="tourMode === 'hunt'">issue </template>{{ tourIndex! + 1 }}/{{ activeTour.stops.length }}
         </span>
         <span class="tour-bar-title">{{ currentStop.title }}</span>
         <span class="tour-bar-path">{{ currentStop.path }}:{{ currentStop.line }}</span>
@@ -769,6 +993,40 @@ async function createPr() {
 }
 .branch-ref { font-family: var(--mono); font-size: 12px; }
 .draft-count { color: var(--accent); }
+/* Scope selector: which slice of the branch's changes the diff shows. Same
+   segmented-modes idiom as the walkthrough selector below. */
+.scope-bar {
+  display: flex; flex-wrap: wrap; align-items: center;
+  column-gap: 10px; row-gap: 6px; margin-bottom: 16px;
+}
+.scope-label { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.scope-modes {
+  display: flex; gap: 2px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2);
+}
+.scope-modes button {
+  border: none; background: transparent; color: var(--muted);
+  font-family: var(--mono); font-size: 10px; padding: 3px 10px; border-radius: 4px; cursor: pointer;
+}
+.scope-modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.scope-modes button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+.scope-modes button:disabled { opacity: 0.35; cursor: not-allowed; }
+.scope-refresh {
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--muted);
+  border-radius: 5px; padding: 2px 8px; cursor: pointer; font-family: var(--mono); font-size: 11px;
+}
+.scope-refresh:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.scope-refresh:disabled { opacity: 0.5; cursor: default; }
+.scope-hint { font-size: 12px; color: var(--muted); }
+.scope-tools-note {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  border: 1px solid var(--border); border-left: 2px solid var(--accent);
+  background: var(--panel-2); border-radius: 6px; padding: 8px 12px; margin-bottom: 16px;
+}
+.scope-inline {
+  border: none; background: none; padding: 0; cursor: pointer;
+  color: var(--accent); font-family: var(--mono); font-size: 12px; text-decoration: underline;
+}
 .verdict { font-size: 14px; font-weight: 600; line-height: 1.5; margin: 0 0 12px; }
 .verdict .rating-score { margin-right: 8px; font-size: 18px; }
 .tour-cta { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -783,6 +1041,14 @@ async function createPr() {
   border-radius: 5px; padding: 2px 8px; cursor: pointer; font-family: var(--mono); font-size: 11px;
 }
 .log-toggle:hover { color: var(--text); }
+/* Export is a plain download link wearing the quiet-button costume. */
+.export-link, .chain-export {
+  text-decoration: none;
+  display: inline-block;
+  white-space: nowrap;
+}
+.export-link:hover, .chain-export:hover { text-decoration: none; color: var(--text); }
+.chain-export { margin-left: 6px; }
 .tour-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 /* Walkthrough mode selector: the FileNav segmented-modes idiom. */
 .tour-modes {
@@ -800,23 +1066,40 @@ async function createPr() {
 .chains-card { margin-bottom: 16px; }
 .chains-overview { font-size: 13px; color: var(--muted); padding: 8px 12px 0; }
 .chain-list { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
-.chain-row {
-  display: grid; grid-template-columns: minmax(140px, auto) 1fr auto;
-  align-items: baseline; gap: 10px; width: 100%; text-align: left;
-  border: 1px solid var(--border); border-radius: 6px; background: transparent;
-  padding: 6px 10px; cursor: pointer;
+.chain-item {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
 }
-.chain-row:hover:not(:disabled) { border-color: var(--accent); }
-.chain-row.on { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
-.chain-row:disabled { cursor: default; opacity: 0.75; }
+.chain-item.on { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
+.chain-main { flex: 1; min-width: 0; }
 .chain-title { font-family: var(--mono); font-size: 12px; color: var(--text); }
-.chain-sum { font-size: 12px; color: var(--muted); }
-.chain-state {
+.chain-sum { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.chain-start {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
   font-family: var(--mono); font-size: 11px; color: var(--muted);
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+  padding: 3px 10px; cursor: pointer;
 }
+.chain-start:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.chain-start:disabled { cursor: default; opacity: 0.75; }
 .chain-fail { color: var(--red); }
-.chain-error { font-family: var(--mono); font-size: 11px; color: var(--red); padding: 2px 10px 0; }
+.chain-error { font-family: var(--mono); font-size: 11px; color: var(--red); margin-top: 4px; }
+
+/* Hunt panel: the chains list with a severity-led issue row. */
+.hunt-card .chain-list { gap: 6px; }
+.issue-item.low { opacity: 0.72; }
+.issue-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sev {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid var(--border); color: var(--muted);
+}
+.sev.high { color: var(--red); border-color: var(--red); }
+.sev.medium { color: #d29922; border-color: #d29922; }
+.sev.low { color: var(--green); border-color: var(--green); }
+.issue-kind { font-size: 11px; color: var(--muted); }
+.issue-where { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 4px; }
+.issue-nowalk { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; }
 
 /* create-PR card */
 .create-card {

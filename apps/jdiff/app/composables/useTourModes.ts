@@ -1,9 +1,13 @@
-import type { ChainSummary, Tour } from '~/utils/tour'
+import type { ChainSummary, HuntIssue, Tour, TourVariant } from '~/utils/tour'
 
 // State for the on-demand walkthrough modes beyond the analyze run's
-// overview tour: the DETAIL tour (one /jdiff-tour session) and the CHAINS
+// overview tour: the DETAIL tour (one /jdiff-tour session), the CHAINS
 // walkthrough (one /jdiff-chains scoping session whose manifest makes the
-// server fan out one walker session per chain). Mirrors useAiTasks' shape:
+// server fan out one walker session per chain) and the HUNT (one /jdiff-hunt
+// session that reviews the change for bugs and vulnerabilities; the server
+// fans out one walker per HIGH issue, each explaining that defect in depth).
+// Chains and hunt share the fan-out shape, so they share the machinery below.
+// Mirrors useAiTasks' shape:
 // app-wide useState keyed by repo + target survives navigation, and the
 // pollers live at module scope so leaving the page never loses a run.
 
@@ -17,24 +21,70 @@ export interface ChainsRes {
   tours: Record<string, { createdAt: string }>
 }
 
+export interface HuntRes {
+  overview: string
+  issues: HuntIssue[]
+  createdAt: string
+  // Which issues already have a landed tour, by slug. Only HIGH issues get
+  // one — the others are listed without a walkthrough.
+  tours: Record<string, { createdAt: string }>
+}
+
+// The two fan-out modes ('chains', 'hunt') keep identical run state: one
+// scoping session, then N walkers each producing one tour.
+export type FanoutMode = 'chains' | 'hunt'
+
+interface FanoutState<M> {
+  manifest: M | null
+  scopePending: boolean
+  scopeStartedAt: number
+  scopeError: string
+  // Walkers currently live in herdr, by slug.
+  jobs: Record<string, boolean>
+  errors: Record<string, string>
+  // Walker tours fetched for walking, by slug.
+  tours: Record<string, SavedTourRes>
+}
+
 interface ModesState {
   detailTour: SavedTourRes | null
   detailPending: boolean
   detailStartedAt: number
   detailError: string
-  chains: ChainsRes | null
-  scopePending: boolean
-  scopeStartedAt: number
-  scopeError: string
-  // Chain walkers currently live in herdr, by slug.
-  chainJobs: Record<string, boolean>
-  chainErrors: Record<string, string>
-  // Chain tours fetched for walking, by slug.
-  chainTours: Record<string, SavedTourRes>
+  chains: FanoutState<ChainsRes>
+  hunt: FanoutState<HuntRes>
   loaded: boolean
 }
 
+// Everything the pollers need to treat a fan-out mode generically: which
+// endpoint holds the manifest, which scope job settles it, and how its
+// walkers' job ids and tour variants are spelled.
+const FANOUT: Record<FanoutMode, {
+  endpoint: string
+  scopeJob: string
+  prefix: string
+  items: (m: any) => { id: string }[]
+}> = {
+  chains: {
+    endpoint: '/api/chains',
+    scopeJob: 'chains-scope',
+    prefix: 'chain:',
+    items: (m: ChainsRes) => m.chains,
+  },
+  hunt: {
+    endpoint: '/api/hunt',
+    scopeJob: 'hunt-scope',
+    prefix: 'issue:',
+    // Only HIGH issues get a walker, so only they are ever "still walking".
+    items: (m: HuntRes) => m.issues.filter((i) => i.severity === 'high'),
+  },
+}
+
 type Store = Ref<Record<string, ModesState>>
+
+function blankFanout<M>(): FanoutState<M> {
+  return { manifest: null, scopePending: false, scopeStartedAt: 0, scopeError: '', jobs: {}, errors: {}, tours: {} }
+}
 
 function blankState(): ModesState {
   return {
@@ -42,13 +92,8 @@ function blankState(): ModesState {
     detailPending: false,
     detailStartedAt: 0,
     detailError: '',
-    chains: null,
-    scopePending: false,
-    scopeStartedAt: 0,
-    scopeError: '',
-    chainJobs: {},
-    chainErrors: {},
-    chainTours: {},
+    chains: blankFanout<ChainsRes>(),
+    hunt: blankFanout<HuntRes>(),
     loaded: false,
   }
 }
@@ -94,8 +139,8 @@ function stopWatching(repo: string, id: string) {
   watchers.delete(key)
 }
 
-async function fetchChains(repo: string, target: ReviewTarget): Promise<ChainsRes | null> {
-  return await $fetch<ChainsRes | null>('/api/chains', {
+async function fetchManifest(mode: FanoutMode, repo: string, target: ReviewTarget): Promise<any | null> {
+  return await $fetch<any | null>(FANOUT[mode].endpoint, {
     query: { repo, ...targetQuery(target) },
   })
 }
@@ -120,12 +165,6 @@ function startWatching(store: Store, repo: string, target: ReviewTarget) {
       const res = await $fetch<JobsRes>('/api/ai-jobs', { query: { repo, ...targetQuery(target) } })
       const byJob = res.byJob ?? {}
 
-      s.chainJobs = Object.fromEntries(
-        Object.keys(byJob)
-          .filter((j) => j.startsWith('chain:'))
-          .map((j) => [j.slice('chain:'.length), true]),
-      )
-
       if (s.detailPending) {
         const saved = await fetchTour(repo, target, 'detail').catch(() => null)
         if (saved?.createdAt && Date.parse(saved.createdAt) >= s.detailStartedAt) {
@@ -137,36 +176,49 @@ function startWatching(store: Store, repo: string, target: ReviewTarget) {
         }
       }
 
-      if (s.scopePending) {
-        const saved = await fetchChains(repo, target).catch(() => null)
-        if (saved?.createdAt && Date.parse(saved.createdAt) >= s.scopeStartedAt) {
-          s.chains = saved
-          s.chainTours = {}
-          s.chainErrors = {}
-          s.scopePending = false
-        } else if (!byJob['chains-scope']) {
-          s.scopePending = false
-          s.scopeError = failureMessage(res.failures, 'chains-scope')
-        }
-      }
+      let fanoutBusy = false
+      for (const mode of ['chains', 'hunt'] as FanoutMode[]) {
+        const cfg = FANOUT[mode]
+        const f = s[mode] as FanoutState<any>
 
-      // While walkers run, keep the manifest's landed-tours join fresh and
-      // settle each chain: a tour ⇒ done, a live job ⇒ still walking,
-      // neither ⇒ that walker died and the recorded failure says why.
-      if (s.chains && !s.scopePending) {
-        const incomplete = s.chains.chains.some((c) => !s.chains!.tours[c.id])
-        if (incomplete) {
-          const fresh = await fetchChains(repo, target).catch(() => null)
-          if (fresh) s.chains = { ...fresh }
-          for (const c of s.chains.chains) {
-            if (s.chains.tours[c.id] || s.chainJobs[c.id]) continue
-            s.chainErrors[c.id] ??= failureMessage(res.failures, `chain:${c.id}`)
+        f.jobs = Object.fromEntries(
+          Object.keys(byJob)
+            .filter((j) => j.startsWith(cfg.prefix))
+            .map((j) => [j.slice(cfg.prefix.length), true]),
+        )
+
+        if (f.scopePending) {
+          const saved = await fetchManifest(mode, repo, target).catch(() => null)
+          if (saved?.createdAt && Date.parse(saved.createdAt) >= f.scopeStartedAt) {
+            f.manifest = saved
+            f.tours = {}
+            f.errors = {}
+            f.scopePending = false
+          } else if (!byJob[cfg.scopeJob]) {
+            f.scopePending = false
+            f.scopeError = failureMessage(res.failures, cfg.scopeJob)
           }
         }
+
+        // While walkers run, keep the manifest's landed-tours join fresh and
+        // settle each item: a tour ⇒ done, a live job ⇒ still walking,
+        // neither ⇒ that walker died and the recorded failure says why.
+        if (f.manifest && !f.scopePending) {
+          const incomplete = cfg.items(f.manifest).some((i) => !f.manifest!.tours[i.id])
+          if (incomplete) {
+            const fresh = await fetchManifest(mode, repo, target).catch(() => null)
+            if (fresh) f.manifest = { ...fresh }
+            for (const i of cfg.items(f.manifest)) {
+              if (f.manifest.tours[i.id] || f.jobs[i.id]) continue
+              f.errors[i.id] ??= failureMessage(res.failures, `${cfg.prefix}${i.id}`)
+            }
+          }
+        }
+
+        if (f.scopePending || Object.keys(f.jobs).length) fanoutBusy = true
       }
 
-      const chainsBusy = Object.keys(s.chainJobs).length > 0
-      if (!s.detailPending && !s.scopePending && !chainsBusy) stopWatching(repo, id)
+      if (!s.detailPending && !fanoutBusy) stopWatching(repo, id)
     } catch {
       /* transient — the next tick retries */
     } finally {
@@ -200,12 +252,14 @@ export function useTourModes(
     const s = state.value
     if (!s.loaded) {
       s.loaded = true
-      const [detail, chains] = await Promise.all([
+      const [detail, chains, hunt] = await Promise.all([
         fetchTour(repo.value, target.value, 'detail').catch(() => null),
-        fetchChains(repo.value, target.value).catch(() => null),
+        fetchManifest('chains', repo.value, target.value).catch(() => null),
+        fetchManifest('hunt', repo.value, target.value).catch(() => null),
       ])
       if (detail) s.detailTour = detail
-      if (chains) s.chains = chains
+      if (chains) s.chains.manifest = chains
+      if (hunt) s.hunt.manifest = hunt
     }
     try {
       const res = await $fetch<JobsRes>('/api/ai-jobs', { query: { repo: repo.value, ...targetQuery(target.value) } })
@@ -217,22 +271,27 @@ export function useTourModes(
         s.detailError = ''
         anyLive = true
       }
-      if (byJob['chains-scope']) {
-        s.scopePending = true
-        s.scopeStartedAt = byJob['chains-scope'].startedAt
-        s.scopeError = ''
-        anyLive = true
-      }
-      for (const j of Object.keys(byJob)) {
-        if (!j.startsWith('chain:')) continue
-        s.chainJobs[j.slice('chain:'.length)] = true
-        anyLive = true
+      for (const mode of ['chains', 'hunt'] as FanoutMode[]) {
+        const cfg = FANOUT[mode]
+        const f = s[mode] as FanoutState<any>
+        const scope = byJob[cfg.scopeJob]
+        if (scope) {
+          f.scopePending = true
+          f.scopeStartedAt = scope.startedAt
+          f.scopeError = ''
+          anyLive = true
+        }
+        for (const j of Object.keys(byJob)) {
+          if (!j.startsWith(cfg.prefix)) continue
+          f.jobs[j.slice(cfg.prefix.length)] = true
+          anyLive = true
+        }
       }
       if (anyLive) startWatching(store, repo.value, target.value)
     } catch { /* offline poll: saved artifacts still shown */ }
   }
 
-  async function generate(mode: 'detail' | 'chains') {
+  async function generate(mode: 'detail' | FanoutMode) {
     if (import.meta.server) return
     const s = state.value
     if (mode === 'detail') {
@@ -240,10 +299,11 @@ export function useTourModes(
       s.detailPending = true
       s.detailError = ''
     } else {
-      if (s.scopePending || Object.keys(s.chainJobs).length) return
-      s.scopePending = true
-      s.scopeError = ''
-      s.chainErrors = {}
+      const f = s[mode] as FanoutState<any>
+      if (f.scopePending || Object.keys(f.jobs).length) return
+      f.scopePending = true
+      f.scopeError = ''
+      f.errors = {}
     }
     try {
       const res = await $fetch<{ startedAt: number; attached: boolean }>('/api/tour-dispatch', {
@@ -251,7 +311,7 @@ export function useTourModes(
         body: { repo: repo.value, ...targetQuery(target.value), mode },
       })
       if (mode === 'detail') s.detailStartedAt = res.startedAt
-      else s.scopeStartedAt = res.startedAt
+      else (s[mode] as FanoutState<any>).scopeStartedAt = res.startedAt
       startWatching(store, repo.value, target.value)
     } catch (e: any) {
       const message = e?.data?.message ?? e?.message ?? 'failed to dispatch into herdr'
@@ -259,13 +319,14 @@ export function useTourModes(
         s.detailPending = false
         s.detailError = message
       } else {
-        s.scopePending = false
-        s.scopeError = message
+        const f = s[mode] as FanoutState<any>
+        f.scopePending = false
+        f.scopeError = message
       }
     }
   }
 
-  function cancel(mode: 'detail' | 'chains') {
+  function cancel(mode: 'detail' | FanoutMode) {
     const s = state.value
     $fetch('/api/ai-job-cancel', {
       method: 'POST',
@@ -274,22 +335,29 @@ export function useTourModes(
     if (mode === 'detail') {
       s.detailPending = false
     } else {
-      s.scopePending = false
-      s.chainJobs = {}
+      const f = s[mode] as FanoutState<any>
+      f.scopePending = false
+      f.jobs = {}
     }
-    if (!s.detailPending && !s.scopePending && !Object.keys(s.chainJobs).length) {
-      stopWatching(repo.value, targetId(target.value))
-    }
+    const busy = s.detailPending
+      || (['chains', 'hunt'] as FanoutMode[]).some((m) => {
+        const f = s[m] as FanoutState<any>
+        return f.scopePending || Object.keys(f.jobs).length > 0
+      })
+    if (!busy) stopWatching(repo.value, targetId(target.value))
   }
 
-  // The chain tour's content, fetched on first walk of that chain.
-  async function loadChainTour(slug: string): Promise<SavedTourRes | null> {
-    const s = state.value
-    if (s.chainTours[slug]) return s.chainTours[slug]!
-    const saved = await fetchTour(repo.value, target.value, `chain:${slug}`).catch(() => null)
-    if (saved) s.chainTours[slug] = saved
+  // A walker tour's content, fetched on first walk of that chain or issue.
+  async function loadWalkerTour(mode: FanoutMode, slug: string): Promise<SavedTourRes | null> {
+    const f = state.value[mode] as FanoutState<any>
+    if (f.tours[slug]) return f.tours[slug]!
+    const saved = await fetchTour(repo.value, target.value, `${FANOUT[mode].prefix}${slug}`).catch(() => null)
+    if (saved) f.tours[slug] = saved
     return saved
   }
+
+  const loadChainTour = (slug: string) => loadWalkerTour('chains', slug)
+  const loadIssueTour = (slug: string) => loadWalkerTour('hunt', slug)
 
   const detail = computed(() => ({
     tour: state.value.detailTour?.tour ?? null,
@@ -300,19 +368,47 @@ export function useTourModes(
   }))
 
   const chains = computed(() => {
-    const s = state.value
+    const f = state.value.chains
     return {
-      manifest: s.chains,
-      at: s.chains?.createdAt ?? '',
-      stale: isStale(s.chains?.createdAt),
-      scopePending: s.scopePending,
-      scopeError: s.scopeError,
-      chainJobs: s.chainJobs,
-      chainErrors: s.chainErrors,
-      chainTours: s.chainTours,
-      anyChainPending: Object.keys(s.chainJobs).length > 0,
+      manifest: f.manifest,
+      at: f.manifest?.createdAt ?? '',
+      stale: isStale(f.manifest?.createdAt),
+      scopePending: f.scopePending,
+      scopeError: f.scopeError,
+      chainJobs: f.jobs,
+      chainErrors: f.errors,
+      chainTours: f.tours,
+      anyChainPending: Object.keys(f.jobs).length > 0,
     }
   })
 
-  return { detail, chains, load, generate, cancel, loadChainTour }
+  const hunt = computed(() => {
+    const f = state.value.hunt
+    const issues = f.manifest?.issues ?? []
+    return {
+      manifest: f.manifest,
+      at: f.manifest?.createdAt ?? '',
+      stale: isStale(f.manifest?.createdAt),
+      scopePending: f.scopePending,
+      scopeError: f.scopeError,
+      issueJobs: f.jobs,
+      issueErrors: f.errors,
+      issueTours: f.tours,
+      anyIssuePending: Object.keys(f.jobs).length > 0,
+      // The severity split the panel leads with: HIGH issues are the ones
+      // that got a walkthrough of their own.
+      high: issues.filter((i) => i.severity === 'high'),
+      rest: issues.filter((i) => i.severity !== 'high'),
+    }
+  })
+
+  return { detail, chains, hunt, load, generate, cancel, loadChainTour, loadIssueTour }
+}
+
+// Link to a tour's standalone HTML walkthrough — the shareable export a
+// developer without jDiff (or the repo) can open. The server sends it as a
+// download, so a plain link is the whole gesture.
+export function tourExportHref(repo: string, target: ReviewTarget, variant: TourVariant): string {
+  const q = new URLSearchParams({ repo, ...targetQuery(target), variant })
+  return `/api/tour-export?${q}`
 }

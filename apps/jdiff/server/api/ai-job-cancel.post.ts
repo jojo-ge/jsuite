@@ -3,10 +3,10 @@
 // each agent best-effort and clears the dispatches so the UI settles. The
 // panes stay open in herdr for the reviewer to inspect or close themselves.
 //
-// `job` picks what to cancel: 'analyze' (default), 'detail', or 'chains' —
-// which clears the whole chains generation (the scope session AND every
-// chain walker). The fan-out loop checks the registry before each launch, so
-// cancelling mid-fan-out also stops the walkers not yet started.
+// `job` picks what to cancel: 'analyze' (default), 'detail', 'chains' or
+// 'hunt' — the last two clear a whole generation (the scope session AND every
+// walker it fanned out). The fan-out loop checks the registry before each
+// launch, so cancelling mid-fan-out also stops the walkers not yet started.
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const path = resolveRepoDir(String(body?.repo ?? ''))
@@ -14,9 +14,11 @@ export default defineEventHandler(async (event) => {
   const job = body?.job == null ? 'analyze' : String(body.job)
 
   const cleared: ReviewDispatch[] = []
-  if (job === 'chains') {
+  if (job === 'chains' || job === 'hunt') {
+    const scope = job === 'chains' ? 'chains-scope' : 'hunt-scope'
+    const prefix = job === 'chains' ? 'chain:' : 'issue:'
     for (const d of targetDispatches(path, target.storeKey)) {
-      if (d.job !== 'chains-scope' && !d.job.startsWith('chain:')) continue
+      if (d.job !== scope && !d.job.startsWith(prefix)) continue
       clearReviewDispatch(path, target.storeKey, d.job)
       cleared.push(d)
     }
@@ -28,7 +30,7 @@ export default defineEventHandler(async (event) => {
   }
 
   for (const d of cleared) {
-    // A chain walker registered but not yet launched has no agent to poke.
+    // A walker registered but not yet launched has no agent to poke.
     if (d.agent === '(starting)') continue
     await herdrJson(['agent', 'send-keys', d.agent, 'esc']).catch(() => {})
     await herdrJson(['agent', 'send-keys', d.agent, 'esc']).catch(() => {})

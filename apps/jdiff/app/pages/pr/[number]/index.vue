@@ -236,23 +236,53 @@ const summaryLine = computed(() => {
   return parts.length ? parts.join(' · ') : 'reviewability · risk heatmap · guided tour · ask yourself'
 })
 
-// ---- walkthrough modes (overview / detail / chains) ----
+// ---- walkthrough modes (overview / detail / chains / hunt) ----
 // The overview tour comes from the analyze run via usePrArtifacts; detail and
 // chains are on-demand dispatches owned by useTourModes. One walk serves
 // whichever tour is active.
-const modes = useTourModes(repo, computed(() => ({ number: number.value })), computed(() => pr.value?.lastPushedAt ?? null))
+const target = computed<ReviewTarget>(() => ({ number: number.value }))
+const modes = useTourModes(repo, target, computed(() => pr.value?.lastPushedAt ?? null))
 onMounted(() => { void modes.load() })
 const modeDetail = modes.detail
 const modeChains = modes.chains
+const modeHunt = modes.hunt
 
-type TourMode = 'overview' | 'detail' | 'chains'
+type TourMode = 'overview' | 'detail' | 'chains' | 'hunt'
+const TOUR_MODES: TourMode[] = ['overview', 'detail', 'chains', 'hunt']
 const tourMode = ref<TourMode>('overview')
 const activeChain = ref<string | null>(null)
+// The hunt issue being walked. Chains and issues are selected independently,
+// so switching modes returns you to where you were in each.
+const activeIssue = ref<string | null>(null)
 const modeKey = computed(() => `jdiff:tour-mode:${repo.value}:${number.value}`)
 
 function selectChain(slug: string) {
   activeChain.value = slug
   void modes.loadChainTour(slug)
+}
+
+// The chain list's start button is the whole gesture: pick the chain, wait for
+// its tour to land (the walk resets itself when the tour arrives), then open
+// the walk where this chain left off.
+async function startChain(slug: string) {
+  activeChain.value = slug
+  await modes.loadChainTour(slug)
+  await nextTick()
+  jumpToStop(resumeIndex.value ?? 0)
+}
+
+function selectIssue(slug: string) {
+  activeIssue.value = slug
+  void modes.loadIssueTour(slug)
+}
+
+// Same gesture for a hunt issue: its tour walks the defect end-to-end — where
+// the bad input enters, what fails to stop it, and where it does damage.
+async function startIssue(slug: string) {
+  activeIssue.value = slug
+  await modes.loadIssueTour(slug)
+  await nextTick()
+  jumpToStop(resumeIndex.value ?? 0)
 }
 
 onMounted(() => {
@@ -263,10 +293,13 @@ onMounted(() => {
   } else if (fromQuery.startsWith('chain:')) {
     tourMode.value = 'chains'
     selectChain(fromQuery.slice('chain:'.length))
+  } else if (fromQuery.startsWith('issue:')) {
+    tourMode.value = 'hunt'
+    selectIssue(fromQuery.slice('issue:'.length))
   } else {
     try {
-      const saved = localStorage.getItem(modeKey.value)
-      if (saved === 'overview' || saved === 'detail' || saved === 'chains') tourMode.value = saved
+      const saved = localStorage.getItem(modeKey.value) as TourMode
+      if (TOUR_MODES.includes(saved)) tourMode.value = saved
     } catch { /* ignore */ }
   }
 })
@@ -282,29 +315,58 @@ watch([tourMode, () => modeChains.value.manifest, () => modeChains.value.manifes
   if (first) selectChain(first.id)
 }, { immediate: true })
 
+// Same for hunt mode: land on the first HIGH issue that has been walked.
+watch([tourMode, () => modeHunt.value.manifest, () => modeHunt.value.manifest?.tours], () => {
+  if (tourMode.value !== 'hunt' || activeIssue.value) return
+  const m = modeHunt.value.manifest
+  const first = modeHunt.value.high.find((i) => m!.tours[i.id])
+  if (first) selectIssue(first.id)
+}, { immediate: true })
+
 const activeVariant = computed<TourVariant>(() => {
   if (tourMode.value === 'detail') return 'detail'
   if (tourMode.value === 'chains' && activeChain.value) return `chain:${activeChain.value}`
+  if (tourMode.value === 'hunt' && activeIssue.value) return `issue:${activeIssue.value}`
   return 'overview'
 })
 const activeTour = computed(() => {
   if (tourMode.value === 'overview') return tour.value
   if (tourMode.value === 'detail') return modeDetail.value.tour
+  if (tourMode.value === 'hunt') {
+    return activeIssue.value ? modeHunt.value.issueTours[activeIssue.value]?.tour ?? null : null
+  }
   return activeChain.value ? modeChains.value.chainTours[activeChain.value]?.tour ?? null : null
 })
 const activeTourAt = computed(() => {
   if (tourMode.value === 'overview') return tourAt.value
   if (tourMode.value === 'detail') return modeDetail.value.at
+  if (tourMode.value === 'hunt') {
+    return activeIssue.value ? modeHunt.value.issueTours[activeIssue.value]?.createdAt ?? '' : ''
+  }
   return activeChain.value ? modeChains.value.chainTours[activeChain.value]?.createdAt ?? '' : ''
 })
 const activePending = computed(() => {
   if (tourMode.value === 'overview') return tourPending.value
   if (tourMode.value === 'detail') return modeDetail.value.pending
+  if (tourMode.value === 'hunt') {
+    return modeHunt.value.scopePending
+      || (!!activeIssue.value && !!modeHunt.value.issueJobs[activeIssue.value])
+  }
   return modeChains.value.scopePending
     || (!!activeChain.value && !!modeChains.value.chainJobs[activeChain.value])
 })
-const activeChainTitle = computed(() =>
-  modeChains.value.manifest?.chains.find((c) => c.id === activeChain.value)?.title ?? activeChain.value ?? '')
+// What the active tour is about — the chain's or the issue's own title.
+const activeTopicTitle = computed(() => {
+  if (tourMode.value === 'hunt') {
+    return modeHunt.value.manifest?.issues.find((i) => i.id === activeIssue.value)?.title
+      ?? activeIssue.value ?? ''
+  }
+  return modeChains.value.manifest?.chains.find((c) => c.id === activeChain.value)?.title
+    ?? activeChain.value ?? ''
+})
+// The active tour as a standalone HTML walkthrough: code hunk beside the
+// guide's note, one file, no jDiff and no repo needed to read it.
+const exportHref = computed(() => tourExportHref(repo.value, target.value, activeVariant.value))
 
 // Component handles for revealing a stop's line before scrolling to it:
 // DiffFiles expand gaps / flip to full view, ContextFiles fetch their file.
@@ -519,6 +581,7 @@ function openSelfCard() {
           <button :class="{ on: tourMode === 'overview' }" :aria-pressed="tourMode === 'overview'" title="the analyze run's first-read tour" @click="tourMode = 'overview'">overview</button>
           <button :class="{ on: tourMode === 'detail' }" :aria-pressed="tourMode === 'detail'" title="fine-grained walkthrough at review depth" @click="tourMode = 'detail'">detail</button>
           <button :class="{ on: tourMode === 'chains' }" :aria-pressed="tourMode === 'chains'" title="each piece of behavior walked end-to-end across the systems it touches" @click="tourMode = 'chains'">chains</button>
+          <button :class="{ on: tourMode === 'hunt' }" :aria-pressed="tourMode === 'hunt'" title="a bug-and-vulnerability review of the change, with a walkthrough of every high-severity issue it finds" @click="tourMode = 'hunt'">hunt</button>
         </div>
         <template v-if="activeTour && !activePending">
           <button class="tour-go" @click="jumpToStop(resumeIndex ?? 0)">
@@ -530,6 +593,11 @@ function openSelfCard() {
             title="forget saved progress and start from stop 1"
             @click="clearTourProgress(); jumpToStop(0)"
           >restart</button>
+          <a
+            class="log-toggle export-link"
+            :href="exportHref"
+            title="download this tour as a standalone HTML walkthrough — code and notes, shareable with anyone"
+          >⤓ export html</a>
           <span class="tour-hint">← → to move · esc ends</span>
         </template>
         <template v-else-if="tourMode === 'detail' && !activePending">
@@ -553,6 +621,17 @@ function openSelfCard() {
             ✦ map system chains
           </button>
           <span v-if="modeChains.scopeError" class="mode-error">{{ modeChains.scopeError }}</span>
+        </template>
+        <template v-else-if="tourMode === 'hunt' && modeHunt.scopePending">
+          <span class="spinner small" />
+          <span class="tour-hint">hunting for bugs and vulnerabilities…</span>
+          <button class="log-toggle" @click="modes.cancel('hunt')">cancel</button>
+        </template>
+        <template v-else-if="tourMode === 'hunt' && !modeHunt.manifest">
+          <button class="rate-btn" title="one session reviews the change for bugs and vulnerabilities, then jDiff dispatches a walkthrough session per high-severity issue" @click="modes.generate('hunt')">
+            ✦ hunt bugs &amp; vulnerabilities
+          </button>
+          <span v-if="modeHunt.scopeError" class="mode-error">{{ modeHunt.scopeError }}</span>
         </template>
         <button
           class="rate-btn run-all"
@@ -582,27 +661,96 @@ function openSelfCard() {
         </div>
         <div v-if="modeChains.manifest.overview" class="chains-overview" v-html="renderMarkdown(modeChains.manifest.overview)" />
         <ul class="chain-list">
-          <li v-for="c in modeChains.manifest.chains" :key="c.id">
-            <button
-              class="chain-row"
-              :class="{ on: activeChain === c.id }"
-              :disabled="!modeChains.manifest.tours[c.id]"
-              @click="selectChain(c.id)"
-            >
-              <span class="chain-title">{{ c.title }}</span>
-              <span class="chain-sum">{{ c.summary }}</span>
-              <span class="chain-state">
-                <template v-if="modeChains.manifest.tours[c.id]">
-                  {{ modeChains.chainTours[c.id] ? `${modeChains.chainTours[c.id]!.tour.stops.length} stops` : 'ready' }}
-                </template>
-                <template v-else-if="modeChains.chainJobs[c.id]"><span class="spinner small" /> walking…</template>
-                <template v-else-if="modeChains.chainErrors[c.id]"><span class="chain-fail">failed</span></template>
-                <template v-else>queued</template>
-              </span>
-            </button>
-            <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-error">
-              {{ modeChains.chainErrors[c.id] }}
+          <li
+            v-for="c in modeChains.manifest.chains"
+            :key="c.id"
+            class="chain-item"
+            :class="{ on: activeChain === c.id }"
+          >
+            <div class="chain-main">
+              <div class="chain-title">{{ c.title }}</div>
+              <div class="chain-sum">{{ c.summary }}</div>
+              <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-error">
+                {{ modeChains.chainErrors[c.id] }}
+              </div>
             </div>
+            <button
+              class="chain-start"
+              :disabled="!modeChains.manifest.tours[c.id]"
+              @click="startChain(c.id)"
+            >
+              <template v-if="modeChains.manifest.tours[c.id]">
+                {{ activeChain === c.id && tourIndex !== null ? 'touring' : 'start tour' }}
+              </template>
+              <template v-else-if="modeChains.chainJobs[c.id]"><span class="spinner small" /> walking…</template>
+              <template v-else-if="modeChains.chainErrors[c.id]"><span class="chain-fail">failed</span></template>
+              <template v-else>queued</template>
+            </button>
+            <a
+              v-if="modeChains.manifest.tours[c.id]"
+              class="chain-start chain-export"
+              :href="tourExportHref(repo, target, `chain:${c.id}`)"
+              title="download this chain as a standalone HTML walkthrough"
+            >⤓ html</a>
+          </li>
+        </ul>
+      </div>
+
+      <div v-if="tourMode === 'hunt' && modeHunt.manifest" class="rating-card chains-card hunt-card">
+        <div class="rating-head">
+          <span class="card-title">🐛 bug &amp; vulnerability hunt</span>
+          <span class="rating-effort">
+            <template v-if="modeHunt.manifest.issues.length">
+              {{ modeHunt.high.length }} high · {{ modeHunt.rest.length }} lower — every high issue gets its own walkthrough
+            </template>
+            <template v-else>nothing found — the hunt came back clean</template>
+          </span>
+          <span class="head-actions">
+            <span v-if="modeHunt.stale" class="stale-badge">out of date</span>
+            <button v-if="modeHunt.anyIssuePending" class="rate-btn" @click="modes.cancel('hunt')">cancel walkers</button>
+            <button v-else class="rate-btn" title="re-run the hunt and re-walk every high-severity issue" @click="modes.generate('hunt')">↻ re-hunt</button>
+          </span>
+        </div>
+        <div v-if="modeHunt.manifest.overview" class="chains-overview" v-html="renderMarkdown(modeHunt.manifest.overview)" />
+        <ul class="chain-list">
+          <li
+            v-for="i in modeHunt.manifest.issues"
+            :key="i.id"
+            class="chain-item issue-item"
+            :class="{ on: activeIssue === i.id, low: i.severity !== 'high' }"
+          >
+            <div class="chain-main">
+              <div class="issue-head">
+                <span class="sev" :class="i.severity">{{ i.severity }}</span>
+                <span class="issue-kind">{{ i.kind }}</span>
+                <span class="chain-title">{{ i.title }}</span>
+              </div>
+              <div class="chain-sum">{{ i.summary }}</div>
+              <div class="issue-where">{{ i.path }}<template v-if="i.line">:{{ i.line }}</template></div>
+              <div v-if="i.severity === 'high' && !modeHunt.manifest.tours[i.id] && modeHunt.issueErrors[i.id]" class="chain-error">
+                {{ modeHunt.issueErrors[i.id] }}
+              </div>
+            </div>
+            <button
+              v-if="i.severity === 'high'"
+              class="chain-start"
+              :disabled="!modeHunt.manifest.tours[i.id]"
+              @click="startIssue(i.id)"
+            >
+              <template v-if="modeHunt.manifest.tours[i.id]">
+                {{ activeIssue === i.id && tourIndex !== null ? 'touring' : 'explain in depth' }}
+              </template>
+              <template v-else-if="modeHunt.issueJobs[i.id]"><span class="spinner small" /> walking…</template>
+              <template v-else-if="modeHunt.issueErrors[i.id]"><span class="chain-fail">failed</span></template>
+              <template v-else>queued</template>
+            </button>
+            <span v-else class="issue-nowalk" title="only high-severity issues get a walkthrough">no walkthrough</span>
+            <a
+              v-if="modeHunt.manifest.tours[i.id]"
+              class="chain-start chain-export"
+              :href="tourExportHref(repo, target, `issue:${i.id}`)"
+              title="download this issue's walkthrough as a standalone HTML page"
+            >⤓ html</a>
           </li>
         </ul>
       </div>
@@ -734,7 +882,7 @@ function openSelfCard() {
 
               <div v-if="activeTour" class="todo-sec">
                 <div class="todo-label">
-                  reading order<template v-if="tourMode !== 'overview'"> · {{ tourMode === 'detail' ? 'detail' : activeChainTitle }}</template>
+                  reading order<template v-if="tourMode !== 'overview'"> · {{ tourMode === 'detail' ? 'detail' : activeTopicTitle }}</template>
                 </div>
                 <ol class="todo-items">
                   <li v-for="(s, i) in activeTour.stops" :key="i" class="todo-item">
@@ -826,7 +974,8 @@ function openSelfCard() {
       <div class="tour-bar-head">
         <span class="tour-step">
           <template v-if="tourMode === 'detail'">detail </template>
-          <template v-else-if="tourMode === 'chains'">chain </template>{{ tourIndex! + 1 }}/{{ activeTour.stops.length }}
+          <template v-else-if="tourMode === 'chains'">chain </template>
+          <template v-else-if="tourMode === 'hunt'">issue </template>{{ tourIndex! + 1 }}/{{ activeTour.stops.length }}
         </span>
         <span class="tour-bar-title">{{ currentStop.title }}</span>
         <span class="tour-bar-path">{{ currentStop.path }}:{{ currentStop.line }}</span>
@@ -985,22 +1134,19 @@ function openSelfCard() {
   flex-direction: column;
   gap: 4px;
 }
-.chain-row {
-  display: grid;
-  grid-template-columns: minmax(140px, auto) 1fr auto;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
+.chain-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: transparent;
-  padding: 6px 10px;
-  cursor: pointer;
+  padding: 8px 10px;
 }
-.chain-row:hover:not(:disabled) { border-color: var(--accent); }
-.chain-row.on { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
-.chain-row:disabled { cursor: default; opacity: 0.75; }
+.chain-item.on { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
+.chain-main {
+  flex: 1;
+  min-width: 0;
+}
 .chain-title {
   font-family: var(--mono);
   font-size: 12px;
@@ -1009,22 +1155,47 @@ function openSelfCard() {
 .chain-sum {
   font-size: 12px;
   color: var(--muted);
+  margin-top: 2px;
 }
-.chain-state {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--muted);
+.chain-start {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 3px 10px;
+  cursor: pointer;
 }
+.chain-start:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.chain-start:disabled { cursor: default; opacity: 0.75; }
 .chain-fail { color: var(--red); }
 .chain-error {
+
+/* Hunt panel: the chains list with a severity-led issue row. */
+.hunt-card .chain-list { gap: 6px; }
+.issue-item.low { opacity: 0.72; }
+.issue-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.sev {
+  font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid var(--border); color: var(--muted);
+}
+.sev.high { color: var(--red); border-color: var(--red); }
+.sev.medium { color: #d29922; border-color: #d29922; }
+.sev.low { color: var(--green); border-color: var(--green); }
+.issue-kind { font-size: 11px; color: var(--muted); }
+.issue-where { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 4px; }
+.issue-nowalk { font-size: 11px; color: var(--muted); align-self: center; white-space: nowrap; }
   font-family: var(--mono);
   font-size: 11px;
   color: var(--red);
-  padding: 2px 10px 0;
+  margin-top: 4px;
 }
 /* Same quiet register as the meta line: the badge carries the color, the
    button is the ordinary rate-btn. */
@@ -1127,6 +1298,14 @@ function openSelfCard() {
   font-size: 11px;
 }
 .log-toggle:hover { color: var(--text); }
+/* Export is a plain download link wearing the quiet-button costume. */
+.export-link, .chain-export {
+  text-decoration: none;
+  display: inline-block;
+  white-space: nowrap;
+}
+.export-link:hover, .chain-export:hover { text-decoration: none; color: var(--text); }
+.chain-export { margin-left: 6px; }
 .spinner.small { width: 10px; height: 10px; border-width: 2px; }
 /* Launch rows: carved cards in the same idiom as the summary page's
    accordions. Panel fill + 1px border makes each row read as a control;

@@ -1,17 +1,21 @@
 import { createHash } from 'node:crypto'
+import type { ParsedTarget, PreparedTarget } from '../utils/target'
 
 // Where the herdr sessions hand their work back. The `jdiff-review` /
-// `jdiff-tour` / `jdiff-chains` skills POST each artifact as soon as it is
-// ready — one bad artifact costs only that tool, the rest land independently.
+// `jdiff-tour` / `jdiff-chains` / `jdiff-hunt` skills POST each artifact as
+// soon as it is ready — one bad artifact costs only that tool, the rest land
+// independently.
 // Payloads are validated through the same cleaners for every caller, then
 // saved to the artifact stores the review pages already read.
 //
 // Tours carry an optional sibling `variant` ('overview' when absent,
-// 'detail', or 'chain:<slug>' naming a chain from the saved manifest). A
-// `chains` POST saves the manifest AND fans out one herdr session per chain —
-// registered synchronously here, launched by a fire-and-forget loop.
+// 'detail', 'chain:<slug>' naming a chain from the chains manifest, or
+// 'issue:<slug>' naming a high-severity issue from the hunt manifest). A
+// `chains` POST saves its manifest AND fans out one herdr session per chain;
+// a `hunt` POST does the same for each HIGH issue — walkers are registered
+// synchronously here, launched by a fire-and-forget loop.
 //
-// Body: { repo, number | branch (+ base?), tool: 'rating'|'risk'|'tour'|'questions'|'findings'|'chains', variant?, artifact }
+// Body: { repo, number | branch (+ base?), tool: 'rating'|'risk'|'tour'|'questions'|'findings'|'chains'|'hunt', variant?, artifact }
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const repo = resolveRepoDir(String(body?.repo ?? ''))
@@ -33,14 +37,13 @@ export default defineEventHandler(async (event) => {
     // this one when the diff is byte-identical. The two endpoints of the
     // three-dot range pin the diff exactly.
     const prepared = await prepareTarget(target, repo)
-    const [leftRef, rightRef] = prepared.range.split('...')
-    const mergeBase = (await run('git', ['merge-base', leftRef!, rightRef!], repo)).trim()
+    const mergeBase = (await run('git', ['merge-base', prepared.leftSpec, prepared.rightSpec!], repo)).trim()
     const diffHash = createHash('sha256').update(`${mergeBase}..${prepared.headOid}`).digest('hex')
     saveRating({ repo, number: target.storeKey, rating, createdAt, diffHash })
   } else if (tool === 'risk') {
     // Only files actually in the diff can carry a risk level.
     const prepared = await prepareTarget(target, repo)
-    const numstat = await run('git', ['diff', '--numstat', '-M', prepared.range], repo)
+    const numstat = await run('git', ['diff', '--numstat', '-M', ...prepared.diffArgs], repo)
     const knownPaths = new Set(
       numstat.trim().split('\n').filter(Boolean)
         .map((l) => newPathOf(l.split('\t').slice(2).join('\t'))),
@@ -49,58 +52,61 @@ export default defineEventHandler(async (event) => {
     if (!risks.length) throw createError({ statusCode: 400, message: 'no valid file risks in payload' })
     saveRiskMap({ repo, number: target.storeKey, risks, createdAt })
   } else if (tool === 'tour') {
-    const slugs = new Set((loadChains(repo, target.storeKey)?.chains ?? []).map((c) => c.id))
-    const variant = parseTourVariant(body?.variant, slugs)
+    const known = new Set([
+      ...(loadChains(repo, target.storeKey)?.chains ?? []).map((c) => `chain:${c.id}`),
+      ...walkableIssues(loadHunt(repo, target.storeKey)?.issues ?? []).map((i) => `issue:${i.id}`),
+    ])
+    const variant = parseTourVariant(body?.variant, known)
     if (variant !== 'overview') job = variant === 'detail' ? 'detail' : variant
     saveTour({ repo, number: target.storeKey, variant, tour: cleanTour(artifact, variant), createdAt })
   } else if (tool === 'chains') {
     job = 'chains-scope'
     const manifest = cleanChains(artifact)
-    // A new manifest supersedes the previous generation: interrupt any chain
-    // walkers still live from the old one so they can't post into the new set.
-    for (const d of targetDispatches(repo, target.storeKey)) {
-      if (!d.job.startsWith('chain:')) continue
-      clearReviewDispatch(repo, target.storeKey, d.job)
-      await herdrJson(['agent', 'send-keys', d.agent, 'esc']).catch(() => {})
-    }
+    await supersedeWalkers(repo, target.storeKey, 'chain:')
     saveChains({ repo, number: target.storeKey, ...manifest, createdAt })
-    // Register every chain dispatch before responding, so ai-jobs shows them
-    // pending immediately; the fan-out loop fills in agent/tab as each starts.
     const prepared = await prepareTarget(target, repo)
-    for (const chain of manifest.chains) {
-      registerReviewDispatch({
-        repo,
-        number: target.storeKey,
-        job: `chain:${chain.id}`,
-        startedAt: Date.now(),
-        agent: '(starting)',
-        workspaceId: '',
-        tabId: '',
-      })
-    }
-    const targetArgs = target.kind === 'pr'
-      ? `number=${target.number}`
-      : `branch=${target.branch} base=${prepared.base}`
-    fanOutChains({
+    const targetArgs = promptTargetArgs(target, prepared)
+    const ids = registerWalkers(repo, target.storeKey, 'chain', manifest.chains.map((c) => c.id))
+    fanOutWalkers({
       repo,
       storeKey: target.storeKey,
-      label: targetLabel(target),
-      targetArgs,
-      range: prepared.range,
-      headRef: prepared.headRef,
-      chains: manifest.chains,
-    }).catch((err: any) => {
-      appendFailures(repo, target.storeKey, [{
-        jobKind: 'chains-scope',
-        message: `chain fan-out failed: ${String(err?.message ?? err).slice(0, 400)}`,
-        at: new Date().toISOString(),
-      }])
-    })
+      kind: {
+        prefix: 'chain',
+        tabLabel: `chains ${targetLabel(target)}`,
+        prompt: (id) => `/jdiff-chains chain=${id} ${targetArgs} `
+          + `range=${prepared.range} head=${prepared.headRef}`,
+      },
+      ids,
+    }).catch(fanOutFailed(repo, target.storeKey, 'chains-scope'))
+  } else if (tool === 'hunt') {
+    // The hunt manifest lists every suspected defect; only the HIGH ones get
+    // a walker session — a tour that explains that one issue in depth.
+    job = 'hunt-scope'
+    const manifest = cleanHunt(artifact)
+    await supersedeWalkers(repo, target.storeKey, 'issue:')
+    saveHunt({ repo, number: target.storeKey, ...manifest, createdAt })
+    const prepared = await prepareTarget(target, repo)
+    const targetArgs = promptTargetArgs(target, prepared)
+    const ids = registerWalkers(repo, target.storeKey, 'issue',
+      walkableIssues(manifest.issues).map((i) => i.id))
+    if (ids.length) {
+      fanOutWalkers({
+        repo,
+        storeKey: target.storeKey,
+        kind: {
+          prefix: 'issue',
+          tabLabel: `hunt ${targetLabel(target)}`,
+          prompt: (id) => `/jdiff-hunt issue=${id} ${targetArgs} `
+            + `range=${prepared.range} head=${prepared.headRef}`,
+        },
+        ids,
+      }).catch(fanOutFailed(repo, target.storeKey, 'hunt-scope'))
+    }
   } else if (tool === 'findings') {
     // Findings must point at files actually in the diff; an empty list is a
     // valid artifact (a clean review) and saves as such.
     const prepared = await prepareTarget(target, repo)
-    const numstat = await run('git', ['diff', '--numstat', '-M', prepared.range], repo)
+    const numstat = await run('git', ['diff', '--numstat', '-M', ...prepared.diffArgs], repo)
     const knownPaths = new Set(
       numstat.trim().split('\n').filter(Boolean)
         .map((l) => newPathOf(l.split('\t').slice(2).join('\t'))),
@@ -113,3 +119,47 @@ export default defineEventHandler(async (event) => {
   markReviewToolPosted(repo, target.storeKey, job, tool)
   return { saved: tool, createdAt }
 })
+
+// A new manifest supersedes the previous generation: interrupt any walker of
+// that kind still live from the old one so it can't post into the new set.
+async function supersedeWalkers(repo: string, storeKey: string, prefix: string): Promise<void> {
+  for (const d of targetDispatches(repo, storeKey)) {
+    if (!d.job.startsWith(prefix)) continue
+    clearReviewDispatch(repo, storeKey, d.job)
+    await herdrJson(['agent', 'send-keys', d.agent, 'esc']).catch(() => {})
+  }
+}
+
+// Register every walker dispatch before responding, so ai-jobs shows them
+// pending immediately; the fan-out loop fills in agent/tab as each starts.
+function registerWalkers(repo: string, storeKey: string, prefix: 'chain' | 'issue', ids: string[]): string[] {
+  for (const id of ids) {
+    registerReviewDispatch({
+      repo,
+      number: storeKey,
+      job: `${prefix}:${id}`,
+      startedAt: Date.now(),
+      agent: '(starting)',
+      workspaceId: '',
+      tabId: '',
+    })
+  }
+  return ids
+}
+
+/** How a walker prompt names its target: a PR number, or branch + base. */
+function promptTargetArgs(target: ParsedTarget, prepared: PreparedTarget): string {
+  return target.kind === 'pr'
+    ? `number=${target.number}`
+    : `branch=${target.branch} base=${prepared.base}`
+}
+
+function fanOutFailed(repo: string, storeKey: string, jobKind: ReviewJob) {
+  return (err: any) => {
+    appendFailures(repo, storeKey, [{
+      jobKind,
+      message: `walker fan-out failed: ${String(err?.message ?? err).slice(0, 400)}`,
+      at: new Date().toISOString(),
+    }])
+  }
+}

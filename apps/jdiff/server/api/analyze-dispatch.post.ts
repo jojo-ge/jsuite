@@ -23,6 +23,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const repo = resolveRepoDir(String(body?.repo ?? ''))
   const target = resolveTargetFromBody(body)
+  requireCommittedScope(target, 'a review run')
 
   // The keys land verbatim in a claude prompt — reject anything that isn't a
   // bare TICK-n / PROJ-n shape rather than trying to escape it.

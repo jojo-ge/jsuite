@@ -1,6 +1,6 @@
 import { RISK_LEVELS, type FileRisk } from '../../app/utils/risk'
 import { FINDING_SEVERITIES, type Finding } from '../../app/utils/findings'
-import type { ChainsManifest, Tour, TourStop, TourVariant } from '../../app/utils/tour'
+import { HUNT_KINDS, type ChainsManifest, type HuntManifest, type Tour, type TourStop, type TourVariant } from '../../app/utils/tour'
 import type { SelfQuestion } from '../../app/utils/askYourself'
 
 // Result validators for the review-guidance artifacts. The artifacts are
@@ -20,27 +20,39 @@ export interface ReviewRating {
 export const MAX_TOUR_STOPS = 20
 export const MAX_DETAIL_STOPS = 40
 export const MAX_CHAINS = 8
+export const MAX_ISSUES = 12
 export const QUESTION_COUNT = 3
 
-// Chain ids travel from the scoping manifest into herdr prompts and tour
-// variants; the slug grammar is the sanitization boundary (like JTICKET_KEY).
+// Chain and issue ids travel from a scoping manifest into herdr prompts and
+// tour variants; the slug grammar is the sanitization boundary (like
+// JTICKET_KEY).
 export const CHAIN_SLUG = /^[a-z][a-z0-9-]{0,39}$/
 
-/** Stop cap for a tour variant: overview 20, detail 40, 20 per chain. */
+/** Stop cap for a tour variant: overview 20, detail 40, 20 per chain/issue. */
 export function maxStopsFor(variant: TourVariant): number {
   return variant === 'detail' ? MAX_DETAIL_STOPS : MAX_TOUR_STOPS
 }
 
-// The tour POST's optional `variant` sibling field. Chain variants must name
-// a slug from the target's saved manifest — an agent posting for a chain the
-// scoping run never defined is a bug, not a new chain.
-export function parseTourVariant(raw: unknown, chainSlugs: Set<string>): TourVariant {
+// The tour POST's optional `variant` sibling field. Chain and issue variants
+// must name something from the target's saved manifest — an agent posting for
+// a chain the scoping run never defined, or an issue the hunt never found, is
+// a bug, not a new chain. `known` holds the full variant strings the manifests
+// currently define ("chain:<slug>" / "issue:<slug>").
+export function parseTourVariant(raw: unknown, known: Set<string>): TourVariant {
   if (raw === undefined || raw === null || raw === 'overview') return 'overview'
   if (raw === 'detail') return 'detail'
-  if (typeof raw === 'string' && raw.startsWith('chain:')) {
-    const slug = raw.slice('chain:'.length)
-    if (CHAIN_SLUG.test(slug) && chainSlugs.has(slug)) return `chain:${slug}`
-    throw createError({ statusCode: 400, message: `unknown chain "${slug}" — not in the saved chains manifest` })
+  for (const prefix of ['chain:', 'issue:'] as const) {
+    if (typeof raw !== 'string' || !raw.startsWith(prefix)) continue
+    const slug = raw.slice(prefix.length)
+    if (CHAIN_SLUG.test(slug) && known.has(raw)) return raw as TourVariant
+    // Hunt walkers only exist for HIGH issues, so `known` holds only those —
+    // say which rule was missed rather than claiming the issue isn't there.
+    throw createError({
+      statusCode: 400,
+      message: prefix === 'chain:'
+        ? `unknown chain "${slug}" — not in the saved chains manifest`
+        : `no walkthrough for issue "${slug}" — not a high-severity issue in the saved hunt manifest`,
+    })
   }
   throw createError({ statusCode: 400, message: 'unexpected tour variant' })
 }
@@ -81,9 +93,9 @@ export function cleanRisks(parsed: any, knownPaths: Set<string>): FileRisk[] {
 }
 
 export function cleanTour(parsed: any, variant: TourVariant = 'overview'): Tour {
-  // Chain tours walk unchanged code rendered head-version only, so LEFT-side
-  // stops have nothing to land on there — coerce to RIGHT.
-  const forceRight = variant.startsWith('chain:')
+  // Chain and issue tours walk unchanged code rendered head-version only, so
+  // LEFT-side stops have nothing to land on there — coerce to RIGHT.
+  const forceRight = variant.startsWith('chain:') || variant.startsWith('issue:')
   const stops: TourStop[] = (Array.isArray(parsed?.stops) ? parsed.stops : [])
     .filter((s: any) => typeof s?.path === 'string' && Number.isInteger(s?.line) && s.line >= 1)
     .map((s: any) => ({
@@ -128,6 +140,46 @@ export function cleanChains(parsed: any): ChainsManifest {
     throw createError({ statusCode: 400, message: 'duplicate chain ids' })
   }
   return { overview: String(parsed.overview ?? ''), chains }
+}
+
+// The hunt manifest: every suspected bug/vulnerability the hunt session found,
+// in severity order. Same slug discipline as chains — the high-severity ids
+// become herdr prompts and tour variants.
+export function cleanHunt(parsed: any): HuntManifest {
+  if (!Array.isArray(parsed?.issues)) {
+    throw createError({ statusCode: 400, message: 'unexpected hunt shape' })
+  }
+  const issues = parsed.issues
+    .filter((i: any) =>
+      typeof i?.id === 'string'
+      && FINDING_SEVERITIES.includes(i?.severity)
+      && typeof i?.title === 'string' && i.title.trim()
+      && typeof i?.path === 'string' && i.path.trim())
+    .map((i: any) => ({
+      id: i.id,
+      severity: i.severity,
+      kind: HUNT_KINDS.includes(i.kind) ? i.kind : 'bug',
+      title: String(i.title).trim().slice(0, 120),
+      summary: String(i.summary ?? '').trim(),
+      path: i.path,
+      line: Number.isInteger(i.line) && i.line >= 1 ? i.line : null,
+      seedPaths: (Array.isArray(i.seedPaths) ? i.seedPaths : [])
+        .filter((p: any) => typeof p === 'string' && p.trim())
+        .slice(0, 10),
+    }))
+    // Severity order, so the walkers (and the panel) lead with the worst.
+    .sort((a: any, b: any) => FINDING_SEVERITIES.indexOf(a.severity) - FINDING_SEVERITIES.indexOf(b.severity))
+    .slice(0, MAX_ISSUES)
+  for (const i of issues) {
+    if (!CHAIN_SLUG.test(i.id)) {
+      throw createError({ statusCode: 400, message: `bad issue id "${i.id}" — must match ${CHAIN_SLUG}` })
+    }
+  }
+  if (new Set(issues.map((i: any) => i.id)).size !== issues.length) {
+    throw createError({ statusCode: 400, message: 'duplicate issue ids' })
+  }
+  // A clean hunt is a real result: zero issues saves as an empty manifest.
+  return { overview: String(parsed.overview ?? ''), issues }
 }
 
 export const MAX_FINDINGS = 50

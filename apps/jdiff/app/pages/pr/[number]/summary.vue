@@ -60,13 +60,23 @@ const modes = useTourModes(repo, computed(() => ({ number: number.value })), com
 onMounted(() => { void modes.load() })
 const modeDetail = modes.detail
 const modeChains = modes.chains
+const modeHunt = modes.hunt
 const detailOpen = ref(true)
 const chainsOpen = ref(true)
+const huntOpen = ref(true)
 const openChains = ref<Record<string, boolean>>({})
 function toggleChain(slug: string) {
   openChains.value[slug] = !openChains.value[slug]
   if (openChains.value[slug]) void modes.loadChainTour(slug)
 }
+// Expanding a hunt issue pulls its walkthrough in — the stops that explain
+// the defect from the entry point to the damage.
+const openIssues = ref<Record<string, boolean>>({})
+function toggleIssue(slug: string) {
+  openIssues.value[slug] = !openIssues.value[slug]
+  if (openIssues.value[slug]) void modes.loadIssueTour(slug)
+}
+
 function reviewAnchor(path: string): string {
   return '#f-' + path.replace(/[^a-zA-Z0-9]/g, '-')
 }
@@ -510,6 +520,74 @@ async function postAnswer(i: number) {
         </template>
         <div v-if="!modeChains.manifest && !modeChains.scopePending && !modeChains.scopeError" class="item-note empty-note">
           not generated yet — one session maps the change into system chains, then jDiff walks each chain end-to-end (unchanged code included)
+        </div>
+      </div>
+
+      <div class="rating-card">
+        <div
+          class="rating-head"
+          :class="{ clickable: modeHunt.manifest && !modeHunt.scopePending }"
+          @click="modeHunt.manifest && !modeHunt.scopePending && (huntOpen = !huntOpen)"
+        >
+          <span v-if="modeHunt.manifest && !modeHunt.scopePending" class="rating-chevron">{{ huntOpen ? '▾' : '▸' }}</span>
+          <span class="card-title">{{ modeHunt.manifest ? 'bug &amp; vulnerability hunt' : '✦ bug &amp; vulnerability hunt' }}</span>
+          <template v-if="modeHunt.manifest">
+            <span class="rating-effort">{{ modeHunt.high.length }} high · {{ modeHunt.rest.length }} lower</span>
+            <span v-if="modeHunt.at" class="rating-effort">hunted {{ timeAgo(modeHunt.at) }}</span>
+            <span v-if="modeHunt.stale" class="stale-badge" title="the PR was pushed after the hunt ran — re-hunt to refresh">out of date</span>
+          </template>
+          <span class="head-actions">
+            <button
+              v-if="!modeHunt.scopePending && !modeHunt.anyIssuePending"
+              class="log-toggle"
+              @click.stop="modes.generate('hunt')"
+            >{{ modeHunt.manifest ? '↻ re-hunt' : '✦ generate' }}</button>
+            <button v-else class="log-toggle" @click.stop="modes.cancel('hunt')">cancel</button>
+            <span v-if="modeHunt.scopePending || modeHunt.anyIssuePending" class="spinner small" />
+          </span>
+        </div>
+        <div v-if="modeHunt.scopeError" class="error-box in-card">{{ modeHunt.scopeError }}</div>
+        <template v-if="modeHunt.manifest && !modeHunt.scopePending && huntOpen">
+          <div v-if="modeHunt.manifest.overview" class="summary-md tour-overview" v-html="renderMarkdown(modeHunt.manifest.overview)" />
+          <ol class="reading-order">
+            <li v-for="i in modeHunt.manifest.issues" :key="i.id">
+              <strong class="stop-title">
+                <span class="factor-dot" :class="'risk-' + i.severity" />
+                <button
+                  v-if="modeHunt.manifest.tours[i.id]"
+                  class="chain-toggle"
+                  @click="toggleIssue(i.id)"
+                >{{ openIssues[i.id] ? '▾' : '▸' }} {{ i.title }}</button>
+                <template v-else>{{ i.title }}</template>
+                <span class="rating-effort"> {{ i.severity }} {{ i.kind }}</span>
+                <span v-if="modeHunt.issueJobs[i.id]" class="rating-effort"> explaining…</span>
+                <span v-else-if="i.severity === 'high' && !modeHunt.manifest.tours[i.id] && modeHunt.issueErrors[i.id]" class="chain-fail"> failed</span>
+              </strong>
+              <div class="item-note">{{ i.summary }}</div>
+              <div class="item-note reading-path">{{ i.path }}<template v-if="i.line">:{{ i.line }}</template></div>
+              <div v-if="i.severity === 'high' && !modeHunt.manifest.tours[i.id] && modeHunt.issueErrors[i.id]" class="item-note chain-fail">
+                {{ modeHunt.issueErrors[i.id] }}
+              </div>
+              <ol v-if="openIssues[i.id] && modeHunt.issueTours[i.id]" class="reading-order nested">
+                <li v-for="(s, si) in modeHunt.issueTours[i.id]!.tour.stops" :key="si">
+                  <strong class="stop-title">{{ s.title }}</strong>
+                  <div>
+                    <NuxtLink
+                      :to="{ path: reviewRoute.path, query: { repo, stop: si, tour: `issue:${i.id}` } }"
+                      class="reading-path"
+                    >{{ s.path }}:{{ s.line }}</NuxtLink>
+                  </div>
+                  <div class="item-note">{{ s.note }}</div>
+                </li>
+              </ol>
+            </li>
+          </ol>
+        </template>
+        <div v-if="modeHunt.manifest && !modeHunt.manifest.issues.length && !modeHunt.scopePending" class="item-note empty-note">
+          the hunt found nothing — no bugs or vulnerabilities in this change
+        </div>
+        <div v-if="!modeHunt.manifest && !modeHunt.scopePending && !modeHunt.scopeError" class="item-note empty-note">
+          not generated yet — one session reviews the change for bugs and vulnerabilities, then jDiff walks every HIGH issue end-to-end to explain it in depth
         </div>
       </div>
 

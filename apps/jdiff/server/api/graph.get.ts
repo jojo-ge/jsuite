@@ -137,33 +137,27 @@ export default defineEventHandler(async (event): Promise<{
   const target = resolveTarget(event)
   const prepared = await prepareTarget(target, path)
 
-  const headRef = prepared.headRef
-  const baseRef = target.kind === 'pr' ? `origin/${prepared.base}` : prepared.base
+  const nameStatus = await rawNameStatus(prepared, path)
 
-  const nameStatus = await run(
-    'git',
-    ['diff', '--name-status', '--no-color', '-M', `${baseRef}...${headRef}`],
-    path,
-  )
-
-  // path -> ref to read content from (deleted files only exist on the base)
-  const fileRefs = new Map<string, string>()
+  // path -> which side of the diff to read content from (deleted files only
+  // exist on the left).
+  const fileSides = new Map<string, 'left' | 'right'>()
   for (const line of nameStatus.split('\n')) {
     if (!line.trim()) continue
     const [status, a, b] = line.split('\t')
     if (!status || !a) continue
-    if (status.startsWith('R') || status.startsWith('C')) fileRefs.set(b ?? a, headRef)
-    else if (status === 'D') fileRefs.set(a, baseRef)
-    else fileRefs.set(a, headRef)
+    if (status.startsWith('R') || status.startsWith('C')) fileSides.set(b ?? a, 'right')
+    else if (status === 'D') fileSides.set(a, 'left')
+    else fileSides.set(a, 'right')
   }
 
-  const changed = new Set(fileRefs.keys())
+  const changed = new Set(fileSides.keys())
 
   const contents = new Map<string, string>()
   await Promise.all(
-    [...fileRefs].map(async ([p, ref]) => {
+    [...fileSides].map(async ([p, side]) => {
       try {
-        const text = await run('git', ['show', `${ref}:${p}`], path)
+        const text = await showFile(prepared, path, p, side)
         if (text.length <= MAX_FILE_BYTES && !text.includes('\0')) contents.set(p, text)
       } catch { /* binary / unreadable: no outgoing edges */ }
     }),
