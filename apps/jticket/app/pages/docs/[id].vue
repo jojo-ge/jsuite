@@ -41,9 +41,82 @@ async function onDelete() {
   navigateTo('/docs')
 }
 
+// Add a picture to the document from the browser: paste anywhere on the page,
+// drop onto the article, or use the button. Each file becomes an `image` block
+// appended to the document — the same block a skill would author with a local
+// `file` path, here carrying the bytes inline — via the same PATCH that
+// rewrites the blocks wholesale (existing blocks go back as they are; their
+// media and charts survive, see materialiseBlocks).
+const addingImages = ref(0)
+const imageError = ref('')
+const canAddImages = computed(() => !!doc.value && !peerName.value)
+
+async function addImages(files: File[]) {
+  if (!doc.value || !canAddImages.value) return
+  const images = files.filter(isImageFile)
+  if (!images.length) return
+  imageError.value = ''
+  addingImages.value += images.length
+  try {
+    const additions = []
+    for (const file of images) {
+      const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+      additions.push({
+        id: `img-${stamp}`,
+        type: 'image',
+        dataUrl: await readAsDataUrl(file),
+        name: `${stamp}-${file.name || 'image.png'}`,
+        alt: file.name?.replace(/\.[a-z0-9]+$/i, '') || 'image',
+      })
+    }
+    await $fetch(`/api/docs/${doc.value.id}`, {
+      method: 'PATCH',
+      body: { blocks: [...(sharedDoc.value?.blocks ?? []), ...additions] },
+    })
+    await Promise.all([refresh(), refreshDocument()])
+  } catch (err) {
+    imageError.value =
+      (err as { data?: { statusMessage?: string } }).data?.statusMessage ?? (err as Error).message ?? 'upload failed'
+  } finally {
+    addingImages.value -= images.length
+  }
+}
+
+function pickImages() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  input.multiple = true
+  input.onchange = () => void addImages(Array.from(input.files ?? []))
+  input.click()
+}
+
+// A paste into the notes rail is the rail's (it attaches to a note and calls
+// preventDefault first); a paste into any other field is text; anything else
+// on the page is "add this picture to the document".
+function onPagePaste(e: ClipboardEvent) {
+  if (e.defaultPrevented || editing.value) return
+  const t = e.target as HTMLElement | null
+  if (t && (t.closest('textarea, input, [contenteditable="true"]'))) return
+  const files = Array.from(e.clipboardData?.files ?? []).filter(isImageFile)
+  if (!files.length) return
+  e.preventDefault()
+  void addImages(files)
+}
+
+function onArticleDrop(e: DragEvent) {
+  if (e.defaultPrevented) return
+  const files = Array.from(e.dataTransfer?.files ?? []).filter(isImageFile)
+  if (!files.length) return
+  e.preventDefault()
+  void addImages(files)
+}
+
 onMounted(() => {
   if (!docs.value.length) refresh()
+  window.addEventListener('paste', onPagePaste)
 })
+onBeforeUnmount(() => window.removeEventListener('paste', onPagePaste))
 </script>
 
 <template>
@@ -88,18 +161,36 @@ onMounted(() => {
           label="Notes"
           @click="railOpen = !railOpen"
         />
+        <span v-if="imageError" class="text-xs text-error">{{ imageError }}</span>
+        <UButton
+          v-if="canAddImages"
+          icon="i-lucide-image-plus"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          :loading="addingImages > 0"
+          title="Append an image block — or paste / drop a picture onto the page"
+          @click="pickImages"
+        >
+          {{ addingImages > 0 ? 'Adding…' : 'Add image' }}
+        </UButton>
         <UButton icon="i-lucide-pencil" size="xs" variant="soft" @click="editing = true">Edit</UButton>
         <UButton icon="i-lucide-trash-2" size="xs" color="error" variant="ghost" aria-label="Delete doc" @click="onDelete" />
       </div>
 
-      <!-- The shared document, rendered exactly as jExplain renders it -->
-      <DocumentArticle v-if="sharedDoc" :doc="sharedDoc" v-model:rail-open="railOpen" />
-      <div v-else class="py-16 text-center text-sm text-muted">
-        <p>No content yet — this doc's shared document is empty or missing.</p>
-        <p class="mt-1">
-          Author it with the <code class="font-mono text-xs">to-jdoc</code> skill:
-          <code class="font-mono text-xs">PATCH /api/docs/{{ doc.key }}</code> with a blocks payload.
-        </p>
+      <!-- The shared document, rendered exactly as jExplain renders it. Dropping
+           a picture here appends it as an image block (the rail's own drop
+           zones take precedence — they prevent default first). -->
+      <div class="flex min-h-0 flex-1 flex-col" @dragover.prevent @drop="onArticleDrop">
+        <DocumentArticle v-if="sharedDoc" :doc="sharedDoc" v-model:rail-open="railOpen" />
+        <div v-else class="py-16 text-center text-sm text-muted">
+          <p>No content yet — this doc's shared document is empty or missing.</p>
+          <p class="mt-1">
+            Author it with the <code class="font-mono text-xs">to-jdoc</code> skill:
+            <code class="font-mono text-xs">PATCH /api/docs/{{ doc.key }}</code> with a blocks payload
+            — or paste / drop a screenshot here to add it as an image block.
+          </p>
+        </div>
       </div>
     </template>
   </div>

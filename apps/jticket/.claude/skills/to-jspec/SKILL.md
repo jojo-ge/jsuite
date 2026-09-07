@@ -22,7 +22,7 @@ here also shows up in jExplain's article list; that is by design.
 ## Process
 
 1. **Run `/to-spec`** to produce the document's content. Everything below is about form.
-2. **Author the blocks.** The vocabulary (prose, callout, code, diff, chart, steps,
+2. **Author the blocks.** The vocabulary (prose, callout, code, diff, chart, image, steps,
    compare, timeline, takeaway, glossary) lives in the **`j-explain` skill** — read its
    "Block vocabulary" section. Spec-shaped guidance: one `prose` block per `/to-spec`
    section (start at `##` — the doc `title` is the `#`); `callout` for the two or three
@@ -51,6 +51,8 @@ curl -sk --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 | Ticket `resolution` | plain GFM markdown | the answer, plus links to whatever it produced |
 | Project `description` | plain GFM markdown on the board, preview on project cards | one or two lines |
 | Ticket `acceptanceCriteria[]` | **inline** markdown only | `` `code` ``, `**bold**`, links — nothing block-level |
+| Pictures in a doc | `image` **block** | `{ "type": "image", "file": "/abs/path.png" }` or `"base64"` — never an `/attachments/` link |
+| Pictures in ticket markdown | `![…](/attachments/<name>)` | upload first: `POST /api/attachments` `{ file }` or `{ name, base64 }`, embed its `markdown` |
 
 There is no jdoc dialect any more — no `:::` panels, `[[toc]]`, `{status:…}` lozenges,
 `@[mentions]`, `[date:…]` or `++underline++` **anywhere**. In markdown fields plain GFM

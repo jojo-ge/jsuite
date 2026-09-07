@@ -64,6 +64,15 @@ function blank(): FormState {
 
 const form = reactive<FormState>(blank())
 const saving = ref(false)
+
+// Pasted / dropped / picked images upload to /api/attachments and land in the
+// field as markdown — the value stays plain GFM.
+const {
+  uploading: descUploading, error: descError, onPaste: descPaste, onDrop: descDrop, pick: descPick,
+} = useAttachImages(toRef(form, 'description'))
+const {
+  uploading: resUploading, error: resError, onPaste: resPaste, onDrop: resDrop, pick: resPick,
+} = useAttachImages(toRef(form, 'resolution'))
 const canSave = computed(() => !!form.title.trim())
 
 // Refilled on mount (the ticket modal mounts the form when you hit Edit) and on
@@ -216,9 +225,18 @@ defineExpose({ save, reset, saving, canSave })
 
     <UFormField
       label="Description"
-      help="The end-to-end behaviour this ticket makes work. Renders as markdown: ```fenced code blocks```, inline `code`, tables, lists…"
+      help="The end-to-end behaviour this ticket makes work. Renders as markdown: ```fenced code blocks```, inline `code`, tables, lists, images…"
     >
-      <UTextarea v-model="form.description" :rows="4" placeholder="What to build…" class="w-full font-mono text-sm" />
+      <UTextarea
+        v-model="form.description"
+        :rows="4"
+        placeholder="What to build…"
+        class="w-full font-mono text-sm"
+        @paste="descPaste"
+        @drop="descDrop"
+        @dragover.prevent
+      />
+      <AttachImageRow :uploading="descUploading" :error="descError" @pick="descPick()" />
     </UFormField>
 
     <UFormField label="Acceptance criteria">
@@ -274,7 +292,11 @@ defineExpose({ save, reset, saving, canSave })
         :rows="3"
         placeholder="The decision / finding this ticket landed on…"
         class="w-full font-mono text-sm"
+        @paste="resPaste"
+        @drop="resDrop"
+        @dragover.prevent
       />
+      <AttachImageRow :uploading="resUploading" :error="resError" @pick="resPick()" />
     </UFormField>
 
     <!-- The ticket's own prompt — folded away unless it has one. Overrides are

@@ -30,8 +30,9 @@ shared document (`documentKey`: title page, blocks, glossary).
 
 The body is **not markdown** — it is the block vocabulary of the shared
 document system: `prose`, `callout`, `code`, `diff`, `chart` (live Excalidraw,
-shared with jChart), `steps`, `compare`, `timeline`, `takeaway`, plus an
-optional `glossary`. **The full vocabulary with worked examples lives in the
+shared with jChart), `image` (a screenshot — local `file` path or inline
+`base64`, copied into the doc's media dir), `steps`, `compare`, `timeline`,
+`takeaway`, plus an optional `glossary`. **The full vocabulary with worked examples lives in the
 `j-explain` skill** (`~/.claude/skills/j-explain/SKILL.md`) — read its "Block
 vocabulary" section before authoring. Everything there applies verbatim;
 only the publish call differs.
@@ -60,6 +61,8 @@ curl -sk https://jticket.local/api/docs \
       "rows": [["Effort", "High", "Low"], ["Debt", "None", "Accrues"]] },
     { "id": "shape", "type": "chart", "title": "New request path",
       "mermaid": "flowchart LR\n  A[Cart] --> B[Pay] --> C[Done]" },
+    { "id": "today", "type": "image", "file": "/abs/path/legacy-checkout.png",
+      "alt": "Legacy checkout", "caption": "The step that loses the carts." },
     { "id": "close", "type": "takeaway", "points": ["Rebuild, but stage it behind a flag."] }
   ]
 }
@@ -72,6 +75,12 @@ Fields:
 - `blocks` — the content. Optional but the point; omitting it creates an empty
   document.
 - `subtitle` / `kicker` / `glossary` — document header extras (see j-explain).
+- Pictures are `image` blocks: `file` (absolute path on this machine) or
+  `base64` / `dataUrl` (inline bytes, `name` picks the stored filename) — the
+  server copies them into `.data/jexplain/media/<documentKey>/` and serves them
+  at `/api/media/<documentKey>/<file>` in both apps. Don't link `/attachments/…`
+  from a doc — that store is jTicket-only (ticket markdown). The user can also
+  add one from the doc page: **Add image**, or paste / drop onto the page.
 - `documentKey` — link an existing shared document instead of authoring one
   (e.g. promote a jExplain article to a tracked doc). 400 on unknown keys.
 - `project` — optional parent project, referenced by **title, key, or id**
@@ -90,7 +99,9 @@ on its project page — and in jExplain (same document, same notes) at
 `subtitle`, `kicker`) **rewrite the shared document wholesale** — send the
 complete blocks array, never a fragment. Notes and `createdAt` survive, and
 chart blocks whose mermaid didn't change keep the user's hand edits (same
-idempotency rule as j-explain `--replace`).
+idempotency rule as j-explain `--replace`). Image blocks: send existing ones
+back with their stored `src` (GET `/api/documents/<documentKey>` has it) —
+media a republish no longer references is pruned.
 
 ```bash
 curl -sk -X PATCH https://jticket.local/api/docs/DOC-3 \

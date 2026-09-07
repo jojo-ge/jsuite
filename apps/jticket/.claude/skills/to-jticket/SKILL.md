@@ -112,6 +112,11 @@ curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' -d '{
 curl -s -X PATCH "$JTICKET/api/tickets/TICK-4" -H 'content-type: application/json' \
   -d '{ "status": "done" }'
 
+# attach a screenshot to a ticket: upload, then embed the returned markdown in
+# the description / resolution / a comment (see reference/api.md "Attachments")
+curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
+  -d '{"file":"/tmp/shot.png","name":"tick-4-shot.png"}' | jq -r .markdown
+
 # comment on a ticket (author = your own name; body is GFM markdown)
 curl -s "$JTICKET/api/tickets/TICK-4/comments" -H 'content-type: application/json' \
   -d '{ "author": "claude", "body": "Blocked on the schema question — see TICK-3." }'
@@ -203,7 +208,11 @@ These are the ways a write silently does the wrong thing. All of them are real.
 6. **A ticket cannot block itself** — the API drops that edge.
 7. **`blocked` / `claimed` / `frontier` are read-only**, computed per GET. Writing them
    does nothing.
-8. **Attachment upload overwrites on name collision.** Prefix names to keep them unique.
+8. **Images go in two different stores.** Ticket markdown (description, resolution,
+   comments) embeds `POST /api/attachments` uploads (`{ file }` or `{ name, base64 }` →
+   use the returned `markdown`). Doc content carries pictures as `image` blocks (`file`
+   or `base64`), never `/attachments/…` links — jExplain can't serve those. Attachment
+   upload **overwrites on name collision**; prefix names to keep them unique.
 9. **Comments are append-only, via their own endpoint.** `POST
    /api/tickets/:id/comments` adds one; PATCHing `comments` does nothing. Comments are
    the discussion (human direction before handoff, LLM questions and progress notes);

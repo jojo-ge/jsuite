@@ -130,7 +130,7 @@ jChart stays the specialised workbench UI on top.
 ## @jsuite/documents
 
 The block-based document system born in jExplain — the model (prose, callout,
-code, diff, chart, steps, compare, timeline, takeaway + glossary), the
+code, diff, chart, image, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
 experience with margin notes), `useMarkdown()`/`useShiki()`, and the
 `server/api/documents/**` routes over `.data/jexplain/` — lives in

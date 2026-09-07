@@ -61,14 +61,26 @@ line clamp stays honest.
   system (`@jsuite/documents`; files in the root `.data/jexplain/` pool, which
   jExplain lists and renders too). Shown at the top of the board and at
   `/docs/DOC-1`.
-  - Content is authored as **blocks** (prose, callout, code, diff, chart,
+  - Content is authored as **blocks** (prose, callout, code, diff, chart, image,
     steps, compare, timeline, takeaway + glossary — the jExplain format).
     `POST /api/docs` with `blocks` creates the document; `documentKey` links an
     existing one; `PATCH` with `blocks` rewrites it (notes survive). Full
     reference at **/api-guide** in the running app.
   - `status`: `draft` · `ready`
-  - Images: `POST /api/attachments` with `{ name, base64 }` → serve from
-    `/attachments/<name>`, reference as `![alt](/attachments/<name>)` in prose.
+  - Images are `image` blocks — `{ type: "image", file }` (a local path) or
+    `{ type: "image", base64 | dataUrl, name }` (inline bytes); the server copies
+    them into `.data/jexplain/media/<documentKey>/` and serves them at
+    `/api/media/<documentKey>/<file>` in jTicket and jExplain alike. The doc page's
+    **Add image** button (or a paste / drop onto the page) appends one.
+
+- **Images in ticket markdown** — descriptions, resolutions, comments (and
+  project descriptions) render GFM, so a picture is `![alt](/attachments/<name>)`.
+  Upload with `POST /api/attachments` — `{ name, base64 }` (bare base64 or a
+  data: URL; `dataUrl` is a synonym) or `{ file, name? }` (a local path) — and
+  embed the `markdown` it returns. In the UI, paste or drop an image into any of
+  those fields, or click **Attach image**. Files live in
+  `.data/jticket/attachments/`, jTicket-only (jExplain can't serve them — hence
+  image blocks for docs). Same name overwrites; the UI prefixes a timestamp.
 
 ## HTTP API
 
@@ -83,7 +95,7 @@ See **/api-guide** in the running app. Summary:
 | POST | `/api/import` | Bulk-create a whole breakdown at once |
 | GET/POST | `/api/docs` | List (`?projectId=`, `?status=`, `?label=`) / create docs |
 | GET/PATCH/DELETE | `/api/docs/:id` | Read / update / delete a doc (id or key) |
-| GET/POST | `/api/attachments` | List / upload attachments for docs |
+| GET/POST | `/api/attachments` | List / upload attachments (`{ name, base64 }` or `{ file }`) for ticket markdown |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
 
 ### Bulk import (recommended for skills)

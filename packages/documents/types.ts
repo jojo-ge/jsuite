@@ -92,12 +92,25 @@ export interface ImageBlock {
   framed?: boolean
 }
 
-/** What skills POST: a local file path we copy into the doc's media dir. */
+/**
+ * What authors POST. The bytes arrive one of three ways — a local `file` path
+ * (skills on this machine), inline `base64`/`dataUrl` (a browser upload, or a
+ * client that can't see this filesystem), or an already-served `src` (a
+ * republish) — and are copied into .data/jexplain/media/<key>/ so the stored
+ * block keeps only a served URL.
+ */
 export interface ImageBlockInput extends Omit<ImageBlock, 'src'> {
   src?: string
   /** Absolute path to a local image file; copied into .data/jexplain/media/<key>/. */
   file?: string
-  /** Override the stored filename; defaults to the source file's name. */
+  /** The image bytes inline — bare base64 or a data: URL. Max 12MB decoded. */
+  base64?: string
+  /** Synonym for `base64` (a data: URL, as a browser paste produces). */
+  dataUrl?: string
+  /**
+   * Override the stored filename; defaults to the source file's name. Give one
+   * with `base64` — the extension picks the content type (else .png).
+   */
   name?: string
 }
 

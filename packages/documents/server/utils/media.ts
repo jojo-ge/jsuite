@@ -62,6 +62,51 @@ export async function storeMedia(docKey: string, sourcePath: string, preferredNa
   return `/api/media/${key}/${name}`
 }
 
+/** Largest image the inline (base64) paths accept, decoded. */
+export const MAX_MEDIA_BYTES = 12 * 1024 * 1024
+
+/**
+ * Decode an inline image — a data: URL or bare base64 — into bytes plus the
+ * extension its content type implies ('' when the payload carried none, i.e.
+ * bare base64; the caller falls back to the name's extension, then .png).
+ */
+export function decodeInlineImage(payload: string): { bytes: Buffer; ext: string } {
+  const trimmed = payload.trim()
+  const m = /^data:([a-z0-9.+/-]+);base64,(.+)$/is.exec(trimmed)
+  let ext = ''
+  let b64 = trimmed
+  if (m) {
+    const type = m[1]!.toLowerCase()
+    ext = Object.entries(EXT_TYPES).find(([, t]) => t === type)?.[0] ?? ''
+    if (!ext) throw new Error(`unsupported image type: ${type}`)
+    b64 = m[2]!
+  } else if (/^data:/i.test(trimmed)) {
+    throw new Error('expected a base64 image data URL')
+  }
+  const bytes = Buffer.from(b64.replace(/\s+/g, ''), 'base64')
+  if (!bytes.length) throw new Error('empty image payload')
+  if (bytes.length > MAX_MEDIA_BYTES) throw new Error('image too large (max 12MB)')
+  return { bytes, ext }
+}
+
+/**
+ * Store inline image bytes (a data: URL or bare base64) as block media and
+ * return the served URL — the upload path for clients that can't hand us a
+ * local file: a browser paste, or a skill on another machine. `preferredName`
+ * decides the stored name; its extension wins over the data URL's type only
+ * when the payload was bare base64.
+ */
+export async function storeMediaBytes(docKey: string, payload: string, preferredName?: string): Promise<string> {
+  const { bytes, ext } = decodeInlineImage(payload)
+  const key = sanitizeDocKey(docKey)
+  const stem = basename(preferredName || 'image', extname(preferredName || ''))
+  const nameExt = extname(preferredName || '').toLowerCase()
+  const name = sanitizeMediaName(stem + (ext || (nameExt in EXT_TYPES ? nameExt : '.png')))
+  await mkdir(mediaDir(key), { recursive: true })
+  await writeFile(join(mediaDir(key), name), bytes)
+  return `/api/media/${key}/${name}`
+}
+
 /**
  * Note attachments live in a `notes/` subdirectory of the document's media dir.
  * Keeping them out of the top level means republishing the document (which
@@ -77,13 +122,10 @@ export function notesMediaPath(docKey: string, name: string): string {
 
 /** Store a data: URL (a paste, an upload, or a canvas export) as a note attachment. */
 export async function storeNoteMedia(docKey: string, dataUrl: string, preferredName?: string): Promise<string> {
-  const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(dataUrl.trim())
-  if (!m) throw new Error('expected a base64 image data URL')
-  const ext = Object.entries(EXT_TYPES).find(([, type]) => type === m[1].toLowerCase())?.[0] ?? '.png'
+  if (!/^data:/i.test(dataUrl.trim())) throw new Error('expected a base64 image data URL')
+  const { bytes, ext } = decodeInlineImage(dataUrl)
   const key = sanitizeDocKey(docKey)
-  const name = sanitizeMediaName((preferredName || 'note') + ext)
-  const bytes = Buffer.from(m[2], 'base64')
-  if (bytes.length > 12 * 1024 * 1024) throw new Error('image too large (max 12MB)')
+  const name = sanitizeMediaName((preferredName || 'note') + (ext || '.png'))
   await mkdir(notesMediaDir(key), { recursive: true })
   await writeFile(join(notesMediaDir(key), name), bytes)
   return `/api/media/${key}/notes/${name}`

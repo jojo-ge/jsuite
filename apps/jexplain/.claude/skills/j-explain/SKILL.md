@@ -88,6 +88,14 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 - Charts you author here **are** jChart charts. Embed an existing one with just `{ "type": "chart", "chartKey": "..." }`, and set `chartKey` yourself when you want a stable, nameable chart rather than a slug derived from the doc key + title.
 - After the user has edited, read the live scene from `.data/jchart/<chartKey>.json` — not your original mermaid — and its shape notes from `<chartKey>.notes.json`.
 
+**image** — a screenshot or picture, framed like a screenshot, click to zoom, with its own note thread (notes pin to block ids, so one image = one conversation). Give it bytes one of three ways: a local `file` path (copied into `.data/jexplain/media/<docKey>/` — the document keeps working after the source is moved), inline `base64` / `dataUrl` (for bytes you hold; `name` picks the stored filename and its extension the type), or an already-served `src` when republishing. Optional `title`, `caption` (markdown), `alt`, `width` (px), `framed` (default true). png/jpg/gif/webp/svg/avif, max 12MB inline.
+```json
+{ "type": "image", "file": "/abs/path/checkout-before.png", "alt": "Legacy checkout",
+  "caption": "The step that loses **12%** of carts." }
+```
+- On `--replace`, media the new blocks no longer reference is pruned — send existing image blocks back with their `src` (read them from `.data/jexplain/<key>.json`) rather than re-copying the file each time.
+- Don't put `/attachments/…` links (jTicket's ticket-markdown store) in a document: jExplain can't serve that path. Image blocks are served at `/api/media/<docKey>/<file>` by both apps.
+
 **steps** — numbered walkthrough: `{ "type": "steps", "title": "…", "items": [{ "title": "…", "md": "…" }] }`
 
 **compare** — options table, markdown cells: `{ "type": "compare", "title": "…", "columns": ["", "Before", "After"], "rows": [["Latency", "800ms", "**120ms**"]] }`

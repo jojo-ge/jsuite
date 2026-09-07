@@ -129,6 +129,10 @@ async function setStatus(s: TicketStatus) {
 const comments = computed(() => live.value?.comments ?? [])
 const commentBody = ref('')
 const commentAuthor = ref('')
+// Screenshots in comments: paste / drop / pick → /api/attachments → markdown.
+const {
+  uploading: commentUploading, error: commentError, onPaste: commentPaste, onDrop: commentDrop, pick: commentPick,
+} = useAttachImages(commentBody)
 onMounted(() => {
   commentAuthor.value = localStorage.getItem('jticket-comment-author') ?? 'Joseph'
 })
@@ -346,9 +350,13 @@ const statusOptions = [
             <UTextarea
               v-model="commentBody"
               :rows="2"
-              placeholder="Leave a note for whoever picks this ticket up… (markdown)"
+              placeholder="Leave a note for whoever picks this ticket up… (markdown; paste or drop images)"
               class="w-full font-mono text-sm"
+              @paste="commentPaste"
+              @drop="commentDrop"
+              @dragover.prevent
             />
+            <AttachImageRow :uploading="commentUploading" :error="commentError" @pick="commentPick()" />
             <div class="flex items-center gap-2">
               <UInput v-model="commentAuthor" placeholder="Name" size="sm" class="w-36" />
               <UButton

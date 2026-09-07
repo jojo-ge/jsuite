@@ -75,8 +75,9 @@ const endpoints = [
   { m: 'POST', p: '/api/documents', d: 'Create/replace a shared document { title, blocks, key?, replace? }' },
   { m: 'GET', p: '/api/documents/:key', d: 'Get a shared document / :key/notes for its notes' },
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
-  { m: 'GET', p: '/api/attachments', d: 'List uploaded attachments' },
-  { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 } → served at /attachments/:name' },
+  { m: 'GET', p: '/api/attachments', d: 'List uploaded attachments (images for ticket markdown)' },
+  { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 | dataUrl } or { file, name? } → served at /attachments/:name, returns ready-made markdown' },
+  { m: 'GET', p: '/api/media/:key/:file', d: "A doc's image-block media (also served by jExplain)" },
 ]
 
 const docExample = `curl -s http://localhost:43000/api/docs \\
@@ -102,11 +103,36 @@ const blockTypes = [
   { s: 'code', d: 'Syntax-highlighted, line highlights + margin annotations' },
   { s: 'diff', d: 'Unified diff with per-line annotations and commentary' },
   { s: 'chart', d: 'Live Excalidraw canvas — shared with jChart (mermaid in)' },
+  { s: 'image', d: 'A screenshot — { file } local path or { base64 | dataUrl, name } inline; stored as doc media' },
   { s: 'steps', d: 'Numbered walkthrough' },
   { s: 'compare', d: 'Options table with markdown cells' },
   { s: 'timeline', d: 'Chronology of events' },
   { s: 'takeaway', d: 'Closing key-points card' },
 ]
+const imageExample = `# Tickets: upload to the attachment store, embed the markdown it hands back
+# (description, resolution, comments and project descriptions all render it)
+curl -s http://localhost:43000/api/attachments \\
+  -H 'content-type: application/json' \\
+  -d '{ "file": "/tmp/checkout-flow.png", "name": "tick-7-flow.png" }'
+# → 201 { "name": "tick-7-flow.png", "url": "/attachments/tick-7-flow.png", "size": 20480,
+#         "markdown": "![tick-7-flow.png](/attachments/tick-7-flow.png)" }
+# No local file? Send the bytes: { "name": "…png", "base64": "<bare base64 or data: URL>" }
+
+curl -s -X PATCH http://localhost:43000/api/tickets/TICK-7 \\
+  -H 'content-type: application/json' \\
+  -d '{ "description": "Persist the cart.\\n\\n![Current flow](/attachments/tick-7-flow.png)" }'
+
+# Docs: an image BLOCK — bytes by local path or inline; stored beside the document
+curl -s -X PATCH http://localhost:43000/api/docs/DOC-3 \\
+  -H 'content-type: application/json' \\
+  -d '{ "blocks": [
+    { "id": "why", "type": "prose", "md": "## Why now" },
+    { "id": "shot", "type": "image", "file": "/tmp/checkout-flow.png", "alt": "Checkout", "caption": "Where carts drop." },
+    { "id": "shot2", "type": "image", "base64": "iVBORw0KGgo…", "name": "after.png" }
+  ] }'
+# Stored as { "type": "image", "src": "/api/media/<documentKey>/01-checkout-flow.png" } —
+# send existing image blocks back with their src on a republish, or their media is pruned.`
+
 const frontierExample = `# The takeable edge of a map: todo + all blockers done + unassigned + yours, in order
 curl -s 'http://localhost:43000/api/tickets?projectId=PROJ-14&frontier=true'
 
@@ -282,11 +308,33 @@ const methodColor: Record<string, string> = {
         </div>
       </section>
 
+      <section>
+        <h2 class="mb-2 flex items-center gap-2 text-base font-semibold">
+          <UIcon name="i-lucide-image-plus" class="size-4 text-primary" />Images
+        </h2>
+        <p class="mb-3 text-sm text-muted">
+          Two stores, one per content kind. <strong>Ticket markdown</strong> (description,
+          resolution, comments, project descriptions) embeds files from
+          <code>POST /api/attachments</code> — a local <code>file</code> path or inline
+          <code>base64</code> / <code>dataUrl</code>, named by you (same name overwrites) — as
+          <code>![alt](/attachments/&lt;name&gt;)</code>; the response's <code>markdown</code> is
+          ready to paste. <strong>Docs</strong> carry pictures as <code>image</code> blocks, whose
+          bytes (<code>file</code> or <code>base64</code>) are copied into
+          <code>.data/jexplain/media/&lt;documentKey&gt;/</code> and served at
+          <code>/api/media/…</code> by jTicket and jExplain alike — never link
+          <code>/attachments/</code> from a doc, jExplain can't serve it. Max 12MB either way.
+          In the UI: paste or drop an image into any of those ticket fields (or click
+          <em>Attach image</em>), and on a doc page use <em>Add image</em> or paste / drop onto the
+          article to append an image block.
+        </p>
+        <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ imageExample }}</code></pre>
+      </section>
+
       <section class="space-y-2">
         <h2 class="text-base font-semibold">Ticket fields</h2>
         <ul class="list-inside list-disc text-sm text-muted">
           <li><code>title</code> — short descriptive name (required)</li>
-          <li><code>description</code> — the end-to-end behaviour ("what to build")</li>
+          <li><code>description</code> — the end-to-end behaviour ("what to build"); GFM markdown, images via <code>/attachments/</code></li>
           <li><code>acceptanceCriteria</code> — string array</li>
           <li><code>type</code> — <code>AFK</code> (agent-runnable) or <code>HITL</code> (needs a human)</li>
           <li><code>status</code> — <code>todo</code> · <code>in_progress</code> · <code>done</code> · <code>merged</code> (set by a local PR merge; done and merged both count as finished)</li>

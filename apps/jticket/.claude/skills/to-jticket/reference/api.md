@@ -25,7 +25,7 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
-| GET / POST | `/api/attachments` | List / upload attachments |
+| GET / POST | `/api/attachments` | List / upload attachments (images for ticket markdown) |
 | GET | `/attachments/:name` | Serve an uploaded file |
 
 `:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`, `DOC-3`).
@@ -170,6 +170,10 @@ POST /api/tickets
 
 `PATCH /api/tickets/:id` — same fields, all optional.
 
+- `description`, `resolution` and comment bodies are GFM markdown and render images:
+  upload with [`POST /api/attachments`](#attachments) and embed the returned `markdown`
+  (`![name](/attachments/<name>)`). The UI's paste / drop / **Attach image** does the same.
+
 - Array fields (`acceptanceCriteria`, `labels`, `blockedBy`) are **replaced wholesale**.
   Read-modify-write to append.
 - `assignee: ""` unassigns. `resolution: ""` clears.
@@ -233,7 +237,8 @@ roll-up PR (integration → default branch) via `gh`.
 POST /api/docs
 { "title": "Checkout spec",             // required
   "blocks": [                           // block document (jExplain format) — see to-jdoc / j-explain
-    { "type": "prose", "md": "## Problem Statement\n…" }
+    { "type": "prose", "md": "## Problem Statement\n…" },
+    { "type": "image", "file": "/abs/path/shot.png", "alt": "…" }   // or "base64": "…" — see Images
   ],
   "subtitle": "One-line standfirst.",   // optional document header extras
   "kicker": "SPEC",
@@ -254,24 +259,61 @@ Docs render at `$JTICKET/docs/DOC-n` and are listed at the top of the board. The
 shared pool itself is at `GET /api/documents` (also served by jExplain — one
 document system, two apps).
 
-### Attachments
+### Attachments (images in ticket markdown)
+
+The attachment store is for anything that renders **markdown** — ticket `description`,
+`resolution`, comments, project descriptions. Upload, then embed the `markdown` the
+response hands back. Doc content does **not** use this: a doc carries pictures as
+`image` blocks (below), which jExplain can serve too.
 
 ```jsonc
 POST /api/attachments
 { "name": "checkout-flow.png",
-  "base64": "iVBORw0KGgo…" }            // bare base64 or a full data: URL
-→ 201 { "name": "checkout-flow.png", "url": "/attachments/checkout-flow.png", "size": 20480 }
+  "base64": "iVBORw0KGgo…" }            // bare base64 or a full data: URL (`dataUrl` is a synonym)
+// — or, when the file is on this machine —
+{ "file": "/abs/path/checkout-flow.png",
+  "name": "flow.png" }                  // optional; defaults to the file's own name
+→ 201 { "name": "checkout-flow.png", "url": "/attachments/checkout-flow.png", "size": 20480,
+        "markdown": "![checkout-flow.png](/attachments/checkout-flow.png)" }
 ```
 
-Reference it from a doc body as `![Checkout flow](/attachments/checkout-flow.png)`.
-**Same name overwrites** — no versioning, no warning.
+- Images (png/jpg/gif/webp/svg) get `![…](…)` markdown; anything else (pdf, csv, txt,
+  json) gets a plain link. Max 12MB.
+- Names are sanitised to `[\w.-]` and stripped of directories. **Same name overwrites** —
+  no versioning, no warning — so prefix names to keep them unique.
+- `GET /api/attachments` lists what's stored; files serve from `/attachments/<name>`
+  (jTicket only — that path doesn't exist in jExplain, which is why docs use image blocks).
 
 ```bash
-# upload a local file
+# a screenshot already on disk → into a ticket description
+MD=$(curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
+  -d '{"file":"/tmp/flow.png","name":"tick-7-flow.png"}' | jq -r .markdown)
+curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' \
+  -d "$(jq -n --arg md "$MD" '{description: ("What to build…\n\n" + $md)}')"
+
+# from bytes you hold (e.g. a remote client)
 curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
-  -d "$(jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" \
-        '{name:$n, base64:$b}')"
+  -d "$(jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" '{name:$n, base64:$b}')"
 ```
+
+### Images in docs (`image` blocks)
+
+A doc's pictures are **`image` blocks**, stored beside the document in
+`.data/jexplain/media/<documentKey>/` and served at `/api/media/<documentKey>/<file>`
+(by jTicket and jExplain alike). Give the block its bytes one of three ways:
+
+```jsonc
+{ "type": "image", "file": "/abs/path/shot.png", "alt": "…", "caption": "…" }   // local path — copied in
+{ "type": "image", "base64": "iVBOR…", "name": "shot.png", "alt": "…" }         // inline; `dataUrl` also works
+{ "type": "image", "src": "/api/media/<key>/shot.png" }                          // already stored (a republish)
+```
+
+Optional `title`, `caption` (markdown), `width` (px), `framed` (default true). The full
+block reference is the `j-explain` skill. Republishing (`PATCH /api/docs/:id` with `blocks`)
+prunes media the new blocks no longer reference — so a republish must send existing
+image blocks back with their `src`, which GET `/api/documents/<key>` gives you.
+The doc page's **Add image** button (and paste / drop onto the page) appends an image
+block the same way.
 
 ## Bulk import
 

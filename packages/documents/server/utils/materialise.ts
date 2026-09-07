@@ -27,18 +27,26 @@ export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): P
     // Stable ids for notes to pin to; keep any the author supplied.
     raw.id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `b${i + 1}`
 
-    // Image blocks carry a local `file` path; copy the bytes into the doc's
-    // media dir and store only the served URL, so the document survives the
-    // source file being moved or deleted.
+    // Image blocks carry their bytes as a local `file` path or inline
+    // `base64`/`dataUrl`; either way the bytes are copied into the doc's media
+    // dir and only the served URL is stored, so the document survives the
+    // source file being moved or deleted (and the JSON never holds bytes).
     if (raw.type === 'image') {
       const file = typeof raw.file === 'string' ? raw.file.trim() : ''
+      const inline =
+        typeof raw.base64 === 'string' && raw.base64.trim()
+          ? raw.base64
+          : typeof raw.dataUrl === 'string' && raw.dataUrl.trim()
+            ? raw.dataUrl
+            : ''
       let src = typeof raw.src === 'string' ? raw.src.trim() : ''
-      if (file) {
+      if (file || inline) {
         imageN++
-        const name = sanitizeMediaName(String(raw.name || `${String(i + 1).padStart(2, '0')}-${basename(file)}`))
+        const fallback = `${String(i + 1).padStart(2, '0')}-${file ? basename(file) : 'image.png'}`
+        const name = sanitizeMediaName(String(raw.name || fallback))
         try {
-          src = await storeMedia(docKey, file, name)
-          mediaKept.push(name)
+          src = file ? await storeMedia(docKey, file, name) : await storeMediaBytes(docKey, inline, name)
+          mediaKept.push(src.split('/').pop()!)
         } catch (err) {
           // A missing screenshot shouldn't nuke the whole publish — drop the
           // block and keep going, the rest of the document is still useful.
