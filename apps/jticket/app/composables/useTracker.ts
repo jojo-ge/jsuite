@@ -386,6 +386,37 @@ export function bucketOf(
   return 'claimed'
 }
 
+// The next frontier: blocked work whose every remaining blocker is running
+// right now, so the tasks in flight are exactly what will free it. It is not a
+// sixth bucket — a next-frontier ticket is genuinely blocked and every view
+// still counts it that way — it is a split of the blocked bucket, for the one
+// question a board can't answer otherwise: what does finishing the current
+// batch actually unlock? A ticket waiting on anything not yet started stays
+// plain blocked; nothing running would free it.
+export function isNextFrontier(
+  ticket: Ticket,
+  all: Ticket[],
+  project: Pick<Project, 'share'> | null | undefined,
+): boolean {
+  if (bucketOf(ticket, all, project) !== 'blocked') return false
+  const open = ticket.blockedBy
+    .map((id) => all.find((t) => t.id === id))
+    .filter((t): t is Ticket => !!t && !isFinished(t.status))
+  return open.length > 0 && open.every((b) => bucketOf(b, all, project) === 'claimed')
+}
+
+// How a blocker badge reads wherever one is drawn: green once it has landed,
+// blue while it is running (that badge is the reason the ticket is on the next
+// frontier), red for a blocker nobody has started.
+export function blockerTone(
+  blocker: Ticket,
+  all: Ticket[],
+  project: Pick<Project, 'share'> | null | undefined,
+): 'success' | 'info' | 'error' {
+  if (isFinished(blocker.status)) return 'success'
+  return bucketOf(blocker, all, project) === 'claimed' ? 'info' : 'error'
+}
+
 // The same precedence as a tally: every bucket present, zeros included, so a
 // summary view — the stacked bar on project cards, the wayfinder graph's
 // legend — can lay its own segments out over it without re-deriving which

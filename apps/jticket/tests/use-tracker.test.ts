@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bucketCountsOf, bucketOf, isFrontier, type Project, type ProjectShare, type Ticket } from '../app/composables/useTracker'
+import { blockerTone, bucketCountsOf, bucketOf, isFrontier, isNextFrontier, type Project, type ProjectShare, type Ticket } from '../app/composables/useTracker'
 
 // The client twin of server/utils/store.test.ts's ticketIsFrontier suite. The
 // two rules have to agree ticket-for-ticket: the board rings and dispatches
@@ -152,6 +152,51 @@ describe('bucketOf', () => {
     const stray = ticket({ transfer: 'pending' })
     expect(isFrontier(stray, [stray], local)).toBe(false)
     expect(bucketOf(stray, [stray], local)).toBe('notTakeable')
+  })
+})
+
+describe('isNextFrontier', () => {
+  // The board's split of the blocked bucket: what the running batch frees.
+  const running = ticket({ id: 'dep', key: 'CART-9', status: 'in_progress' })
+  const idle = ticket({ id: 'dep2', key: 'CART-8' })
+  const landed = ticket({ id: 'dep3', key: 'CART-7', status: 'done' })
+
+  it('is blocked work whose every open blocker is in progress', () => {
+    const t = ticket({ blockedBy: ['dep'] })
+    expect(isNextFrontier(t, [t, running], local)).toBe(true)
+  })
+
+  it('ignores blockers that already landed', () => {
+    const t = ticket({ blockedBy: ['dep', 'dep3'] })
+    expect(isNextFrontier(t, [t, running, landed], local)).toBe(true)
+  })
+
+  it('is false when anything it waits on has not started', () => {
+    const t = ticket({ blockedBy: ['dep', 'dep2'] })
+    expect(isNextFrontier(t, [t, running, idle], local)).toBe(false)
+  })
+
+  it('is false for tickets that are not blocked at all', () => {
+    const open = ticket()
+    expect(isNextFrontier(open, [open], local)).toBe(false)
+    const claimed = ticket({ status: 'in_progress', blockedBy: ['dep3'] })
+    expect(isNextFrontier(claimed, [claimed, landed], local)).toBe(false)
+  })
+
+  it('leaves the bucket alone — a next-frontier ticket is still blocked', () => {
+    const t = ticket({ blockedBy: ['dep'] })
+    expect(bucketOf(t, [t, running], local)).toBe('blocked')
+  })
+})
+
+describe('blockerTone', () => {
+  it('reads landed / running / not started', () => {
+    const done = ticket({ id: 'dep3', status: 'done' })
+    const running = ticket({ id: 'dep', status: 'in_progress' })
+    const idle = ticket({ id: 'dep2' })
+    expect(blockerTone(done, [done], local)).toBe('success')
+    expect(blockerTone(running, [running], local)).toBe('info')
+    expect(blockerTone(idle, [idle], local)).toBe('error')
   })
 })
 

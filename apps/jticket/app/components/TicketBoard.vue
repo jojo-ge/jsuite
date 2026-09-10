@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A project's tickets, in one of three switchable views:
-//   Board  — frontier-first: Frontier + In progress as cards, Blocked + Resolved
-//            folded into condensed rows. The default.
+//   Board  — frontier-first: Frontier, In progress and Next frontier as cards,
+//            Blocked + Resolved folded into condensed rows. The default.
 //   Digest — every ticket as one dense table row; frontier pinned + tinted.
 //   Graph  — the wayfinder dependency graph (wayfinder projects only; see
 //            WayfinderMap).
@@ -50,14 +50,25 @@ function byKey(a: Ticket, b: Ticket) {
 }
 
 type BucketKey = TicketBucket
+// Board groups are not quite buckets: on the board the blocked bucket splits in
+// two. `next` is the next frontier — blocked only by tickets running right now,
+// so the batch in flight is what will free it — and it earns the same big cards
+// as the frontier, because it is the queue directly behind it. What is left is
+// waiting on work nobody has started, and keeps the folded Blocked rows.
+// Everywhere else (digest, graph, project bars) a next-frontier ticket is still
+// just blocked; see isNextFrontier.
+type GroupKey = BucketKey | 'next'
 const BUCKET_ORDER: BucketKey[] = ['frontier', 'claimed', 'notTakeable', 'blocked', 'done']
-const BUCKET_META: Record<BucketKey, { label: string; icon: string; dot: string; text: string; hint: string }> = {
+const GROUP_ORDER: GroupKey[] = ['frontier', 'claimed', 'notTakeable', 'next', 'blocked', 'done']
+const CARD_GROUPS: GroupKey[] = ['frontier', 'claimed', 'next']
+const BUCKET_META: Record<GroupKey, { label: string; icon: string; dot: string; text: string; hint: string }> = {
   frontier: { label: 'Frontier', icon: 'i-lucide-flag', dot: 'bg-primary', text: 'text-primary', hint: 'takeable now' },
   claimed: { label: 'In progress', icon: 'i-lucide-loader', dot: 'bg-info', text: 'text-info', hint: 'claimed' },
   // Only ever non-empty on a shared project — the peer's open work and
   // anything frozen mid-transfer. Muted like Blocked: it is not yours to act
   // on, and the card underneath already says whose it is.
   notTakeable: { label: 'Not takeable here', icon: 'i-lucide-user-lock', dot: 'bg-warning', text: 'text-warning', hint: 'the peer’s, or frozen mid-transfer' },
+  next: { label: 'Next frontier', icon: 'i-lucide-flag-triangle-right', dot: 'bg-secondary', text: 'text-secondary', hint: 'unblocked by what’s running' },
   blocked: { label: 'Blocked', icon: 'i-lucide-lock', dot: 'bg-error', text: 'text-error', hint: 'waiting on a blocker' },
   done: { label: 'Resolved', icon: 'i-lucide-check', dot: 'bg-success', text: 'text-success', hint: 'decided' },
 }
@@ -68,22 +79,37 @@ const bucketed = computed(() => {
   for (const g of Object.values(groups)) g.sort(byKey)
   return groups
 })
+// The blocked bucket, split: what the running batch will free, and what it
+// won't. The banner and the group headers both count off this split, so the
+// numbers on screen always add up to the rows underneath them.
+const nextFrontier = computed(() =>
+  bucketed.value.blocked.filter((t) => isNextFrontier(t, props.allTickets, props.project)),
+)
+const stillBlocked = computed(() =>
+  bucketed.value.blocked.filter((t) => !isNextFrontier(t, props.allTickets, props.project)),
+)
+const grouped = computed<Record<GroupKey, Ticket[]>>(() => ({
+  ...bucketed.value,
+  next: nextFrontier.value,
+  blocked: stillBlocked.value,
+}))
 const counts = computed(() => ({
   frontier: bucketed.value.frontier.length,
   claimed: bucketed.value.claimed.length,
   notTakeable: bucketed.value.notTakeable.length,
-  blocked: bucketed.value.blocked.length,
+  next: nextFrontier.value.length,
+  blocked: stillBlocked.value.length,
   done: bucketed.value.done.length,
 }))
 const boardGroups = computed(() =>
-  BUCKET_ORDER
-    .map((key) => ({ key, ...BUCKET_META[key], tickets: bucketed.value[key] }))
+  GROUP_ORDER
+    .map((key) => ({ key, ...BUCKET_META[key], tickets: grouped.value[key] }))
     .filter((g) => g.tickets.length),
 )
 const digestRows = computed(() => BUCKET_ORDER.flatMap((key) => bucketed.value[key]))
 
-const folded = reactive(new Set<BucketKey>(['notTakeable', 'blocked', 'done']))
-function toggleFold(key: BucketKey) {
+const folded = reactive(new Set<GroupKey>(['notTakeable', 'blocked', 'done']))
+function toggleFold(key: GroupKey) {
   if (folded.has(key)) folded.delete(key)
   else folded.add(key)
 }
@@ -206,6 +232,10 @@ function dispatchFor(t: Ticket) {
         <span class="text-muted">·</span>
         <template v-if="counts.notTakeable">
           <span class="text-warning">{{ counts.notTakeable }} not takeable here</span>
+          <span class="text-muted">·</span>
+        </template>
+        <template v-if="counts.next">
+          <span class="text-secondary">{{ counts.next }} next up</span>
           <span class="text-muted">·</span>
         </template>
         <span :class="counts.blocked ? 'text-error/80' : 'text-muted'">{{ counts.blocked }} blocked</span>
@@ -362,7 +392,7 @@ function dispatchFor(t: Ticket) {
           <UBadge
             v-for="b in blockersOf(t)"
             :key="b.id"
-            :color="isFinished(b.status) ? 'success' : 'error'"
+            :color="blockerTone(b, allTickets, project)"
             variant="outline"
             size="sm"
             class="shrink-0 font-mono"
@@ -376,10 +406,10 @@ function dispatchFor(t: Ticket) {
     <!-- Board — frontier-first: cards for the live work, folded rows for the rest -->
     <div v-else class="space-y-5">
       <div v-for="g in boardGroups" :key="g.key">
-        <template v-if="g.key === 'frontier' || g.key === 'claimed'">
+        <template v-if="CARD_GROUPS.includes(g.key)">
           <div class="mb-2 flex items-center gap-2">
-            <UIcon :name="g.icon" class="size-4" :class="g.key === 'frontier' ? 'text-primary' : 'text-muted'" />
-            <h4 class="text-sm font-semibold" :class="g.key === 'frontier' ? 'text-primary' : ''">{{ g.label }}</h4>
+            <UIcon :name="g.icon" class="size-4" :class="g.key === 'claimed' ? 'text-muted' : g.text" />
+            <h4 class="text-sm font-semibold" :class="g.key === 'claimed' ? '' : g.text">{{ g.label }}</h4>
             <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
             <template v-if="g.key === 'frontier' && project && herdrUp">
               <UCheckbox
@@ -400,7 +430,7 @@ function dispatchFor(t: Ticket) {
               :tickets="allTickets"
               :wayfinder="wayfinder"
               :architect="mode === 'architect'"
-              :dispatch="project ? dispatchFor(t) : null"
+              :dispatch="g.key !== 'next' && project ? dispatchFor(t) : null"
               :selectable="g.key === 'frontier' && !!project && herdrUp"
               :selected="picked.has(t.id)"
               @edit="emit('edit-ticket', $event)"
@@ -462,7 +492,7 @@ function dispatchFor(t: Ticket) {
                 <UBadge
                   v-for="b in blockersOf(t)"
                   :key="b.id"
-                  :color="isFinished(b.status) ? 'success' : 'error'"
+                  :color="blockerTone(b, allTickets, project)"
                   variant="outline"
                   size="sm"
                   class="shrink-0 font-mono"
