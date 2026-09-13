@@ -16,6 +16,8 @@
 #   https://jchart.local     jChart
 #   https://jexplain.local   jExplain
 #   https://jgrilling.local  jGrilling
+#   https://jcode.local      jCode
+#   https://jmap.local       jMap
 set -euo pipefail
 
 # Resolve through symlinks so a shim on PATH (e.g. ~/.local/bin/jsuite) still
@@ -48,10 +50,11 @@ APPS=(
   "jchart|jchart|43003|pnpm dev --port 43003"
   "jexplain|jexplain|43004|pnpm dev --port 43004"
   "jgrilling|jgrilling|43005|pnpm dev --port 43005"
+  "jcode|jcode|43006|pnpm dev --port 43006"
   "jmap|jmap|43007|pnpm dev --port 43007"
 )
 
-DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jmap.local)
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jcode.local jmap.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
@@ -65,6 +68,7 @@ SKILLS_MANIFEST=(
   "apps/jchart|j-chart"
   "apps/jexplain|j-explain"
   "apps/jgrilling|j-grilling"
+  "apps/jcode|jcode jcode-mark"
   "apps/jmap|jmap-scope jmap-domain jmap-synthesize j-map"
 )
 POCOCK_SOURCE="mattpocock/skills"

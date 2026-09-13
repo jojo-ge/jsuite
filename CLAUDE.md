@@ -1,6 +1,6 @@
 # jSuite
 
-Six local Nuxt apps (jticket, jdiff, jchart, jexplain, jgrilling, jmap)
+Seven local Nuxt apps (jticket, jdiff, jchart, jexplain, jgrilling, jcode, jmap)
 + shared packages behind one Caddy edge; OrbStack resolves the `.local` names
 and terminates HTTPS.
 `README.md` covers architecture; this file is for routing requests to the right
@@ -17,6 +17,7 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | explainers, walkthroughs, post-mortems, articles | `apps/jexplain` | skill `j-explain` (`explain.py` publish script) |
 | grill/stress-test a plan | terminal | skill `grilling` — the default; one question escalates to `apps/jgrilling` only when the operator asks (skill `j-grilling`; API on :43005; state in `.data/jgrilling/`) |
 | map a codebase — domains, dependency map, walkthrough docs | `apps/jmap` | skill `j-map` (front door); the work runs as a jMap-mode jTicket project (herdr-dispatched `/jmap-scope`, `/jmap-domain`, `/jmap-synthesize` tickets); jMap API on :43007 renders the posted graph; state in `.data/jmap/` |
+| build a feature and hand-code its core as a problem — "with jcode", "pose the core as a problem" | `apps/jcode` | skill `jcode` (build and ship as usual, then publish the core piece as a pure-function kata to :43006: a sandbox in `.data/jcode/sandbox/<key>/` with stub + cases + the app's runner, answer hidden); the page's Mark-it button dispatches `jcode-mark` into herdr, which runs the cases, judges, or posts a verdict that unlocks the next hint. Disclosure is server-side: brief → hints → answer. Nothing ships from a kata |
 | improve/deepen a codebase's architecture | `apps/jticket` | the Improve-architecture button on the projects page (or `POST /api/projects/architect`) makes an architect-mode project whose scan (`/jarchitect-scan`) fills the board with graded HITL candidates + an assessment spec; a candidate's herdr button dispatches its go/no-go grilling (`/jarchitect-grill`, answered in that herdr pane) and finishes the ticket |
 | reproduce suspected bugs before a deploy | `apps/jticket` | a predeploy-mode project — one suspected bug per ticket; the herdr button dispatches `/jreproduce`, which reproduces it in a throwaway worktree as a failing test, records the test + verdict (reproduced / flaky / not-reproduced / already-fixed / invalid) on the ticket, and never fixes it |
 | charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
@@ -60,7 +61,7 @@ jsuite            # launcher: start/stop/status/logs/open/setup
 Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
-apps/             # jticket jdiff jchart jexplain jgrilling jmap
+apps/             # jticket jdiff jchart jexplain jgrilling jcode jmap
 packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter), @jsuite/relay (sync setup wizard + local broadcast relay)
 .data/<app>/      # ALL app state, gitignored
 ```

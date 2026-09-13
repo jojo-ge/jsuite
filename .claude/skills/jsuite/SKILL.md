@@ -1,11 +1,11 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling and jMap each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jCode and jMap each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
 ---
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of six local
+jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of seven local
 Nuxt apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
@@ -22,6 +22,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
 | jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser — grillings themselves run in the terminal |
+| jCode | https://jcode.local | 43006 | hand-code the part that matters as a standalone problem — Claude ships the feature, then poses its core as a sandbox kata: brief → hints → answer, marked in herdr |
 | jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
@@ -105,6 +106,25 @@ opens only when the operator escalates one specific question into the browser
 mid-grilling: the interviewer posts that one question, waits, then returns to
 the terminal. Skill: `j-grilling` (the interviewer's playbook).
 
+**jCode** — hand-code the part that matters, as a standalone problem. A
+Claude BUILD session (skill `jcode`) builds and ships a feature as usual,
+then takes its core piece — the function where the central decision lives —
+expresses it as a pure function, and POSTs a **kata** to jCode: a sandbox
+under `.data/jcode/sandbox/<key>/` (the stub the human fills in, the cases
+as data, optional types, plus the app's runner for `ts`/`js`/`php`/`py`), the
+brief (the contract, the behaviours, never how), a ladder of 2–3 hints, and
+its own answer. The human solves it in the sandbox (Open in VS Code, Run
+cases from the page with a cases table and their own console output split
+from the runner's); *Mark it* dispatches a MARKING session (`jcode-mark`)
+into herdr, which runs the cases, judges against the contract and the hidden
+reference, and posts a verdict — what's wrong and where to look, never the
+fix — unlocking the next hint. Reveal shows the answer to code along.
+**Nothing ships from a kata**: the repo already has Claude's version; this
+is practice drawn from real work. **Disclosure is enforced on the server**:
+the page only receives the rungs reached; the answer is always on file in
+`.data/jcode/<key>.json`. jCode runs no claude of its own. Skills: `jcode`
+(build side), `jcode-mark` (the marker).
+
 **jMap** — the codebase cartographer, orchestrated entirely through jTicket.
 Creating a map creates a **jMap-mode jTicket project** (repo = the mapped
 directory) with a scoping ticket; jTicket's herdr Run buttons dispatch every
@@ -142,8 +162,8 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
   packed 2×2 per tab, agent start + prompt with the retry dances, model
   overrides via agent args. jTicket dispatches ticket work; jMap dispatches
   domain mappers; jDiff dispatches its review-guidance sessions (the
-  `jdiff-review`/`jdiff-ask` skills, pinned to Opus 5) — no app runs a
-  headless claude of its own.
+  `jdiff-review`/`jdiff-ask` skills, pinned to Opus 5); jCode dispatches its
+  marking sessions (`jcode-mark`) — no app runs a headless claude of its own.
 - **jTicket ↔ jDiff reviews**: jTicket deep-links every branch/PR into jDiff
   (finished tickets and merged local PRs link to their exact squash diff), and
   its Run-review buttons proxy to jDiff's `POST /api/analyze-dispatch` with
@@ -170,6 +190,7 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
 | be grilled about a plan | `grilling` (in the terminal) — `j-grilling` only when the operator asks for a specific question in the browser |
+| build a feature and hand-code its core as a problem ("with jcode") | `jcode` — ship as usual, then publish the core as a sandbox kata; the page dispatches `jcode-mark` to mark attempts |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
 | check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, no fix) |

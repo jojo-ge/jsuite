@@ -1,0 +1,23 @@
+{
+  "name": "jcode",
+  "private": true,
+  "type": "module",
+  "description": "Hand-code the part that matters — a Claude session builds a feature test-first, holds ONE core piece back, and publishes a kata here: the brief, then hints, then the answer, disclosed one rung at a time. You write it in the repo; a herdr marking session checks it and commits.",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare && node ../../packages/charting/scripts/copy-excalidraw-assets.mjs"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.0",
+    "@jsuite/data": "workspace:*",
+    "@jsuite/documents": "workspace:*",
+    "@jsuite/herdr": "workspace:*",
+    "@nuxt/ui": "^4.10.0",
+    "nuxt": "^4.5.0",
+    "tsx": "^4.19.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  }
+}

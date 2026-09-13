@@ -18,6 +18,7 @@
       <a href="#jchart">jChart</a>
       <a href="#jexplain">jExplain</a>
       <a href="#jgrilling">jGrilling</a>
+      <a href="#jcode">jCode</a>
       <a href="https://jmap.local">jMap</a>
       <a href="#ecosystem">How it works</a>
       <a href="/pricing.html">Pricing</a>
@@ -28,10 +29,10 @@
 
 <section class="hero">
   <div class="wrap">
-    <span class="eyebrow-pill"><b>Seven apps · one edge</b> — stable <code>.local</code> names, HTTPS by OrbStack</span>
+    <span class="eyebrow-pill"><b>Eight apps · one edge</b> — stable <code>.local</code> names, HTTPS by OrbStack</span>
     <h1>A local workbench where <span class="grad">Claude authors and you review</span></h1>
-    <p class="sub">jSuite is seven local apps behind one HTTPS edge — plan work, review diffs,
-      sketch diagrams, publish explainers, get grilled about plans, draw rigged avatars, and map whole codebases, all on localhost.
+    <p class="sub">jSuite is eight local apps behind one HTTPS edge — plan work, review diffs,
+      sketch diagrams, publish explainers, get grilled about plans, hand-code the part that matters, and map whole codebases, all on localhost.
       Every app has a stable name, so skills and bookmarks never chase a dev-server port.</p>
     <div class="hero-ctas">
       <a class="btn btn-primary" href="#jticket">Tour the apps <span class="arrow">→</span></a>
@@ -46,6 +47,7 @@
 <span class="ok">✓</span> jchart    <a href="https://jchart.local">https://jchart.local</a>
 <span class="ok">✓</span> jexplain  <a href="https://jexplain.local">https://jexplain.local</a>
 <span class="ok">✓</span> jgrilling <a href="https://jgrilling.local">https://jgrilling.local</a>
+<span class="ok">✓</span> jcode     <a href="https://jcode.local">https://jcode.local</a>
 <span class="ok">✓</span> jmap      <a href="https://jmap.local">https://jmap.local</a>
 <span class="ok">✓</span> edge      Caddy up <span class="c"># HTTPS by OrbStack, green lock</span></pre>
     </div>
@@ -77,6 +79,11 @@
     <a class="k" href="https://jgrilling.local">jGrilling <span class="ext">↗</span></a>
     <span class="v">Plan interrogation — Claude grills you, in a UI</span>
     <span class="u"><a href="https://jgrilling.local">jgrilling.local</a> · <a href="#jgrilling">tour ↓</a></span>
+  </div>
+  <div data-app="jcode">
+    <a class="k" href="https://jcode.local">jCode <span class="ext">↗</span></a>
+    <span class="v">Hand-code the part that matters — brief, hints, answer</span>
+    <span class="u"><a href="https://jcode.local">jcode.local</a> · <a href="#jcode">tour ↓</a></span>
   </div>
   <div data-app="jmap">
     <a class="k" href="https://jmap.local">jMap <span class="ext">↗</span></a>
@@ -288,6 +295,42 @@
   </div>
 </section>
 
+<!-- ============ jCode ============ -->
+<section class="fold flip" id="jcode" data-app="jcode">
+  <div class="wrap">
+    <div class="fold-copy">
+      <p class="fold-eyebrow">jCode · Hand-code the core <span class="port">:43006</span></p>
+      <h2>Claude builds the feature. You write the part that matters.</h2>
+      <p class="lede">A Claude session builds a feature test-first as usual — then, before committing,
+        holds <em>one</em> core piece back as a stub and publishes it here as a kata. You write it by
+        hand; a marking session in herdr checks it and commits.</p>
+      <ul class="fold-points">
+        <li><b>Progressive disclosure.</b> First the brief — the contract, the cases, how to test. Then hints, one per failed attempt. The answer only when you ask.</li>
+        <li><b>The answer is always on file.</b> Claude's own implementation ships with the kata, hidden by the server until you reveal it — so hints are precise and code-along is a click away.</li>
+        <li><b>Mark it, don't merge it.</b> Right: the marker commits your piece and moves on. Wrong: it says what's off and where to look — never the fix.</li>
+      </ul>
+      <div class="skill-row"><span class="lbl">Drive with skills</span>
+        <span class="chip">jcode</span><span class="chip">jcode-mark</span>
+      </div>
+      <div class="fold-ctas">
+        <a class="btn btn-app" href="https://jcode.local">Open jCode <span class="arrow">→</span></a>
+      </div>
+    </div>
+    <div class="fold-visual">
+      <div class="mock">
+        <div class="mock-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">jcode.local</span></div>
+        <div class="mock-article">
+          <div class="title"></div>
+          <div class="mock-code"><span class="kw">refill</span>(now: <span class="kw">number</span>): <span class="kw">void</span> <span class="str">// your piece</span></div>
+          <div class="mock-block"><span class="bar w100"></span><span class="bar w70"></span><span class="bar w55"></span></div>
+          <div class="mock-note"><b>Hint 1 · unlocked:</b> think in elapsed time, not ticks — what does <code>now − lastRefill</code> earn?</div>
+          <div class="mock-note"><b>Attempt 2 · passed:</b> committed 4f2c9e1 — a full bucket stays full now.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ ecosystem ============ -->
 <section class="section" id="ecosystem">
   <div class="wrap">
@@ -337,7 +380,7 @@
   <div class="wrap">
     <div class="section-head" style="margin-bottom:0">
       <h2>Up in one command</h2>
-      <p>The launcher starts all six apps and the Caddy edge, checks their health over
+      <p>The launcher starts all seven apps and the Caddy edge, checks their health over
          HTTPS, and tails their logs. <code>./jsuite setup</code> handles onboarding —
          deps, jskills into <code>~/.claude/skills</code>, OrbStack checks — in one go.</p>
     </div>
@@ -345,7 +388,7 @@
       <div class="terminal-bar"><i></i><i></i><i></i></div>
       <pre><span class="p">$</span> cd ~/code/anyway/jsuite
 <span class="p">$</span> ./jsuite setup      <span class="c"># once: deps + jskills + OrbStack checks</span>
-<span class="p">$</span> ./jsuite start      <span class="c"># all six apps + the Caddy edge</span>
+<span class="p">$</span> ./jsuite start      <span class="c"># all seven apps + the Caddy edge</span>
 <span class="p">$</span> ./jsuite status     <span class="c"># pid + live HTTPS check per app</span>
 <span class="p">$</span> ./jsuite logs jdiff <span class="c"># tail one app (or: logs edge)</span></pre>
     </div>
@@ -364,6 +407,7 @@
         <a href="https://jchart.local">jchart.local</a>
         <a href="https://jexplain.local">jexplain.local</a>
         <a href="https://jgrilling.local">jgrilling.local</a>
+        <a href="https://jcode.local">jcode.local</a>
         <a href="https://jmap.local">jmap.local</a>
       </span>
       <span class="foot-col">
