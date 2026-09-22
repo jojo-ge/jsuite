@@ -159,6 +159,8 @@ The project page then shows a **Pull requests** section:
   the name on the project. It is idempotent: a branch that already exists (yours
   or cut by hand) is *adopted*, not re-cut. The default name is
   `proj/<KEY>-<title-slug>`; pass `{ "branch": "...", "base": "..." }` to override.
+  Pass `{ "worktree": true }` — the *and a worktree for it* box next to the
+  button — and the branch also gets a checkout to run in, see below.
 - **Or adopt one that already exists** — *use an existing branch* opens a search
   over every branch in the repo, local and on origin
   (`GET /api/projects/:id/branches?q=`, matching branch names *and* commit
@@ -205,19 +207,66 @@ The loop, per ticket:
    whatever you're mid-way through. On success the ticket branch is deleted and
    the ticket moves to **`merged`** (a fourth status; `done` and `merged` both
    count as finished everywhere). If the integration branch happens to be checked
-   out *clean*, that checkout is fast-forwarded; checked out *dirty* refuses.
+   out *clean*, that checkout is fast-forwarded — this is how the project's
+   worktree keeps up with no syncing step at all; checked out with modified
+   tracked files, it refuses (untracked ones are fine, `reset --hard` can't lose
+   them). Once the roll-up PR exists the merge also **pushes** the integration
+   branch — see 5.
 4. **Conflicts refuse cleanly** — the repo is left exactly as it was, the PR
    turns `conflicted` with the file list on the row. Rebase the ticket branch
    onto the integration branch, then hit merge again.
-5. **Sync** — `POST /api/projects/:id/sync` (the *Sync* button) pushes the
-   integration branch to origin: the only remote write in the flow. The
-   *Roll-up PR* button (`POST /api/projects/:id/integration-pr`) pushes and then
-   opens — or finds — the one real GitHub PR, integration → default branch,
-   via `gh`.
+5. **Sync happens on its own once the branch is public.** The *Roll-up PR*
+   button (`POST /api/projects/:id/integration-pr`) pushes and then opens — or
+   finds — the one real GitHub PR, integration → default branch, via `gh`, and
+   records it on the project (`rollupPr`). From that point every merge pushes
+   the integration branch itself: a PR describing work the branch doesn't carry
+   is worse than a slow push. The push is best-effort — offline never turns a
+   landed merge into an error, and a rejected one says *origin has moved* — so
+   `POST /api/projects/:id/sync` (the *Sync* button) stays as the manual retry,
+   and the branch chip carries **↑n unpushed** / **↓n behind origin** whenever
+   the two have drifted. Before the roll-up PR exists nothing leaves the
+   machine, exactly as before.
 
 The project page's *Pull requests* section shows both lists: **Local pull
 requests** (with per-PR commit fold-outs, merge/close buttons) above **On
 GitHub** (the read-only `gh pr list` view, usually just the roll-up).
+
+### The project's worktree
+
+Merging with plumbing moves the ref and touches no checkout, which leaves the
+project's accumulated work with nowhere to *run*. So a project can own a
+worktree: a checkout of its integration branch at `<repo>/.worktrees/<slug>`
+(`proj-8-hydra-asset-library`), recorded as `project.worktree`.
+
+The point isn't the directory, it's what the directory then does for free —
+**every merge fast-forwards it**, through the same "base is checked out clean"
+path in step 3. Nothing syncs the worktree; it stays current because it *is* the
+integration branch. Ticket agents keep working in their own cheap checkouts and
+land into it.
+
+- **Make one** — the *and a worktree for it* box on the branch cut, or *Add a
+  worktree* / `POST /api/projects/:id/worktree` later (`{ slug?, boot? }`).
+- **Fleet slots** — a repo that ships an **executable `kraken` at its root** gets
+  more than a checkout: the job runs `./kraken wt adopt --slug <slug>` to claim a
+  numbered slot (its own Postgres, Redis, port block, browsable at
+  `wtN.…localhost`) and then `./kraken wt up -d` to boot its stack. That feature
+  detection is the whole integration — any other repo gets the plain checkout and
+  the same flow with one less trick. `git worktree add` + `adopt` is deliberate:
+  `wt new` would invent a branch off `origin/master`, and the branch we want
+  already exists.
+- **It takes minutes**, so the POST returns immediately and a background job
+  reports by writing `project.worktree.status`
+  (`creating` → `adopting` → `booting` → `ready`, or `failed` with the error).
+  The store is a watched file, so the panel follows along with no polling. A
+  restart mid-job corrects the record to `failed` rather than spinning forever;
+  re-POSTing retries, and every step is idempotent — a branch already checked out
+  somewhere else (a Conductor workspace, a hand-made worktree) is adopted where
+  it stands, since git refuses two checkouts of one branch anyway.
+- **Remove it** — `DELETE /api/projects/:id/worktree` (`?force=1` for a dirty
+  checkout, `?forget=1` to drop only jTicket's record). With a fleet that runs
+  `./kraken wt rm`, which stops the stack and takes the slot's containers and
+  volumes with it — so the button arms on the first click and removes on the
+  second. The integration branch is never touched.
 
 ### Herdr dispatch
 

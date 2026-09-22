@@ -37,6 +37,10 @@ export default defineEventHandler(async (event) => {
     mode: 'standard',
     repo: '',
     integrationBranch: '',
+    // The worktree and the roll-up PR are machine-local and earned, not
+    // given: a fresh project has neither.
+    worktree: null,
+    rollupPr: null,
     starred: false,
     share: { key: blob.sharedKey, side: blob.side, peerName },
     // Hand-off prompts are machine-local — never shared, never pulled.

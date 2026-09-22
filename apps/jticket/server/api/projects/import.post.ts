@@ -78,6 +78,10 @@ export default defineEventHandler(async (event) => {
     // clone in the same call (the UI passes the selected codebase).
     repo: repoOverride,
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
+    // The worktree and the roll-up PR are machine-local and earned, not
+    // given: a fresh project has neither.
+    worktree: null,
+    rollupPr: null,
     // Starring is a local "what's on deck" flag, so it doesn't travel.
     starred: false,
     // Nor do the hand-off prompts: like `repo`, they describe how the

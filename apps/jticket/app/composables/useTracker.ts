@@ -27,6 +27,23 @@ export interface Project {
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string
+  // A checkout of the integration branch under the repo's .worktrees/, so the
+  // project's work has somewhere to run; null until it has one. The live view
+  // (slot state, whether the checkout is still there) comes from the project's
+  // own GET — see <ProjectGithub>.
+  worktree: {
+    path: string
+    slug: string
+    slot: number
+    host: string
+    status: 'creating' | 'adopting' | 'booting' | 'ready' | 'failed'
+    error: string
+    createdAt: string
+    updatedAt: string
+  } | null
+  // The project's roll-up PR once opened — its presence is what makes local
+  // merges push the integration branch.
+  rollupPr: { number: number; url: string } | null
   // Starred = on deck: only starred projects surface on /next. Tickets are
   // unaffected everywhere else (/running, /finished, the board).
   starred: boolean

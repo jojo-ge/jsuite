@@ -21,7 +21,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
-| jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser — grillings themselves run in the terminal |
+| jGrilling | https://jgrilling.local | 43005 | browser grilling sessions — an external Codex session interrogates, you answer in the UI |
 | jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
@@ -62,36 +62,20 @@ the selected codebase for deepening opportunities: `/jarchitect-scan` fills
 the board with graded HITL candidate tickets (`arch:strong` /
 `arch:worth-exploring` / `arch:speculative`, one `arch:top-pick`) plus an
 assessment spec with before/after jChart diagrams; a candidate's herdr button
-dispatches its go/no-go grilling (`/jarchitect-grill`, answered in its herdr pane)
+dispatches its go/no-go grilling (`/jarchitect-grill`, answered in jGrilling)
 and finishes the ticket — the grilling hardens it into an
 implementation-ready spec doc.
-It also hosts **predeploy-mode projects** — a board of suspected bugs standing
-between a codebase and a deploy, one report per ticket. A ticket's herdr button
-dispatches `/jreproduce`: it reproduces the bug in a throwaway git worktree as a
-failing test, records that test plus a verdict (`reproduced` / `flaky` /
-`not-reproduced` / `already-fixed` / `invalid`) and a blocks-the-deploy call on
-the ticket, then tears the worktree down. It never fixes anything — the
-resolution is the hand-off to `/jimplement`.
 
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR
 exists, stores draft comments in `.data/jdiff/`, and can open the PR and post
-them in one shot. A branch view also has a scope: `committed` (the default,
-`base...branch`), `staged`, `unstaged`, or `everything` — the last three read
-the index/working tree, so they need that branch checked out, and the claude
-review tools run on `committed` only. Beyond the analyze run, a review page
-offers three on-demand walkthroughs: a fine-grained **detail** tour, the
-**chains** walkthrough (each behavior traced end-to-end across the systems it
-touches), and the **hunt** — a bug-and-vulnerability review whose every
-high-severity finding gets its own walkthrough explaining the defect in depth.
-Drive it with the `jdiff` CLI:
-`jdiff pr 123`, `jdiff branch my-feature`, `jdiff branch -s unstaged` (bare
-`jdiff branch` means the current branch), `--print` for a machine-readable
-URL. No skill — the CLI is the interface.
+them in one shot. Drive it with the `jdiff` CLI: `jdiff pr 123`,
+`jdiff branch my-feature`, `--print` for a machine-readable URL. No skill — the
+CLI is the interface.
 
-**jChart** — diagram workbench. Claude POSTs mermaid to `/api/charts`; the app
+**jChart** — diagram workbench. Codex POSTs mermaid to `/api/charts`; the app
 lays it out as an Excalidraw scene; the human redraws freehand and pins notes to
-shapes; Claude reads the scene + notes back off `.data/jchart/`. After first
+shapes; Codex reads the scene + notes back off `.data/jchart/`. After first
 import the canvas is the source of truth, not the mermaid. Skill: `j-chart`.
 
 **jExplain** — blog-style articles built from typed blocks (prose, code, diffs,
@@ -102,21 +86,16 @@ in place, "Open in jChart" for the full workbench. Skill: `j-explain` (author a
 JSON payload, publish via `explain.py`, read notes back, revise with
 `--replace`; also the block-vocabulary reference for jTicket docs).
 
-**jGrilling** — one grilling question, argued in the browser. A passive
-question room: an external Claude session IS the interviewer — it posts the
-question over the HTTP API as jspec-format blocks (three phases: the question,
-why it needs answering, the candidate answers as tabbed cases) and monitors the
-session file in `.data/jgrilling/` until the user's answer lands. The user
-answers in the browser (scrollable transcript, sticky answer bar), and the
-wrap-up is a verdict, optionally a debrief in the shared document pool
-(decision table + a jChart decision-tree chart).
-
-**It never hosts a whole interview.** Matt Pocock's *grilling* interview runs
-in the terminal under the plain `grilling` skill — herdr-dispatched HITL
-jTickets included, where the human goes to the herdr pane to answer. A room
-opens only when the operator escalates one specific question into the browser
-mid-grilling: the interviewer posts that one question, waits, then returns to
-the terminal. Skill: `j-grilling` (the interviewer's playbook).
+**jGrilling** — get grilled about a plan before building it. A passive
+question room: an external Codex session (usually in herdr, often working a
+HITL jTicket) IS the interviewer — it runs Matt Pocock's *grilling* interview,
+posts each question over the HTTP API as jspec-format blocks (one at a time,
+each with a recommended answer), and monitors the session file in
+`.data/jgrilling/` until the user's answer lands. The user answers in the
+browser (scrollable transcript, sticky answer bar). The wrap-up is a debrief
+in the shared document pool (decision table + a jChart decision-tree chart),
+readable in-app, in jExplain, or in jTicket. Skill: `j-grilling` (the
+interviewer's playbook: open a session, post questions, monitor for answers).
 
 **jMap** — the codebase cartographer, orchestrated entirely through jTicket.
 Creating a map creates a **jMap-mode jTicket project** (repo = the mapped
@@ -126,7 +105,7 @@ phase (`/jmap-scope` divides the repo into domains and creates one
 walkthrough doc on the project; `/jmap-synthesize` — created from the map
 room's Synthesize button — unifies the docs into the graph and POSTs it back
 to jMap; no branches, no PRs, docs and the graph are the output). jMap runs no
-claude itself: it polls the project for progress and renders the interactive
+Codex itself: it polls the project for progress and renders the interactive
 SVG map (pan/zoom, hover a node to see its dependencies, click for commentary
 and the domain's document). Maps live in `.data/jmap/`. Skills: `j-map` (front
 door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
@@ -136,7 +115,7 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 
 - **One edge**: a Caddy container routes each `.local` name to its native host
   port; OrbStack resolves the names and terminates HTTPS (no certs, no
-  /etc/hosts). Apps run natively (jDiff needs host `git`/`gh`/`claude`); only
+  /etc/hosts). Apps run natively (jDiff needs host `git`/`gh`/`Codex`); only
   Caddy is Dockerised.
 - **One state directory**: every app stores state under
   `~/code/anyway/jsuite/.data/<app>/` (gitignored) via `@jsuite/data` — one
@@ -151,14 +130,12 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
   same object jExplain renders — one document system serving both apps, notes
   included.
 - **One herdr adapter**: `@jsuite/herdr` (plain ESM package) dispatches whole
-  terminal claude sessions into the herdr workspace manager — workspaces, panes
+  terminal Codex sessions into the herdr workspace manager — workspaces, panes
   packed 2×2 per tab, agent start + prompt with the retry dances, model
   overrides via agent args. jTicket dispatches ticket work; jMap dispatches
   domain mappers; jDiff dispatches its review-guidance sessions (the
-  `jdiff-review`/`jdiff-ask`/`jdiff-tour`/`jdiff-chains`/`jdiff-hunt` skills,
-  pinned to Opus 5; the chains and hunt modes fan out one walker session per
-  chain / per high-severity issue) — no app runs a
-  headless claude of its own.
+  `jdiff-review`/`jdiff-ask` skills, pinned to Opus 5) — no app runs a
+  headless Codex of its own.
 - **jTicket ↔ jDiff reviews**: jTicket deep-links every branch/PR into jDiff
   (finished tickets and merged local PRs link to their exact squash diff), and
   its Run-review buttons proxy to jDiff's `POST /api/analyze-dispatch` with
@@ -167,10 +144,10 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
   `review:finding` tickets in the project; a single ticket's branch review
   posts a comment on that ticket.
 - **Notes loop everywhere**: jChart and jExplain keep human feedback in
-  `<key>.notes.json` sidecars — the human annotates in the browser, Claude reads
+  `<key>.notes.json` sidecars — the human annotates in the browser, Codex reads
   the sidecar and acts on it.
 - **Skills are app-owned**: each app keeps its skills in
-  `<app>/.claude/skills`; `./jsuite setup` (repo root) installs them all globally.
+  `<app>/.Codex/skills`; `./jsuite setup` (repo root) installs them all globally.
 
 ## Routing a request
 
@@ -184,11 +161,9 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | a diagram the human can edit and annotate | `j-chart` |
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
-| read only my staged / unstaged / uncommitted changes | `jdiff` CLI (`jdiff branch -s staged\|unstaged\|everything`) |
-| be grilled about a plan | `grilling` (in the terminal) — `j-grilling` only when the operator asks for a specific question in the browser |
+| be grilled about a plan, answering in a UI | `j-grilling` |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
-| check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, no fix) |
 | share/sync a jTicket project with a coworker | the project page's Share panel; one-time relay deploy via `packages/relay/wizard.sh` (both machines wire the same relay URL) |
 
 If an app isn't responding, `cd ~/code/anyway/jsuite && ./jsuite status` then

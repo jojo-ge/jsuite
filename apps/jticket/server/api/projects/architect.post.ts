@@ -30,6 +30,10 @@ export default defineEventHandler(async (event) => {
     mode: 'architect',
     repo: probe.path,
     integrationBranch: '',
+    // The worktree and the roll-up PR are machine-local and earned, not
+    // given: a fresh project has neither.
+    worktree: null,
+    rollupPr: null,
     starred: false,
     share: null,
     prompts: {},

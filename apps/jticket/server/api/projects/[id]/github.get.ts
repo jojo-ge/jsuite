@@ -25,6 +25,8 @@ export default defineEventHandler(async (event) => {
       integrationBranch: project.integrationBranch,
       suggestedBranch,
       branch: null,
+      worktree: null,
+      rollupPr: null,
       localPrs: [],
       mergedPrCount: 0,
       prs: [],
@@ -48,6 +50,10 @@ export default defineEventHandler(async (event) => {
         name: branchName,
         local: await localBranchExists(path, branchName),
         remote: await remoteBranchExists(path, branchName),
+        // How far origin has fallen behind the local branch. Merges push
+        // themselves once the roll-up PR exists, so anything but level here is
+        // either a private branch or a push that didn't land.
+        drift: await branchDrift(path, branchName),
         jdiffUrl: jdiffBranchUrl(path, branchName, ctx.defaultBranch),
         githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branchName)}` : null,
         // "Open the roll-up PR" — the integration branch against the default branch.
@@ -83,6 +89,36 @@ export default defineEventHandler(async (event) => {
     prsError = String(err.statusMessage ?? err.message ?? err).slice(0, 300)
   }
 
+  // A roll-up PR opened before jTicket recorded them — or by hand, or by a
+  // teammate — is found here and registered, which is what arms the push that
+  // follows a merge. Same write discipline as rememberRepo: only when it moves.
+  const rollup = prs.find((pr) => pr.matchedBy.includes('integration'))
+  let dirty = false
+  if (rollup) dirty = rememberRollupPr(project, { number: rollup.number, url: rollup.githubUrl })
+
+  // A job's state is only real while its process lives; after a restart, a
+  // record stuck mid-setup is corrected rather than left spinning.
+  const corrected = reconcileWorktree(project.id, project.worktree)
+  if (corrected) {
+    project.worktree = corrected
+    dirty = true
+  }
+  if (dirty) {
+    project.updatedAt = now()
+    saveStore(store)
+  }
+
+  // The record plus what disk says right now: whether the checkout is still
+  // there, and the fleet slot's own view of its stack.
+  const worktree = project.worktree
+    ? {
+        ...project.worktree,
+        alive: await worktreeAlive(path, project.worktree.path),
+        fleet: readFleetSlot(path, project.worktree.path),
+        jdiffUrl: jdiffBranchUrl(project.worktree.path, branchName || ctx.defaultBranch),
+      }
+    : null
+
   return {
     configured: true,
     repo: path,
@@ -93,6 +129,12 @@ export default defineEventHandler(async (event) => {
     integrationBranch: branchName,
     suggestedBranch,
     branch,
+    worktree,
+    suggestedWorktreeSlug: suggestWorktreeSlug(project),
+    // Only a repo with a launcher can claim a slot and boot a stack; without
+    // one the offer is a plain checkout, and the UI says that instead.
+    fleet: !!fleetLauncher(path),
+    rollupPr: project.rollupPr,
     localPrs,
     mergedPrCount,
     prs,

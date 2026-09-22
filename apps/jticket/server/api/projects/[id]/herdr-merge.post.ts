@@ -13,7 +13,8 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
-  const cwd = resolveRepoDir(project.repo)
+  // Same rule as ticket dispatch: the project's worktree once it is ready.
+  const cwd = projectCwd(project)
 
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
   // A fresh workspace's root tab becomes the merge tab; otherwise cut a new one.

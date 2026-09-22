@@ -21,7 +21,10 @@ export default defineEventHandler(async (event) => {
   // Already open? Reuse it — the roll-up PR is singular by design.
   const listed = await run('gh', ['pr', 'list', '--head', branch, '--json', 'number,url', '--limit', '1'], path)
   const existing = (JSON.parse(listed) as { number: number; url: string }[])[0]
-  if (existing) return { ...existing, created: false, branch }
+  if (existing) {
+    if (rememberRollupPr(project, existing)) saveStore(store)
+    return { ...existing, created: false, branch }
+  }
 
   const ctx = await repoContext(path)
   const mergedTickets = store.prs
@@ -40,5 +43,8 @@ export default defineEventHandler(async (event) => {
     path,
   )
   const url = out.trim().split('\n').pop() ?? ''
+  // From here on the branch is public: recording the PR is what turns on the
+  // push that follows every local merge (server/api/prs/[id]/merge.post.ts).
+  if (rememberRollupPr(project, { number: prNumberFromUrl(url), url })) saveStore(store)
   return { url, created: true, branch }
 })

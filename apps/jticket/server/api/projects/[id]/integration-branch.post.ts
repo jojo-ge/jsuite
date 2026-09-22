@@ -7,12 +7,21 @@
 // (recorded on the project) rather than re-cut, so a re-click after a partial
 // failure — or wiring up a branch you cut by hand — does the right thing.
 //
-// Body: { branch?: string, base?: string }  (both optional)
-//   branch — defaults to 'proj/<KEY>-<title-slug>'
-//   base   — defaults to the repo's default branch
+// Cutting the branch can also give the project somewhere to run it: pass
+// { worktree: true } and a checkout of the new branch is set up under the
+// repo's .worktrees/ in the background (server/utils/worktrees.ts), fleet slot
+// and all. That is the one moment the decision is obvious — the branch has
+// just come into being — so the UI asks it here rather than leaving a second
+// button to remember.
+//
+// Body: { branch?: string, base?: string, worktree?: boolean, boot?: boolean }
+//   branch   — defaults to 'proj/<KEY>-<title-slug>'
+//   base     — defaults to the repo's default branch
+//   worktree — also set up the project's worktree (default false)
+//   boot     — boot its fleet slot once claimed (default true)
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  const body = await readBody<{ branch?: string; base?: string }>(event)
+  const body = await readBody<{ branch?: string; base?: string; worktree?: boolean; boot?: boolean }>(event)
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
@@ -43,11 +52,25 @@ export default defineEventHandler(async (event) => {
 
   project.integrationBranch = branch
   project.updatedAt = now()
+
+  // The worktree is a checkout of the branch we just made sure exists, so it
+  // can only be asked for after the cut — and it starts only once the store
+  // holds the record the job reports into.
+  let startWorktree: (() => void) | null = null
+  let worktree = project.worktree
+  if (body?.worktree === true && !isJobRunning(project.id)) {
+    const begun = beginWorktree(project, path, branch, { boot: body?.boot !== false })
+    worktree = begun.worktree
+    startWorktree = begun.start
+  }
+
   saveStore(store)
+  startWorktree?.()
 
   return {
     branch,
     base,
+    worktree,
     // What actually happened, so the UI can say "created" vs "adopted".
     created: !hadLocal && !hadRemote,
     pushed: !hadRemote,

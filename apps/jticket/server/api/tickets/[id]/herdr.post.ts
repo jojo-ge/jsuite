@@ -42,7 +42,10 @@ export default defineEventHandler(async (event) => {
   const framing = await collaboratorFramingFor(ticket, project, store.docs, readDoc)
   const framedPrompt = framedDispatchPrompt(prompt, framing)
 
-  const cwd = resolveRepoDir(project.repo)
+  // The project's worktree when it has one: the pane's HEAD is then the
+  // integration branch, so the agent's own checkout starts from the project's
+  // work instead of origin/master.
+  const cwd = projectCwd(project)
 
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
   let tabId: string, paneId: string

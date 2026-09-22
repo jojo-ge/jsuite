@@ -54,6 +54,33 @@ export function coerceProjectMode(mode: unknown): ProjectMode {
   return PROJECT_MODES.includes(mode as ProjectMode) ? (mode as ProjectMode) : 'standard'
 }
 
+// Setting one up runs minutes of work (git worktree add → claim a fleet slot →
+// boot its stack), so it happens in a background job and the project carries
+// the job's state. 'ready' means the checkout exists and, where the repo has a
+// fleet, its slot is booted; 'failed' keeps `error` for the UI to show.
+export type WorktreeStatus = 'creating' | 'adopting' | 'booting' | 'ready' | 'failed'
+
+export interface ProjectWorktree {
+  /** Absolute path of the checkout — <repo>/.worktrees/<slug>. */
+  path: string
+  /** Registry name, lowercase-hyphen: 'proj-8-hydra-asset-library'. */
+  slug: string
+  /** Fleet slot number once claimed; 0 when the repo has no fleet. */
+  slot: number
+  /** The slot's browsable host ('' without a fleet). */
+  host: string
+  status: WorktreeStatus
+  /** Why the job stopped, when status is 'failed'. */
+  error: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RollupPr {
+  number: number
+  url: string
+}
+
 export interface Project {
   id: string
   key: string // PROJ-1
@@ -68,6 +95,14 @@ export interface Project {
   // branch that the project's PRs target, and which lands as one PR when the
   // project is done. See server/utils/github.ts.
   integrationBranch: string
+  // A checkout of that branch under the repo's .worktrees/, so the project's
+  // accumulated work can be run somewhere — claimed as a fleet slot when the
+  // repo knows how. null = none. See server/utils/worktrees.ts.
+  worktree: ProjectWorktree | null
+  // The project's one roll-up PR (integration branch → default branch), once
+  // opened. Its presence is what makes the branch public — and what turns on
+  // pushing after every local merge, so the PR is never stale.
+  rollupPr: RollupPr | null
   // Starred projects are the ones on deck: /next only surfaces frontier
   // tickets (and merge queues) from starred projects. Everything else about a
   // project is unaffected — its tickets still appear on /running, /finished
@@ -286,6 +321,11 @@ export function loadStore(): Store {
         mode: coerceProjectMode(p.mode),
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
+        // Projects predating the worktree / roll-up records have neither; both
+        // are re-derivable (the checkout is on disk, the PR is on GitHub) and
+        // get filled in by the project's own GET.
+        worktree: p.worktree ?? null,
+        rollupPr: p.rollupPr ?? null,
         starred: p.starred ?? false,
         // Projects predating (or never entering) sync are local-only.
         share: p.share ?? null,

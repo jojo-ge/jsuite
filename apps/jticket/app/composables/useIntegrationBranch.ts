@@ -19,19 +19,25 @@ export function useIntegrationBranch() {
     revision.value++
   }
 
-  /** POST the integration-branch endpoint; toasts either way. Returns true on success. */
-  async function createBranch(projectId: string, branch?: string): Promise<boolean> {
+  /**
+   * POST the integration-branch endpoint; toasts either way. Returns true on
+   * success. `worktree` also sets the project's checkout of the new branch up
+   * in the background — the one moment that decision is obvious, so the panel
+   * asks it here instead of leaving a second button to remember.
+   */
+  async function createBranch(projectId: string, branch?: string, worktree = false): Promise<boolean> {
     creating.value = projectId
     try {
-      const res = await $fetch<{ branch: string; base: string; created: boolean }>(
+      const res = await $fetch<{ branch: string; base: string; created: boolean; worktree: { slug: string } | null }>(
         `/api/projects/${projectId}/integration-branch`,
-        { method: 'POST', body: { branch: branch?.trim() || undefined } },
+        { method: 'POST', body: { branch: branch?.trim() || undefined, worktree: worktree || undefined } },
       )
+      const wt = worktree && res.worktree ? ` Setting up .worktrees/${res.worktree.slug}…` : ''
       toast.add({
         title: res.created ? `Cut ${res.branch}` : `Adopted ${res.branch}`,
-        description: res.created
+        description: (res.created
           ? `Empty branch off ${res.base}, pushed to origin.`
-          : 'The branch already existed — it is now this project’s.',
+          : 'The branch already existed — it is now this project’s.') + wt,
         color: 'success',
         icon: 'i-lucide-git-branch',
       })

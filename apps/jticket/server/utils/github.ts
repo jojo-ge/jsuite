@@ -135,6 +135,87 @@ export async function remoteBranchExists(path: string, branch: string): Promise<
   return !!(out ?? '').trim()
 }
 
+// ── Keeping origin level with the local branch ───────────────────────────────
+// The local integration branch is jTicket's own: every local PR merge moves it
+// with plumbing. Origin only ever receives, and until the roll-up PR exists
+// nobody is looking — which is why pushing was a button. Once the PR is open,
+// a branch six merges behind is a lie the PR tells the reviewer, so the push
+// stops being a decision and becomes part of the merge.
+
+/** How far the local branch is ahead of / behind its tracked origin copy. */
+export interface BranchDrift {
+  ahead: number
+  behind: number
+}
+
+/**
+ * Ahead/behind against origin's copy, read from what the clone already knows —
+ * no fetch, so a stale origin ref reads as level. Null when the branch isn't on
+ * origin yet (nothing to be out of step with).
+ */
+export async function branchDrift(path: string, branch: string): Promise<BranchDrift | null> {
+  const out = await tryRun(
+    'git',
+    ['rev-list', '--left-right', '--count', `refs/remotes/origin/${branch}...refs/heads/${branch}`],
+    path,
+  )
+  if (!out) return null
+  const parts = out.trim().split(/\s+/)
+  const behind = Number.parseInt(parts[0] ?? '', 10)
+  const ahead = Number.parseInt(parts[1] ?? '', 10)
+  if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return null
+  return { ahead, behind }
+}
+
+export type PushResult = { pushed: true } | { pushed: false; error: string }
+
+/**
+ * Push the branch to origin. An answer, never a throw: this rides along with a
+ * merge that has already succeeded, and being offline must not turn a landed
+ * merge into a 500. A rejected push (origin moved under us) comes back as its
+ * own message so the UI can say what happened.
+ */
+export async function pushBranch(path: string, branch: string): Promise<PushResult> {
+  try {
+    await pExecFile('git', ['push', '--set-upstream', 'origin', `${branch}:${branch}`], {
+      cwd: path,
+      maxBuffer: 16 * 1024 * 1024,
+      // This one runs inside the merge request, so a network that hangs must
+      // not hang the merge's answer with it — the merge itself is already done.
+      timeout: 60_000,
+    })
+    return { pushed: true }
+  } catch (err: any) {
+    const raw = String(err?.stderr || err?.message || 'push failed').trim()
+    const rejected = /non-fast-forward|rejected|fetch first/i.test(raw)
+    return {
+      pushed: false,
+      error: rejected
+        ? `origin/${branch} has moved — pull it into ${branch} before pushing again`
+        : raw.slice(0, 300),
+    }
+  }
+}
+
+/** 'https://github.com/o/r/pull/42' → 42 (0 when gh printed something else). */
+export function prNumberFromUrl(url: string): number {
+  const n = Number.parseInt((url.trim().match(/\/pull\/(\d+)/) ?? [])[1] ?? '', 10)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Record the project's roll-up PR, and say whether that changed anything —
+ * callers save the store only when it did. Also the self-healing path: a PR
+ * opened before jTicket recorded them is found by the project's own GET and
+ * registered there.
+ */
+export function rememberRollupPr(project: Project, pr: { number: number; url: string }): boolean {
+  if (!pr.url) return false
+  if (project.rollupPr?.number === pr.number && project.rollupPr?.url === pr.url) return false
+  project.rollupPr = { number: pr.number, url: pr.url }
+  return true
+}
+
 // ── Probing a path ──────────────────────────────────────────────────────────
 export type RepoProbe =
   | { ok: true; path: string; slug: string | null; defaultBranch: string }

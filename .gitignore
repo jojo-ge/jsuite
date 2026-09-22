@@ -3,6 +3,8 @@ node_modules/
 .output/
 # every app's state — see packages/data
 .data/
+# snapshots of it: jdiff's caches alone run past GitHub's 100MB file limit
+.data-backups/
 .DS_Store
 logs/
 run/

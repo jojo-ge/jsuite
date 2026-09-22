@@ -76,8 +76,13 @@ export async function worktreeOf(path: string, branch: string): Promise<string |
   return null
 }
 
+// Clean *enough* to fast-forward: no modified tracked files. Untracked ones are
+// excluded on purpose — `reset --hard` cannot lose them, and the checkout that
+// most wants this treatment is the project's worktree, where a running dev
+// stack leaves build output and logs lying around. Counting those as "dirty"
+// would refuse every merge for the price of protecting nothing.
 async function worktreeIsClean(dir: string): Promise<boolean> {
-  const out = await tryGit(dir, ['status', '--porcelain'])
+  const out = await tryGit(dir, ['status', '--porcelain', '--untracked-files=no'])
   return out !== null && !out.trim()
 }
 

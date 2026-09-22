@@ -95,6 +95,13 @@ async function runImport(source: string, opts: { silent?: boolean } = {}) {
   try {
     const scene = await mermaidToScene(source)
     canvas.value?.setScene(scene)
+    // setScene reports the new scene as a change, which queues a save of its
+    // own. This save writes the same scene plus the source it came from, so
+    // drop the queued one instead of letting two writes race for the file.
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
     await saveChart({ source: { type: 'mermaid', text: source }, scene })
     if (!opts.silent) toast.add({ title: 'Imported from Mermaid', color: 'success' })
   } catch (err: unknown) {

@@ -57,6 +57,10 @@ export default defineEventHandler(async (event) => {
       mode: coerceProjectMode(p.mode),
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
+      // The worktree and the roll-up PR are machine-local and earned, not
+      // given: a fresh project has neither.
+      worktree: null,
+      rollupPr: null,
       starred: p.starred === true,
       // Hand-off prompts are machine-local; a breakdown doesn't carry them.
       prompts: {},

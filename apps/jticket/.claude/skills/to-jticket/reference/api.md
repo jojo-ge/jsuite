@@ -21,7 +21,9 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / POST | `/api/prs` | List / open **local PRs** (ticket branch → integration branch, merged by jTicket) |
 | GET / PATCH / DELETE | `/api/prs/:id` | One local PR (id or `PR-n`); PATCH status only to `closed` / `open` |
 | POST | `/api/prs/:id/merge` | Squash-merge locally; deletes the branch, ticket → `merged`; 409 on conflict |
-| POST | `/api/projects/:id/sync` | Push the integration branch to origin (the only remote write) |
+| POST | `/api/projects/:id/worktree` | Check the integration branch out at `<repo>/.worktrees/<slug>` — `{ slug?, boot? }`; claims a fleet slot + boots its stack where the repo ships a `kraken` launcher. Returns at once; watch `project.worktree.status` |
+| DELETE | `/api/projects/:id/worktree` | Remove it (`?force=1` dirty, `?forget=1` record only) |
+| POST | `/api/projects/:id/sync` | Push the integration branch to origin — the manual retry; once the roll-up PR is on record every merge pushes it |
 | POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
@@ -223,9 +225,11 @@ curl -s -X POST "$JTICKET/api/prs/PR-4/merge"
 # unless the *integration branch itself* is checked out dirty (409, says so).
 ```
 
-Everything stays on the machine until `POST /api/projects/:id/sync` pushes the
-integration branch. `POST /api/projects/:id/integration-pr` opens the one real GitHub
-roll-up PR (integration → default branch) via `gh`.
+Everything stays on the machine until the roll-up PR exists.
+`POST /api/projects/:id/integration-pr` opens the one real GitHub roll-up PR
+(integration → default branch) via `gh` and records it; from then on each merge
+pushes the integration branch itself, best-effort — `POST /api/projects/:id/sync`
+is the retry.
 
 ### Doc
 

@@ -1,8 +1,12 @@
 // The merge button. Squash-merges the PR's head branch onto its base (the
 // integration branch) with plumbing — no checkout, the working tree is never
 // touched — then deletes the head branch and moves the ticket to 'merged'.
-// Everything stays local; pushing the integration branch is a separate,
-// explicit action (POST /api/projects/:id/sync).
+//
+// Everything stays local until the project's roll-up PR exists. From that
+// point the branch is something other people read, and a merge that didn't
+// push would leave the PR describing work it doesn't contain — so the push
+// rides along with the merge (best-effort: offline never turns a landed merge
+// into an error, and POST /api/projects/:id/sync is still there to retry).
 //
 // A conflict refuses cleanly: the repo is left exactly as it was, the PR is
 // marked 'conflicted' with the files recorded, and the answer is a 409 —
@@ -51,9 +55,20 @@ export default defineEventHandler(async (event) => {
   }
 
   saveStore(store)
+
+  // Only the project's own integration branch is jTicket's to push — a PR
+  // based on anything else (a ticket stacked on a ticket) is nobody's roll-up.
+  const push =
+    project.rollupPr && pr.baseBranch === project.integrationBranch.trim()
+      ? await pushBranch(path, pr.baseBranch)
+      : null
+
   return {
     ...withPrDerived(store, pr, path),
     headDeleted: result.headDeleted,
     jdiffBaseUrl: jdiffBranchUrl(path, pr.baseBranch),
+    // null = the branch is still private, so nothing was owed to origin.
+    pushed: push ? push.pushed : null,
+    pushError: push && !push.pushed ? push.error : null,
   }
 })

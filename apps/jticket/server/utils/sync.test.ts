@@ -26,6 +26,9 @@ function makeProject(over: Partial<Project> = {}): Project {
     mode: 'standard',
     repo: '/home/me/code/thing',
     integrationBranch: 'proj/shared-effort',
+    // Machine-local, like repo: never on the wire, so always null in fixtures.
+    worktree: null,
+    rollupPr: null,
     starred: true,
     share: { key: 'AB', side: 'creator', peerName: 'sam' },
     createdAt: AT,

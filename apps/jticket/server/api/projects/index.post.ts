@@ -13,6 +13,10 @@ export default defineEventHandler(async (event) => {
     mode: coerceProjectMode(body.mode),
     repo: body.repo?.trim() ?? '',
     integrationBranch: body.integrationBranch?.trim() ?? '',
+    // The worktree and the roll-up PR are machine-local and earned, not
+    // given: a fresh project has neither.
+    worktree: null,
+    rollupPr: null,
     // Unstarred by default — a new project earns its /next slot explicitly.
     starred: body.starred === true,
     // Local-only until the share flow arms it — never set at creation.

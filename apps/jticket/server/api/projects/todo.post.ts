@@ -24,6 +24,10 @@ export default defineEventHandler(async (event) => {
     mode: 'todo',
     repo: probe.path,
     integrationBranch: '',
+    // The worktree and the roll-up PR are machine-local and earned, not
+    // given: a fresh project has neither.
+    worktree: null,
+    rollupPr: null,
     // Never starred: /next is for dispatchable work, todos are grilled instead.
     starred: false,
     share: null,

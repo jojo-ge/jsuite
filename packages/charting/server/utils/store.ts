@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
+import { readFile, writeFile, readdir, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
@@ -71,6 +71,27 @@ async function ensureDir() {
   if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true })
 }
 
+/**
+ * Write through a temp file and rename over the target.
+ *
+ * The editor saves on a debounce and the Mermaid import saves as well, so two
+ * PUTs for one chart can be in flight at once. Writing both straight to the
+ * path lets the shorter one land inside the longer one's bytes — the JSON ends
+ * where it ends and the tail of the previous save is still sitting after it,
+ * which is an unparseable file and a chart that silently vanishes from the
+ * list. A rename is atomic: the loser is overwritten whole, never spliced.
+ */
+async function writeAtomic(path: string, body: string): Promise<void> {
+  const tmp = `${path}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`
+  try {
+    await writeFile(tmp, body, 'utf8')
+    await rename(tmp, path)
+  } catch (err) {
+    await rm(tmp, { force: true }).catch(() => {})
+    throw err
+  }
+}
+
 const chartPath = (key: string) => join(DATA_DIR, sanitizeKey(key) + '.json')
 const notesPath = (key: string) => join(DATA_DIR, sanitizeKey(key) + '.notes.json')
 
@@ -115,7 +136,7 @@ export async function readChart(key: string): Promise<Chart | null> {
 
 export async function writeChart(key: string, chart: Chart): Promise<void> {
   await ensureDir()
-  await writeFile(chartPath(key), JSON.stringify(chart, null, 2) + '\n', 'utf8')
+  await writeAtomic(chartPath(key), JSON.stringify(chart, null, 2) + '\n')
 }
 
 export async function deleteChart(key: string): Promise<void> {
@@ -140,7 +161,7 @@ export async function readNotes(key: string): Promise<ChartNotes> {
 
 export async function writeNotes(key: string, notes: ChartNotes): Promise<void> {
   await ensureDir()
-  await writeFile(notesPath(key), JSON.stringify(notes, null, 2) + '\n', 'utf8')
+  await writeAtomic(notesPath(key), JSON.stringify(notes, null, 2) + '\n')
 }
 
 export async function listCharts(): Promise<ChartMeta[]> {

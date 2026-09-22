@@ -55,6 +55,21 @@ interface LocalPrRow {
   jdiffUrl: string | null
   commits: PrCommit[]
 }
+// The project's worktree as the GET returns it: the stored record plus what
+// disk says right now — is the checkout still there, and what does the fleet
+// registry make of its slot.
+interface ProjectWorktreeRow {
+  path: string
+  slug: string
+  slot: number
+  host: string
+  status: 'creating' | 'adopting' | 'booting' | 'ready' | 'failed'
+  error: string
+  alive: boolean
+  fleet: { slot: number; host: string; status: string } | null
+  jdiffUrl: string
+}
+
 interface GithubInfo {
   configured: boolean
   repo: string
@@ -68,10 +83,18 @@ interface GithubInfo {
     name: string
     local: boolean
     remote: boolean
+    // How far origin has fallen behind the local branch (null: not on origin).
+    drift: { ahead: number; behind: number } | null
     jdiffUrl: string
     githubUrl: string | null
     comparePrUrl: string | null
   } | null
+  // The project's checkout of the integration branch, once it has one.
+  worktree: ProjectWorktreeRow | null
+  suggestedWorktreeSlug?: string
+  // Whether this repo can claim a fleet slot and boot a stack in the worktree.
+  fleet?: boolean
+  rollupPr: { number: number; url: string } | null
   localPrs: LocalPrRow[]
   mergedPrCount: number
   prs: ProjectPr[]
@@ -106,7 +129,7 @@ const branchName = ref('')
 watch(data, (d) => { if (d && !branchName.value) branchName.value = d.suggestedBranch }, { immediate: true })
 
 async function createBranch() {
-  await cutBranch(props.project.id, branchName.value)
+  await cutBranch(props.project.id, branchName.value, cutWithWorktree.value)
 }
 
 // Somebody else changed the branch — the header button, or another tab.
@@ -205,6 +228,82 @@ async function clearBranch() {
   invalidate()
 }
 
+// ── The project's worktree ──
+// A checkout of the integration branch under the repo's .worktrees/, so the
+// project's accumulated work has somewhere to run. Setting one up is minutes
+// of work in the background: the POST returns immediately and the record it
+// writes arrives over the store's own change stream, so all this has to do is
+// start it and let the panel refetch.
+const worktree = computed(() => data.value?.worktree ?? null)
+const worktreeBusy = computed(() =>
+  !!worktree.value && ['creating', 'adopting', 'booting'].includes(worktree.value.status),
+)
+const WORKTREE_STEP: Record<string, string> = {
+  creating: 'Adding the worktree…',
+  adopting: 'Claiming a fleet slot…',
+  booting: 'Booting its stack…',
+}
+
+// Cutting the branch can set the worktree up in the same click.
+const cutWithWorktree = ref(false)
+
+const addingWorktree = ref(false)
+async function addWorktree() {
+  addingWorktree.value = true
+  try {
+    await $fetch(`/api/projects/${props.project.id}/worktree`, { method: 'POST', body: {} })
+    toast.add({
+      title: 'Setting the worktree up',
+      description: data.value?.fleet
+        ? 'Adding the checkout, claiming a fleet slot, booting its stack — this takes a few minutes.'
+        : 'Adding the checkout under .worktrees/.',
+      color: 'success',
+      icon: 'i-lucide-folder-tree',
+    })
+  } catch (err: any) {
+    toast.add({ title: 'Could not set the worktree up', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    addingWorktree.value = false
+    await refreshTracker()
+    reload()
+  }
+}
+
+// Removal takes the fleet slot's containers and volumes with it, so it arms
+// first and removes on the second click.
+const removeArmed = ref(false)
+const removingWorktree = ref(false)
+// A checkout with uncommitted work refuses the first time. Rather than hide a
+// second button, the refusal re-arms and the next click means it.
+const forceNext = ref(false)
+let disarm: ReturnType<typeof setTimeout> | undefined
+function armRemove() {
+  removeArmed.value = true
+  clearTimeout(disarm)
+  disarm = setTimeout(() => { removeArmed.value = false; forceNext.value = false }, 5000)
+}
+async function removeWorktree() {
+  removingWorktree.value = true
+  try {
+    await $fetch(`/api/projects/${props.project.id}/worktree${forceNext.value ? '?force=1' : ''}`, { method: 'DELETE' })
+    toast.add({ title: 'Worktree removed', color: 'success', icon: 'i-lucide-trash-2' })
+    removeArmed.value = false
+    forceNext.value = false
+  } catch (err: any) {
+    const message = errorText(err)
+    if (/force=1/.test(message)) {
+      forceNext.value = true
+      armRemove()
+    }
+    toast.add({ title: 'Could not remove the worktree', description: message, color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    removingWorktree.value = false
+    await refreshTracker()
+    reload()
+  }
+}
+onUnmounted(() => clearTimeout(disarm))
+
 const prs = computed(() => data.value?.prs ?? [])
 const localPrs = computed(() => data.value?.localPrs ?? [])
 
@@ -258,11 +357,21 @@ const merging = ref('')
 async function mergePr(pr: LocalPrRow) {
   merging.value = pr.id
   try {
-    const res = await $fetch<{ headDeleted: boolean }>(`/api/prs/${pr.id}/merge`, { method: 'POST' })
+    const res = await $fetch<{ headDeleted: boolean; pushed: boolean | null; pushError: string | null }>(
+      `/api/prs/${pr.id}/merge`,
+      { method: 'POST' },
+    )
+    // pushed === null means the branch is still private: nothing was owed to
+    // origin. true means the roll-up PR already has this merge in it.
+    const landed = res.pushed === null
+      ? 'Local only — sync when ready.'
+      : res.pushed
+        ? `Pushed to origin — the roll-up PR is current.`
+        : `Not pushed: ${res.pushError}`
     toast.add({
       title: `${pr.key} merged into ${pr.baseBranch}`,
-      description: `${pr.ticketKey ?? 'Its ticket'} is now merged${res.headDeleted ? ` · ${pr.headBranch} deleted` : ''}. Local only — sync when ready.`,
-      color: 'success',
+      description: `${pr.ticketKey ?? 'Its ticket'} is now merged${res.headDeleted ? ` · ${pr.headBranch} deleted` : ''}. ${landed}`,
+      color: res.pushed === false ? 'warning' : 'success',
       icon: 'i-lucide-git-merge',
     })
   } catch (err: any) {
@@ -544,6 +653,23 @@ async function createPr() {
           <span class="font-mono text-xs">{{ data.branch.name }}</span>
           <UBadge v-if="data.branch.remote" color="success" variant="subtle" size="sm">on origin</UBadge>
           <UBadge v-else color="warning" variant="subtle" size="sm">local only</UBadge>
+          <!-- Merges push themselves once the roll-up PR exists, so anything
+               but level here is a private branch or a push that didn't land. -->
+          <UTooltip
+            v-if="data.branch.drift && data.branch.drift.ahead"
+            :text="`${data.branch.drift.ahead} commit${data.branch.drift.ahead === 1 ? '' : 's'} not on origin — Sync pushes them`"
+          >
+            <UBadge color="warning" variant="subtle" size="sm">↑{{ data.branch.drift.ahead }} unpushed</UBadge>
+          </UTooltip>
+          <UTooltip
+            v-if="data.branch.drift && data.branch.drift.behind"
+            :text="`origin/${data.branch.name} has ${data.branch.drift.behind} commit(s) this clone doesn't — pull before pushing again`"
+          >
+            <UBadge color="error" variant="subtle" size="sm">↓{{ data.branch.drift.behind }} behind origin</UBadge>
+          </UTooltip>
+          <UBadge v-if="data.rollupPr" color="neutral" variant="subtle" size="sm">
+            roll-up #{{ data.rollupPr.number }} · merges push
+          </UBadge>
           <span class="text-xs text-muted">integration branch · off {{ data.defaultBranch }}</span>
           <div class="ml-auto flex gap-1">
             <UTooltip text="Point at a different branch">
@@ -616,6 +742,100 @@ async function createPr() {
           </div>
         </div>
 
+        <!-- The project's worktree: a checkout of the branch above, so the work
+             it accumulates has somewhere to run. Every merge fast-forwards it. -->
+        <div v-if="data.branch" class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2 text-sm">
+          <UIcon name="i-lucide-folder-tree" class="size-4 shrink-0 text-muted" />
+
+          <template v-if="worktree">
+            <span class="font-mono text-xs">.worktrees/{{ worktree.slug }}</span>
+            <UBadge v-if="worktreeBusy" color="info" variant="subtle" size="sm">
+              {{ WORKTREE_STEP[worktree.status] }}
+            </UBadge>
+            <UBadge v-else-if="worktree.status === 'failed'" color="error" variant="subtle" size="sm">failed</UBadge>
+            <UBadge v-else-if="!worktree.alive" color="warning" variant="subtle" size="sm">checkout gone</UBadge>
+            <UBadge v-else color="success" variant="subtle" size="sm">ready</UBadge>
+            <UBadge v-if="worktree.slot" color="neutral" variant="subtle" size="sm">
+              fleet:{{ worktree.slot }}{{ worktree.fleet?.status ? ` · ${worktree.fleet.status}` : '' }}
+            </UBadge>
+            <span v-if="worktree.status === 'failed'" class="text-xs text-error">{{ worktree.error }}</span>
+            <span v-else class="text-xs text-muted">tracks {{ data.branch.name }}</span>
+
+            <div class="ml-auto flex items-center gap-1">
+              <UButton
+                v-if="worktree.host"
+                :to="`https://${worktree.host}`"
+                target="_blank"
+                external
+                icon="i-lucide-external-link"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+              >
+                {{ worktree.host }}
+              </UButton>
+              <UButton
+                :to="worktree.jdiffUrl"
+                target="_blank"
+                external
+                icon="i-lucide-git-compare"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+              >
+                Review
+              </UButton>
+              <UButton
+                v-if="worktree.status === 'failed' || !worktree.alive"
+                icon="i-lucide-refresh-cw"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :loading="addingWorktree"
+                @click="addWorktree"
+              >
+                Retry
+              </UButton>
+              <UTooltip
+                :text="data.fleet
+                  ? 'Stop the stack, drop the slot’s containers and volumes, remove the checkout'
+                  : 'Remove the checkout'"
+              >
+                <UButton
+                  :icon="removeArmed ? 'i-lucide-triangle-alert' : 'i-lucide-trash-2'"
+                  size="xs"
+                  :color="removeArmed ? 'error' : 'neutral'"
+                  variant="ghost"
+                  :disabled="worktreeBusy"
+                  :loading="removingWorktree"
+                  @click="removeArmed ? removeWorktree() : armRemove()"
+                >
+                  {{ removeArmed ? (forceNext ? 'Remove, changes and all' : 'Remove for real') : 'Remove' }}
+                </UButton>
+              </UTooltip>
+            </div>
+          </template>
+
+          <template v-else>
+            <span class="text-xs text-muted">
+              No worktree — the branch has nowhere to run.
+              <span class="font-mono">.worktrees/{{ data.suggestedWorktreeSlug }}</span>
+              {{ data.fleet ? 'would claim a fleet slot and boot its stack.' : 'would be a plain checkout.' }}
+            </span>
+            <UButton
+              class="ml-auto"
+              icon="i-lucide-folder-plus"
+              size="xs"
+              color="neutral"
+              variant="soft"
+              :loading="addingWorktree"
+              @click="addWorktree"
+            >
+              Add a worktree
+            </UButton>
+          </template>
+        </div>
+
         <!-- No integration branch yet — cut one -->
         <div v-else class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2">
           <UIcon name="i-lucide-git-branch" class="size-4 shrink-0 text-muted" />
@@ -624,6 +844,15 @@ async function createPr() {
             Create integration branch
           </UButton>
           <span class="text-xs text-muted">empty branch off {{ data.defaultBranch }}, pushed to origin</span>
+          <!-- The one moment the worktree decision is obvious: the branch is
+               coming into being right now, and it needs somewhere to run. -->
+          <UTooltip
+            :text="data.fleet
+              ? `Also check the branch out at .worktrees/${data.suggestedWorktreeSlug}, claim a fleet slot and boot its stack`
+              : `Also check the branch out at .worktrees/${data.suggestedWorktreeSlug}`"
+          >
+            <UCheckbox v-model="cutWithWorktree" size="sm" label="and a worktree for it" />
+          </UTooltip>
           <UButton
             icon="i-lucide-search"
             size="xs"
