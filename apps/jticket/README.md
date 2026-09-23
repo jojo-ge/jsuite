@@ -218,6 +218,11 @@ The loop, per ticket:
    the ticket moves to **`merged`** (a fourth status; `done` and `merged` both
    count as finished everywhere). If the integration branch happens to be checked
    out *clean*, that checkout is fast-forwarded; checked out *dirty* refuses.
+   One exception to the squash: a PR whose branch carries upstream
+   (`origin/HEAD`) commits the integration branch lacks — a "catch up with
+   master" PR — lands as a real two-parent merge, so upstream stays an ancestor
+   and GitHub doesn't count upstream's changes as the branch's own. The response
+   says which way it went (`mergedAs: "squash" | "merge"`).
 4. **Conflicts refuse cleanly** — the repo is left exactly as it was, the PR
    turns `conflicted` with the file list on the row. Rebase the ticket branch
    onto the integration branch, then hit merge again.

@@ -44,7 +44,7 @@ const endpoints = [
   { m: 'POST', p: '/api/prs', d: 'Open a local PR { ticket, title?, description?, headBranch?, baseBranch? } — one per ticket' },
   { m: 'GET', p: '/api/prs/:id', d: 'One local PR (id or PR-n key) with the commits it would merge' },
   { m: 'PATCH', p: '/api/prs/:id', d: 'Edit a local PR; status accepts only closed / open (merge outcomes are the merge\'s)' },
-  { m: 'POST', p: '/api/prs/:id/merge', d: 'Squash-merge onto the integration branch, delete the branch, ticket → merged; 409 + conflictFiles on conflict' },
+  { m: 'POST', p: '/api/prs/:id/merge', d: 'Squash-merge onto the integration branch (a real merge when the PR brings upstream history), delete the branch, ticket → merged; 409 + conflictFiles on conflict' },
   { m: 'DELETE', p: '/api/prs/:id', d: 'Remove a local PR record (git untouched)' },
   { m: 'POST', p: '/api/tickets/:id/branch', d: 'Cut the ticket\'s local work branch off the integration branch { branch? } — never pushed' },
   { m: 'GET', p: '/api/herdr', d: 'Herdr state: available? + workspaces/tabs (workspace label = project title)' },
