@@ -108,6 +108,7 @@ export function reviewMeta(r: Review): ReviewMeta {
     status: r.status,
     findingCount: r.findings.length,
     projectKey: r.tickets?.projectKey,
+    consensus: r.consensus ? true : undefined,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }

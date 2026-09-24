@@ -6,11 +6,12 @@ description: Publish a finished code review into jReview as a jExplain document 
 # jreview-report
 
 You are one of several jReview reviewer sessions. You have just run a code
-review (the target repo's own code-review skill, or the global `/code-review`).
+review (the global `/code-review` skill).
 This skill turns that review into a **jExplain document** at the exact key
 jReview is watching. jReview polls the shared document pool: **the moment a
 document exists at `doc=`, this reviewer counts as finished**, and when every
-reviewer is finished a triage session merges all the reports.
+reviewer is finished a triage session merges all the reports (or, for a
+consensus review, a consensus session files the agreed findings as tickets).
 
 Arguments: `review=<key> reviewer=<n> doc=<docKey>`.
 
@@ -35,7 +36,7 @@ commit list itself, so don't paste code. Point at it with `quote:`.
 
 ```
 BASE: <the fixed point>
-SKILL: <which review skill ran — the repo's own (name it) or the global /code-review>
+SKILL: <which review skill ran — normally the global /code-review>
 SOURCES: <spec/standards documents the review used, or "none found">
 VERDICT: <one sentence — the overall verdict>
 

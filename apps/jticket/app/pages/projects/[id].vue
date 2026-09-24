@@ -214,6 +214,8 @@ async function removeProject() {
                 @click="toggleStar"
               />
             </UTooltip>
+            <!-- The jButton — auto mode on/off -->
+            <AutoLoopButton v-if="project.mode === 'standard'" :project="project" :tickets="projectTickets" :all-tickets="tickets" />
             <UButton icon="i-lucide-plus" size="sm" variant="soft" @click="openNewTicket(project.id)">Ticket</UButton>
             <!-- Integration branch: cut it, or jump to reviewing it -->
             <UTooltip v-if="project.repo && !project.integrationBranch" text="Cut an empty branch off the default branch and push it">
@@ -261,6 +263,9 @@ async function removeProject() {
             <UButton icon="i-lucide-trash-2" size="sm" color="error" variant="ghost" @click="removeProject" />
           </div>
         </div>
+
+        <!-- Auto mode's loop — phase, what it's waiting on, the stop button -->
+        <AutoLoopPanel :project="project" :tickets="projectTickets" />
 
         <!-- Pending pull approvals — the serving side's per-pull human gate -->
         <SyncPullRequests :project-id="project.id" class="mb-6" />

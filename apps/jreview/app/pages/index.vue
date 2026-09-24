@@ -235,7 +235,7 @@ const dateFmt = (iso: string) =>
 
         <UInput v-model="form.title" placeholder="Title (optional — defaults to repo · branch)" />
         <p class="text-xs text-muted">
-          Starts four Opus 5.5 reviewers in herdr. Each runs the repo's code-review skill (or the default one)
+          Starts four Opus 5.5 reviewers in herdr. Each runs the global /code-review skill
           and publishes a jExplain report here. When all four are in, a triager merges the duplicates.
         </p>
         <p v-if="createError" class="text-sm text-error">{{ createError }}</p>

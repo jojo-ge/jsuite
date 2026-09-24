@@ -1,7 +1,10 @@
 // Dispatch a ticket's hand-off prompt straight into Herdr instead of the
 // clipboard: workspace = the project (title, cwd = repo), pane = a fresh shell
 // packed up to four per 'PROJ-n' tab, agent = claude named after the ticket.
-// Nothing is focused — the work starts in the background.
+// Nothing is focused — the work starts in the background. The work itself is
+// dispatchTicketSession (server/utils/herdrDispatch.ts), shared with the auto
+// loop — which is why a project in auto mode refuses hand dispatches of AFK
+// tickets (409).
 //
 // The prompt itself comes from the client (it owns the prompt-target picker
 // and has already cut the ticket branch, same as the copy button).
@@ -19,49 +22,10 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const ticket = store.tickets.find((t) => t.id === id || t.key === id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
-  const project = store.projects.find((p) => p.id === ticket.projectId)
-  if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
-
-  // Hard invariant (spec DOC-30): no remote-originated content ever reaches a
-  // dispatch endpoint. A peer-owned ticket is refused here at the API — if its
-  // work is yours to do, mint your own ticket (a human rewrite in between).
-  // Transfer is the one point where remote-authored text would become
-  // runnable by local agents — a pending offer stays undispatchable until the
-  // human has reviewed and accepted it (spec DOC-30). Before the peer guard:
-  // the transferor's pending copy is peer-owned too, and "frozen" is why.
-  const frozen = transferFreezeError(ticket, project.share)
-  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
-  const refused = peerDispatchError(ticket, project.share)
-  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
-
-  // Untrusted-content framing (spec DOC-30): dispatching a local ticket on a
-  // shared project still puts peer-authored text in front of the agent — the
-  // project's description (creator-owned metadata) and any peer-owned doc the
-  // ticket links. It rides along wrapped as collaborator content: data, not
-  // instructions. Local-only projects pass the prompt through byte-identical.
-  const framing = await collaboratorFramingFor(ticket, project, store.docs, readDoc)
-  const framedPrompt = framedDispatchPrompt(prompt, framing)
-
-  const cwd = resolveRepoDir(project.repo)
-
-  const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
-  let tabId: string, paneId: string
-  if (body?.ownTab) {
-    const label = `${project.key} · ${ticket.key}`
-    if (freshTab) {
-      await herdrJson(['tab', 'rename', freshTab.tabId, label])
-      ;({ tabId, paneId } = freshTab)
-    } else {
-      ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
-    }
-  } else {
-    ;({ tabId, paneId } = await acquireTicketPane(workspaceId, project.key, cwd, freshTab))
+  // Auto mode owns every AFK ticket of its project; HITL tickets are still the
+  // human's to dispatch — the loop never does.
+  if (projectAutoEnabled(store, ticket.projectId) && !isHitl(ticket)) {
+    throw createError({ statusCode: 409, statusMessage: 'auto mode is driving this project — turn the jButton off to dispatch AFK tickets by hand' })
   }
-  // Name the pane after its ticket: in a packed 2×2 tab the four panes are
-  // otherwise four identical claude spinners with nothing saying which ticket
-  // each is working. Cosmetic and best-effort — never fails the dispatch.
-  await renamePane(paneId, ticket.title ? `${ticket.key} · ${ticket.title}` : ticket.key)
-  const agent = await startClaudeIn(paneId, ticket.key, framedPrompt)
-
-  return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
+  return dispatchTicketSession(store, ticket, prompt, { ownTab: !!body?.ownTab })
 })

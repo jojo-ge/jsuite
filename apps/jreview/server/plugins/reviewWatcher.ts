@@ -1,11 +1,13 @@
-import { reviewerSettled } from '../../app/utils/reviewTypes'
+import { readyForTriage } from '../../app/utils/reviewTypes'
 
 // The review watcher: jReview's only moving part. Every few seconds it looks
 // at each review still in `reviewing` and checks the shared document pool for
 // each reviewer's pre-assigned jExplain document — a document landing IS that
 // reviewer finishing. Once every reviewer is settled (done, or skipped by the
 // human) and at least one report is in, it flips the review to `triaging` and
-// dispatches the triage session.
+// dispatches the triage session. A consensus review (jTicket's auto loop)
+// waits for EVERY reviewer's report and dispatches the consensus session
+// instead — it files agreed findings into jTicket and skips triage.
 //
 // Server-side on purpose: triage fires whether or not a browser is open.
 
@@ -44,9 +46,7 @@ export default defineNitroPlugin((nitroApp) => {
           changed = true
         }
       }
-      const settled = review.reviewers.every(reviewerSettled)
-      const anyReport = review.reviewers.some((r) => r.status === 'done')
-      if (settled && anyReport) {
+      if (readyForTriage(review)) {
         // Claimed here, inside the serialised update, so a second tick can
         // never dispatch a second triager.
         review.status = 'triaging'

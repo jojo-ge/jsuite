@@ -1,10 +1,10 @@
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
-import { REVIEWER_COUNT, type Review } from '../../../app/utils/reviewTypes'
+import { DEFAULT_REVIEWERS, MAX_REVIEWERS, type Review, type ReviewConsensus } from '../../../app/utils/reviewTypes'
 
 /**
- * Start a review. Body: { repoPath, branch?, base?, title? }
+ * Start a review. Body: { repoPath, branch?, base?, title?, reviewers?, consensus? }
  *
  * - `branch` — what to review (default: whatever is checked out). A branch
  *   that isn't checked out is reviewed in a detached worktree, so the human's
@@ -44,6 +44,21 @@ export default defineEventHandler(async (event) => {
   }
   if (base === branch) throw createError({ statusCode: 400, message: `branch and target are both ${branch}` })
 
+  const count = body.reviewers === undefined ? DEFAULT_REVIEWERS : Number(body.reviewers)
+  if (!Number.isInteger(count) || count < 1 || count > MAX_REVIEWERS) {
+    throw createError({ statusCode: 400, message: `reviewers must be 1…${MAX_REVIEWERS}` })
+  }
+
+  let consensus: ReviewConsensus | undefined
+  if (body.consensus !== undefined && body.consensus !== null) {
+    const projectKey = String(body.consensus?.projectKey ?? '').trim()
+    if (!/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(projectKey)) {
+      throw createError({ statusCode: 400, message: 'consensus.projectKey must be a jTicket project key (PROJ-n)' })
+    }
+    const loop = Number(body.consensus?.loop)
+    consensus = { projectKey, ...(Number.isInteger(loop) && loop > 0 ? { loop } : {}) }
+  }
+
   const repoName = basename(repoPath)
   const title = String(body.title ?? '').trim() || `${repoName} · ${pr ? `#${pr.number} ` : ''}${branch}`
   const key = await uniqueReviewKey(title)
@@ -66,7 +81,7 @@ export default defineEventHandler(async (event) => {
     worktree: !inPlace,
     worktreeGuide: guide?.url,
     status: 'reviewing',
-    reviewers: Array.from({ length: REVIEWER_COUNT }, (_, i) => ({
+    reviewers: Array.from({ length: count }, (_, i) => ({
       n: i + 1,
       docKey: `jreview-${key}-r${i + 1}`,
       status: 'queued' as const,
@@ -74,6 +89,7 @@ export default defineEventHandler(async (event) => {
     triage: { docKey: `jreview-${key}-triage`, status: 'waiting' },
     findings: [],
     tickets: null,
+    ...(consensus ? { consensus } : {}),
     createdAt: now,
     updatedAt: now,
   }

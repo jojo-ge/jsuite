@@ -13,43 +13,14 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const ticket = store.tickets.find((t) => t.id === id || t.key === id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
-  const project = store.projects.find((p) => p.id === ticket.projectId)
-  if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — branches are cut in a project's repo` })
-
-  // Cutting a branch writes ticket.branch and is the first step of working a
-  // ticket — peer-owned work isn't yours to start.
-  // Mid-transfer = frozen: starting work on an unanswered offer would put a
-  // branch on a ticket that may bounce back or change hands (spec DOC-30).
-  // Before the peer guard — the transferor's pending copy is peer-owned too.
-  const frozen = transferFreezeError(ticket, project.share)
-  if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
-  const refused = peerWriteError(ticket, project.share)
-  if (refused) throw createError({ statusCode: 403, statusMessage: refused })
-
-  const path = resolveRepoDir(project.repo)
-  const base = project.integrationBranch.trim()
-  if (!base) throw createError({ statusCode: 400, statusMessage: `${project.key} has no integration branch — cut that first` })
-
-  const branch = (body?.branch ?? '').trim() || ticket.branch.trim() || suggestTicketBranchName(ticket)
-  if (!isSafeRef(branch)) throw createError({ statusCode: 400, statusMessage: `not a usable branch name: ${branch}` })
-
-  // The local integration branch is the source of truth for ticket work; only
-  // when it hasn't been checked out here yet does origin's copy stand in.
-  const existed = !!(await branchOid(path, branch))
-  if (!existed) {
-    const startPoint = (await branchOid(path, base)) ? base : `refs/remotes/origin/${base}`
-    await run('git', ['branch', branch, startPoint], path)
-  }
-
-  ticket.branch = branch
-  ticket.updatedAt = now()
+  const cut = await cutTicketBranch(store, ticket, body?.branch ?? '')
   saveStore(store)
 
   return {
-    branch,
-    base,
-    created: !existed,
-    adopted: existed,
-    jdiffUrl: jdiffBranchUrl(path, branch, base),
+    branch: cut.branch,
+    base: cut.base,
+    created: cut.created,
+    adopted: cut.adopted,
+    jdiffUrl: jdiffBranchUrl(cut.path, cut.branch, cut.base),
   }
 })

@@ -364,7 +364,7 @@ async function dispatchMerge(q: MergeQueue) {
               >
                 {{ copiedMerge === q.project.id ? 'Copied' : 'Copy prompt' }}
               </UButton>
-              <UTooltip v-if="herdrUp" text="Run the merge sweep in a new herdr tab (background — no focus steal)">
+              <UTooltip v-if="herdrUp && !q.project.auto?.enabled" text="Run the merge sweep in a new herdr tab (background — no focus steal)">
                 <UButton
                   icon="i-lucide-terminal"
                   color="secondary"
@@ -473,8 +473,11 @@ async function dispatchMerge(q: MergeQueue) {
               Tickets with no project
             </h2>
             <UBadge color="primary" variant="subtle" size="sm">{{ g.rows.length }} ready</UBadge>
+            <UTooltip v-if="g.project?.auto?.enabled" text="Auto mode is driving this project — the jButton dispatches its frontier each loop">
+              <UBadge color="success" variant="subtle" size="sm" icon="i-lucide-infinity">Auto mode</UBadge>
+            </UTooltip>
             <UTooltip
-              v-if="herdrUp && g.project"
+              v-else-if="herdrUp && g.project"
               :text="`Dispatch all ${g.rows.length} of ${g.project.key}'s shown tickets into herdr — HITL tickets get their own tab`"
             >
               <UButton
@@ -596,7 +599,7 @@ async function dispatchMerge(q: MergeQueue) {
                   >
                     {{ copied === t.id ? 'Copied' : commandLabel(mode, t) }}
                   </UButton>
-                  <UTooltip v-if="herdrUp" text="Run this hand-off in herdr (background — no focus steal)">
+                  <UTooltip v-if="herdrUp && !(g.project?.auto?.enabled && !isHitl(t))" text="Run this hand-off in herdr (background — no focus steal)">
                     <UButton
                       icon="i-lucide-terminal"
                       variant="soft"

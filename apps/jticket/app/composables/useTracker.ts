@@ -1,4 +1,5 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
+import type { AutoLoop } from '~/utils/autoLoop'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
@@ -38,6 +39,9 @@ export interface Project {
   // kinds it overrides are present. Machine-local (never on the sync wire);
   // see ~/utils/prompts.ts for the four layers that resolve a prompt.
   prompts: PromptOverrides
+  // Auto mode (the jButton) — the server-driven implement → merge → review →
+  // fix loop; see ~/utils/autoLoop.ts. Absent/null = never turned on.
+  auto?: AutoLoop | null
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,

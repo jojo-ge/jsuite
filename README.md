@@ -77,7 +77,7 @@ jsuite/
 │   ├── jgrilling/      # one escalated grilling question, argued in the browser
 │   ├── jcode/          # hand-code the part that matters — sandbox katas: brief → hints → answer, marked in herdr
 │   ├── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
-│   └── jreview/        # multi-reviewer code review — 4 herdr reviewers, a triager, findings → jTicket
+│   └── jreview/        # multi-reviewer code review — 4 herdr reviewers, a triager, findings → jTicket (+ 2-reviewer consensus reviews for jTicket's auto loop)
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
@@ -238,7 +238,7 @@ jdiff owns `jdiff-review` and `jdiff-ask`;
 jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`;
 jcode owns `jcode` (the build side) and `jcode-mark` (the marker);
 jmap owns `j-map`, `jmap-scope`, `jmap-domain` and `jmap-synthesize`;
-jreview owns `jreview-report` and `jreview-triage`).
+jreview owns `jreview-report`, `jreview-triage` and `jreview-consensus`).
 Suite-level skills live in
 `.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
 app does, how they relate, and which app/skill a request routes to.

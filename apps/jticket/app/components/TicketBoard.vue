@@ -202,6 +202,11 @@ async function runAllFrontier() {
 }
 
 // The per-card control state — the card itself stays presentational.
+// Auto mode (the jButton) owns every AFK ticket of the project: no hand
+// dispatch for those — the server would refuse it anyway. HITL tickets stay
+// the human's to run.
+const autoOn = computed(() => !!props.project?.auto?.enabled)
+
 function dispatchFor(t: Ticket) {
   return {
     commandLabel: commandLabel(mode.value, t),
@@ -211,7 +216,7 @@ function dispatchFor(t: Ticket) {
     custom: isCustomPrompt(t, mode.value),
     copied: copied.value === t.id,
     dispatching: dispatching.value === t.id,
-    herdr: herdrUp.value,
+    herdr: herdrUp.value && !(autoOn.value && !isHitl(t)),
   }
 }
 </script>
@@ -255,8 +260,11 @@ function dispatchFor(t: Ticket) {
             class="w-52"
             aria-label="Where the hand-off prompt points its PR"
           />
+          <UTooltip v-if="autoOn" text="Auto mode is driving this project — the jButton dispatches the frontier each loop">
+            <UBadge color="success" variant="subtle" icon="i-lucide-infinity">Auto mode</UBadge>
+          </UTooltip>
           <UTooltip
-            v-if="herdrUp"
+            v-else-if="herdrUp"
             :text="
               pickedFrontier.length
                 ? `Dispatch the ${pickedFrontier.length} ticked ${pickedFrontier.length === 1 ? 'ticket' : 'tickets'} into herdr — untick them all to run the whole frontier`

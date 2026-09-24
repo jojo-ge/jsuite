@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// The review room. Left: the pipeline — four reviewers, the triager, and the
-// human's to-jTicket button. Right: what they produced — the merged findings,
+// The review room. Left: the pipeline — the reviewers, the triager, and the
+// human's to-jTicket button (for a consensus review: the consensus session and
+// the tickets it filed into the auto loop's project). Right: what they produced — the merged findings,
 // the triage report, and each reviewer's jExplain report, rendered inline.
 // Everything mirrors .data/jreview/<key>.json over the /watch SSE; the
 // watcher plugin on the server moves the review along, never this page.
@@ -32,10 +33,17 @@ type Tab = { id: string; label: string; docKey?: string; ready: boolean }
 const tabs = computed<Tab[]>(() => {
   const r = review.value
   if (!r) return []
+  const reports = r.reviewers.map((x) => ({ id: `r${x.n}`, label: `Reviewer ${x.n}`, docKey: x.docKey, ready: x.status === 'done' }))
+  // A consensus review has no findings or triage document of its own — its
+  // output is tickets in jTicket.
+  if (r.consensus) {
+    const n = r.tickets?.ticketKeys.length
+    return [{ id: 'findings', label: n !== undefined ? `Tickets · ${n}` : 'Tickets', ready: true }, ...reports]
+  }
   return [
     { id: 'findings', label: r.findings.length ? `Findings · ${r.findings.length}` : 'Findings', ready: true },
     { id: 'triage', label: 'Triage report', docKey: r.triage.docKey, ready: r.triage.status === 'done' },
-    ...r.reviewers.map((x) => ({ id: `r${x.n}`, label: `Reviewer ${x.n}`, docKey: x.docKey, ready: x.status === 'done' })),
+    ...reports,
   ]
 })
 const activeTab = ref('findings')
@@ -140,11 +148,13 @@ const reviewerBadge = (s: Reviewer['status']) =>
 const triageBadge = computed(() => {
   const r = review.value
   if (!r) return { color: 'neutral' as const, label: '' }
-  if (r.triage.status === 'done') return { color: 'success' as const, label: 'merged' }
+  if (r.triage.status === 'done') return { color: 'success' as const, label: r.consensus ? 'filed' : 'merged' }
   if (r.triage.status === 'failed') return { color: 'error' as const, label: 'dispatch failed' }
-  if (r.status === 'triaging') return { color: 'primary' as const, label: 'triaging' }
+  if (r.status === 'triaging') return { color: 'primary' as const, label: r.consensus ? 'matching' : 'triaging' }
   return { color: 'neutral' as const, label: 'waiting' }
 })
+
+const ticketUrl = (k: string) => `https://jticket.local/tickets/${k}`
 
 const statusColor = computed(() => {
   const s = review.value?.status
@@ -217,6 +227,7 @@ const statusColor = computed(() => {
                     @click="redispatchReviewer(r)"
                   />
                   <UButton
+                    v-if="!review.consensus"
                     icon="i-lucide-skip-forward"
                     size="xs"
                     color="neutral"
@@ -235,12 +246,18 @@ const statusColor = computed(() => {
         <section>
           <h2 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
             <span class="grid size-5 place-items-center rounded-full bg-elevated text-[11px]">2</span>
-            Triage
+            {{ review.consensus ? 'Consensus' : 'Triage' }}
             <UBadge :color="triageBadge.color" variant="subtle" size="sm" class="ml-auto normal-case tracking-normal">{{ triageBadge.label }}</UBadge>
           </h2>
           <div class="rounded-md border border-default px-3 py-2 text-sm">
             <p v-if="review.status === 'reviewing'" class="text-muted">
-              Fires automatically when every reviewer has reported ({{ settledCount }}/{{ review.reviewers.length }}).
+              Fires automatically when every reviewer has reported ({{ review.consensus ? doneCount : settledCount }}/{{ review.reviewers.length }}).
+            </p>
+            <p v-else-if="review.consensus && review.status === 'triaging' && review.triage.status !== 'failed'" class="text-muted">
+              A Sonnet 5 session is keeping the findings every reviewer raised and filing them into {{ review.consensus.projectKey }}<template v-if="review.triage.agent"> — herdr · <span class="font-mono text-xs">{{ review.triage.agent }}</span></template>.
+            </p>
+            <p v-else-if="review.consensus && review.triage.status === 'done'" class="text-muted">
+              {{ review.consensus.kept ?? review.tickets?.ticketKeys.length ?? 0 }} agreed<template v-if="review.consensus.considered !== undefined"> of {{ review.consensus.considered }} distinct</template> finding{{ (review.consensus.considered ?? 2) === 1 ? '' : 's' }}.
             </p>
             <p v-else-if="review.status === 'triaging' && review.triage.status !== 'failed'" class="text-muted">
               An Opus 5.5 triager is merging duplicates<template v-if="review.triage.agent"> — herdr · <span class="font-mono text-xs">{{ review.triage.agent }}</span></template>.
@@ -259,7 +276,7 @@ const statusColor = computed(() => {
               size="xs"
               color="neutral"
               variant="soft"
-              :label="review.triage.status === 'failed' ? 'Retry triage' : 'Restart triager'"
+              :label="review.triage.status === 'failed' ? (review.consensus ? 'Retry consensus' : 'Retry triage') : (review.consensus ? 'Restart consensus' : 'Restart triager')"
               :loading="busy === 'triage'"
               @click="redispatchTriage"
             />
@@ -279,6 +296,9 @@ const statusColor = computed(() => {
                 </a>
                 — {{ review.tickets.ticketKeys.length }} tickets in jTicket.
               </p>
+              <p v-if="review.consensus" class="mt-1 text-xs text-muted">
+                Filed by the consensus session for {{ review.consensus.loop ? `auto loop ${review.consensus.loop}` : 'jTicket' }}.
+              </p>
             </template>
             <template v-else-if="review.status === 'triaged'">
               <p class="mb-2 text-muted">{{ selectedCount }} of {{ review.findings.length }} findings selected.</p>
@@ -291,6 +311,9 @@ const statusColor = computed(() => {
                 @click="splitIntoTickets"
               />
             </template>
+            <p v-else-if="review.consensus" class="text-muted">
+              Filed straight into {{ review.consensus.projectKey }} — one ticket per finding every reviewer raised.
+            </p>
             <p v-else class="text-muted">Yours to press once triage is in — one ticket per finding, in a new project.</p>
           </div>
         </section>
@@ -311,7 +334,30 @@ const statusColor = computed(() => {
           />
         </nav>
 
-        <div v-if="activeTab === 'findings'" class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+        <div v-if="activeTab === 'findings' && review.consensus" class="scroll-thin min-h-0 flex-1 overflow-y-auto">
+          <div class="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-6">
+            <div v-if="!review.tickets?.ticketKeys.length" class="rounded-lg border border-dashed border-default p-10 text-center text-muted">
+              <template v-if="review.status === 'reviewing'">
+                Reviewing — {{ doneCount }} of {{ review.reviewers.length }} reports in. Finished reports open from the tabs above.
+              </template>
+              <template v-else-if="review.status === 'triaging'">Matching the reports — tickets for the agreed findings land here.</template>
+              <template v-else>The reviewers agreed on nothing — no tickets filed.</template>
+            </div>
+            <a
+              v-for="k in review.tickets?.ticketKeys ?? []"
+              :key="k"
+              :href="ticketUrl(k)"
+              target="_blank"
+              class="flex items-center gap-2 rounded-md border border-default px-3 py-2 text-sm hover:bg-elevated"
+            >
+              <UIcon name="i-lucide-ticket" class="size-4 text-muted" />
+              <span class="font-mono">{{ k }}</span>
+              <span class="ml-auto text-xs text-muted">jTicket ↗</span>
+            </a>
+          </div>
+        </div>
+
+        <div v-else-if="activeTab === 'findings'" class="scroll-thin min-h-0 flex-1 overflow-y-auto">
           <div class="mx-auto flex max-w-3xl flex-col gap-2 px-4 py-6">
             <div v-if="!review.findings.length" class="rounded-lg border border-dashed border-default p-10 text-center text-muted">
               <template v-if="review.status === 'reviewing'">

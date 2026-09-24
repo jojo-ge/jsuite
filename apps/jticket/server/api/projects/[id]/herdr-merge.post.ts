@@ -13,19 +13,8 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
-  const cwd = resolveRepoDir(project.repo)
-
-  const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
-  // A fresh workspace's root tab becomes the merge tab; otherwise cut a new one.
-  let tabId: string, paneId: string
-  if (freshTab) {
-    await herdrJson(['tab', 'rename', freshTab.tabId, `${project.key} · merge`])
-    ;({ tabId, paneId } = freshTab)
-  } else {
-    ;({ tabId, paneId } = await createJobTab(workspaceId, `${project.key} · merge`, cwd))
+  if (project.auto?.enabled) {
+    throw createError({ statusCode: 409, statusMessage: 'auto mode is driving this project — it runs its own merge sweeps' })
   }
-  await renamePane(paneId, `${project.key} · merge`)
-  const agent = await startClaudeIn(paneId, `merge-${project.key}`, prompt)
-
-  return { workspaceId, tabId, paneId, agent, project: project.key }
+  return dispatchMergeSession(project, prompt)
 })

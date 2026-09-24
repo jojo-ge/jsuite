@@ -660,7 +660,7 @@ async function createPr() {
                 {{ copiedMergePrompt ? 'Copied' : 'Merge prompt' }}
               </UButton>
             </UTooltip>
-            <UTooltip v-if="localPrs.length && herdrAvailable" text="Run the merge sweep in a new herdr tab (background — no focus steal)">
+            <UTooltip v-if="localPrs.length && herdrAvailable && !project.auto?.enabled" text="Run the merge sweep in a new herdr tab (background — no focus steal)">
               <UButton
                 icon="i-lucide-terminal"
                 color="secondary"

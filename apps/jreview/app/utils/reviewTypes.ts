@@ -1,24 +1,31 @@
 // The j-review format — shared by the server store and the UI (the jMap
 // app/utils pattern: server files import these relatively).
 //
-// A review is one run over one repo: REVIEWER_COUNT herdr claude sessions each
-// run the target codebase's code-review skill and publish their report as a
+// A review is one run over one repo: up to MAX_REVIEWERS herdr claude sessions
+// each run the global /code-review skill and publish their report as a
 // jExplain document at a pre-assigned key in the shared pool. jReview watches
 // those keys; when every reviewer's document has landed it dispatches one
 // triage session, which dedupes the findings, publishes a triage document and
 // POSTs the merged findings back here. Turning findings into jTicket tickets
 // is the human's button — no agent does it.
+//
+// A CONSENSUS review (jTicket's auto loop) skips all of that: once every
+// reviewer is in, a consensus session keeps only the findings every reviewer
+// raised and files each straight into the caller's jTicket project as a ticket.
+// jReview records just the ticket keys — no triage document, no findings.
 
-export const REVIEWER_COUNT = 4
+export const MAX_REVIEWERS = 4
+/** The reviewer count when the caller doesn't ask for one. */
+export const DEFAULT_REVIEWERS = 4
 
 export type ReviewStatus =
   /** Reviewers dispatched or running; waiting on their documents. */
   | 'reviewing'
-  /** Every reviewer is finished; the triage session is running. */
+  /** Every reviewer is finished; the triage (or consensus) session is running. */
   | 'triaging'
   /** Merged findings are in; waiting on the human's to-jTicket button. */
   | 'triaged'
-  /** Findings were split into a jTicket project. */
+  /** Findings were split into a jTicket project (or, for a consensus review, filed into the caller's). */
   | 'ticketed'
 
 export type ReviewerStatus =
@@ -86,6 +93,20 @@ export interface ReviewTickets {
   createdAt: string
 }
 
+/**
+ * Set when another app (jTicket's auto loop) asked for a consensus review: only
+ * findings every reviewer raised become tickets, filed straight into
+ * `projectKey` by the consensus session.
+ */
+export interface ReviewConsensus {
+  projectKey: string
+  /** The auto-loop iteration that asked, for ticket labels and titles. */
+  loop?: number
+  /** Distinct findings the consensus session weighed — `kept` of them agreed. */
+  considered?: number
+  kept?: number
+}
+
 /** An open pull request, as `gh pr list` reports it. */
 export interface PullRequest {
   number: number
@@ -130,6 +151,7 @@ export interface Review {
   triage: Triage
   findings: Finding[]
   tickets: ReviewTickets | null
+  consensus?: ReviewConsensus
   createdAt: string
   updatedAt: string
 }
@@ -144,12 +166,23 @@ export interface ReviewMeta {
   status: ReviewStatus
   findingCount: number
   projectKey?: string
+  consensus?: boolean
   createdAt: string
   updatedAt: string
 }
 
 /** Reviewers that no longer hold up triage. */
 export const reviewerSettled = (r: Reviewer) => r.status === 'done' || r.status === 'skipped'
+
+/**
+ * Whether a review's reviewers are all in and its triage (or consensus) can
+ * start. A consensus needs every reviewer's report — a skipped reviewer can't
+ * agree with anything — so there a skip holds it up.
+ */
+export function readyForTriage(review: Pick<Review, 'reviewers' | 'consensus'>): boolean {
+  if (review.consensus) return review.reviewers.every((r) => r.status === 'done')
+  return review.reviewers.every(reviewerSettled) && review.reviewers.some((r) => r.status === 'done')
+}
 
 /** A codebase jReview (or jTicket) has been pointed at before. */
 export interface KnownRepo {

@@ -15,24 +15,32 @@ import type { Review } from '../../app/utils/reviewTypes'
 // a herdr pane, one workspace per reviewed repo (`jreview · <dir>`), every
 // pane's cwd the review's workdir (the repo, or the branch's worktree):
 //   - REVIEWERS — packed 2×2 into a `review <key>` tab, one pane each. The
-//     prompt runs the target repo's code-review skill (the global one when the
-//     repo has none), then `/jreview-report` publishes the report as a jExplain
+//     prompt runs the global /code-review skill — never the target repo's own
+//     — then `/jreview-report` publishes the report as a jExplain
 //     document at the reviewer's pre-assigned key. That document landing in
 //     the pool IS the completion signal — the watcher plugin sees it.
 //   - the TRIAGER — one job tab, dispatched by the watcher once every reviewer
 //     is settled. `/jreview-triage <key>` dedupes the reports, publishes the
 //     triage document, and POSTs the merged findings to /api/reviews/:key/findings.
+//     A consensus review gets `/jreview-consensus <key>` on CONSENSUS_MODEL in
+//     that tab instead: it files the findings every reviewer raised into the
+//     caller's jTicket project and POSTs the ticket keys to /consensus.
 
 /** Every session is pinned to Opus 5.5; JREVIEW_MODEL overrides it. */
 export const REVIEW_MODEL = process.env.JREVIEW_MODEL?.trim() || 'claude-opus-5-5'
+
+/**
+ * The consensus session only matches finished reports and files tickets —
+ * Sonnet 5 is plenty; JREVIEW_CONSENSUS_MODEL overrides it.
+ */
+export const CONSENSUS_MODEL = process.env.JREVIEW_CONSENSUS_MODEL?.trim() || 'claude-sonnet-5'
 
 export function reviewerPrompt(review: Review, n: number): string {
   const r = review.reviewers.find((x) => x.n === n)!
   // One line: herdr submits the prompt as typed input, and a newline would
   // submit it early.
   return [
-    "Run the target codebase's code review skill. If it does not exist, run the default code review skill.",
-    "(The target codebase's skills live in this repo's .claude/skills; the default is the global /code-review.)",
+    'Run the global /code-review skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
     `HEAD in this checkout is ${review.branch}${review.pr ? ` (PR #${review.pr.number}, "${review.pr.title.replace(/[\r\n]+/g, ' ')}")` : ''}.`,
     `The fixed point is ${review.base} — review \`git diff ${review.base}...HEAD\`.`,
     ...(review.worktree && review.worktreeGuide
@@ -43,7 +51,8 @@ export function reviewerPrompt(review: Review, n: number): string {
   ].join(' ')
 }
 
-export const triagePrompt = (review: Review) => `/jreview-triage ${review.key}`
+export const triagePrompt = (review: Review) =>
+  review.consensus ? `/jreview-consensus ${review.key}` : `/jreview-triage ${review.key}`
 
 async function workspaceFor(review: Review) {
   return ensureHerdrWorkspace(`jreview · ${basename(review.repoPath)}`, review.workdir)
@@ -96,7 +105,8 @@ export async function dispatchQueuedReviewers(key: string): Promise<void> {
 }
 
 /**
- * Start the triage session in its own job tab. Never throws — a failure is
+ * Start the triage session (the consensus session, for a consensus review) in
+ * its own job tab. Never throws — a failure is
  * recorded as triage `failed` with the error, and the page offers a retry.
  */
 export async function dispatchTriage(key: string): Promise<void> {
@@ -112,9 +122,9 @@ export async function dispatchTriage(key: string): Promise<void> {
     } else {
       ;({ tabId, paneId } = await createJobTab(workspaceId, tabLabel, review.workdir))
     }
-    await renamePane(paneId, `triage · ${review.title}`)
+    await renamePane(paneId, `${review.consensus ? 'consensus' : 'triage'} · ${review.title}`)
     const agent = await startClaudeIn(paneId, `jrt-${review.key}`, triagePrompt(review), {
-      args: ['--model', REVIEW_MODEL],
+      args: ['--model', review.consensus ? CONSENSUS_MODEL : REVIEW_MODEL],
     })
     await updateReview(key, (fresh) => {
       if (fresh.triage.status === 'done') return

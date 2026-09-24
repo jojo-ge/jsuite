@@ -72,7 +72,7 @@ SKILLS_MANIFEST=(
   "apps/jgrilling|j-grilling"
   "apps/jcode|jcode jcode-mark"
   "apps/jmap|jmap-scope jmap-domain jmap-synthesize j-map"
-  "apps/jreview|jreview-report jreview-triage"
+  "apps/jreview|jreview-report jreview-triage jreview-consensus"
 )
 POCOCK_SOURCE="mattpocock/skills"
 

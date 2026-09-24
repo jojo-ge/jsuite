@@ -10,6 +10,7 @@ import type { Share } from './shares'
 import { isLegacyTicket, normalizeTicketKind, defaultTicketType } from './ticketTypes'
 import type { TicketType } from './ticketTypes'
 import type { WorktreeGuide, WorktreeLink } from './worktrees'
+import { coerceAutoLoop, type AutoLoop } from '../../app/utils/autoLoop'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
@@ -85,6 +86,10 @@ export interface Project {
   // global defaults and then to the code default (prompts.ts). Machine-local
   // like `repo`: never on the sync wire, editable on both sides of a share.
   prompts: PromptOverrides
+  // Auto mode (the jButton): the implement → merge → review → fix loop the
+  // server drives (app/utils/autoLoop.ts). Absent/null = never turned on.
+  // Machine-local like `prompts`: never on the sync wire.
+  auto?: AutoLoop | null
   createdAt: string
   updatedAt: string
 }
@@ -309,6 +314,7 @@ export function loadStore(): Store {
         share: p.share ?? null,
         // Projects predating prompt overrides use the defaults for everything.
         prompts: cleanPromptOverrides(p.prompts),
+        auto: coerceAutoLoop(p.auto),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -536,6 +542,11 @@ export function ticketIsBlocked(ticket: Ticket, all: Ticket[]): boolean {
 // bounce straight off the API's 403. The share is required, like everywhere
 // else ownership is judged — null (a backlog ticket, a local-only project)
 // means there is no peer and the answer is exactly what it was before.
+/** Whether auto mode (the jButton) is driving this project right now. */
+export function projectAutoEnabled(store: Store, projectId: string | null | undefined): boolean {
+  return !!projectId && !!store.projects.find((p) => p.id === projectId)?.auto?.enabled
+}
+
 export function ticketIsFrontier(
   ticket: Ticket,
   all: Ticket[],

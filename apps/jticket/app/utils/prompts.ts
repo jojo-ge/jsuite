@@ -18,7 +18,7 @@
 // The client twin of server/utils/prompts.ts (which owns storage and the same
 // PROMPT_KINDS list); tests/prompts.test.ts holds the two lists together.
 
-import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
+import type { Project, ProjectMode, Ticket } from '../composables/useTracker'
 
 export const PROMPT_KINDS = [
   'standard:local',
