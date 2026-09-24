@@ -22,7 +22,7 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | POST | `/api/tickets/:id/branch` | Cut the ticket's local work branch off the integration branch |
 | GET / POST | `/api/prs` | List / open **local PRs** (ticket branch → integration branch, merged by jTicket) |
 | GET / PATCH / DELETE | `/api/prs/:id` | One local PR (id or `PR-n`); PATCH status only to `closed` / `open` |
-| POST | `/api/prs/:id/merge` | Squash-merge locally; deletes the branch, ticket → `merged`; 409 on conflict |
+| POST | `/api/prs/:id/merge` | Squash-merge locally (a real merge when the PR brings upstream history); deletes the branch, ticket → `merged`; 409 on conflict |
 | POST | `/api/projects/:id/sync` | Push the integration branch to origin (the only remote write) |
 | POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` |
 | GET / POST | `/api/docs` | List / create docs |
@@ -247,6 +247,8 @@ curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
 # 3. The human merges from the UI — or:
 curl -s -X POST "$JTICKET/api/prs/PR-4/merge"
 # Success: squash commit on the integration branch, ticket branch deleted, ticket → merged.
+#   A PR that brings upstream (origin/HEAD) commits the base lacks lands as a real
+#   two-parent merge instead, so upstream stays an ancestor; mergedAs says which.
 # Conflict: 409, PR status → "conflicted" with conflictFiles, the repo left untouched.
 #   Fix = rebase the ticket branch onto the integration branch, then POST the merge again.
 # The merge never touches the working tree (plumbing merge) — a dirty checkout is fine

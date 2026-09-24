@@ -196,7 +196,7 @@ export interface LocalPr {
   status: LocalPrStatus
   // Files the last failed merge attempt conflicted on; [] unless 'conflicted'.
   conflictFiles: string[]
-  mergeCommit: string // oid of the squash commit, '' until merged
+  mergeCommit: string // oid of the squash (or merge) commit, '' until merged
   // Oid of the squash commit's parent (the base tip it landed on), '' until
   // merged — keeps mergeParent..mergeCommit reviewable in jDiff after the
   // head branch is deleted.
