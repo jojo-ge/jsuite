@@ -39,8 +39,15 @@ easy, then make the easy change."
 Give each ticket its **blocking edges** — the other tickets that must complete before it
 can start. A ticket with no blockers can start immediately.
 
-Set each ticket's **`type`**: `AFK` if an agent can pick it up cold with no human
-context, `HITL` if it needs a human in the loop.
+Set each ticket's **`type`** — the kind of work it is: `story` (a user-facing slice —
+most vertical slices), `task` (technical work with no user-visible change, e.g. a
+prefactor or a refactor batch), `bug`, `review`, `verification` (QA / acceptance /
+post-deploy check), `research` (output is knowledge), `decision` (a choice to grill
+out), or `docs`.
+
+Tag each ticket's **agency** in `labels`: `afk` if an agent can pick it up cold with no
+human context, `hitl` if it needs a human in the loop — exactly one. Add `prototype` if
+the work is throwaway and must never ship.
 
 **Wide refactors are the exception to vertical slicing.** A wide refactor is one
 mechanical change — rename a column, retype a shared symbol — whose **blast radius** fans
@@ -61,7 +68,7 @@ Present the proposed breakdown as a numbered list. For each ticket show:
 - **Title** — short descriptive name
 - **Blocked by** — which other tickets (if any) must complete first
 - **What it delivers** — the end-to-end behaviour this ticket makes work
-- **AFK / HITL**
+- **Type** and **AFK / HITL** (plus `prototype` if it applies)
 
 Ask the user:
 
@@ -90,10 +97,10 @@ curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
   "projects": [{ "title": "Checkout", "description": "Everything payments-related" }],
   "tickets": [
     { "title": "Add cart schema", "description": "Persist a cart across sessions.",
-      "type": "AFK", "project": "Checkout",
+      "type": "story", "labels": ["afk"], "project": "Checkout",
       "acceptanceCriteria": ["A cart survives a refresh", "Two tabs see one cart"] },
     { "title": "Cart UI", "description": "Edit quantities from the cart page.",
-      "type": "AFK", "project": "Checkout", "blockedBy": ["Add cart schema"],
+      "type": "story", "labels": ["afk"], "project": "Checkout", "blockedBy": ["Add cart schema"],
       "acceptanceCriteria": ["Quantity edits persist"] }
   ]
 }'

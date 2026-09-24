@@ -1,6 +1,6 @@
 # jSuite
 
-Seven local Nuxt apps (jticket, jdiff, jchart, jexplain, jgrilling, jcode, jmap)
+Eight local Nuxt apps (jticket, jdiff, jchart, jexplain, jgrilling, jcode, jmap, jreview)
 + shared packages behind one Caddy edge; OrbStack resolves the `.local` names
 and terminates HTTPS.
 `README.md` covers architecture; this file is for routing requests to the right
@@ -18,7 +18,9 @@ globally by `./jsuite setup`) carries the same map for sessions outside this rep
 | grill/stress-test a plan | terminal | skill `grilling` — the default; one question escalates to `apps/jgrilling` only when the operator asks (skill `j-grilling`; API on :43005; state in `.data/jgrilling/`) |
 | map a codebase — domains, dependency map, walkthrough docs | `apps/jmap` | skill `j-map` (front door); the work runs as a jMap-mode jTicket project (herdr-dispatched `/jmap-scope`, `/jmap-domain`, `/jmap-synthesize` tickets); jMap API on :43007 renders the posted graph; state in `.data/jmap/` |
 | build a feature and hand-code its core as a problem — "with jcode", "pose the core as a problem" | `apps/jcode` | skill `jcode` (build and ship as usual, then publish the core piece as a pure-function kata to :43006: a sandbox in `.data/jcode/sandbox/<key>/` with stub + cases + the app's runner, answer hidden); the page's Mark-it button dispatches `jcode-mark` into herdr, which runs the cases, judges, or posts a verdict that unlocks the next hint. Disclosure is server-side: brief → hints → answer. Nothing ships from a kata |
+| multi-reviewer code review — several reviewers, dedupe, findings → tickets | `apps/jreview` | the New review button on :43008 dispatches four Opus 5.5 reviewers into herdr (target repo's code-review skill, else the default), each publishing a jExplain report at a pre-assigned doc key via `/jreview-report`; the server-side watcher (`server/plugins/reviewWatcher.ts`) sees every report land and dispatches `/jreview-triage`, which POSTs deduped findings back; the human's button splits them into a new jTicket project. State in `.data/jreview/` |
 | improve/deepen a codebase's architecture | `apps/jticket` | the Improve-architecture button on the projects page (or `POST /api/projects/architect`) makes an architect-mode project whose scan (`/jarchitect-scan`) fills the board with graded HITL candidates + an assessment spec; a candidate's herdr button dispatches its go/no-go grilling (`/jarchitect-grill`, answered in that herdr pane) and finishes the ticket |
+| worktrees — how a codebase makes/sets up/runs/tears down worktrees, connecting an integration branch to one | `apps/jticket` | Codebase settings (`/codebase`) → Worktrees: the kickoff button dispatches the `worktree:kickoff` prompt into herdr; the agent asks the codebase (and the human, in its pane), proves the recipe, and PUTs the **worktree guide** to `/api/repos/worktree?repo=`. Every worktree consumer (`/jimplement`, `/jreproduce`, jReview, the connect prompt) GETs the guide first. The integration branch's Connect worktree button dispatches `worktree:connect`, which POSTs the link to `/api/projects/:id/worktree` (re-checked against `git worktree list`). Codebase settings also hold the codebase's prompt overrides (ticket → project → codebase → global → built-in) |
 | reproduce suspected bugs before a deploy | `apps/jticket` | a predeploy-mode project — one suspected bug per ticket; the herdr button dispatches `/jreproduce`, which reproduces it in a throwaway worktree as a failing test, records the test + verdict (reproduced / flaky / not-reproduced / already-fixed / invalid) on the ticket, and never fixes it |
 | charts embedded in articles | shared pool | `packages/charting` serves `/api/charts` over `.data/jchart/` in every consumer — jExplain charts ARE jChart charts |
 | block documents (docs, specs, explainers) | shared pool | `packages/documents` serves `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling — a jTicket doc IS a jExplain document |
@@ -61,7 +63,7 @@ jsuite            # launcher: start/stop/status/logs/open/setup
 Caddyfile         # edge config — one block per .local name
 www/index.html    # static ecosystem index at https://jsuite.local
 .claude/skills/   # suite-level skills (jsuite)
-apps/             # jticket jdiff jchart jexplain jgrilling jcode jmap
+apps/             # jticket jdiff jchart jexplain jgrilling jcode jmap jreview
 packages/         # @jsuite/charting + @jsuite/documents (Nuxt layers), @jsuite/data (.data resolver), @jsuite/herdr (herdr dispatch adapter), @jsuite/relay (sync setup wizard + local broadcast relay)
 .data/<app>/      # ALL app state, gitignored
 ```

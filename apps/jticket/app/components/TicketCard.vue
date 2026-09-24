@@ -4,7 +4,6 @@ import type { Ticket } from '~/composables/useTracker'
 const props = defineProps<{
   ticket: Ticket
   tickets: Ticket[]
-  wayfinder?: boolean
   architect?: boolean
   // Hand-off controls (copy the command / run it in herdr), shown on frontier
   // cards when the board around this card supplies them. The card stays
@@ -51,14 +50,11 @@ const transferBadge = computed(() => {
 
 const blocked = computed(() => isBlocked(props.ticket, props.tickets))
 // Frontier highlighting is independent of wayfinder mode — every board groups by
-// flow state, so the takeable edge is worth ringing everywhere. The wayfinder
-// sub-type badge below stays gated, since only maps carry those labels.
+// flow state, so the takeable edge is worth ringing everywhere.
 const frontier = computed(() => isFrontier(props.ticket, props.tickets, project.value))
-const wfType = computed(() => (props.wayfinder ? wayfinderType(props.ticket) : null))
-const wfMeta = computed(() => (wfType.value ? WAYFINDER_TYPE_META[wfType.value] : null))
 // Architect candidates carry the scan's judgment as labels; the badges are how
-// "really worth working on" reads at a glance. Gated on the mode, like the
-// wayfinder sub-type, since only architect boards carry these labels.
+// "really worth working on" reads at a glance. Gated on the mode, since only
+// architect boards carry these labels.
 const archStrength = computed(() => (props.architect ? archTag(props.ticket) : null))
 const archMeta = computed(() => (archStrength.value ? ARCH_TAG_META[archStrength.value] : null))
 const topPick = computed(() => props.architect && isArchTopPick(props.ticket))
@@ -99,10 +95,9 @@ const ring = computed(() => {
       />
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
+          <TicketTypeIcon :type="ticket.type" label />
           <span class="font-mono text-xs text-muted">{{ ticket.key }}</span>
-          <UBadge v-if="wfMeta" :color="wfMeta.color" variant="subtle" size="sm" :icon="wfMeta.icon">
-            {{ wfMeta.label }}
-          </UBadge>
+          <TicketTags :ticket="ticket" />
           <UBadge v-if="topPick" color="primary" variant="solid" size="sm" icon="i-lucide-star">
             Top pick
           </UBadge>
@@ -114,9 +109,6 @@ const ring = computed(() => {
           </UBadge>
           <UBadge v-if="transferBadge" color="warning" variant="subtle" size="sm" :icon="transferBadge.icon">
             {{ transferBadge.label }}
-          </UBadge>
-          <UBadge :color="ticket.type === 'HITL' ? 'warning' : 'neutral'" variant="subtle" size="sm">
-            {{ ticket.type }}
           </UBadge>
           <UBadge v-if="moved" color="info" variant="subtle" size="sm" icon="i-lucide-radio">
             Just moved

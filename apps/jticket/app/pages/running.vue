@@ -77,7 +77,7 @@ function toggleAll() {
   else collapseAll(groups.value.map(groupKey))
 }
 
-const hitl = computed(() => running.value.filter((t) => t.type === 'HITL').length)
+const hitl = computed(() => running.value.filter(isHitl).length)
 const unassigned = computed(() => running.value.filter((t) => !t.assignee).length)
 
 // ── Go to herdr ──
@@ -208,7 +208,6 @@ async function goToHerdr(t: Ticket, project: Project | null) {
               <TicketCard
                 :ticket="t"
                 :tickets="tickets"
-                :wayfinder="g.project?.mode === 'wayfinder'"
                 class="flex-1"
                 @edit="openEditTicket"
                 @delete="onDeleteTicket"

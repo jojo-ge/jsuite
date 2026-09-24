@@ -51,11 +51,15 @@ computes it for you.
 Never start a ticket whose `blocked` is `true` — its blockers hold facts you need. If the
 frontier is empty but tickets remain, say so and stop; something is blocked or claimed.
 
-A **HITL** ticket needs the human in the loop. Confirm they're here for it before
+A ticket's `type` says what kind of work it is (`story`, `task`, `bug`, `review`,
+`verification`, `research`, `decision`, `docs`); its agency is a tag in `labels`.
+A **`hitl`** ticket needs the human in the loop. Confirm they're here for it before
 claiming, and never answer their side of it. Put its questions to them **in this
 terminal** (`/grilling`) — they come to the herdr pane to answer. Only when they
 ask for one question in the browser do you escalate it with **`/j-grilling`**;
-never route the whole interview there. **AFK** tickets you can take cold.
+never route the whole interview there. **`afk`** tickets you can take cold. A
+**`prototype`**-tagged ticket is throwaway work that must never ship — build it to
+answer its question, and never merge it or open a PR from it.
 
 ## 2. Claim it — before any work
 
@@ -86,6 +90,31 @@ written, **stop and raise it** rather than quietly reinterpreting the ticket. Re
 you found and hand it back (§6).
 
 ## 4. Build it
+
+### In the codebase's worktree — its way, not a generic one
+
+When the hand-off says "in a worktree", the worktree is made the way **this
+codebase** does worktrees. Every codebase differs (deps, env files, ports,
+a script of its own), so jTicket keeps each codebase's answer as its **worktree
+guide** — ask for it before creating anything:
+
+```bash
+REPO="$(curl -s "$JTICKET/api/projects/PROJ-2" | jq -r .repo)"
+curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=$REPO" \
+  | jq '{state, changed, root: .guide.root, body: .guide.body}'
+```
+
+- **`ready`** — follow `body` for where the worktree goes, how it is created,
+  set up, run, tested and torn down. Check the ticket's branch out into it (the
+  branch jTicket cut, or your own).
+- **`stale`** — follow it, but `changed` names files that moved since it was
+  written; adapt where they disagree and say so in your report.
+- **`missing`** — no guide yet: a plain `git worktree add` next to the repo,
+  set up the way the repo's `CLAUDE.md`/`AGENTS.md` says. Tell the human the
+  codebase has no guide (Codebase settings → Worktrees → Run kickoff).
+
+Tear down the way the guide says once the PR is open — unless the hand-off
+says otherwise. Never build in the repo's own checkout.
 
 Standard `/implement` discipline, plus the project's own conventions — read the repo's
 `CLAUDE.md`/`AGENTS.md` and invoke whatever skills it names for the layers you're

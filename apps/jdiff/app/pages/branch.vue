@@ -283,6 +283,17 @@ const {
   ready: computed(() => !!diff.value),
 })
 
+// From the chains panel's modal: make the chain the active tour, wait for
+// its content and the walk's progress to settle on the new variant, then
+// start (or resume) walking it.
+async function startChain(slug: string) {
+  selectChain(slug)
+  await modes.loadChainTour(slug)
+  await nextTick()
+  if (!activeTour.value) return
+  jumpToStop(resumeIndex.value ?? 0)
+}
+
 // ---- review checklist (tour stops + risks + ask-yourself) ----
 // The reading-order section follows the ACTIVE tour; each variant's
 // done-flags live under their own key (overview's stay in the legacy entry).
@@ -473,41 +484,19 @@ async function createPr() {
         </button>
       </div>
 
-      <div v-if="tourMode === 'chains' && modeChains.manifest" class="rating-card chains-card">
-        <div class="rating-head">
-          <span class="card-title">⛓ system chains</span>
-          <span class="rating-effort">{{ modeChains.manifest.chains.length }} chains · walk each end-to-end, unchanged code included</span>
-          <span class="head-actions">
-            <button v-if="modeChains.anyChainPending" class="rate-btn" @click="modes.cancel('chains')">cancel walkers</button>
-            <button v-else class="rate-btn" title="re-scope the change and re-walk every chain" @click="modes.generate('chains')">↻ re-map</button>
-          </span>
-        </div>
-        <div v-if="modeChains.manifest.overview" class="chains-overview" v-html="renderMarkdown(modeChains.manifest.overview)" />
-        <ul class="chain-list">
-          <li v-for="c in modeChains.manifest.chains" :key="c.id">
-            <button
-              class="chain-row"
-              :class="{ on: activeChain === c.id }"
-              :disabled="!modeChains.manifest.tours[c.id]"
-              @click="selectChain(c.id)"
-            >
-              <span class="chain-title">{{ c.title }}</span>
-              <span class="chain-sum">{{ c.summary }}</span>
-              <span class="chain-state">
-                <template v-if="modeChains.manifest.tours[c.id]">
-                  {{ modeChains.chainTours[c.id] ? `${modeChains.chainTours[c.id]!.tour.stops.length} stops` : 'ready' }}
-                </template>
-                <template v-else-if="modeChains.chainJobs[c.id]"><span class="spinner small" /> walking…</template>
-                <template v-else-if="modeChains.chainErrors[c.id]"><span class="chain-fail">failed</span></template>
-                <template v-else>queued</template>
-              </span>
-            </button>
-            <div v-if="!modeChains.manifest.tours[c.id] && modeChains.chainErrors[c.id]" class="chain-error">
-              {{ modeChains.chainErrors[c.id] }}
-            </div>
-          </li>
-        </ul>
-      </div>
+      <ChainsPanel
+        v-if="tourMode === 'chains' && modeChains.manifest"
+        :manifest="modeChains.manifest"
+        :chain-tours="modeChains.chainTours"
+        :chain-jobs="modeChains.chainJobs"
+        :chain-errors="modeChains.chainErrors"
+        :any-chain-pending="modeChains.anyChainPending"
+        :active-chain="activeChain"
+        @open="modes.loadChainTour($event)"
+        @start="startChain($event)"
+        @remap="modes.generate('chains')"
+        @cancel="modes.cancel('chains')"
+      />
 
       <!-- create PR -->
       <div class="create-card">
@@ -713,25 +702,16 @@ async function createPr() {
       </div>
     </div>
 
-    <div v-if="currentStop && activeTour" class="tour-bar">
-      <div class="tour-bar-head">
-        <span class="tour-step">
-          <template v-if="tourMode === 'detail'">detail </template>
-          <template v-else-if="tourMode === 'chains'">chain </template>{{ tourIndex! + 1 }}/{{ activeTour.stops.length }}
-        </span>
-        <span class="tour-bar-title">{{ currentStop.title }}</span>
-        <span class="tour-bar-path">{{ currentStop.path }}:{{ currentStop.line }}</span>
-        <button class="tour-x" title="end tour (esc)" @click="endTour">×</button>
-      </div>
-      <div class="tour-bar-note">{{ currentStop.note }}</div>
-      <div class="tour-bar-actions">
-        <span class="tour-keys">← → to navigate · esc to end</span>
-        <button class="tour-nav" :disabled="tourIndex === 0" @click="prevStop">← prev</button>
-        <button class="tour-nav primary" @click="nextStop">
-          {{ tourIndex === activeTour.stops.length - 1 ? 'finish ✓' : 'next →' }}
-        </button>
-      </div>
-    </div>
+    <TourBar
+      v-if="currentStop && activeTour"
+      :stop="currentStop"
+      :index="tourIndex!"
+      :count="activeTour.stops.length"
+      :mode="tourMode"
+      @prev="prevStop"
+      @next="nextStop"
+      @end="endTour"
+    />
   </main>
 </template>
 
@@ -796,27 +776,6 @@ async function createPr() {
 .tour-modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tour-modes button.on { background: var(--panel); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
 .mode-error { font-family: var(--mono); font-size: 11px; color: var(--red); }
-/* Chains panel: the manifest and one row per chain. */
-.chains-card { margin-bottom: 16px; }
-.chains-overview { font-size: 13px; color: var(--muted); padding: 8px 12px 0; }
-.chain-list { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
-.chain-row {
-  display: grid; grid-template-columns: minmax(140px, auto) 1fr auto;
-  align-items: baseline; gap: 10px; width: 100%; text-align: left;
-  border: 1px solid var(--border); border-radius: 6px; background: transparent;
-  padding: 6px 10px; cursor: pointer;
-}
-.chain-row:hover:not(:disabled) { border-color: var(--accent); }
-.chain-row.on { border-color: var(--accent); background: rgba(88, 166, 255, 0.06); }
-.chain-row:disabled { cursor: default; opacity: 0.75; }
-.chain-title { font-family: var(--mono); font-size: 12px; color: var(--text); }
-.chain-sum { font-size: 12px; color: var(--muted); }
-.chain-state {
-  font-family: var(--mono); font-size: 11px; color: var(--muted);
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-}
-.chain-fail { color: var(--red); }
-.chain-error { font-family: var(--mono); font-size: 11px; color: var(--red); padding: 2px 10px 0; }
 
 /* create-PR card */
 .create-card {
@@ -952,30 +911,4 @@ a.todo-link:hover { text-decoration: none; }
 .todo-rdot.medium { background: #d29922; }
 .todo-rdot.low { background: var(--green); }
 
-/* tour bar */
-.tour-bar {
-  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
-  width: min(680px, calc(100vw - 32px)); z-index: 20;
-  border: 1px solid var(--accent); border-radius: 10px; background: var(--panel);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5); padding: 10px 14px; font-size: 13px;
-}
-.tour-bar-head { display: flex; gap: 10px; align-items: baseline; }
-.tour-step { font-family: var(--mono); font-size: 11px; color: var(--accent); }
-.tour-bar-title { font-weight: 600; }
-.tour-bar-path {
-  font-family: var(--mono); font-size: 11px; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.tour-x { margin-left: auto; border: none; background: transparent; color: var(--muted); font-weight: 700; font-size: 14px; cursor: pointer; }
-.tour-x:hover { color: var(--red); }
-.tour-bar-note { margin-top: 6px; color: var(--muted); line-height: 1.5; }
-.tour-bar-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.tour-keys { margin-right: auto; color: var(--muted); font-size: 11px; }
-.tour-nav {
-  border: 1px solid var(--border); background: transparent; color: var(--text);
-  border-radius: 6px; padding: 3px 12px; cursor: pointer; font-size: 12px;
-}
-.tour-nav:hover:not(:disabled) { border-color: var(--accent); }
-.tour-nav:disabled { opacity: 0.4; cursor: default; }
-.tour-nav.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>

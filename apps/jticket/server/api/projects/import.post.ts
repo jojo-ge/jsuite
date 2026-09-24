@@ -97,17 +97,20 @@ export default defineEventHandler(async (event) => {
   const pairs: Array<{ ticket: Ticket; src: Ticket }> = []
   for (const t of bundle.tickets ?? []) {
     if (!t?.title?.trim()) continue
+    // Bundles exported before ticket types carry 'AFK' | 'HITL' as the type.
+    const labels = cleanLabels(t.labels)
+    const kind = normalizeTicketKind({ type: t.type, labels }, defaultTicketType(labels, project.mode))
     const ticket: Ticket = {
       id: newId('tick'),
       key: nextKey(store, 'ticket'),
       title: t.title.trim(),
       description: fixAttachments(String(t.description ?? '')),
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s)).filter(Boolean),
-      type: t.type === 'HITL' ? 'HITL' : 'AFK',
+      type: kind.type,
       status: isStatus(t.status) ? t.status : 'todo',
       projectId: project.id,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
-      labels: cleanLabels(t.labels),
+      labels: kind.labels,
       resolution: fixAttachments(String(t.resolution ?? '')),
       blockedBy: [],
       comments: (t.comments ?? [])

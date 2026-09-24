@@ -18,15 +18,16 @@ question**, monitors the session file for the answer, and goes back to grilling
 in the terminal. Later escalations reuse the same room, so it always shows
 exactly one open question.
 
-That holds for herdr-dispatched HITL jTickets too — `wayfinder:grilling`
-tickets, todo grillings, `/jarchitect-grill`. They grill in the herdr pane and
+That holds for herdr-dispatched HITL jTickets too — `decision` tickets
+tagged `hitl`, todo grillings, `/jarchitect-grill`. They grill in the herdr pane and
 the human goes there to answer; the room is still one question at a time, on
 request.
 
 ## Up next — grilling tickets from jTicket
 
 The index page lists every **HITL grilling ticket** on jTicket's frontier
-(`type: HITL` + label `wayfinder:grilling`, open/unblocked/unclaimed), grouped
+(`type: decision` + tag `hitl`, open/unblocked/unclaimed; `arch:candidate`
+tickets excluded — they grill through `/jarchitect-grill`), grouped
 by project in the same format as jTicket's own /next page. **Start** dispatches
 the ticket into herdr through jTicket's dispatch endpoint (own tab, no focus
 steal) — a launcher, not a redirect: the interview runs in that herdr pane and

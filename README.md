@@ -1,6 +1,6 @@
 # jSuite
 
-A pnpm-workspace monorepo of seven local dev apps behind one HTTPS edge — one
+A pnpm-workspace monorepo of eight local dev apps behind one HTTPS edge — one
 command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
 instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
@@ -21,6 +21,7 @@ cd ~/code/anyway/jsuite
 | https://jgrilling.local  | jGrilling                 | 43005     |
 | https://jcode.local      | jCode                     | 43006     |
 | https://jmap.local       | jMap                      | 43007     |
+| https://jreview.local    | jReview                   | 43008     |
 
 ## Setup
 
@@ -45,11 +46,15 @@ which does, in order:
 3. installs every repo-owned jskill into `~/.claude/skills` (manifest:
    `SKILLS_MANIFEST` in `./jsuite`), then — when run from a real terminal —
    the interactive `mattpocock/skills` installer
-4. removes leftovers from the old mkcert-based edge (stale `/etc/hosts`
+4. runs the data migrations — each rewrites an older `.data` shape in place
+   and is a no-op once applied (today: jTicket's ticket types —
+   `AFK`/`HITL` types and `wayfinder:<sub-type>` labels become a main `type`
+   plus `afk`/`hitl`/`prototype` tags; `apps/jticket/scripts/migrate-ticket-types.ts`)
+5. removes leftovers from the old mkcert-based edge (stale `/etc/hosts`
    pins, `./certs/`), which would otherwise shadow OrbStack's DNS
 
 It is safe to re-run at any time — after adding an app, adding a skill, or
-pulling dependency changes. Finish with `./jsuite start`; on the first HTTPS
+pulling dependency or data-shape changes. Finish with `./jsuite start`; on the first HTTPS
 visit OrbStack asks once to trust its local CA, and every app gets a green
 lock from then on.
 
@@ -71,7 +76,8 @@ jsuite/
 │   ├── jexplain/       # blog-style explainers with live charts
 │   ├── jgrilling/      # one escalated grilling question, argued in the browser
 │   ├── jcode/          # hand-code the part that matters — sandbox katas: brief → hints → answer, marked in herdr
-│   └── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
+│   ├── jmap/           # codebase cartographer — scoping, herdr mappers, interactive map
+│   └── jreview/        # multi-reviewer code review — 4 herdr reviewers, a triager, findings → jTicket
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
@@ -111,6 +117,7 @@ overrides the search when set.
 | jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
 | jcode | `.data/jcode/<key>.json` — katas: brief, hint ladder, the hidden answer, attempts + verdicts (the page only ever sees the reached rungs); `.data/jcode/sandbox/<key>/` — each kata's sandbox (stub, cases, runner) |
 | jmap | `.data/jmap/<key>.json` — map identity + synthesized graph; the work (tickets, docs) lives in jTicket and the shared document pool |
+| jreview | `.data/jreview/<key>.json` — one review run: reviewer/triage dispatch state, the triaged findings, the jTicket project they became; the reports themselves live in the shared document pool |
 
 ## @jsuite/charting
 
@@ -230,7 +237,8 @@ jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
 jdiff owns `jdiff-review` and `jdiff-ask`;
 jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`;
 jcode owns `jcode` (the build side) and `jcode-mark` (the marker);
-jmap owns `j-map`, `jmap-scope`, `jmap-domain` and `jmap-synthesize`).
+jmap owns `j-map`, `jmap-scope`, `jmap-domain` and `jmap-synthesize`;
+jreview owns `jreview-report` and `jreview-triage`).
 Suite-level skills live in
 `.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
 app does, how they relate, and which app/skill a request routes to.
@@ -262,7 +270,7 @@ Always include the scheme: `https://jticket.local`.
 ./jsuite logs [app|edge]  # tail -F; no arg = every app
 ./jsuite open [app]       # open in the browser (default: the index)
 ./jsuite setup            # onboarding: OrbStack check, pnpm install, skill install,
-                          # cleanup of the old mkcert/hosts edge — re-runnable
+                          # .data migrations, cleanup of the old mkcert/hosts edge — re-runnable
 ```
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.

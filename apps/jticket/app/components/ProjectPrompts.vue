@@ -36,7 +36,8 @@ const count = computed(() => Object.keys(props.project.prompts ?? {}).length)
 
     <div v-if="open" class="space-y-4">
       <p class="text-sm text-muted">
-        Each hand-off falls through until something answers: this project → the
+        Each hand-off falls through until something answers: this project → its
+        <NuxtLink to="/codebase" class="text-primary hover:underline">codebase settings</NuxtLink> → the
         <NuxtLink to="/prompts" class="text-primary hover:underline">global defaults</NuxtLink> → the built-in text.
         A single ticket can go further still — open it and use its own prompt box.
       </p>

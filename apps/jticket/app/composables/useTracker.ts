@@ -1,7 +1,10 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 
-export type TicketType = 'AFK' | 'HITL'
+// Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
+export type TicketType = 'story' | 'task' | 'bug' | 'review' | 'verification' | 'research' | 'decision' | 'docs'
+export type AgencyTag = 'afk' | 'hitl'
+export type TicketTag = AgencyTag | 'prototype'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
@@ -432,24 +435,55 @@ export function bucketCountsOf(
   return counts
 }
 
-// ── Wayfinder labels ──
-export type WayfinderType = 'research' | 'prototype' | 'grilling' | 'task'
-export const WAYFINDER_TYPES: WayfinderType[] = ['research', 'prototype', 'grilling', 'task']
+// ── Ticket types and tags ──
+// One colour per type, spread round the hue wheel so a type reads by colour
+// alone, with the icon as the second cue. Nuxt UI's seven semantic colours
+// can't cover eight types, so these are literal Tailwind hues (`text` for the
+// glyph, `bg` for its tile) — kept as whole class strings so Tailwind sees them.
+export const TICKET_TYPES: TicketType[] = ['story', 'task', 'bug', 'review', 'verification', 'research', 'decision', 'docs']
 
-export const WAYFINDER_TYPE_META: Record<WayfinderType, { label: string; icon: string; color: 'info' | 'warning' | 'success' | 'neutral' }> = {
-  research: { label: 'Research', icon: 'i-lucide-book-open', color: 'info' },
-  prototype: { label: 'Prototype', icon: 'i-lucide-flask-conical', color: 'warning' },
-  grilling: { label: 'Grilling', icon: 'i-lucide-messages-square', color: 'success' },
-  task: { label: 'Task', icon: 'i-lucide-wrench', color: 'neutral' },
+export interface TicketTypeMeta {
+  label: string
+  hint: string
+  icon: string
+  text: string
+  bg: string
 }
 
-// Pull the wayfinder sub-type out of a ticket's labels (first wayfinder:<type>).
-export function wayfinderType(ticket: Pick<Ticket, 'labels'>): WayfinderType | null {
-  for (const l of ticket.labels ?? []) {
-    const m = /^wayfinder:(research|prototype|grilling|task)$/.exec(l)
-    if (m) return m[1] as WayfinderType
-  }
-  return null
+export const TICKET_TYPE_META: Record<TicketType, TicketTypeMeta> = {
+  story: { label: 'Story', hint: 'A user-facing slice of value', icon: 'i-lucide-bookmark', text: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-500/15' },
+  task: { label: 'Task', hint: 'A unit of technical work', icon: 'i-lucide-square-check', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-500/15' },
+  bug: { label: 'Bug', hint: 'Something is broken', icon: 'i-lucide-bug', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/15' },
+  review: { label: 'Review', hint: 'Review code, a PR or a doc', icon: 'i-lucide-scan-eye', text: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-500/15' },
+  verification: { label: 'Verification', hint: 'Confirm something works — QA, acceptance, post-deploy', icon: 'i-lucide-shield-check', text: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-500/15' },
+  research: { label: 'Research', hint: 'Investigate a question — the output is knowledge', icon: 'i-lucide-book-open', text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-500/15' },
+  decision: { label: 'Decision', hint: 'A choice to make or grill out', icon: 'i-lucide-signpost', text: 'text-fuchsia-600 dark:text-fuchsia-400', bg: 'bg-fuchsia-500/15' },
+  docs: { label: 'Docs', hint: 'Write or refresh documentation', icon: 'i-lucide-file-text', text: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-500/15' },
+}
+
+// Tickets predating types (or from an old peer) fall back to Task rather than
+// rendering nothing — the server folds them properly on its next load.
+export function ticketTypeMeta(ticket: Pick<Ticket, 'type'>): TicketTypeMeta {
+  return TICKET_TYPE_META[ticket.type] ?? TICKET_TYPE_META.task
+}
+
+export const TICKET_TAG_META: Record<TicketTag, { label: string; hint: string; icon: string; color: 'neutral' | 'warning' | 'secondary'; variant: 'subtle' | 'outline' }> = {
+  afk: { label: 'AFK', hint: 'An agent can take it end to end', icon: 'i-lucide-bot', color: 'neutral', variant: 'subtle' },
+  hitl: { label: 'HITL', hint: 'Needs a human — gets its own herdr tab', icon: 'i-lucide-user', color: 'warning', variant: 'subtle' },
+  prototype: { label: 'Prototype', hint: 'Throwaway work — never ships', icon: 'i-lucide-flask-conical', color: 'secondary', variant: 'outline' },
+}
+
+export function isHitl(ticket: Pick<Ticket, 'labels'>): boolean {
+  return (ticket.labels ?? []).includes('hitl')
+}
+
+export function isPrototype(ticket: Pick<Ticket, 'labels'>): boolean {
+  return (ticket.labels ?? []).includes('prototype')
+}
+
+// The well-known tags a ticket carries, agency first.
+export function ticketTags(ticket: Pick<Ticket, 'labels'>): TicketTag[] {
+  return [isHitl(ticket) ? 'hitl' : 'afk', ...(isPrototype(ticket) ? ['prototype' as const] : [])]
 }
 
 // ── Architect labels ──

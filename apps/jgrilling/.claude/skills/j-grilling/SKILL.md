@@ -28,8 +28,8 @@ a question and want the browser — *"take that one to jgrilling"*, *"jgrill
 this"*, *"give me the tabbed version"*. You escalate **that one question**,
 wait for the answer, and come back to the terminal.
 
-That holds for a herdr-dispatched HITL jTicket too — a `wayfinder:grilling`
-ticket, a todo grilling, `/jarchitect-grill`. Those grill **in the herdr pane**;
+That holds for a herdr-dispatched HITL jTicket too — a `decision` ticket
+tagged `hitl`, a todo grilling, `/jarchitect-grill`. Those grill **in the herdr pane**;
 the human comes to the terminal to answer, and escalates a question here only
 when they want it argued properly. A dispatched ticket is not a licence to run
 the whole interview in the room.

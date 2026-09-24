@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { Project, Ticket, TicketBucket, WayfinderType } from '~/composables/useTracker'
+import type { Project, Ticket, TicketBucket } from '~/composables/useTracker'
 
-// Map mode for a wayfinder project: tickets as nodes in dependency layers
+// The Graph view, on every project mode: tickets as nodes in dependency layers
 // flowing left → right toward the destination, blocking edges drawn between
-// them, and the un-ticketable parts of the journey — fog and destination —
-// read straight out of the map body (the project description) so the picture
-// matches what the body says.
+// them. On a wayfinder project the un-ticketable parts of the journey — fog
+// and destination — are read straight out of the map body (the project
+// description) so the picture matches what the body says; every other mode
+// passes an empty body, so a spec's own "## Out of scope" is never misread.
 // `project` carries the share the node states are judged against — the peer's
 // half of a shared map is not takeable here, so it must not be drawn as the
 // frontier the walk aims at.
@@ -135,7 +136,7 @@ const layout = computed(() => {
     layer.map((t, r) => ({
       ticket: t,
       state: stateOf(t),
-      wf: wayfinderType(t) as WayfinderType | null,
+      type: ticketTypeMeta(t),
       x: colX(i),
       y: centered(layer.length, NODE_H) + r * (NODE_H + ROW_GAP),
     })),
@@ -277,9 +278,10 @@ const legend = computed(() =>
           @click="emit('edit-ticket', n.ticket)"
         >
           <span class="flex items-center gap-1.5 px-2 pt-1.5">
+            <UIcon :name="n.type.icon" class="size-3 shrink-0" :class="n.type.text" />
             <span class="font-mono text-[10px] text-muted">{{ n.ticket.key }}</span>
-            <UIcon v-if="n.wf" :name="WAYFINDER_TYPE_META[n.wf].icon" class="size-3 text-muted" />
-            <span v-if="n.ticket.type === 'HITL'" class="text-[9px] font-semibold text-warning">HITL</span>
+            <span v-if="isHitl(n.ticket)" class="text-[9px] font-semibold text-warning">HITL</span>
+            <UIcon v-if="isPrototype(n.ticket)" :name="TICKET_TAG_META.prototype.icon" class="size-3 text-secondary" />
             <span v-if="n.state === 'claimed' && n.ticket.assignee" class="max-w-16 truncate text-[9px] text-info">
               {{ n.ticket.assignee }}
             </span>

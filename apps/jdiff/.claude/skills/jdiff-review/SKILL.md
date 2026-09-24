@@ -279,8 +279,8 @@ fix tickets. Re-running a review must not refile what is already tracked:
 curl -s -X POST "$JTICKET/api/tickets" -H 'content-type: application/json' -d @- <<JSON
 { "title": "[review] <finding title>",
   "projectId": "PROJ-3",
-  "type": "AFK",
-  "labels": ["review:finding", "severity:<severity>"],
+  "type": "bug",
+  "labels": ["afk", "review:finding", "severity:<severity>"],
   "description": "**<severity>** \`<path>:<line>\`\n\n<detail>\n\n[View in jDiff](<diff link>)\n\nfinding-fingerprint: <hash>" }
 JSON
 ```

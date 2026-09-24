@@ -51,8 +51,8 @@ const project = computed(() =>
   live.value?.projectId ? projects.value.find((p) => p.id === live.value!.projectId) : undefined,
 )
 // A ticket is "in wayfinder mode" when its project is a wayfinder effort — then
-// the sub-type and resolution controls appear.
-const isWayfinder = computed(() => project.value?.mode === 'wayfinder' || !!(live.value && wayfinderType(live.value)))
+// the resolution controls appear.
+const isWayfinder = computed(() => project.value?.mode === 'wayfinder')
 // Peer-owned = the other side of a shared project's ticket — badged with the
 // peer's name; the API refuses writes and dispatch on it.
 const peerName = computed(() => (live.value ? peerNameOf(live.value, project.value) : null))
@@ -99,10 +99,6 @@ async function answerTransfer(action: 'accept' | 'decline') {
     transferBusy.value = false
   }
 }
-const wfMeta = computed(() => {
-  const wt = live.value ? wayfinderType(live.value) : null
-  return wt ? WAYFINDER_TYPE_META[wt] : null
-})
 const { render: renderMd, renderInline: renderMdInline } = useMarkdown()
 const renderedResolution = computed(() =>
   live.value?.resolution.trim() ? renderMd(live.value.resolution) : '',
@@ -222,17 +218,8 @@ const statusOptions = [
             <UBadge v-if="transferDeclined" color="warning" variant="subtle" size="sm" icon="i-lucide-undo-2">
               Declined · returns to {{ share!.peerName }}
             </UBadge>
-            <UBadge v-if="wfMeta" :color="wfMeta.color" variant="subtle" size="sm" :icon="wfMeta.icon">
-              {{ wfMeta.label }}
-            </UBadge>
-            <UBadge
-              :color="live.type === 'HITL' ? 'warning' : 'neutral'"
-              variant="subtle"
-              size="sm"
-              :icon="live.type === 'HITL' ? 'i-lucide-user' : 'i-lucide-bot'"
-            >
-              {{ live.type === 'HITL' ? 'HITL · needs a human' : 'AFK · agent-runnable' }}
-            </UBadge>
+            <TicketTypeIcon :type="live.type" size="md" label />
+            <TicketTags :ticket="live" />
             <UBadge v-if="blocked" color="error" variant="subtle" size="sm" icon="i-lucide-lock">Blocked</UBadge>
             <UBadge v-if="live.assignee" color="primary" variant="subtle" size="sm" icon="i-lucide-user-round">
               {{ live.assignee }}

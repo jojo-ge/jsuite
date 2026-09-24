@@ -3,8 +3,9 @@
 //   Board  — frontier-first: Frontier, In progress and Next frontier as cards,
 //            Blocked + Resolved folded into condensed rows. The default.
 //   Digest — every ticket as one dense table row; frontier pinned + tinted.
-//   Graph  — the wayfinder dependency graph (wayfinder projects only; see
-//            WayfinderMap).
+//   Graph  — the dependency graph (see WayfinderMap), on every project mode;
+//            only a wayfinder project's graph also draws the map body's fog
+//            and destination.
 // A recap banner (flow-state counts) sits above all three and carries a badge
 // that opens the project's body — the map (destination / decisions / fog) or a
 // plain description — in a modal, so it never buries the tickets. The page
@@ -36,13 +37,13 @@ const bodyModalOpen = ref(false)
 
 type ViewMode = 'board' | 'digest' | 'map'
 const view = ref<ViewMode>('board')
-const viewOptions = computed(() => [
+const viewOptions = [
   { key: 'board' as const, label: 'Board', icon: 'i-lucide-layout-list' },
   { key: 'digest' as const, label: 'Digest', icon: 'i-lucide-table-2' },
-  // The graph rendering of the map's tickets. Labelled "Graph" (not "Map") so
-  // "Map" only ever means the body text.
-  ...(props.wayfinder ? [{ key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' }] : []),
-])
+  // The graph rendering of the tickets. Labelled "Graph" (not "Map") so "Map"
+  // only ever means a wayfinder project's body text.
+  { key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' },
+]
 
 function byKey(a: Ticket, b: Ticket) {
   const n = (k: string) => Number(k.split('-').pop()) || 0
@@ -116,9 +117,6 @@ function toggleFold(key: GroupKey) {
 
 function blockersOf(t: Ticket) {
   return t.blockedBy.map((id) => props.allTickets.find((x) => x.id === id)).filter((x): x is Ticket => !!x)
-}
-function wfOf(t: Ticket) {
-  return props.wayfinder ? wayfinderType(t) : null
 }
 function archOf(t: Ticket) {
   return mode.value === 'architect' ? archTag(t) : null
@@ -361,7 +359,7 @@ function dispatchFor(t: Ticket) {
 
     <WayfinderMap
       v-else-if="view === 'map'"
-      :body="props.body ?? ''"
+      :body="wayfinder ? (props.body ?? '') : ''"
       :tickets="tickets"
       :all-tickets="allTickets"
       :project="project"
@@ -379,13 +377,13 @@ function dispatchFor(t: Ticket) {
         @click="emit('edit-ticket', t)"
       >
         <span class="size-2 shrink-0 rounded-full" :class="BUCKET_META[stateOf(t)].dot" />
+        <TicketTypeIcon :type="t.type" size="xs" />
         <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
-        <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
         <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
         <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="truncate" :class="stateOf(t) === 'frontier' ? 'font-medium' : ''">{{ t.title }}</span>
         <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
-        <UBadge v-if="t.type === 'HITL'" color="warning" variant="subtle" size="sm" class="shrink-0">HITL</UBadge>
+        <TicketTags :ticket="t" hide-afk />
         <span v-if="t.assignee" class="shrink-0 text-xs text-info">{{ t.assignee }}</span>
         <template v-if="stateOf(t) === 'blocked' && blockersOf(t).length">
           <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
@@ -428,7 +426,6 @@ function dispatchFor(t: Ticket) {
               :key="t.id"
               :ticket="t"
               :tickets="allTickets"
-              :wayfinder="wayfinder"
               :architect="mode === 'architect'"
               :dispatch="g.key !== 'next' && project ? dispatchFor(t) : null"
               :selectable="g.key === 'frontier' && !!project && herdrUp"
@@ -468,8 +465,8 @@ function dispatchFor(t: Ticket) {
               @keydown.enter="emit('edit-ticket', t)"
             >
               <span class="size-1.5 shrink-0 rounded-full" :class="g.dot" />
+              <TicketTypeIcon :type="t.type" size="xs" />
               <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
-              <UIcon v-if="wfOf(t)" :name="WAYFINDER_TYPE_META[wfOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
               <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
               <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
               <span class="truncate text-sm">{{ t.title }}</span>

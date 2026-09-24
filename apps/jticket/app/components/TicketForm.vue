@@ -3,7 +3,7 @@
 // modal and the ticket detail modal fill in the same fields the same way.
 // The parent owns the save button (modal footers are sticky) and drives it
 // through the exposed save()/saving/canSave.
-import type { Project, ProjectMode, Ticket, TicketType, TicketStatus, WayfinderType } from '~/composables/useTracker'
+import type { AgencyTag, Project, ProjectMode, Ticket, TicketType, TicketStatus } from '~/composables/useTracker'
 import type { TicketPromptMode } from '~/utils/prompts'
 
 const props = withDefaults(
@@ -12,7 +12,7 @@ const props = withDefaults(
     projects: Project[]
     tickets: Ticket[]
     defaultProjectId?: string | null
-    // Wayfinder projects get the sub-type and resolution fields. The parent
+    // Wayfinder projects get the resolution field. The parent
     // decides: it already knows which project the ticket sits under.
     wayfinder?: boolean
     // Off for the create modal's non-visible tabs: an autofocus on a hidden
@@ -35,26 +35,33 @@ interface FormState {
   description: string
   acceptanceCriteria: string[]
   type: TicketType
+  agency: AgencyTag
+  prototype: boolean
   status: TicketStatus
   projectId: string | null
   assignee: string
-  wfType: WayfinderType | null
   resolution: string
   blockedBy: string[]
   prompt: string
   promptMode: TicketPromptMode
 }
 
+// A new ticket starts as the type its project's mode implies — a pre-deploy
+// sweep is bugs, a jMap project is docs — and Task everywhere else.
+const MODE_DEFAULT_TYPE: Partial<Record<ProjectMode, TicketType>> = { predeploy: 'bug', jmap: 'docs' }
+
 function blank(): FormState {
+  const mode = props.projects.find((p) => p.id === props.defaultProjectId)?.mode
   return {
     title: '',
     description: '',
     acceptanceCriteria: [''],
-    type: 'AFK',
+    type: (mode && MODE_DEFAULT_TYPE[mode]) || 'task',
+    agency: 'afk',
+    prototype: false,
     status: 'todo',
     projectId: props.defaultProjectId ?? null,
     assignee: '',
-    wfType: null,
     resolution: '',
     blockedBy: [],
     prompt: '',
@@ -85,10 +92,11 @@ function reset() {
       description: t.description,
       acceptanceCriteria: t.acceptanceCriteria.length ? [...t.acceptanceCriteria] : [''],
       type: t.type,
+      agency: isHitl(t) ? 'hitl' : 'afk',
+      prototype: isPrototype(t),
       status: t.status,
       projectId: t.projectId,
       assignee: t.assignee ?? '',
-      wfType: wayfinderType(t),
       resolution: t.resolution ?? '',
       blockedBy: [...t.blockedBy],
       prompt: t.prompt ?? '',
@@ -100,14 +108,7 @@ function reset() {
 }
 reset()
 
-const typeOptions = [
-  { label: 'AFK — agent-runnable', value: 'AFK' },
-  { label: 'HITL — needs a human', value: 'HITL' },
-]
-const wfTypeOptions = [
-  { label: 'None', value: null as WayfinderType | null },
-  ...WAYFINDER_TYPES.map((t) => ({ label: WAYFINDER_TYPE_META[t].label, value: t as WayfinderType | null })),
-]
+const AGENCIES: AgencyTag[] = ['afk', 'hitl']
 const statusOptions = [
   { label: 'To Do', value: 'todo' },
   { label: 'In Progress', value: 'in_progress' },
@@ -125,7 +126,7 @@ const blockerOptions = computed(() =>
 )
 
 // ── This ticket's own hand-off prompt ──
-// The last of the four layers (see ~/utils/prompts.ts): whatever the project
+// The last of the layers (see ~/utils/prompts.ts): whatever the project
 // resolves for this ticket's kind, plus what you write here — appended after
 // it, or in place of it. The box keeps its text when the mode goes back to
 // "use the project prompt", so switching back and forth loses nothing.
@@ -188,9 +189,10 @@ async function save() {
   if (!canSave.value) return
   saving.value = true
   try {
-    // Preserve any non-wayfinder labels; set the sub-type from the picker.
-    const otherLabels = (live.value?.labels ?? []).filter((l) => !/^wayfinder:(research|prototype|grilling|task)$/.test(l))
-    const labels = form.wfType ? [...otherLabels, `wayfinder:${form.wfType}`] : otherLabels
+    // Preserve every other label (mode labels like arch:* ride here); set the
+    // well-known tags from the pickers.
+    const otherLabels = (live.value?.labels ?? []).filter((l) => l !== 'afk' && l !== 'hitl' && l !== 'prototype')
+    const labels = [form.agency, ...(form.prototype ? ['prototype'] : []), ...otherLabels]
     const payload = {
       title: form.title,
       description: form.description,
@@ -258,10 +260,44 @@ defineExpose({ save, reset, saving, canSave })
       </div>
     </UFormField>
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <UFormField label="Type">
-        <USelect v-model="form.type" :items="typeOptions" class="w-full" />
-      </UFormField>
+    <UFormField label="Type">
+      <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-4" role="radiogroup" aria-label="Ticket type">
+        <button
+          v-for="t in TICKET_TYPES"
+          :key="t"
+          type="button"
+          role="radio"
+          :aria-checked="form.type === t"
+          class="flex items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition"
+          :class="form.type === t ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-default hover:bg-elevated/50'"
+          @click="form.type = t"
+        >
+          <TicketTypeIcon :type="t" />
+          <span :class="form.type === t ? 'font-medium' : 'text-muted'">{{ TICKET_TYPE_META[t].label }}</span>
+        </button>
+      </div>
+    </UFormField>
+
+    <UFormField label="Tags">
+      <div class="flex flex-wrap items-center gap-3">
+        <UFieldGroup>
+          <UButton
+            v-for="a in AGENCIES"
+            :key="a"
+            :icon="TICKET_TAG_META[a].icon"
+            :color="form.agency === a ? TICKET_TAG_META[a].color : 'neutral'"
+            :variant="form.agency === a ? 'subtle' : 'outline'"
+            size="sm"
+            @click="form.agency = a"
+          >
+            {{ TICKET_TAG_META[a].label }} <span class="font-normal text-muted">· {{ TICKET_TAG_META[a].hint.toLowerCase() }}</span>
+          </UButton>
+        </UFieldGroup>
+        <UCheckbox v-model="form.prototype" :label="`${TICKET_TAG_META.prototype.label} — ${TICKET_TAG_META.prototype.hint.toLowerCase()}`" />
+      </div>
+    </UFormField>
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <UFormField label="Status">
         <USelect v-model="form.status" :items="statusOptions" class="w-full" />
       </UFormField>
@@ -269,14 +305,6 @@ defineExpose({ save, reset, saving, canSave })
         <USelect v-model="form.projectId" :items="projectOptions" class="w-full" />
       </UFormField>
     </div>
-
-    <UFormField
-      v-if="wayfinder"
-      label="Wayfinder type"
-      help="The kind of decision this ticket resolves: research · prototype · grilling · task."
-    >
-      <USelect v-model="form.wfType" :items="wfTypeOptions" class="w-full" />
-    </UFormField>
 
     <UFormField label="Assignee" help="Who is working on it — the claim. Free-form name; blank to unassign.">
       <UInput v-model="form.assignee" placeholder="e.g. an agent or person's name" class="w-full" />

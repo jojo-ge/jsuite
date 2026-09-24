@@ -59,24 +59,42 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/jso
   -d '{ "assignee": "claude", "status": "in_progress" }'
 ```
 
-## 3. Cut a throwaway worktree
+## 3. Cut a throwaway worktree — the codebase's way
 
 The repo's own checkout is the human's, and a predeploy sweep may be running
 several of these at once. Work in a worktree of your own, detached at a commit
 you name in the finding — a reproduction against "whatever was checked out" is
 not a reproduction.
 
+Make it the way **this codebase** makes worktrees. jTicket keeps each
+codebase's answer as its **worktree guide** — where worktrees go, how they're
+set up (deps, env files, ports so parallel reproductions don't collide), how
+tests run, how they're torn down:
+
 ```bash
 REPO="<project.repo>"                       # from §1
+curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=$REPO" \
+  | jq '{state, changed, root: .guide.root, body: .guide.body}'
 BASE="<project.integrationBranch or the repo's default branch>"
 SHA="$(git -C "$REPO" rev-parse "$BASE")"
+```
+
+- **`ready`** — create and set up the worktree exactly as `body` says, but
+  **detached at `$SHA`** (no branch — nothing here is kept), under the guide's
+  `root` when it names one.
+- **`stale`** — the same, adapting where the files in `changed` now disagree;
+  note that in the finding.
+- **`missing`** — fall back to the plain recipe, and read the repo's
+  `CLAUDE.md`/`AGENTS.md` for setup and how it runs tests:
+
+```bash
 WT="$(mktemp -d)/TICK-n"
 git -C "$REPO" worktree add --detach "$WT" "$SHA"
 cd "$WT" && <install deps the way this repo does — pnpm i / npm ci / …>
 ```
 
-Read the repo's `CLAUDE.md`/`AGENTS.md` for how it runs tests, and use whatever
-skills it names. Everything from here happens inside `$WT`.
+Call the directory `$WT` either way, and use whatever skills the repo names.
+Everything from here happens inside `$WT`.
 
 ## 4. Reproduce it — as a failing test
 
@@ -193,13 +211,14 @@ goes in a comment (`POST /api/tickets/TICK-n/comments`), never in the descriptio
 ## 7. Tear the worktree down — always
 
 Success, failure, or abandoned. Leaving worktrees behind poisons the next
-reproduction and the human's own repo.
+reproduction and the human's own repo. With a guide, run its teardown first
+(containers, databases, ports it claimed); then, either way:
 
 ```bash
 git -C "$REPO" worktree remove --force "$WT" && git -C "$REPO" worktree prune
 git -C "$REPO" worktree list      # yours is gone
 git -C "$REPO" status --short     # the human's checkout, untouched
-rm -rf "$(dirname "$WT")"
+rm -rf "$(dirname "$WT")"         # only for the mktemp fallback
 ```
 
 If teardown fails, say so loudly in your report with the path — a stranded

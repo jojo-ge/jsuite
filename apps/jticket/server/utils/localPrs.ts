@@ -13,6 +13,8 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { LocalPr, Store, Ticket } from './store'
+import { parseWorktreeList } from './worktrees'
+import type { WorktreeEntry } from './worktrees'
 
 // run() (github.ts) wraps failures in an h3 error and drops the exit code and
 // stdout, but merge-tree's conflict answer *is* a non-zero exit with output —
@@ -74,6 +76,12 @@ export async function worktreeOf(path: string, branch: string): Promise<string |
     else if (line === `branch refs/heads/${branch}` && dir) return dir
   }
   return null
+}
+
+/** Every worktree of the repo, main checkout first — [] when git can't say. */
+export async function listWorktrees(path: string): Promise<WorktreeEntry[]> {
+  const out = await tryGit(path, ['worktree', 'list', '--porcelain'])
+  return out ? parseWorktreeList(out) : []
 }
 
 async function worktreeIsClean(dir: string): Promise<boolean> {

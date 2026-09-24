@@ -3,14 +3,17 @@ import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
 import { isPeerOwned } from './ownership'
 import { cleanPromptOverrides, cleanPromptText, coercePromptMode } from './prompts'
+import { cleanWorktreeGuide, cleanWorktreeLinks } from './worktrees'
 import type { ProjectShare, ShareSide } from './ownership'
 import type { PromptOverrides, TicketPromptMode } from './prompts'
 import type { Share } from './shares'
+import { isLegacyTicket, normalizeTicketKind, defaultTicketType } from './ticketTypes'
+import type { TicketType } from './ticketTypes'
+import type { WorktreeGuide, WorktreeLink } from './worktrees'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
 // ── Types ─────────────────────────────────────────────────────────────────
-export type TicketType = 'AFK' | 'HITL'
 // 'done' = the work is built and recorded; 'merged' = its local PR has landed
 // on the integration branch. Both count as finished — see isFinishedStatus.
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
@@ -107,11 +110,14 @@ export interface Ticket {
   title: string
   description: string // "what to build" / the wayfinder question
   acceptanceCriteria: string[]
-  type: TicketType
+  type: TicketType // the main type — see ticketTypes.ts
   status: TicketStatus
   projectId: string | null // parent project; null = backlog
   assignee: string // who is working on it — free-form name (e.g. an agent id); '' = unassigned
-  labels: string[] // e.g. 'wayfinder:research' — the wayfinder sub-type
+  // Free-form, plus the well-known tags (ticketTypes.ts): exactly one of
+  // 'afk' | 'hitl', and optionally 'prototype'. Mode labels (arch:*, jmap:*)
+  // live here too.
+  labels: string[]
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved
   blockedBy: string[] // ticket ids that gate this one
   comments: TicketComment[] // append via POST /api/tickets/:id/comments, never PATCH
@@ -204,6 +210,17 @@ export interface KnownRepo {
   slug: string // 'owner/name', '' when gh can't say
   defaultBranch: string
   lastUsedAt: string
+  // ── Codebase settings (PATCH /api/repos, /api/repos/worktree) ──
+  // The codebase's hand-off prompt overrides: the layer between a project's
+  // own and the global defaults (ticket → project → codebase → global →
+  // built-in). Only overridden kinds are present.
+  prompts: PromptOverrides
+  // How this codebase does worktrees, as its kickoff agent wrote it — null
+  // until the kickoff has run. See worktrees.ts.
+  worktreeGuide: WorktreeGuide | null
+  // Which worktree each connected branch lives in (integration branches,
+  // today) — one per branch. See worktrees.ts.
+  worktreeLinks: WorktreeLink[]
 }
 
 export interface Store {
@@ -278,6 +295,7 @@ export function loadStore(): Store {
   try {
     const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8')) as LegacyStore
     migrateEpics(parsed)
+    const modeOf = new Map((parsed.projects ?? []).map((p) => [p.id, p.mode]))
     return {
       // Projects predating wayfinder mode default to 'standard'; those
       // predating the GitHub link have no repo and no integration branch.
@@ -299,7 +317,12 @@ export function loadStore(): Store {
         ...t,
         projectId: t.projectId ?? null,
         assignee: t.assignee ?? '',
-        labels: t.labels ?? [],
+        // Tickets predating ticket types carry 'AFK' | 'HITL' as their type and
+        // wayfinder:<sub-type> labels — folded here so an unmigrated file still
+        // reads right (`./jsuite setup` persists the same fold).
+        ...(isLegacyTicket(t)
+          ? normalizeTicketKind(t, defaultTicketType(t.labels ?? [], modeOf.get(t.projectId ?? '')))
+          : { labels: t.labels }),
         resolution: t.resolution ?? '',
         // Entities predating sync are unowned ('') — local, editable here.
         comments: (t.comments ?? []).map((c) => ({ ...c, origin: c.origin ?? '', owner: c.owner ?? '' })),
@@ -338,6 +361,10 @@ export function loadStore(): Store {
         slug: r.slug ?? '',
         defaultBranch: r.defaultBranch ?? '',
         lastUsedAt: r.lastUsedAt ?? '',
+        // Codebase settings postdate the list; absent = nothing configured.
+        prompts: cleanPromptOverrides(r.prompts),
+        worktreeGuide: cleanWorktreeGuide(r.worktreeGuide),
+        worktreeLinks: cleanWorktreeLinks(r.worktreeLinks),
       })).filter((r) => r.path),
       // Shares postdate everything else; absent = nothing shared yet. Records
       // from before two-way sync have no reverse room — that direction
@@ -445,6 +472,9 @@ export function rememberRepo(
       slug: rec.slug ?? '',
       defaultBranch: rec.defaultBranch ?? '',
       lastUsedAt: now(),
+      prompts: {},
+      worktreeGuide: null,
+      worktreeLinks: [],
     })
     return true
   }
@@ -458,7 +488,15 @@ export function rememberRepo(
   return changed
 }
 
-/** Drop a repo from the remembered list. Returns true if one was there. */
+/** The remembered repo at a resolved path, if any. */
+export function findKnownRepo(store: Store, path: string): KnownRepo | undefined {
+  return store.repos.find((r) => r.path === path.trim())
+}
+
+/**
+ * Drop a repo from the remembered list — and with it the codebase's settings
+ * (prompt overrides, worktree guide and links). Returns true if one was there.
+ */
 export function forgetRepo(store: Store, path: string): boolean {
   const before = store.repos.length
   store.repos = store.repos.filter((r) => r.path !== path.trim())

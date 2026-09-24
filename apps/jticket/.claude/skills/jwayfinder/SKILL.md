@@ -56,8 +56,8 @@ stand in for it:
 | The effort | a **project** with `"mode": "wayfinder"` |
 | Map | the project's `description` **is** the map body |
 | Ticket | a **ticket** whose `projectId` is that project; its `description` is the question |
-| Ticket sub-type | a `wayfinder:research\|prototype\|grilling\|task` **label** |
-| HITL / AFK | the ticket's **`type`** |
+| Ticket sub-type | the ticket's **`type`** — `research`, `decision` or `task`; a prototype is `research` plus the **`prototype` tag** |
+| HITL / AFK | a **`hitl` / `afk` tag** in `labels` — exactly one per ticket |
 | Blocking | **`blockedBy`** (ticket keys) — rendered natively in the UI |
 | Claim | set **`assignee`** — an assigned ticket leaves the frontier |
 | Frontier | `GET /api/tickets?projectId=<project key>&frontier=true` — key-ordered |
@@ -135,22 +135,24 @@ for you — `blocked`, `claimed`, `frontier` come back on every GET.
 Every ticket is either **HITL** — human in the loop, worked *with* a human who speaks for
 themselves — or **AFK**, driven by the agent alone. A HITL ticket only resolves through
 that live exchange; the agent never stands in for the human's side of it (a grilling agent
-that answers its own questions has broken this). This is the ticket's `type` field.
+that answers its own questions has broken this). This is the `hitl` / `afk` tag in the
+ticket's `labels`; the sub-type below is its `type` (plus the `prototype` tag).
 
-- **Research** (AFK) — `wayfinder:research`. Reading documentation, third-party APIs, or
+- **Research** (AFK) — `type: "research"`, tag `afk`. Reading documentation, third-party APIs, or
   local resources like knowledge bases. Creates a markdown summary as a linked asset —
   in jTicket that's a **doc** (`POST /api/docs`, labelled `wayfinder:asset`), linked from
   the resolution. Use when knowledge outside the current working directory is required.
-- **Prototype** (HITL) — `wayfinder:prototype`. Raise the fidelity of the discussion by
+- **Prototype** (HITL) — `type: "research"` with tags `prototype` + `hitl`. Raise the fidelity of the discussion by
   making a cheap, rough, concrete artifact to react to — an outline, a rough take, a stub,
   or UI/logic code via the `/prototype` skill. Links the prototype as an asset. Use when
-  "how should it look" or "how should it behave" is the key question.
-- **Grilling** (HITL) — `wayfinder:grilling`. Conversation one question at a time,
+  "how should it look" or "how should it behave" is the key question. The `prototype`
+  tag is what makes a research ticket this one — throwaway, never shipped.
+- **Grilling** (HITL) — `type: "decision"`, tag `hitl`. Conversation one question at a time,
   run **in this terminal** with the `/grilling` skill and `/domain-modeling`
   alongside — the human comes to the herdr pane to answer. If they want one
   question argued properly (tabbed options, tables, charts), escalate that
   *single* question with **`/j-grilling`**, then carry on here. The default case.
-- **Task** (HITL or AFK) — `wayfinder:task`. Manual work that must happen before a
+- **Task** (HITL or AFK) — `type: "task"`, tag `afk` or `hitl`. Manual work that must happen before a
   *decision* can be made — nothing to decide, prototype, or research, but the discussion
   is blocked until it's done. Signing up for a service so its API can be judged,
   provisioning access, moving data so its shape can be seen. This is the one type that
@@ -236,11 +238,11 @@ curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
   "projects": [{ "title": "Rive Story Assets", "mode": "wayfinder",
                  "description": "## Destination\n\n…\n\n## Notes\n\n…\n\n## Decisions so far\n\n## Not yet specified\n\n- …\n\n## Out of scope\n\n" }],
   "tickets":  [
-    { "title": "Choose the Rive runtime", "project": "Rive Story Assets", "type": "AFK",
-      "wayfinderType": "research",
+    { "title": "Choose the Rive runtime", "project": "Rive Story Assets",
+      "type": "research", "labels": ["afk"],
       "description": "## Question\n\nWhich Rive runtime fits a Nuxt app — web, or the canvas build?" },
-    { "title": "Decide the asset hand-off format", "project": "Rive Story Assets", "type": "HITL",
-      "wayfinderType": "grilling", "blockedBy": ["Choose the Rive runtime"],
+    { "title": "Decide the asset hand-off format", "project": "Rive Story Assets",
+      "type": "decision", "labels": ["hitl"], "blockedBy": ["Choose the Rive runtime"],
       "description": "## Question\n\nWhat does a designer hand over, and where does it live?" }
   ]
 }'
@@ -284,8 +286,9 @@ without one, you pick the next decision, not the user.
 3. **Resolve it — zoom as needed.** Fetch the full body of any related or resolved ticket
    on demand (`GET /api/tickets/TICK-n` → `.description`, `.resolution`); invoke the
    skills the map's `## Notes` names. If in doubt, use `/grilling` and `/domain-modeling`.
-   Respect the ticket's type: a HITL ticket resolves only through live exchange with the
-   human — never answer their side of it.
+   Respect the ticket's kind: `type` + tags say which sub-type above it is (`research`
+   with the `prototype` tag → Prototype; `decision` → Grilling), and a `hitl` ticket
+   resolves only through live exchange with the human — never answer their side of it.
 
 4. **Record the resolution** — the answer into `resolution`, close the ticket, then append
    a one-line gist to the map's **Decisions so far**:
@@ -315,8 +318,10 @@ appended a decision since you loaded it.
   or `projectId` on `POST`/`PATCH /api/tickets` is silently dropped. Use keys.
 - Import **always creates, never upserts**. To add tickets to an existing map, send only
   `tickets` and reference the project by key. Passing the project again duplicates it.
-- `wayfinderType` shorthand only exists on import. Elsewhere set the
-  `wayfinder:<type>` label explicitly in `labels`.
+- The sub-type is `type` (+ the `prototype` tag), never a label — the old
+  `wayfinder:research|prototype|grilling|task` labels are gone (the server folds any it
+  is sent into the type). Agency is always exactly one of `afk` / `hitl` in `labels`;
+  the server adds `afk` when neither is there.
 - Every array field — `blockedBy`, `labels`, `acceptanceCriteria` — is **replaced
   wholesale** by PATCH. Read, append, write back.
 - `blocked` / `claimed` / `frontier` are derived on read; writing them does nothing.

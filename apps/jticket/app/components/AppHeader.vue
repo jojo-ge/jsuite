@@ -20,7 +20,10 @@ const codebaseItems = computed(() => [
     checked: c.path === selectedPath.value,
     onSelect: () => { select(c.path) },
   })),
-  [{ label: 'Manage codebases…', icon: 'i-lucide-settings-2', to: '/codebases' }],
+  [
+    ...(selectedPath.value ? [{ label: 'Codebase settings', icon: 'i-lucide-sliders-horizontal', to: '/codebase' }] : []),
+    { label: 'Manage codebases…', icon: 'i-lucide-settings-2', to: '/codebases' },
+  ],
 ])
 
 // Only the two counts the nav actually badges — the header is deliberately

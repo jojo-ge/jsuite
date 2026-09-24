@@ -12,14 +12,16 @@ const importExample =`curl -s http://localhost:43000/api/import \\
       "title": "Add cart schema",
       "description": "Persist a cart end-to-end.",
       "acceptanceCriteria": ["Cart survives refresh", "API returns totals"],
-      "type": "AFK",
+      "type": "task",
+      "labels": ["afk"],
       "project": "Checkout",
       "blockedBy": []
     },
     {
       "title": "Cart UI",
       "description": "Render the cart and let users edit quantities.",
-      "type": "AFK",
+      "type": "story",
+      "labels": ["hitl"],
       "project": "Checkout",
       "blockedBy": ["Add cart schema"]
     }
@@ -55,7 +57,16 @@ const endpoints = [
   { m: 'PATCH', p: '/api/prompts', d: "Edit them { prompts: { 'standard:local': '…' } } — merged per kind; '' drops one back to the built-in" },
   { m: 'GET', p: '/api/repos', d: 'Known repos = codebases — path, slug, default branch, which projects use each' },
   { m: 'POST', p: '/api/repos', d: 'Remember a repo { path } (validates it is a clone, resolves its slug)' },
-  { m: 'DELETE', p: '/api/repos?path=', d: 'Forget a repo (the list only; projects and disk are untouched)' },
+  { m: 'PATCH', p: '/api/repos?path=', d: "Codebase settings: its prompt overrides { prompts: { … } } — the layer between project and global" },
+  { m: 'DELETE', p: '/api/repos?path=', d: 'Forget a repo and its settings (projects and disk are untouched)' },
+  { m: 'GET', p: '/api/repos/worktree?repo=', d: "The codebase's worktree guide + state (ready / stale / missing) — read before making any worktree" },
+  { m: 'PUT', p: '/api/repos/worktree?repo=', d: 'Write the guide { body, root?, sources?, verified?, author? } — the kickoff agent calls this' },
+  { m: 'DELETE', p: '/api/repos/worktree?repo=', d: "Drop the codebase's worktree guide" },
+  { m: 'POST', p: '/api/repos/worktree/herdr?repo=', d: "Dispatch the worktree kickoff { prompt } into the codebase's herdr workspace" },
+  { m: 'GET', p: '/api/projects/:id/worktree', d: "The integration branch's worktree link, re-checked against git worktree list" },
+  { m: 'POST', p: '/api/projects/:id/worktree', d: 'Record the link { path, notes?, author? } — 409 unless git has the branch checked out there' },
+  { m: 'DELETE', p: '/api/projects/:id/worktree', d: 'Forget the link (the worktree stays on disk)' },
+  { m: 'POST', p: '/api/projects/:id/herdr-worktree', d: 'Dispatch the connect prompt { prompt } — 409 until the codebase has a guide' },
   { m: 'GET', p: '/api/repos/probe', d: 'What is this path? (?path=) — read-only check, no store write' },
   { m: 'GET', p: '/api/repos/pick', d: 'Native folder picker (macOS) → { path }' },
   { m: 'GET', p: '/api/tickets', d: 'List tickets (?projectId= &repo= &status= &assignee= &label= &frontier=true &finished=true &since=<ISO>) — ?repo= excludes backlog tickets' },
@@ -336,11 +347,23 @@ const methodColor: Record<string, string> = {
           <li><code>title</code> — short descriptive name (required)</li>
           <li><code>description</code> — the end-to-end behaviour ("what to build"); GFM markdown, images via <code>/attachments/</code></li>
           <li><code>acceptanceCriteria</code> — string array</li>
-          <li><code>type</code> — <code>AFK</code> (agent-runnable) or <code>HITL</code> (needs a human)</li>
+          <li>
+            <code>type</code> — the kind of work: <code>story</code> (user-facing slice of value) ·
+            <code>task</code> (technical work) · <code>bug</code> (something broken) · <code>review</code>
+            (review code/PR/doc) · <code>verification</code> (confirm something works — QA, acceptance,
+            post-deploy check) · <code>research</code> (investigate; output is knowledge) ·
+            <code>decision</code> (a choice to make/grill out) · <code>docs</code> (write/refresh
+            documentation). Omitted → implied by mode labels / the project mode, else <code>task</code>
+          </li>
           <li><code>status</code> — <code>todo</code> · <code>in_progress</code> · <code>done</code> · <code>merged</code> (set by a local PR merge; done and merged both count as finished)</li>
           <li><code>projectId</code> / <code>project</code> — parent project</li>
           <li><code>assignee</code> — free-form name of who is working on it (agents self-assign by name; <code>''</code> = unassigned)</li>
-          <li><code>labels</code> — free-form strings; wayfinder uses <code>wayfinder:research|prototype|grilling|task</code></li>
+          <li>
+            <code>labels</code> — free-form strings, plus the tags: exactly one of <code>afk</code>
+            (agent-runnable) or <code>hitl</code> (needs a human; own herdr tab) — <code>afk</code> is added
+            when neither is sent — and optional <code>prototype</code> (throwaway work that must never
+            ship; any type). A legacy <code>"type": "AFK" | "HITL"</code> is still accepted and becomes the tag
+          </li>
           <li><code>resolution</code> — the answer, recorded on resolve (markdown)</li>
           <li><code>blockedBy</code> — tickets that gate this one</li>
           <li><code>branch</code> — the ticket's local work branch (cut via <code>POST /api/tickets/:id/branch</code>; a local PR's default head)</li>
@@ -426,7 +449,8 @@ const methodColor: Record<string, string> = {
         <p class="mb-3 text-sm text-muted">
           Set a project's <code>mode</code> to <code>wayfinder</code> and the project is a
           <strong>map</strong> — its description is the map body. Tickets are wayfinder
-          tickets — sub-type via a <code>wayfinder:&lt;research|prototype|grilling|task&gt;</code> label,
+          tickets — sub-type via <code>type</code>: <code>research</code>, <code>research</code> + the
+          <code>prototype</code> tag, <code>decision</code> (a grilling) or <code>task</code> —
           claim by setting <code>assignee</code>, resolve by setting <code>status: done</code> + <code>resolution</code>.
           The board groups them into <strong>Frontier · In progress · Blocked · Resolved</strong>.
         </p>

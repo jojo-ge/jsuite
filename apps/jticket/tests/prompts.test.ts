@@ -8,9 +8,13 @@ import {
   promptKindsInGroup,
   promptTemplateFor,
   renderPrompt,
+  resolveConnectPrompt,
+  resolveKickoffPrompt,
   resolveMergePrompt,
   resolveTicketPrompt,
+  TICKET_PROMPT_KINDS,
   ticketPromptVars,
+  worktreeGuideUrl,
   type PromptOverrides,
 } from '../app/utils/prompts'
 import type { Project, Ticket } from '../app/composables/useTracker'
@@ -26,11 +30,11 @@ const ticket = (over: Partial<Ticket> = {}): Ticket =>
     title: 'Persist the cart',
     description: '',
     acceptanceCriteria: [],
-    type: 'AFK',
+    type: 'task',
     status: 'todo',
     projectId: 'p1',
     assignee: '',
-    labels: [],
+    labels: ['afk'],
     resolution: '',
     blockedBy: [],
     comments: [],
@@ -70,6 +74,7 @@ const resolve = (over: {
   mode?: Project['mode']
   target?: 'local' | 'master' | 'integration'
   defaults?: PromptOverrides
+  codebase?: { prompts: PromptOverrides }
   branch?: string
 } = {}) =>
   resolveTicketPrompt({
@@ -78,6 +83,7 @@ const resolve = (over: {
     mode: over.mode ?? 'standard',
     target: over.target ?? 'local',
     defaults: over.defaults ?? {},
+    codebase: over.codebase,
     branch: over.branch,
   })
 
@@ -262,5 +268,66 @@ describe('promptTemplateFor', () => {
   it('treats a missing project as no override', () => {
     expect(promptTemplateFor('wayfinder', null, {}).layer).toBe('built-in')
     expect(promptTemplateFor('wayfinder', null, { wayfinder: 'x' }).layer).toBe('default')
+  })
+})
+
+describe('the codebase layer', () => {
+  const codebase = { prompts: { 'standard:local': 'codebase {key}' } as PromptOverrides }
+
+  it('sits between the project and the global default', () => {
+    const defaults = { 'standard:local': 'global {key}' }
+    expect(resolve({ defaults, codebase })).toMatchObject({ text: 'codebase TICK-42', layer: 'codebase', custom: true })
+    expect(resolve({ defaults, codebase, project: { prompts: { 'standard:local': 'project {key}' } } }).layer).toBe('project')
+    expect(resolve({ defaults, codebase: { prompts: {} } }).layer).toBe('default')
+  })
+
+  it('is skipped when absent, so the old three-argument call is unchanged', () => {
+    expect(promptTemplateFor('wayfinder', null, {}, null).layer).toBe('built-in')
+    expect(promptTemplateFor('wayfinder', null, {}, { prompts: { wayfinder: 'x' } })).toEqual({ template: 'x', layer: 'codebase' })
+  })
+
+  it('reaches the project-level sweep too', () => {
+    expect(resolveMergePrompt(project(), ['PR-1'], {}, { prompts: { merge: 'land {prs}' } })).toBe('land PR-1')
+  })
+})
+
+describe('worktree prompts', () => {
+  it('are not ticket kinds', () => {
+    expect(TICKET_PROMPT_KINDS).not.toContain('worktree:kickoff')
+    expect(TICKET_PROMPT_KINDS).not.toContain('worktree:connect')
+    expect(TICKET_PROMPT_KINDS).not.toContain('merge')
+    expect(PROMPT_KIND_META['worktree:kickoff'].level).toBe('codebase')
+  })
+
+  it('are one line — herdr submits a newline early', () => {
+    expect(PROMPT_KIND_META['worktree:kickoff'].template).not.toContain('\n')
+    expect(PROMPT_KIND_META['worktree:connect'].template).not.toContain('\n')
+  })
+
+  it("point the kickoff at the codebase's guide, to read and to write", () => {
+    const text = resolveKickoffPrompt({ path: '/code/checkout', prompts: {} }, {})
+    const url = worktreeGuideUrl('/code/checkout')
+    expect(url).toBe('http://localhost:43000/api/repos/worktree?repo=%2Fcode%2Fcheckout')
+    expect(text).toContain(`GET ${url}`)
+    expect(text).toContain(`PUT ${url}`)
+    expect(text).toContain('/code/checkout')
+    expect(text).not.toMatch(/\{\w+\}/)
+  })
+
+  it('let a codebase override its own kickoff, but no project can', () => {
+    expect(resolveKickoffPrompt({ path: '/r', prompts: { 'worktree:kickoff': 'ask {repo}' } }, { 'worktree:kickoff': 'global' })).toBe('ask /r')
+  })
+
+  it("render the connect prompt with the project's branch, its link endpoint and the guide", () => {
+    const text = resolveConnectPrompt({ ...project(), repoPath: '/Users/me/code/checkout' }, {})
+    expect(text).toContain('proj-1-integration')
+    expect(text).toContain('POST http://localhost:43000/api/projects/PROJ-1/worktree')
+    expect(text).toContain(worktreeGuideUrl('/Users/me/code/checkout'))
+    expect(text).not.toMatch(/\{\w+\}/)
+  })
+
+  it('expose the guide URL to ticket templates as {worktreeGuide}', () => {
+    expect(ticketPromptVars(ticket(), project()).worktreeGuide).toBe(worktreeGuideUrl('~/code/checkout'))
+    expect(ticketPromptVars(ticket(), null).worktreeGuide).toBe('')
   })
 })

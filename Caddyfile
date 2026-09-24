@@ -55,3 +55,7 @@ http://jcode.local:80 {
 http://jmap.local:80 {
 	import app host.docker.internal:43007
 }
+
+http://jreview.local:80 {
+	import app host.docker.internal:43008
+}

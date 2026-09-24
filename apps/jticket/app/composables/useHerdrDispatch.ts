@@ -27,6 +27,7 @@ export function useHerdrDispatch() {
   const { available: herdrUp, refresh: refreshHerdr, workspaceByLabel, focus } = useHerdr()
   const { projects } = useTracker()
   const { ticketPrompt, templateFor } = usePrompts()
+  const { current: currentCodebase } = useCodebase()
 
   const promptTarget = useState<PromptTarget>('jticket-prompt-target', () => 'local')
   // The preference is per-browser; load it once on the client and write on
@@ -45,7 +46,7 @@ export function useHerdrDispatch() {
     label: PROMPT_KIND_META[promptKind.value].label,
     value: promptTarget.value,
     command: (key: string, branch = '') =>
-      renderPrompt(templateFor(promptKind.value).template, {
+      renderPrompt(templateFor(promptKind.value, null, currentCodebase.value).template, {
         ...ticketPromptVars({ key, title: '' }, null, branch),
       }),
   }))
@@ -131,7 +132,7 @@ export function useHerdrDispatch() {
     const branch = await resolveBranch(t, mode)
     const res = await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
       method: 'POST',
-      body: { prompt: commandFor(t, mode, branch), ownTab: t.type === 'HITL' },
+      body: { prompt: commandFor(t, mode, branch), ownTab: isHitl(t) },
     })
     // Sending a candidate to its grilling IS the triage decision, so the ticket
     // finishes here, at dispatch — not when the interview ends (an abandoned

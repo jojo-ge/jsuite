@@ -75,7 +75,7 @@ For EACH domain (these are what `/jmap-domain` sessions will run):
 ```bash
 curl -s -X POST "$JTICKET/api/tickets" -H 'content-type: application/json' -d @- <<'JSON'
 { "title": "Map: <domain name>",
-  "projectId": "<PROJ-key>", "type": "AFK", "labels": ["jmap", "jmap:domain"],
+  "projectId": "<PROJ-key>", "type": "docs", "labels": ["afk", "jmap", "jmap:domain"],
   "description": "Map the <domain name> domain (<kind>) of this codebase.\n\n<one paragraph: what this domain is and does>\n\nEntry paths:\n- `path/one`\n- `path/two`\n\nCover: how it works end to end, its key files, what it depends on (other domains by name, shared systems, external services), and its gotchas. The /jmap-domain skill carries the full contract.",
   "acceptanceCriteria": [
     "A walkthrough doc labelled jmap:domain + the ticket key is published on the project",

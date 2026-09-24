@@ -1,13 +1,14 @@
 // Per-project and per-ticket prompt overrides.
 //
 // Every hand-off jTicket makes — a ticket into herdr, a merge sweep — is a
-// prompt built from a template. Three layers decide which template that is,
+// prompt built from a template. Four layers decide which template that is,
 // each falling back to the one under it:
 //
 //   ticket.prompt (promptMode 'replace' | 'append')
 //     → project.prompts[kind]
-//       → store.promptDefaults[kind]        ← editable, PATCH /api/prompts
-//         → the code default (app/utils/prompts.ts PROMPT_KIND_META)
+//       → the codebase's repo.prompts[kind]  ← PATCH /api/repos?path=
+//         → store.promptDefaults[kind]        ← editable, PATCH /api/prompts
+//           → the code default (app/utils/prompts.ts PROMPT_KIND_META)
 //
 // The rendering itself is the client's job (it owns the prompt-target picker
 // and the placeholder vocabulary — app/utils/prompts.ts). The server's job is
@@ -30,6 +31,9 @@
  * - `architect:*` — the architecture scan and a candidate's go/no-go grilling
  * - `predeploy` — a pre-deploy bug reproduction
  * - `merge` — the project-level merge sweep (not a ticket; project layer only)
+ * - `worktree:kickoff` — asks a codebase how it does worktrees (codebase-level; no project)
+ * - `worktree:connect` — connects a project's integration branch to the
+ *   codebase's worktree setup (project-level; not a ticket)
  */
 export const PROMPT_KINDS = [
   'standard:local',
@@ -44,6 +48,8 @@ export const PROMPT_KINDS = [
   'architect:grill',
   'predeploy',
   'merge',
+  'worktree:kickoff',
+  'worktree:connect',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 

@@ -615,6 +615,8 @@ async function createPr() {
             </UTooltip>
           </div>
         </div>
+        <!-- The integration branch's worktree, made the codebase's way -->
+        <IntegrationWorktree v-if="data.branch" :project="project" />
 
         <!-- No integration branch yet — cut one -->
         <div v-else class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2">

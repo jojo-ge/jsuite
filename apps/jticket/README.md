@@ -25,7 +25,8 @@ pnpm dev          # http://localhost:43000
 | --- | --- |
 | `/` | Board — every project and its tickets, plus docs and the backlog |
 | `/next` | **Up next** — the frontier across every project: open, unblocked, unclaimed tickets, each with its `/jimplement` hand-off command |
-| `/prompts` | **Prompts** — the suite-wide hand-off prompt defaults every project inherits and can override |
+| `/prompts` | **Prompts** — the suite-wide hand-off prompt defaults every codebase and project inherits and can override |
+| `/codebase` | **Codebase settings** — the selected codebase's worktree guide (how it does worktrees, and the branches connected to one) and its prompt overrides |
 | `/running` | **Running now** — every in-progress ticket grouped by its project, with a link through to the project |
 | `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail |
@@ -39,10 +40,10 @@ pnpm dev          # http://localhost:43000
   - `repo` / `integrationBranch`: the optional GitHub link — see **GitHub** below. Both `""` when unset.
 - **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
-  - `type`: `AFK` (agent-runnable) or `HITL` (needs a human)
+  - `type`: the kind of work — `story` (user-facing slice of value) · `task` (technical work) · `bug` (something broken) · `review` (review code/PR/doc) · `verification` (confirm something works — QA, acceptance, post-deploy check) · `research` (investigate; output is knowledge) · `decision` (a choice to make/grill out) · `docs` (write/refresh documentation). With no `type`, mode labels / the project mode pick one: `arch:scan` → `research`, `arch:candidate` → `decision`, `jmap:*` / jmap projects → `docs`, `review:finding` / predeploy projects → `bug`, else `task`.
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name of who is working on it — agents self-assign by name; `""` = unassigned. Filter with `GET /api/tickets?assignee=<name>`. In wayfinder terms, the assignee **is** the claim.
-  - `labels`: free-form strings. Wayfinder uses `wayfinder:research|prototype|grilling|task` (the ticket sub-type). Filter with `GET /api/tickets?label=<label>`.
+  - `labels`: free-form strings, plus the **tags**: exactly one of `afk` (agent-runnable) or `hitl` (needs a human; gets its own herdr tab) — the server adds `afk` when neither is sent — and optional `prototype` (throwaway work that must never ship; combines with any type). Filter with `GET /api/tickets?label=<label>`. Legacy writes (`"type": "AFK"|"HITL"`, `wayfinder:<sub-type>` labels) are still accepted and folded into this shape; `./jsuite setup` migrates stored tickets.
   - `resolution`: the answer recorded when the ticket resolves (GFM markdown); `""` until then.
   - `blockedBy`: ids of tickets that must finish first
   - `completedAt`: ISO timestamp of when the ticket last became `done`; `null` while unfinished. **Set by the server on the status change, never by the caller** — PATCHing it is ignored. Re-saving an already-done ticket keeps the original stamp, so fixing a resolution doesn't move it up `/finished`; moving a ticket out of `done` clears it, and moving it back stamps afresh. Tickets finished before the field existed were backfilled from `updatedAt`.
@@ -108,9 +109,9 @@ ids are resolved for you after everything is created. `projects` is optional.
 curl -s http://localhost:43000/api/import -H 'content-type: application/json' -d '{
   "projects": [{ "title": "Checkout", "description": "Everything payments-related" }],
   "tickets": [
-    { "title": "Add cart schema", "description": "Persist a cart.", "type": "AFK",
+    { "title": "Add cart schema", "description": "Persist a cart.", "type": "task", "labels": ["afk"],
       "project": "Checkout", "acceptanceCriteria": ["Survives refresh"] },
-    { "title": "Cart UI", "description": "Edit quantities.", "type": "AFK",
+    { "title": "Cart UI", "description": "Edit quantities.", "type": "story", "labels": ["hitl"],
       "project": "Checkout", "blockedBy": ["Add cart schema"] }
   ]
 }'
@@ -255,28 +256,60 @@ All of it degrades: no `herdr` binary or no running server and the buttons
 simply don't render (`GET /api/herdr` → `available: false`). If the binary
 lives somewhere unusual, point `HERDR_BIN` at it.
 
+### Codebase worktrees
+
+Every codebase does worktrees differently — deps, env files and secrets, ports
+two worktrees would fight over, a script of its own — so jTicket doesn't guess:
+it asks the codebase, and keeps the answer as the codebase's **worktree guide**
+(`/codebase` → Worktrees; `server/utils/worktrees.ts`).
+
+1. **Kickoff.** *Run kickoff in herdr* fires the `worktree:kickoff` prompt into
+   a HITL tab in the codebase's workspace. The agent reads the repo, asks you in
+   its pane for what the repo can't say, proves the recipe on a throwaway
+   worktree, and `PUT`s the guide to `/api/repos/worktree?repo=` — markdown
+   `body`, the `root` worktrees go under, and the `sources` it rests on, hashed
+   at save so a changed lockfile or `CLAUDE.md` turns the guide **stale**.
+2. **Consumers.** Everything that makes a worktree `GET`s the guide first:
+   `/jimplement`, `/jreproduce`, jReview (its reviewer checkouts go under the
+   guide's `root`), and the connect prompt.
+3. **Connect.** Once a guide exists, the integration branch's row on the
+   project's GitHub panel shows **Connect worktree**: it fires
+   `worktree:connect`, whose agent checks the branch out the guide's way (or
+   adopts the worktree it's already in), sets it up and `POST`s the link to
+   `/api/projects/:id/worktree`. "Linked" is re-checked against
+   `git worktree list` on every read, and the row refreshes itself when the
+   agent writes. Keep that worktree clean — local PR merges reset it to each
+   squash commit and refuse while it's dirty.
+
+Guides and links live on the codebase (`store.repos`), machine-local, never
+synced. Forgetting a codebase forgets them too.
+
 ### Hand-off prompts
 
 Every hand-off — dispatched or copied — is one string built from a template,
-and which template resolves through four layers, first answer winning:
+and which template resolves through five layers, first answer winning:
 
 ```
 ticket.prompt (promptMode 'append' | 'replace')     the ticket's own text
   → project.prompts[kind]                           the project page's Prompts panel
-    → store.promptDefaults[kind]                    /prompts, GET/PATCH /api/prompts
-      → the built-in text                           app/utils/prompts.ts
+    → repo.prompts[kind]                            /codebase, PATCH /api/repos?path=
+      → store.promptDefaults[kind]                  /prompts, GET/PATCH /api/prompts
+        → the built-in text                         app/utils/prompts.ts
 ```
 
-There are eleven **kinds**, each picked by what fires it — the three
+There are fourteen **kinds**, each picked by what fires it — the three
 `standard:*` PR targets of the hand-off picker, `wayfinder`, `jmap:scope` /
 `jmap:domain` / `jmap:synthesize` (by the ticket's `jmap:` label), `todo`,
-`architect:scan` / `architect:grill`, and the project-level `merge` sweep.
+`architect:scan` / `architect:grill`, `predeploy`, the project-level `merge`
+sweep and `worktree:connect`, and the codebase-level `worktree:kickoff` (see
+**Codebase worktrees**).
 A kind is stored only when overridden, so an untouched jTicket fires exactly
 the strings it always has (`tests/prompts.test.ts` pins them).
 
 Templates interpolate `{key}`, `{title}`, `{branch}`, `{onBranch}`,
-`{projectKey}`, `{projectTitle}`, `{repo}`, `{integrationBranch}` and — for the
-sweep — `{prs}`; an unknown placeholder is left standing rather than blanked,
+`{projectKey}`, `{projectTitle}`, `{repo}`, `{integrationBranch}`,
+`{worktreeGuide}` (the codebase's worktree guide URL) and — for the sweep —
+`{prs}`; an unknown placeholder is left standing rather than blanked,
 so a typo shows up in the prompt instead of vanishing from it. A ticket's own
 box takes placeholders too, and keeps its text when you switch back to "use the
 project prompt", so a draft survives.
@@ -294,21 +327,21 @@ Set a project's `mode` to `wayfinder` and it becomes a home for [wayfinder](http
 | --- | --- |
 | Map | the project's **description** (the map body: Destination / Notes / Decisions / Fog / Out-of-scope) |
 | Ticket | a **ticket** under that project; body = the question |
-| Ticket sub-type | a `wayfinder:research\|prototype\|grilling\|task` **label** |
-| AFK / HITL | the ticket **`type`** |
+| Ticket sub-type | the ticket **`type`**: research → `research`, prototype → `research` + the `prototype` tag, grilling → `decision`, task → `task` |
+| AFK / HITL | the **`afk` / `hitl` tag** in `labels` |
 | Blocking | **`blockedBy`** |
 | Claim | set **`assignee`** (an assigned ticket leaves the frontier) |
 | Frontier | `GET /api/tickets?projectId=<project>&frontier=true` — todo + all `blockedBy` done + unassigned + takeable on this machine, key-ordered |
 | Resolve | set `status: "done"`, fill **`resolution`**, add a gist to the map's *Decisions so far* |
 
-In the UI, **every** project — wayfinder or standard — renders its tickets grouped into **Frontier · In progress · Not takeable here · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. *Not takeable here* holds the peer's open work and anything frozen mid-ownership-transfer, so it is only ever non-empty on a shared project; empty groups aren't rendered, so a local-only board still reads as the four it always did. What a wayfinder project adds on top is the map body (behind the board's Brief button) and the `wayfinder:<type>` sub-type badge on each card.
+In the UI, **every** project — wayfinder or standard — renders its tickets grouped into **Frontier · In progress · Not takeable here · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. *Not takeable here* holds the peer's open work and anything frozen mid-ownership-transfer, so it is only ever non-empty on a shared project; empty groups aren't rendered, so a local-only board still reads as the four it always did. What a wayfinder project adds on top is the map body (behind the board's Brief button); every card carries its type badge.
 
-**Authoring a whole map** via `POST /api/import`: give the project `"mode": "wayfinder"` and a map-body `description`, and each ticket a `"wayfinderType": "research"` (shorthand that adds the `wayfinder:<type>` label) — e.g.:
+**Authoring a whole map** via `POST /api/import`: give the project `"mode": "wayfinder"` and a map-body `description`, and each ticket its `type` and agency tag — e.g.:
 
 ```jsonc
 {
   "projects": [{ "title": "Rive Story Assets", "mode": "wayfinder", "description": "## Destination\n…" }],
-  "tickets":  [{ "title": "Choose the runtime", "project": "Rive Story Assets", "type": "AFK", "wayfinderType": "research" }]
+  "tickets":  [{ "title": "Choose the runtime", "project": "Rive Story Assets", "type": "research", "labels": ["afk"] }]
 }
 ```
 
@@ -316,7 +349,7 @@ In the UI, **every** project — wayfinder or standard — renders its tickets g
 
 When the skill asks where to publish, tell it: **publish to the local jTicket app
 via `POST http://localhost:43000/api/import`** instead of Jira. It maps cleanly:
-skill "tickets" → tickets, "blocked by" → `blockedBy` (by title), AFK/HITL → `type`,
+skill "tickets" → tickets, "blocked by" → `blockedBy` (by title), AFK/HITL → the `afk`/`hitl` tag in `labels` (plus a `type` per ticket),
 parent → `project`.
 
 ## The `to-jspec` skill

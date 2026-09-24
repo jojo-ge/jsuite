@@ -7,7 +7,7 @@
 // up right now — which until now meant reading every project and doing the
 // blocked/claimed arithmetic by eye. Each row carries the hand-off command, so
 // the page ends in dispatch rather than in another click.
-import type { LocalPr, Project, ProjectMode, Ticket, WayfinderType } from '~/composables/useTracker'
+import type { AgencyTag, LocalPr, Project, ProjectMode, Ticket, TicketType } from '~/composables/useTracker'
 
 useHead({ title: 'Up next' })
 
@@ -20,12 +20,18 @@ const { scopedProjects: projects, scopedTickets: tickets, scopedPrs: prs } = use
 const { openEditTicket } = useTrackerModals()
 const toast = useToast()
 
-const TYPES = [
+const AGENCIES = [
   { label: 'AFK and HITL', value: 'all' },
-  { label: 'AFK — agent can take it', value: 'AFK' },
-  { label: 'HITL — needs you', value: 'HITL' },
+  { label: 'AFK — agent can take it', value: 'afk', icon: TICKET_TAG_META.afk.icon },
+  { label: 'HITL — needs you', value: 'hitl', icon: TICKET_TAG_META.hitl.icon },
 ]
-const typeFilter = ref<'all' | 'AFK' | 'HITL'>('all')
+const agencyFilter = ref<'all' | AgencyTag>('all')
+
+const TYPES = [
+  { label: 'Every type', value: 'all' },
+  ...TICKET_TYPES.map((t) => ({ label: TICKET_TYPE_META[t].label, value: t, icon: TICKET_TYPE_META[t].icon })),
+]
+const typeFilter = ref<'all' | TicketType>('all')
 
 const projectOptions = computed(() => [
   { label: 'All projects', value: 'all' },
@@ -68,17 +74,15 @@ const hiddenByStar = computed(() => frontier.value.length - onDeck.value.length)
 
 const shown = computed(() =>
   onDeck.value.filter((t) => {
+    if (agencyFilter.value !== 'all' && (isHitl(t) ? 'hitl' : 'afk') !== agencyFilter.value) return false
     if (typeFilter.value !== 'all' && t.type !== typeFilter.value) return false
     if (projectFilter.value !== 'all' && projectOf(t)?.id !== projectFilter.value) return false
     return true
   }),
 )
 
-// The wayfinder sub-type is resolved once per row rather than in the template —
-// only maps carry those labels, so it is null on most boards.
 interface NextRow {
   ticket: Ticket
-  wf: (typeof WAYFINDER_TYPE_META)[WayfinderType] | null
   // The project's mode — it decides which hand-off command the row copies
   // (/jwayfinder, /jmap-*, or /jimplement), not just how the row is decorated.
   mode: ProjectMode
@@ -105,11 +109,7 @@ const groups = computed<NextGroup[]>(() => {
   }
 
   const rowsFor = (list: Ticket[], project: Project | null): NextRow[] =>
-    list.map((ticket) => {
-      const mode = project?.mode ?? 'standard'
-      const type = mode === 'wayfinder' ? wayfinderType(ticket) : null
-      return { ticket, wf: type ? WAYFINDER_TYPE_META[type] : null, mode }
-    })
+    list.map((ticket) => ({ ticket, mode: project?.mode ?? 'standard' }))
 
   const out: NextGroup[] = []
   for (const project of projects.value) {
@@ -176,12 +176,13 @@ const stalledLead = computed(() =>
 )
 
 const counts = computed(() => ({
-  afk: onDeck.value.filter((t) => t.type === 'AFK').length,
-  hitl: onDeck.value.filter((t) => t.type === 'HITL').length,
+  afk: onDeck.value.filter((t) => !isHitl(t)).length,
+  hitl: onDeck.value.filter(isHitl).length,
 }))
 
-const filtered = computed(() => typeFilter.value !== 'all' || projectFilter.value !== 'all')
+const filtered = computed(() => agencyFilter.value !== 'all' || typeFilter.value !== 'all' || projectFilter.value !== 'all')
 function clearFilters() {
+  agencyFilter.value = 'all'
   typeFilter.value = 'all'
   projectFilter.value = 'all'
 }
@@ -303,7 +304,8 @@ async function dispatchMerge(q: MergeQueue) {
           </p>
         </div>
         <div v-if="onDeck.length" class="flex flex-wrap items-center gap-2">
-          <USelect v-model="typeFilter" :items="TYPES" value-key="value" class="w-56" />
+          <USelect v-model="agencyFilter" :items="AGENCIES" value-key="value" class="w-56" />
+          <USelect v-model="typeFilter" :items="TYPES" value-key="value" class="w-44" />
           <USelect v-model="projectFilter" :items="projectOptions" value-key="value" class="w-56" />
           <USelect
             v-model="promptTarget"
@@ -543,7 +545,7 @@ async function dispatchMerge(q: MergeQueue) {
             class="divide-y divide-default overflow-hidden rounded-lg border border-default"
           >
             <li
-              v-for="{ ticket: t, wf, mode } in g.rows"
+              v-for="{ ticket: t, mode } in g.rows"
               :key="t.id"
               class="group cursor-pointer bg-elevated/20 px-4 py-3 transition hover:bg-elevated/60"
               :class="changedTickets[t.id] ? 'jt-moved' : ''"
@@ -554,14 +556,10 @@ async function dispatchMerge(q: MergeQueue) {
 
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
+                    <TicketTypeIcon :type="t.type" size="xs" />
                     <span class="font-mono text-xs text-muted">{{ t.key }}</span>
                     <span class="truncate font-medium">{{ t.title }}</span>
-                    <UBadge :color="t.type === 'HITL' ? 'warning' : 'neutral'" variant="subtle" size="sm">
-                      {{ t.type }}
-                    </UBadge>
-                    <UBadge v-if="wf" :color="wf.color" :icon="wf.icon" variant="subtle" size="sm">
-                      {{ wf.label }}
-                    </UBadge>
+                    <TicketTags :ticket="t" />
                     <UBadge
                       v-if="t.acceptanceCriteria.length"
                       color="neutral"

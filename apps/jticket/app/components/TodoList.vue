@@ -28,7 +28,7 @@ async function add() {
   if (!title || adding.value) return
   adding.value = true
   try {
-    await createTicket({ title, projectId: props.project.id, type: 'AFK' })
+    await createTicket({ title, projectId: props.project.id, type: 'task' })
     newTitle.value = ''
   } finally {
     adding.value = false

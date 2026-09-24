@@ -1,11 +1,11 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jCode and jMap each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jCode, jMap and jReview each do, how they share data and charts, and which app or skill a request should route to. Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, or how to start/stop/manage the suite.
 ---
 
 # jSuite — the local product ecosystem
 
-jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of seven local
+jSuite is a pnpm-workspace monorepo at `~/code/anyway/jsuite` of eight local
 Nuxt apps behind one HTTPS edge. One command starts everything; every app has a
 stable URL, so skills and bookmarks point at fixed addresses:
 
@@ -24,6 +24,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser — grillings themselves run in the terminal |
 | jCode | https://jcode.local | 43006 | hand-code the part that matters as a standalone problem — Claude ships the feature, then poses its core as a sandbox kata: brief → hints → answer, marked in herdr |
 | jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
+| jReview | https://jreview.local | 43008 | four herdr reviewers run the repo's code-review skill, a triager dedupes, you split the findings into jTicket tickets |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
@@ -31,7 +32,11 @@ that port returns a 400, not a redirect.
 ## The products
 
 **jTicket** — the planning hub. A lean local tracker (projects, tickets
-with acceptance criteria and blocked-by edges) plus draft docs. A doc is a
+with acceptance criteria and blocked-by edges) plus draft docs. Every ticket
+has a main `type` — `story` · `task` · `bug` · `review` · `verification` ·
+`research` · `decision` · `docs` — and exactly one agency tag in its labels,
+`afk` or `hitl` (HITL gets its own herdr tab); an optional `prototype` tag marks
+throwaway work that must never ship. A doc is a
 tracker record wrapping a **shared block document** (the jExplain format, one
 pool for both apps); descriptions and resolutions are plain GFM markdown.
 It is deliberately NOT Jira/Confluence: skills author breakdowns and documents
@@ -56,7 +61,7 @@ session as investigation tickets), `jimplement` (claim a ticket, build it,
 record the outcome). It also hosts **architect-mode projects** — the projects
 page's Improve-architecture button (or `POST /api/projects/architect`) scans
 the selected codebase for deepening opportunities: `/jarchitect-scan` fills
-the board with graded HITL candidate tickets (`arch:strong` /
+the board with graded HITL `decision` candidate tickets (`arch:strong` /
 `arch:worth-exploring` / `arch:speculative`, one `arch:top-pick`) plus an
 assessment spec with before/after jChart diagrams; a candidate's herdr button
 dispatches its go/no-go grilling (`/jarchitect-grill`, answered in its herdr pane)
@@ -69,6 +74,15 @@ failing test, records that test plus a verdict (`reproduced` / `flaky` /
 `not-reproduced` / `already-fixed` / `invalid`) and a blocks-the-deploy call on
 the ticket, then tears the worktree down. It never fixes anything — the
 resolution is the hand-off to `/jimplement`.
+Each codebase has **codebase settings** (`/codebase`): its hand-off prompt
+overrides (ticket → project → codebase → global → built-in) and its **worktree
+guide** — how that codebase creates, sets up, runs and tears down worktrees,
+written by an agent the Worktrees kickoff dispatches into herdr (it asks the
+repo, asks the human for what the repo can't say, proves the recipe, then PUTs
+`/api/repos/worktree?repo=`). Anything that makes a worktree — `/jimplement`,
+`/jreproduce`, jReview — reads that guide first. An integration branch's
+Connect worktree button dispatches an agent that checks the branch out the
+guide's way and records the link (`/api/projects/:id/worktree`).
 
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR
@@ -139,6 +153,23 @@ and the domain's document). Maps live in `.data/jmap/`. Skills: `j-map` (front
 door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 `jmap-synthesize` (the ticket contracts).
 
+**jReview** — multi-reviewer code review. Pick a remembered codebase, a
+branch (open PRs detected via `gh`) and a target (defaults to the PR's base,
+so a stacked PR reviews against its parent; any branch/tag/SHA allowed; a
+branch not checked out is reviewed in a detached worktree), and its Run button dispatches
+**four Opus 5.5 reviewers** into herdr (one 2×2 tab), each told to run the
+target codebase's code-review skill — or the default `/code-review` when the
+repo has none — then publish its report as a jExplain document at a
+pre-assigned key (`/jreview-report`). jReview's server-side watcher polls the
+shared document pool for those keys; when every reviewer has reported it
+dispatches an Opus 5.5 **triager** (`/jreview-triage`), which merges duplicate
+findings, publishes a triage document and POSTs the deduplicated findings
+back. The reports and findings render in the review room. **Splitting the
+findings into tickets is the human's button**, never an agent's: it creates a
+new jTicket project (repo = the reviewed repo) with one `review:finding`
+ticket per selected finding. Reviews live in `.data/jreview/`. Skills:
+`jreview-report`, `jreview-triage` (the dispatched sessions' contracts).
+
 ## How they relate
 
 - **One edge**: a Caddy container routes each `.local` name to its native host
@@ -191,6 +222,7 @@ door — create a map of the current repo), `jmap-scope`, `jmap-domain` and
 | review a PR or local branch diff | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`) |
 | be grilled about a plan | `grilling` (in the terminal) — `j-grilling` only when the operator asks for a specific question in the browser |
 | build a feature and hand-code its core as a problem ("with jcode") | `jcode` — ship as usual, then publish the core as a sandbox kata; the page dispatches `jcode-mark` to mark attempts |
+| a thorough multi-reviewer code review of a branch, findings → tickets | jReview (https://jreview.local) — New review; the dispatched sessions run `jreview-report` / `jreview-triage` |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
 | check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, no fix) |

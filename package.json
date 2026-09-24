@@ -16,6 +16,7 @@
     "dev:jexplain": "pnpm --filter jexplain dev --port 43004",
     "dev:jgrilling": "pnpm --filter jgrilling dev --port 43005",
     "dev:jcode": "pnpm --filter jcode dev --port 43006",
-    "dev:jmap": "pnpm --filter jmap dev --port 43007"
+    "dev:jmap": "pnpm --filter jmap dev --port 43007",
+    "dev:jreview": "pnpm --filter jreview dev --port 43008"
   }
 }

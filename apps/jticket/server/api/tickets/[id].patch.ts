@@ -21,7 +21,6 @@ export default defineEventHandler(async (event) => {
   if (body.acceptanceCriteria !== undefined) {
     ticket.acceptanceCriteria = body.acceptanceCriteria.map((s) => String(s).trim()).filter(Boolean)
   }
-  if (body.type !== undefined) ticket.type = body.type === 'HITL' ? 'HITL' : 'AFK'
   if (body.status !== undefined && isStatus(body.status)) {
     // Stamp/clear the completion time alongside the status — never from the body.
     ticket.completedAt = stampCompletion(ticket, body.status, now())
@@ -29,7 +28,18 @@ export default defineEventHandler(async (event) => {
   }
   // Free-form assignee; pass '' (or null) to unassign. LLMs self-assign by name.
   if (body.assignee !== undefined) ticket.assignee = typeof body.assignee === 'string' ? body.assignee.trim() : ''
-  if (body.labels !== undefined) ticket.labels = cleanLabels(body.labels)
+  // Type and tags are normalized together (ticketTypes.ts). A legacy
+  // 'AFK' | 'HITL' type sets the agency tag and keeps the current type;
+  // labels sent without an agency tag keep AFK/HITL as it was.
+  if (body.type !== undefined || body.labels !== undefined) {
+    const rawType: unknown = body.type
+    let labels = body.labels !== undefined ? cleanLabels(body.labels) : ticket.labels
+    if (rawType === 'AFK' || rawType === 'HITL') labels = labels.filter((l) => l !== 'afk' && l !== 'hitl')
+    else if (!labels.includes('afk') && !labels.includes('hitl')) labels = [...labels, ...ticket.labels.filter((l) => l === 'hitl')]
+    const kind = normalizeTicketKind({ type: rawType, labels }, ticket.type)
+    ticket.type = kind.type
+    ticket.labels = kind.labels
+  }
   // The wayfinder answer. Pass '' to clear.
   if (body.resolution !== undefined) ticket.resolution = typeof body.resolution === 'string' ? body.resolution.trim() : ''
   // The ticket's work branch — usually set by POST /api/tickets/:id/branch,

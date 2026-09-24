@@ -31,9 +31,11 @@ onMounted(() => {
         <h1 class="text-xl font-semibold">Prompts</h1>
         <p class="mt-1 max-w-3xl text-sm text-muted">
           Every hand-off jTicket makes is one string pasted into a herdr pane. These are the defaults
-          it uses. A project can override any of them on its own page, and a single ticket can append
-          to or replace whatever its project resolves to — first answer wins:
-          <span class="whitespace-nowrap font-mono text-xs">ticket → project → these → built-in</span>.
+          it uses. A codebase can override any of them in its
+          <NuxtLink to="/codebase" class="text-primary hover:underline">codebase settings</NuxtLink>, a
+          project on its own page, and a single ticket can append to or replace whatever its project
+          resolves to — first answer wins:
+          <span class="whitespace-nowrap font-mono text-xs">ticket → project → codebase → these → built-in</span>.
         </p>
       </div>
 

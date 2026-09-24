@@ -1,6 +1,7 @@
 import type { Explainer, DocNotes } from '@jsuite/documents/store'
 import type { Project, Ticket, Doc, TicketComment, ProjectMode } from './store'
 import { cleanLabels, coerceProjectMode, isDocStatus, isFinishedStatus, isStatus } from './store'
+import { defaultTicketType, normalizeTicketKind } from './ticketTypes'
 import type { ProjectShare, ShareSide } from './ownership'
 import { isPeerOwned, otherSide } from './ownership'
 import { attachmentRefs, docMediaRefs, rewriteAttachmentUrls, rewriteDocMediaUrls, sanitizeAttachmentName } from './bundle'
@@ -568,17 +569,20 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
     reservedTicketKeys.add(finalKey)
     const finished = isFinishedStatus(t.status)
     const blockedBy = [...new Set((t.blockedBy ?? []).map((r) => String(r)).filter((r) => r && r !== t.id))]
+    // A peer still on the pre-types build sends 'AFK' | 'HITL' as the type.
+    const incomingLabels = cleanLabels(t.labels)
+    const kind = normalizeTicketKind({ type: t.type, labels: incomingLabels }, defaultTicketType(incomingLabels, input.project.mode))
     incomingTickets.set(t.id, {
       id: t.id,
       key: finalKey,
       title,
       description: fixText(String(t.description ?? '')),
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s)).filter(Boolean),
-      type: t.type === 'HITL' ? 'HITL' : 'AFK',
+      type: kind.type,
       status: isStatus(t.status) ? t.status : 'todo',
       projectId: input.project.id,
       assignee: String(t.assignee ?? '').trim(),
-      labels: cleanLabels(t.labels),
+      labels: kind.labels,
       resolution: fixText(String(t.resolution ?? '')),
       blockedBy,
       comments: (t.comments ?? [])

@@ -2,14 +2,15 @@
 //
 // jTicket's whole agent hand-off is one string: the prompt pasted into a herdr
 // pane (or copied to the clipboard). Which string that is resolves through
-// four layers, each falling back to the one under it:
+// five layers, each falling back to the one under it:
 //
 //   1. the ticket's own text          ticket.prompt + ticket.promptMode
 //   2. the project's override         project.prompts[kind]
-//   3. the editable global default    GET/PATCH /api/prompts
-//   4. the code default               PROMPT_KIND_META[kind].template  ← here
+//   3. the codebase's override        repo.prompts[kind]  (codebase settings)
+//   4. the editable global default    GET/PATCH /api/prompts
+//   5. the code default               PROMPT_KIND_META[kind].template  ← here
 //
-// Layers 2–4 are templates rendered with the ticket's/project's values (see
+// Layers 2–5 are templates rendered with the ticket's/project's values (see
 // PROMPT_VARS); layer 1 either appends to or replaces the result. With nothing
 // overridden anywhere, every prompt is byte-identical to what jTicket fired
 // before overrides existed — the code defaults below ARE the old literals.
@@ -32,6 +33,8 @@ export const PROMPT_KINDS = [
   'architect:grill',
   'predeploy',
   'merge',
+  'worktree:kickoff',
+  'worktree:connect',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 export type PromptOverrides = Partial<Record<PromptKind, string>>
@@ -50,11 +53,15 @@ export interface PromptVars {
   integrationBranch: string
   /** The merge sweep's queue, e.g. 'PR-3, PR-4'. */
   prs: string
+  /** The codebase's worktree guide on jTicket's API — GET it to read, PUT it to write. */
+  worktreeGuide: string
 }
 
 /** The variables a given kind's editor advertises, in the order they read best. */
-const TICKET_VARS = ['key', 'title', 'branch', 'onBranch', 'projectKey', 'projectTitle', 'repo', 'integrationBranch'] as const
+const TICKET_VARS = ['key', 'title', 'branch', 'onBranch', 'projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 const MERGE_VARS = ['prs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch'] as const
+const KICKOFF_VARS = ['repo', 'worktreeGuide'] as const
+const CONNECT_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 
 export const PROMPT_VAR_HINTS: Record<keyof PromptVars, string> = {
   key: "the ticket's key, e.g. TICK-42",
@@ -66,6 +73,12 @@ export const PROMPT_VAR_HINTS: Record<keyof PromptVars, string> = {
   repo: "the project's local clone path",
   integrationBranch: "the project's integration branch",
   prs: "the merge queue, e.g. 'PR-3, PR-4'",
+  worktreeGuide: "the codebase's worktree guide URL on jTicket's API — GET to read, PUT to write",
+}
+
+/** Where a codebase's worktree guide lives on jTicket's API (repo = path, ~/… or slug). */
+export function worktreeGuideUrl(repo: string): string {
+  return repo ? `http://localhost:43000/api/repos/worktree?repo=${encodeURIComponent(repo)}` : ''
 }
 
 export interface PromptKindMeta {
@@ -75,6 +88,12 @@ export interface PromptKindMeta {
   hint: string
   /** The heading it sits under in the editor. */
   group: string
+  /**
+   * The narrowest thing that fires it: a ticket (every layer applies), a
+   * project (no ticket text), or a codebase (no project either — the project
+   * editor doesn't offer it).
+   */
+  level: 'ticket' | 'project' | 'codebase'
   /** What the copy button says, and what the prompt normally starts with. */
   command: string
   /** The variables this kind renders. */
@@ -88,6 +107,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Local PR (merged in jTicket)',
     hint: 'Standard tickets, with the hand-off picker set to a local PR.',
     group: 'Implementation',
+    level: 'ticket',
     command: '/jimplement',
     vars: TICKET_VARS,
     template:
@@ -97,6 +117,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'PR to master',
     hint: 'Standard tickets, with the hand-off picker set to master.',
     group: 'Implementation',
+    level: 'ticket',
     command: '/jimplement',
     vars: TICKET_VARS,
     template: '/jimplement {key} in a worktree. When done open a PR to master and tear down the worktree.',
@@ -105,6 +126,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'PR to integration branch',
     hint: "Standard tickets, with the hand-off picker set to the project's integration branch.",
     group: 'Implementation',
+    level: 'ticket',
     command: '/jimplement',
     vars: TICKET_VARS,
     template:
@@ -114,6 +136,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Wayfinder ticket',
     hint: 'Every ticket in a wayfinder project — research, prototypes, grillings.',
     group: 'Wayfinder',
+    level: 'ticket',
     command: '/jwayfinder',
     vars: TICKET_VARS,
     template: '/jwayfinder {key}',
@@ -122,6 +145,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'jMap scope',
     hint: "The jmap:scope ticket — the pass that carves the repo into domains.",
     group: 'jMap',
+    level: 'ticket',
     command: '/jmap-scope',
     vars: TICKET_VARS,
     template: '/jmap-scope {key}',
@@ -130,6 +154,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'jMap domain',
     hint: 'Every other mapping ticket — one domain documented per ticket.',
     group: 'jMap',
+    level: 'ticket',
     command: '/jmap-domain',
     vars: TICKET_VARS,
     template: '/jmap-domain {key}',
@@ -138,6 +163,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'jMap synthesize',
     hint: 'The jmap:synthesize ticket — the docs folded into one dependency map.',
     group: 'jMap',
+    level: 'ticket',
     command: '/jmap-synthesize',
     vars: TICKET_VARS,
     template: '/jmap-synthesize {key}',
@@ -146,6 +172,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Todo grilling',
     hint: "A todo-list ticket's interview, run in the herdr terminal.",
     group: 'Todo',
+    level: 'ticket',
     command: '/grilling',
     vars: TICKET_VARS,
     template:
@@ -159,6 +186,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Architecture scan',
     hint: 'The arch:scan ticket — the pass that fills the board with graded candidates.',
     group: 'Architecture',
+    level: 'ticket',
     command: '/jarchitect-scan',
     vars: TICKET_VARS,
     template: '/jarchitect-scan {key}',
@@ -167,6 +195,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Architecture candidate grilling',
     hint: "A candidate's go/no-go interview. Dispatching it is the triage decision.",
     group: 'Architecture',
+    level: 'ticket',
     command: '/jarchitect-grill',
     vars: TICKET_VARS,
     template: '/jarchitect-grill {key}',
@@ -175,6 +204,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Pre-deploy reproduction',
     hint: 'Every ticket in a predeploy project — one suspected bug reproduced, never fixed.',
     group: 'Predeploy',
+    level: 'ticket',
     command: '/jreproduce',
     vars: TICKET_VARS,
     template: '/jreproduce {key}',
@@ -183,6 +213,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     label: 'Merge sweep',
     hint: "The project-level sweep that lands every open local PR. Not a ticket — no per-ticket override.",
     group: 'Merge',
+    level: 'project',
     command: 'Merge sweep',
     vars: MERGE_VARS,
     template: [
@@ -192,16 +223,54 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       'Everything stays local — do not push or touch GitHub.',
     ].join(' '),
   },
+  // One line each, like every template: herdr submits the prompt as typed
+  // input, so a newline would send it early.
+  'worktree:kickoff': {
+    label: 'Worktree kickoff',
+    hint: "Asks the codebase how it creates, sets up, runs and tears down worktrees — its answer is the guide every worktree follows.",
+    group: 'Worktrees',
+    level: 'codebase',
+    command: 'Worktree kickoff',
+    vars: KICKOFF_VARS,
+    template: [
+      'Work out how this codebase ({repo}) should do git worktrees, and record the answer in jTicket as its worktree guide.',
+      'If a guide exists already (GET {worktreeGuide}), start from it and update what changed.',
+      'Read CLAUDE.md/AGENTS.md, the README, package manifests and lockfiles, env examples, docker/compose files, and any worktree scripts or conventions the repo already has — prefer those over inventing new ones.',
+      'The guide is markdown for agents and must cover, for a new worktree of a branch: where it goes and the exact create command; setup (dependencies, env files and secrets to copy from the main checkout, codegen, databases); how two worktrees running at once avoid colliding (ports, containers, data); how to run and test it; how to keep it current with its base; and teardown.',
+      "Ask me in this pane for anything the repo can't tell you (secrets, services, port ranges) — don't guess.",
+      'Then prove it: create a throwaway worktree the guide\'s way, set it up, run the tests (or the smallest meaningful check), and tear it down.',
+      'Record it: PUT {worktreeGuide} with JSON {"body": "<the guide>", "root": "<absolute directory worktrees go under, or empty if no convention>", "sources": ["<repo-relative files the guide rests on — lockfiles, CLAUDE.md, compose files…>"], "verified": <true only if the proof passed>, "author": "claude"}.',
+      "Don't commit or change tracked files unless I agree.",
+    ].join(' '),
+  },
+  'worktree:connect': {
+    label: 'Connect integration worktree',
+    hint: "The integration branch's Connect button — checks the branch out in a worktree the codebase's way and records the link.",
+    group: 'Worktrees',
+    level: 'project',
+    command: 'Connect worktree',
+    vars: CONNECT_VARS,
+    template: [
+      "Connect {projectKey} ({projectTitle})'s integration branch {integrationBranch} to this codebase's worktree setup.",
+      "Read the guide first — GET {worktreeGuide} — and follow it; if there isn't one, stop and tell me.",
+      'In {repo}: if {integrationBranch} is already checked out in a worktree (git worktree list), adopt that one; otherwise create a worktree for it exactly as the guide says (not the main checkout, not a detached HEAD).',
+      'Set it up per the guide and check it runs.',
+      'Leave it clean — no untracked files outside .gitignore — because jTicket squash-merges local PRs into this branch and resets this checkout to each merge, refusing when it is dirty.',
+      "Don't leave servers running unless I ask.",
+      'Then record the link: POST http://localhost:43000/api/projects/{projectKey}/worktree with JSON {"path": "<absolute worktree path>", "notes": "<markdown: what you set up, and how to run and test it there>", "author": "claude"}.',
+      'Do not push or touch GitHub.',
+    ].join(' '),
+  },
 }
 
 /** The editor's sections, in the order they render. */
-export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge'] as const
+export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees'] as const
 export function promptKindsInGroup(group: string): PromptKind[] {
   return PROMPT_KINDS.filter((k) => PROMPT_KIND_META[k].group === group)
 }
 
-/** Every kind but the sweep — the ones a single ticket can fire. */
-export const TICKET_PROMPT_KINDS = PROMPT_KINDS.filter((k) => k !== 'merge')
+/** The kinds a single ticket can fire. */
+export const TICKET_PROMPT_KINDS = PROMPT_KINDS.filter((k) => PROMPT_KIND_META[k].level === 'ticket')
 
 /**
  * A variable as it reads in a template — '{key}'. A helper rather than an
@@ -231,9 +300,14 @@ export function renderPrompt(template: string, vars: Partial<PromptVars>): strin
   })
 }
 
+/** A project's repo as the API should see it: the resolved path when the tracker derived one. */
+function projectRepo(project: (Pick<Project, 'repo'> & { repoPath?: string }) | null | undefined): string {
+  return project?.repoPath || project?.repo || ''
+}
+
 export function ticketPromptVars(
   ticket: Pick<Ticket, 'key' | 'title'> & { branch?: string },
-  project: Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch'> | null | undefined,
+  project: (Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch'> & { repoPath?: string }) | null | undefined,
   branch = ticket.branch ?? '',
 ): PromptVars {
   return {
@@ -246,6 +320,7 @@ export function ticketPromptVars(
     repo: project?.repo ?? '',
     integrationBranch: project?.integrationBranch ?? '',
     prs: '',
+    worktreeGuide: worktreeGuideUrl(projectRepo(project)),
   }
 }
 
@@ -273,14 +348,21 @@ export function promptKindFor(
 }
 
 // ── The layers ──────────────────────────────────────────────────────────────
-/** Layers 2–4: the template this kind resolves to for this project. */
+export type PromptLayer = 'project' | 'codebase' | 'default' | 'built-in'
+/** The codebase layer's input — a codebase settings row, or anything carrying its overrides. */
+export type CodebasePrompts = { prompts?: PromptOverrides } | null | undefined
+
+/** Layers 2–5: the template this kind resolves to for this project and codebase. */
 export function promptTemplateFor(
   kind: PromptKind,
   project: Pick<Project, 'prompts'> | null | undefined,
   defaults: PromptOverrides,
-): { template: string; layer: 'project' | 'default' | 'built-in' } {
+  codebase?: CodebasePrompts,
+): { template: string; layer: PromptLayer } {
   const own = project?.prompts?.[kind]
   if (own) return { template: own, layer: 'project' }
+  const shared = codebase?.prompts?.[kind]
+  if (shared) return { template: shared, layer: 'codebase' }
   const fallback = defaults[kind]
   if (fallback) return { template: fallback, layer: 'default' }
   return { template: PROMPT_KIND_META[kind].template, layer: 'built-in' }
@@ -291,26 +373,28 @@ export interface ResolvedPrompt {
   /** The text that actually gets fired. */
   text: string
   /** Which layer supplied the template (before any ticket text). */
-  layer: 'project' | 'default' | 'built-in'
+  layer: PromptLayer
   /** What the ticket's own text did to it. */
   ticketMode: TicketPromptMode
   /** True when anything but the built-in template alone produced this. */
   custom: boolean
 }
 
-/** All four layers, for one ticket's hand-off. */
+/** Every layer, for one ticket's hand-off. */
 export function resolveTicketPrompt(input: {
   ticket: Pick<Ticket, 'key' | 'title' | 'labels'> & { branch?: string; prompt?: string; promptMode?: TicketPromptMode }
-  project: Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch' | 'prompts'> | null | undefined
+  project: (Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch' | 'prompts'> & { repoPath?: string }) | null | undefined
   mode: ProjectMode
   target: 'local' | 'master' | 'integration'
   defaults: PromptOverrides
+  /** The project's codebase settings — the layer between project and global. */
+  codebase?: CodebasePrompts
   /** The branch as of this hand-off — the dispatch cuts it just before asking. */
   branch?: string
 }): ResolvedPrompt {
   const { ticket, project, mode, target, defaults } = input
   const kind = promptKindFor(mode, ticket, target)
-  const { template, layer } = promptTemplateFor(kind, project, defaults)
+  const { template, layer } = promptTemplateFor(kind, project, defaults, input.codebase)
   const vars = ticketPromptVars(ticket, project, input.branch ?? ticket.branch ?? '')
 
   const own = (ticket.prompt ?? '').trim()
@@ -323,22 +407,50 @@ export function resolveTicketPrompt(input: {
   return { kind, text, layer, ticketMode, custom: layer !== 'built-in' || ticketMode !== '' }
 }
 
-/** The project-level sweep, resolved through layers 2–4 (it has no ticket). */
-export function resolveMergePrompt(
-  project: Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch' | 'prompts'>,
-  prKeys: string[],
-  defaults: PromptOverrides,
-): string {
-  const { template } = promptTemplateFor('merge', project, defaults)
-  return renderPrompt(template, {
+type ProjectForPrompt = Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch' | 'prompts'> & { repoPath?: string }
+
+/** The vars of a hand-off with no ticket — a project's, or (project null) a bare codebase's. */
+function projectLevelVars(project: ProjectForPrompt | null, repo: string, prs = ''): PromptVars {
+  return {
     key: '',
     title: '',
     branch: '',
     onBranch: '',
-    projectKey: project.key,
-    projectTitle: project.title,
-    repo: project.repo,
-    integrationBranch: project.integrationBranch,
-    prs: prKeys.join(', '),
-  })
+    projectKey: project?.key ?? '',
+    projectTitle: project?.title ?? '',
+    repo,
+    integrationBranch: project?.integrationBranch ?? '',
+    prs,
+    worktreeGuide: worktreeGuideUrl(project ? projectRepo(project) : repo),
+  }
+}
+
+/** The project-level sweep, resolved through layers 2–5 (it has no ticket). */
+export function resolveMergePrompt(
+  project: ProjectForPrompt,
+  prKeys: string[],
+  defaults: PromptOverrides,
+  codebase?: CodebasePrompts,
+): string {
+  const { template } = promptTemplateFor('merge', project, defaults, codebase)
+  return renderPrompt(template, projectLevelVars(project, project.repo, prKeys.join(', ')))
+}
+
+/** The integration branch's connect prompt — layers 2–5, like the sweep. */
+export function resolveConnectPrompt(
+  project: ProjectForPrompt,
+  defaults: PromptOverrides,
+  codebase?: CodebasePrompts,
+): string {
+  const { template } = promptTemplateFor('worktree:connect', project, defaults, codebase)
+  return renderPrompt(template, projectLevelVars(project, project.repo))
+}
+
+/** A codebase's worktree kickoff — layers 3–5: there is no project, let alone a ticket. */
+export function resolveKickoffPrompt(
+  codebase: { path: string; prompts?: PromptOverrides },
+  defaults: PromptOverrides,
+): string {
+  const { template } = promptTemplateFor('worktree:kickoff', null, defaults, codebase)
+  return renderPrompt(template, projectLevelVars(null, codebase.path))
 }

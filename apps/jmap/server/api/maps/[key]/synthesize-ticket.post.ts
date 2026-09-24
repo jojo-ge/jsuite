@@ -31,9 +31,9 @@ export default defineEventHandler(async (event) => {
         '',
         `Read this project's ${domainDocs.length} \`jmap:domain\` walkthrough docs, unify them into the system graph (one node per domain, shared systems promoted, edges from the Dependencies sections), and POST the result to jMap at \`/api/maps/${map.key}/synthesis\`. The \`/jmap-synthesize\` skill carries the full contract.`,
       ].join('\n'),
-      type: 'AFK',
+      type: 'docs',
       projectId: map.projectKey,
-      labels: ['jmap', 'jmap:synthesize'],
+      labels: ['afk', 'jmap', 'jmap:synthesize'],
       acceptanceCriteria: [
         `The graph is POSTed to jMap (map \`${map.key}\`) and the map renders at https://jmap.local/m/${map.key}`,
         'This ticket is resolved with the node/edge counts',

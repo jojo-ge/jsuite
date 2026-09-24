@@ -10,7 +10,9 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | POST | `/api/projects/todo` | Get-or-create a codebase's TODO project (idempotent; the only way to make a `todo`-mode project) |
 | POST | `/api/projects/architect` | Create an architecture-review project + its `arch:scan` ticket (one per scan, never reused; the only way to make an `architect`-mode project) |
 | GET / PATCH / DELETE | `/api/projects/:id` | One project (id **or** key) |
-| GET / POST / DELETE | `/api/repos` | Known repos = **codebases** (POST remembers a path after probing it; DELETE `?path=` forgets) |
+| GET / POST / PATCH / DELETE | `/api/repos` | Known repos = **codebases** (POST remembers a path after probing it; PATCH `?path=` `{prompts}` sets the codebase's prompt overrides; DELETE `?path=` forgets it and its settings) |
+| GET / PUT / DELETE | `/api/repos/worktree?repo=` | The codebase's **worktree guide** — how it creates, sets up, runs and tears down worktrees. Read it before making any worktree |
+| GET / POST / DELETE | `/api/projects/:id/worktree` | The integration branch's **worktree link** (status re-checked against git; POST `{path, notes, author}` records it) |
 | GET | `/api/repos/probe?path=` | Is this path a usable git clone? (answers, never errors) |
 | GET / POST | `/api/tickets` | List / create tickets |
 | GET / PATCH / DELETE | `/api/tickets/:id` | One ticket (id or key) |
@@ -108,8 +110,8 @@ An architecture review of a codebase — the projects page's Improve-architectur
 button calls this, and so can an agent. Not idempotent: every call is a fresh
 review (a fresh run is a fresh project). Creates the `architect`-mode project
 plus its `arch:scan` ticket; dispatching that ticket into herdr
-(`/jarchitect-scan TICK-n`) fills the board with graded HITL `arch:candidate`
-tickets and publishes the assessment spec doc.
+(`/jarchitect-scan TICK-n`) fills the board with graded `hitl` `decision` tickets
+(`arch:candidate`) and publishes the assessment spec doc.
 
 ```jsonc
 POST /api/projects/architect
@@ -159,16 +161,39 @@ POST /api/tickets
 { "title": "Persist the cart",          // required
   "description": "What to build, from the user's perspective",
   "acceptanceCriteria": ["Survives refresh"],
-  "type": "AFK",                        // or "HITL"; anything else → "AFK"
+  "type": "story",                      // story | task | bug | review | verification | research | decision | docs
+                                        // omitted → implied by labels / project mode, else "task"
   "status": "todo",                     // todo | in_progress | done
   "projectId": "PROJ-2",                // id or KEY only — 400 if unknown
   "assignee": "",                       // free-form name; "" = unassigned
-  "labels": ["wayfinder:research"],
+  "labels": ["afk"],                    // tags: exactly one of "afk" | "hitl" (+ optional "prototype"); rest free-form
   "resolution": "",                     // the answer, GFM markdown
   "blockedBy": ["TICK-3"] }             // ids or KEYS only — unknown refs DROPPED silently
 ```
 
 `PATCH /api/tickets/:id` — same fields, all optional.
+
+**Type vs tags.** `type` is what kind of work the ticket is:
+
+| `type` | For |
+| --- | --- |
+| `story` | a user-facing slice of value |
+| `task` | a unit of technical work (the default) |
+| `bug` | something broken |
+| `review` | reviewing code, a PR or a doc |
+| `verification` | confirming something works — QA, acceptance, a post-deploy check |
+| `research` | investigating a question; the output is knowledge |
+| `decision` | a choice to make or grill out |
+| `docs` | writing or refreshing documentation |
+
+Agency is a **tag** in `labels`: every ticket carries exactly one of `afk` (an agent can
+take it cold) or `hitl` (needs a human; gets its own herdr tab) — the server adds `afk`
+when neither is sent. `prototype` marks throwaway work that must never ship and
+combines with any type (a wayfinder prototype is `research` + `prototype`). With no
+`type`, the server infers one: `arch:scan` → `research`, `arch:candidate` → `decision`,
+`jmap:*` or a jmap project → `docs`, `review:finding` or a predeploy project → `bug`,
+else `task`. Legacy input — `"type": "AFK" | "HITL"`, `wayfinder:<sub-type>` labels —
+is still accepted and folded into this shape; don't send it.
 
 - `description`, `resolution` and comment bodies are GFM markdown and render images:
   upload with [`POST /api/attachments`](#attachments) and embed the returned `markdown`
@@ -178,7 +203,8 @@ POST /api/tickets
   Read-modify-write to append.
 - `assignee: ""` unassigns. `resolution: ""` clears.
 - `projectId: null` detaches (→ backlog). A self-blocking edge is dropped.
-- Labels are trimmed, emptied-out, and de-duplicated on the way in.
+- Labels are trimmed, emptied-out, and de-duplicated on the way in. A PATCHed `labels`
+  with no `afk`/`hitl` keeps the ticket's current agency tag.
 - `comments` is **not PATCHable** — use the comments endpoint below.
 
 ### Ticket comments
@@ -230,6 +256,48 @@ curl -s -X POST "$JTICKET/api/prs/PR-4/merge"
 Everything stays on the machine until `POST /api/projects/:id/sync` pushes the
 integration branch. `POST /api/projects/:id/integration-pr` opens the one real GitHub
 roll-up PR (integration → default branch) via `gh`.
+
+### Codebase worktrees
+
+Every codebase does worktrees differently, so jTicket asks the codebase and keeps the
+answer: the **worktree guide**. Anything that makes a worktree reads it first.
+`?repo=` takes a path, `~/…` or an `owner/name` slug.
+
+```bash
+curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=~/code/checkout"
+# → { "repo": "/Users/you/code/checkout", "state": "ready" | "stale" | "missing",
+#     "changed": [],            # stale: source files that changed since it was written
+#     "guide": { "body": "<markdown>", "root": "/abs/dir/worktrees/go/under or ''",
+#                "sources": [{ "path": "pnpm-lock.yaml", "hash": "…" }],
+#                "verified": true, "author": "claude", "updatedAt": "…" } | null }
+
+# The kickoff agent writes it (replaces the whole guide; sources are hashed now):
+curl -s -X PUT "$JTICKET/api/repos/worktree" --url-query "repo=$REPO" \
+  -H 'content-type: application/json' \
+  -d '{ "body": "## Create\n…", "root": "../checkout-worktrees",
+        "sources": ["pnpm-lock.yaml", "CLAUDE.md", ".env.example"], "verified": true, "author": "claude" }'
+```
+
+A project's integration branch can be **connected** to a worktree made from the guide
+(the GitHub panel's Connect worktree button dispatches an agent to do it). The link is
+one per branch, stored on the codebase, and always re-checked against `git worktree list`:
+
+```bash
+curl -s "$JTICKET/api/projects/PROJ-2/worktree"
+# → { "state": "linked" | "broken" | "unlinked-checked-out" | "unlinked" | "no-branch" | "no-repo",
+#     "branch": "proj/PROJ-2-checkout", "checkedOutAt": "/abs/path" | null,
+#     "link": { "path": "…", "notes": "<markdown: how to run it>", … } | null,
+#     "guide": { "state": "ready", … } }
+
+# Record it — 409 unless path is a worktree of the repo (not its main checkout)
+# with the integration branch checked out:
+curl -s "$JTICKET/api/projects/PROJ-2/worktree" -H 'content-type: application/json' \
+  -d '{ "path": "/Users/you/code/checkout-worktrees/proj-2", "notes": "pnpm dev --port 3102", "author": "claude" }'
+```
+
+jTicket squash-merges local PRs into the integration branch and resets a checked-out
+integration worktree to each merge — it refuses while that worktree is dirty, so keep
+set-up artefacts gitignored.
 
 ### Doc
 
@@ -324,10 +392,12 @@ that resolves references by **title**, which is what makes it usable before any 
 {
   "projects": [{ "title": "Checkout", "description": "…", "mode": "standard" }],
   "tickets":  [
-    { "title": "Add cart schema", "description": "Persist a cart.", "type": "AFK",
+    { "title": "Add cart schema", "description": "Persist a cart.", "type": "task",
+      "labels": ["afk"],
       "project": "Checkout",                      // project title or key
       "acceptanceCriteria": ["Survives refresh"] },
-    { "title": "Cart UI", "description": "Edit quantities.", "type": "AFK",
+    { "title": "Cart UI", "description": "Edit quantities.", "type": "story",
+      "labels": ["hitl"],
       "project": "Checkout",
       "blockedBy": ["Add cart schema"] }          // ticket TITLES or keys
   ]
@@ -338,8 +408,9 @@ that resolves references by **title**, which is what makes it usable before any 
 - Both arrays are optional. Order within the call does not matter: projects are
   created, then tickets, then `blockedBy` edges are wired in a second pass — so a
   ticket may block-reference one declared later in the same array.
-- `wayfinderType: "research"` on a ticket is shorthand that adds the label
-  `wayfinder:research`. Only valid here.
+- Tickets take the same `type` + `labels` tags as `POST /api/tickets`. (A legacy
+  `wayfinderType` shorthand is still accepted here and folded into type + tags — don't
+  write it; set `type` instead.)
 - **It always creates.** There is no upsert. Re-running the same import duplicates
   everything. To extend an existing project, send only `tickets` and reference the
   project by key.

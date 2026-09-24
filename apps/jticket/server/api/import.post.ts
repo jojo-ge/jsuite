@@ -9,7 +9,9 @@
 //     "title": "...",
 //     "description": "...",
 //     "acceptanceCriteria": ["...", "..."],
-//     "type": "AFK" | "HITL",
+//     "type": "story" | "task" | "bug" | "review" | "verification"
+//           | "research" | "decision" | "docs",   // optional — see ticketTypes.ts
+//     "labels": ["hitl", "prototype", ...],      // optional — 'afk' unless 'hitl'
 //     "project": "<project title or key>",     // optional
 //     "blockedBy": ["<ticket title or key>"]   // optional
 //   }]
@@ -30,7 +32,9 @@ interface ImportTicket {
   project?: string | null // project title or key
   assignee?: string
   labels?: string[]
-  wayfinderType?: string // shorthand → adds a 'wayfinder:<type>' label
+  // Legacy shorthand from before ticket types: a wayfinder sub-type
+  // (research | prototype | grilling | task), folded into type + tags.
+  wayfinderType?: string
   resolution?: string
   blockedBy?: string[]
 }
@@ -79,6 +83,8 @@ export default defineEventHandler(async (event) => {
     const status = isStatus(t.status) ? t.status : 'todo'
     const project = findProject(t.project)
     const projectId = project?.id ?? null
+    const labels = cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])])
+    const kind = normalizeTicketKind({ type: t.type, labels }, defaultTicketType(labels, project?.mode))
     const ticket: Ticket = {
       id: newId('tick'),
       // Shared projects mint under the shared key with the side's parity
@@ -89,11 +95,11 @@ export default defineEventHandler(async (event) => {
       title: t.title.trim(),
       description: t.description?.trim() ?? '',
       acceptanceCriteria: (t.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
-      type: t.type === 'HITL' ? 'HITL' : 'AFK',
+      type: kind.type,
       status,
       projectId,
       assignee: typeof t.assignee === 'string' ? t.assignee.trim() : '',
-      labels: cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])]),
+      labels: kind.labels,
       resolution: typeof t.resolution === 'string' ? t.resolution.trim() : '',
       blockedBy: [],
       comments: [],

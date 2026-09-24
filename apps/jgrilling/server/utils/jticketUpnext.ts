@@ -1,5 +1,6 @@
 // The jTicket side of jGrilling's "Up next" strip: the frontier's HITL
-// grilling tickets (label `wayfinder:grilling`), grouped by project the same
+// grilling tickets (type `decision` + tag `hitl`; architect candidates excluded,
+// they grill through /jarchitect-grill), grouped by project the same
 // way jTicket's own /next page groups them. jGrilling only reads — claiming,
 // resolving and all other ticket state stay jTicket's.
 const JTICKET = process.env.JTICKET_URL || 'http://localhost:43000'
@@ -35,7 +36,7 @@ export async function fetchGrillingFrontier(): Promise<UpnextGroup[]> {
   ])
 
   const grillings = tickets.filter(
-    (t) => t.type === 'HITL' && (t.labels ?? []).includes('wayfinder:grilling'),
+    (t) => t.type === 'decision' && (t.labels ?? []).includes('hitl') && !(t.labels ?? []).includes('arch:candidate'),
   )
   const row = (t: any): UpnextTicket => ({
     id: t.id,

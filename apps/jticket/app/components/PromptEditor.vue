@@ -1,39 +1,61 @@
 <script setup lang="ts">
-// The hand-off prompt editor, used at two scopes: the suite-wide defaults
-// (/prompts) and one project's overrides (the project page's Prompts panel).
-// Same rows either way — what changes is where a save lands and what an empty
-// box falls through to, which is the whole point of the layering.
+// The hand-off prompt editor, used at three scopes: the suite-wide defaults
+// (/prompts), one codebase's overrides (codebase settings) and one project's
+// (the project page's Prompts panel). Same rows every time — what changes is
+// where a save lands and what an empty box falls through to, which is the
+// whole point of the layering.
+import type { Codebase } from '~/composables/useCodebase'
 import type { Project } from '~/composables/useTracker'
-import type { PromptKind, PromptOverrides, PromptVars } from '~/utils/prompts'
+import type { PromptKind, PromptLayer, PromptOverrides, PromptVars } from '~/utils/prompts'
 
 const props = defineProps<{
-  // 'global' edits store.promptDefaults; 'project' edits project.prompts.
-  scope: 'global' | 'project'
+  // 'global' edits store.promptDefaults; 'codebase' a repo's prompts;
+  // 'project' edits project.prompts.
+  scope: 'global' | 'codebase' | 'project'
   project?: Project | null
+  codebase?: Codebase | null
 }>()
 
 const toast = useToast()
 const { defaults, loaded, saveDefaults, templateFor } = usePrompts()
 const { updateProject } = useTracker()
+const { codebaseOf, saveCodebasePrompts, label: codebaseLabel } = useCodebase()
 
 // What this scope has stored right now — the box's saved value.
-const stored = computed<PromptOverrides>(() =>
-  props.scope === 'project' ? (props.project?.prompts ?? {}) : defaults.value,
-)
+const stored = computed<PromptOverrides>(() => {
+  if (props.scope === 'project') return props.project?.prompts ?? {}
+  if (props.scope === 'codebase') return props.codebase?.prompts ?? {}
+  return defaults.value
+})
 
-// What an empty box falls through to. At project scope that is the global
-// default (or the built-in); at global scope it is always the built-in.
-function inherited(kind: PromptKind) {
-  return props.scope === 'project'
-    ? templateFor(kind, null)
-    : { template: PROMPT_KIND_META[kind].template, layer: 'built-in' as const }
+// A codebase-level kind (the worktree kickoff) has no project to override it.
+const kinds = (group: string) =>
+  promptKindsInGroup(group).filter((k) => props.scope !== 'project' || PROMPT_KIND_META[k].level !== 'codebase')
+const groups = computed(() => PROMPT_GROUPS.filter((g) => kinds(g).length))
+
+// What an empty box falls through to. At project scope that is the project's
+// codebase, then the global default, then the built-in; at codebase scope the
+// global default or the built-in; at global scope always the built-in.
+function inherited(kind: PromptKind): { template: string; layer: PromptLayer } {
+  if (props.scope === 'project') return templateFor(kind, null, codebaseOf(props.project))
+  if (props.scope === 'codebase') return templateFor(kind, null, null)
+  return { template: PROMPT_KIND_META[kind].template, layer: 'built-in' }
 }
 
-const LAYER_LABEL = {
+const LAYER_LABEL: Record<PromptLayer, string> = {
   project: 'This project',
+  codebase: 'Codebase',
   default: 'Global default',
   'built-in': 'Built-in',
-} as const
+}
+const OWN_BADGE = { global: 'Custom', codebase: 'This codebase', project: 'This project' } as const
+const previewWho = computed(() =>
+  props.scope === 'project'
+    ? props.project?.key
+    : props.scope === 'codebase'
+      ? codebaseLabel(props.codebase)
+      : 'a codebase with no override',
+)
 
 // One draft per kind, filled from what's stored. The stored map changes under
 // us often — the defaults land after SSR, and saving one kind refetches the
@@ -70,9 +92,10 @@ const sampleVars = computed<PromptVars>(() => ({
   onBranch: ' on the existing branch tick-42-persist-the-cart',
   projectKey: props.project?.key ?? 'PROJ-1',
   projectTitle: props.project?.title ?? 'Checkout',
-  repo: props.project?.repo || '~/code/checkout',
+  repo: props.project?.repo || props.codebase?.path || '~/code/checkout',
   integrationBranch: props.project?.integrationBranch || 'proj-1-integration',
   prs: 'PR-3, PR-4',
+  worktreeGuide: worktreeGuideUrl(props.project?.repoPath || props.project?.repo || props.codebase?.path || '~/code/checkout'),
 }))
 
 // What this kind fires today, at this scope — the draft if you've typed one,
@@ -91,6 +114,9 @@ async function save(kind: PromptKind) {
     if (props.scope === 'project') {
       if (!props.project) return
       await updateProject(props.project.id, { prompts: patch })
+    } else if (props.scope === 'codebase') {
+      if (!props.codebase) return
+      await saveCodebasePrompts(props.codebase.path, patch)
     } else {
       await saveDefaults(patch)
     }
@@ -101,8 +127,10 @@ async function save(kind: PromptKind) {
       description: drafts[kind]?.trim()
         ? props.scope === 'project'
           ? `${props.project?.key} fires your text for this hand-off.`
-          : 'Every project without its own override fires your text.'
-        : `Back to the ${inherited(kind).layer === 'built-in' ? 'built-in' : 'global default'} text.`,
+          : props.scope === 'codebase'
+            ? `Every ${codebaseLabel(props.codebase)} project without its own override fires your text.`
+            : 'Every codebase and project without its own override fires your text.'
+        : `Back to the ${LAYER_LABEL[inherited(kind).layer].toLowerCase()} text.`,
       icon: 'i-lucide-message-square-code',
       color: 'success',
     })
@@ -133,13 +161,13 @@ function fillFromInherited(kind: PromptKind) {
 <template>
   <div class="space-y-6">
     <div
-      v-for="group in PROMPT_GROUPS"
+      v-for="group in groups"
       :key="group"
       class="space-y-2"
     >
       <h3 class="text-xs font-semibold uppercase tracking-wide text-dimmed">{{ group }}</h3>
       <div class="divide-y divide-default overflow-hidden rounded-lg border border-default">
-        <div v-for="kind in promptKindsInGroup(group)" :key="kind">
+        <div v-for="kind in kinds(group)" :key="kind">
           <button
             type="button"
             class="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-elevated/50"
@@ -160,7 +188,7 @@ function fillFromInherited(kind: PromptKind) {
               variant="subtle"
               size="sm"
             >
-              {{ scope === 'project' ? 'This project' : 'Custom' }}
+              {{ OWN_BADGE[scope] }}
             </UBadge>
             <UBadge v-else color="neutral" variant="subtle" size="sm">
               {{ LAYER_LABEL[inherited(kind).layer] }}
@@ -200,7 +228,7 @@ function fillFromInherited(kind: PromptKind) {
 
             <div>
               <p class="mb-1 text-xs text-dimmed">
-                What {{ scope === 'project' ? project?.key : 'a project with no override' }} would fire:
+                What {{ previewWho }} would fire:
               </p>
               <pre class="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-default bg-default p-2 font-mono text-xs text-muted">{{ preview(kind) }}</pre>
             </div>

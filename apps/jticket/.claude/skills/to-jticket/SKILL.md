@@ -53,7 +53,15 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
   `repo` is also what scopes a project to a **codebase**.
 - **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
-  - `type`: `AFK` (an agent can take it cold) or `HITL` (needs a human)
+  - `type`: what kind of work it is — `story` (user-facing slice of value) · `task`
+    (technical work) · `bug` (something broken) · `review` (review code/PR/doc) ·
+    `verification` (confirm something works — QA, acceptance, post-deploy check) ·
+    `research` (investigate; output is knowledge) · `decision` (a choice to make/grill
+    out) · `docs` (write/refresh documentation). Omitted → what the labels/project mode
+    imply, else `task`.
+  - `labels`: free-form, plus the **tags** — exactly one of `afk` (an agent can take it
+    cold) or `hitl` (needs a human; gets its own herdr tab); the server adds `afk` if
+    neither. Optional `prototype` = throwaway work that must never ship, on any type.
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name; `""` = unassigned. **The assignee is the claim.**
   - `blockedBy`: ticket **ids** that must be `done` first
@@ -105,7 +113,7 @@ curl -s "$JTICKET/api/tickets/TICK-4"
 
 # add one ticket to an existing project
 curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' -d '{
-  "title": "Persist the cart", "description": "…", "type": "AFK",
+  "title": "Persist the cart", "description": "…", "type": "story", "labels": ["afk"],
   "projectId": "PROJ-2", "acceptanceCriteria": ["Survives refresh"], "blockedBy": ["TICK-3"] }'
 
 # update
@@ -201,8 +209,10 @@ These are the ways a write silently does the wrong thing. All of them are real.
    project, send only `tickets` and reference the project by its key.
 3. **Unresolvable refs vanish without error.** After any import or edge write, GET the
    tickets back and confirm `blockedBy` is populated as intended.
-4. **`wayfinderType` shorthand exists only on import.** Elsewhere, set the
-   `wayfinder:<type>` label explicitly in `labels`.
+4. **`type` is the kind of work; AFK/HITL is a tag.** Send `"type": "bug", "labels":
+   ["hitl"]` — not the legacy `"type": "HITL"` (still accepted, folded into the tag, but
+   don't write it). PATCHing `labels` replaces them all, so keep the agency tag when you
+   rewrite them (a set without `afk`/`hitl` keeps the current one).
 5. **Ticket POST/PATCH take `projectId`** (id or key) — not `project`. Docs take either
    `project` (id, key, **or** title) or `projectId`; import tickets take `project`.
 6. **A ticket cannot block itself** — the API drops that edge.

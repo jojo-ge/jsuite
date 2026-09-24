@@ -18,6 +18,12 @@ export default defineEventHandler(async (event) => {
   // Resolve blockedBy refs (ids or keys) to ticket ids.
   const blockedBy = resolveTicketRefs(store, body.blockedBy ?? [])
 
+  // Type + tags: a legacy 'AFK' | 'HITL' type or wayfinder:<sub-type> label is
+  // folded in; no type at all takes what the labels or project mode imply.
+  const labels = cleanLabels(body.labels)
+  const mode = store.projects.find((p) => p.id === projectId)?.mode
+  const kind = normalizeTicketKind({ type: body.type, labels }, defaultTicketType(labels, mode))
+
   const ts = now()
   const status = isStatus(body.status) ? body.status : 'todo'
   const ticket: Ticket = {
@@ -30,11 +36,11 @@ export default defineEventHandler(async (event) => {
     title: body.title.trim(),
     description: body.description?.trim() ?? '',
     acceptanceCriteria: (body.acceptanceCriteria ?? []).map((s) => String(s).trim()).filter(Boolean),
-    type: body.type === 'HITL' ? 'HITL' : 'AFK',
+    type: kind.type,
     status,
     projectId,
     assignee: typeof body.assignee === 'string' ? body.assignee.trim() : '',
-    labels: cleanLabels(body.labels),
+    labels: kind.labels,
     resolution: typeof body.resolution === 'string' ? body.resolution.trim() : '',
     blockedBy,
     comments: [],

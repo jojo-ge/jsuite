@@ -18,6 +18,7 @@
 #   https://jgrilling.local  jGrilling
 #   https://jcode.local      jCode
 #   https://jmap.local       jMap
+#   https://jreview.local    jReview
 set -euo pipefail
 
 # Resolve through symlinks so a shim on PATH (e.g. ~/.local/bin/jsuite) still
@@ -52,9 +53,10 @@ APPS=(
   "jgrilling|jgrilling|43005|pnpm dev --port 43005"
   "jcode|jcode|43006|pnpm dev --port 43006"
   "jmap|jmap|43007|pnpm dev --port 43007"
+  "jreview|jreview|43008|pnpm dev --port 43008"
 )
 
-DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jcode.local jmap.local)
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jcode.local jmap.local jreview.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
@@ -70,6 +72,7 @@ SKILLS_MANIFEST=(
   "apps/jgrilling|j-grilling"
   "apps/jcode|jcode jcode-mark"
   "apps/jmap|jmap-scope jmap-domain jmap-synthesize j-map"
+  "apps/jreview|jreview-report jreview-triage"
 )
 POCOCK_SOURCE="mattpocock/skills"
 
@@ -246,8 +249,9 @@ cmd_open() {
 
 # One-shot onboarding: verify OrbStack is in charge (it does DNS + HTTPS for
 # the .local names via the dev.orbstack.domains label in docker-compose.yml),
-# install workspace deps, install every jskill globally, and sweep up leftovers
-# from the old mkcert/hosts-file edge. Re-runnable.
+# install workspace deps, install every jskill globally, migrate older .data
+# shapes, and sweep up leftovers from the old mkcert/hosts-file edge.
+# Re-runnable.
 cmd_setup() {
   bold "orbstack"
   command -v orb >/dev/null || die "OrbStack not installed — https://orbstack.dev (brew install orbstack)"
@@ -284,6 +288,13 @@ cmd_setup() {
   else
     warn "no terminal — skipped the interactive $POCOCK_SOURCE installer (run: npx skills add $POCOCK_SOURCE -g)"
   fi
+
+  # Data migrations: each rewrites an older .data shape in place and is a no-op
+  # once applied, so re-running setup is always safe. Needs the deps above.
+  bold "data migrations"
+  (cd "$HERE/apps/jticket" && ./node_modules/.bin/tsx scripts/migrate-ticket-types.ts | sed 's/^/  /') \
+    || die "jticket ticket-types migration failed"
+  ok "jticket ticket types"
 
   bold "old mkcert edge leftovers"
   local d stale=()

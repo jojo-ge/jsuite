@@ -112,12 +112,16 @@ export function useLiveStatus() {
   const status = useState<LiveStatus>('jticket-live-status', () => 'connecting')
   // When the board last actually moved, as a client timestamp.
   const lastChangeAt = useState<number | null>('jticket-live-change', () => null)
-  return { status, lastChangeAt }
+  // Bumped on every store change the stream reports, ticket move or not — for
+  // panels reading state the tracker doesn't carry (a codebase's worktree
+  // guide, an integration branch's link) that an agent may have just written.
+  const revision = useState<number>('jticket-live-revision', () => 0)
+  return { status, lastChangeAt, revision }
 }
 
 export function useLiveTracker() {
   const { tickets, refresh, markChanged } = useTracker()
-  const { status, lastChangeAt } = useLiveStatus()
+  const { status, lastChangeAt, revision } = useLiveStatus()
   const toast = useToast()
 
   let source: EventSource | null = null
@@ -156,6 +160,7 @@ export function useLiveTracker() {
         queued = false
         const before = new Map(tickets.value.map((t) => [t.id, t]))
         await refresh()
+        revision.value++
         const moves = diffTickets(before, tickets.value)
         if (!moves.length) continue
         markChanged(moves.map((m) => m.ticket.id))

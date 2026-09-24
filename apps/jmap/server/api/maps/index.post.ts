@@ -55,9 +55,9 @@ export default defineEventHandler(async (event) => {
         '',
         'Explore the codebase top-down and divide it into domains (pages, surfaces, systems). Publish a scoping doc on this project, then create one `jmap:domain` ticket per domain with its entry paths, so each can be mapped in depth by its own session. The `/jmap-scope` skill carries the full contract.',
       ].join('\n'),
-      type: 'AFK',
+      type: 'docs',
       projectId: project.key,
-      labels: ['jmap', 'jmap:scope'],
+      labels: ['afk', 'jmap', 'jmap:scope'],
       acceptanceCriteria: [
         'A scoping doc is published on the project',
         'One jmap:domain ticket exists per domain, each with entry paths',

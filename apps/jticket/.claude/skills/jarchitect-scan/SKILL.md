@@ -1,6 +1,6 @@
 ---
 name: jarchitect-scan
-description: Run an architect scan ticket — explore the codebase for deepening opportunities, publish the assessment as a spec doc on the jTicket project, and create one HITL arch:candidate ticket per opportunity with strength tags. Use when "/jarchitect-scan <TICK-n>" is invoked (jTicket dispatches these into herdr on architect-mode projects).
+description: Run an architect scan ticket — explore the codebase for deepening opportunities, publish the assessment as a spec doc on the jTicket project, and create one HITL decision ticket (arch:candidate) per opportunity with strength tags. Use when "/jarchitect-scan <TICK-n>" is invoked (jTicket dispatches these into herdr on architect-mode projects).
 disable-model-invocation: true
 ---
 
@@ -80,7 +80,7 @@ Apply the **deletion test** to anything you suspect is shallow: would deleting
 it concentrate complexity, or just move it? "Yes, concentrates" is the signal
 you want. Expect **3–8 candidates**; fewer honest ones beat a padded list.
 
-## 5. Create one HITL ticket per candidate
+## 5. Create one HITL decision ticket per candidate
 
 Each candidate ticket is the improvement work item itself, and its description
 must be rich enough that a later grilling session can pick it up **cold** — no
@@ -89,8 +89,8 @@ re-exploration:
 ```bash
 curl -s -X POST "$JTICKET/api/tickets" -H 'content-type: application/json' -d @- <<'JSON'
 { "title": "Deepen <module>: <one-line solution>",
-  "projectId": "<PROJ-key>", "type": "HITL",
-  "labels": ["arch", "arch:candidate", "arch:strong"],
+  "projectId": "<PROJ-key>", "type": "decision",
+  "labels": ["hitl", "arch", "arch:candidate", "arch:strong"],
   "description": "**Files**: `path/one`, `path/two`\n\n**Problem**: why the current shape causes friction — name the shallow module, the leaking seam.\n\n**Solution**: plain English, what would change. No interface design — that is the grilling's job.\n\n**Benefits**: in terms of locality and leverage, and how tests improve (what becomes testable through the interface).",
   "acceptanceCriteria": [
     "Grilled via /jarchitect-grill — decisions recorded in the resolution",

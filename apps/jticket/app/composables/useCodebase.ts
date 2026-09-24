@@ -11,8 +11,28 @@
 // (GET /api/repos), and membership is derived from each project's resolved
 // repoPath — the same rule the server's ?repo= filters apply.
 import type { Project, Ticket } from '~/composables/useTracker'
+import type { PromptOverrides } from '~/utils/prompts'
 
-// A row of GET /api/repos: a KnownRepo plus the derived exists/projects.
+// A codebase's worktree guide and links — see server/utils/worktrees.ts.
+export interface WorktreeGuide {
+  body: string
+  root: string
+  sources: Array<{ path: string; hash: string }>
+  verified: boolean
+  author: string
+  updatedAt: string
+}
+export interface WorktreeLink {
+  branch: string
+  path: string
+  notes: string
+  author: string
+  linkedAt: string
+}
+export type GuideState = 'missing' | 'ready' | 'stale'
+
+// A row of GET /api/repos: a KnownRepo (with its settings) plus the derived
+// exists/projects and the worktree guide's current standing.
 export interface Codebase {
   path: string
   slug: string
@@ -20,6 +40,10 @@ export interface Codebase {
   lastUsedAt: string
   exists: boolean
   projects: string[]
+  prompts: PromptOverrides
+  worktreeGuide: WorktreeGuide | null
+  worktreeLinks: WorktreeLink[]
+  worktree: { state: GuideState; changed: string[] }
 }
 
 export function useCodebase() {
@@ -36,6 +60,23 @@ export function useCodebase() {
   }
 
   const current = computed(() => codebases.value.find((c) => c.path === selectedPath.value) ?? null)
+
+  /** The codebase a project belongs to — its settings are the project's codebase layer. */
+  function codebaseOf(project: Pick<Project, 'repoPath'> | null | undefined): Codebase | null {
+    const path = project?.repoPath
+    return path ? (codebases.value.find((c) => c.path === path) ?? null) : null
+  }
+
+  /** Merge-patch a codebase's prompt overrides: a kind set to '' drops back to the global default. */
+  async function saveCodebasePrompts(path: string, patch: PromptOverrides) {
+    const res = await $fetch<{ path: string; prompts: PromptOverrides }>('/api/repos', {
+      method: 'PATCH',
+      query: { path },
+      body: { prompts: patch },
+    })
+    const row = codebases.value.find((c) => c.path === res.path)
+    if (row) row.prompts = res.prompts
+  }
 
   // 'owner/name' when known, else the folder name — same rule as the project
   // form's repo chips.
@@ -83,6 +124,8 @@ export function useCodebase() {
     codebases,
     refreshCodebases,
     current,
+    codebaseOf,
+    saveCodebasePrompts,
     label,
     select,
     scopedProjects,

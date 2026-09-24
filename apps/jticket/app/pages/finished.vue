@@ -168,9 +168,10 @@ const stats = computed(() => {
 
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-center gap-2">
+                    <TicketTypeIcon :type="ticket.type" size="xs" />
                     <span class="font-mono text-xs text-muted">{{ ticket.key }}</span>
                     <span class="truncate font-medium">{{ ticket.title }}</span>
-                    <UBadge v-if="ticket.type === 'HITL'" color="warning" variant="subtle" size="sm">HITL</UBadge>
+                    <TicketTags :ticket="ticket" hide-afk />
                   </div>
 
                   <p v-if="ticket.resolution" class="mt-1 line-clamp-2 text-sm text-muted">
