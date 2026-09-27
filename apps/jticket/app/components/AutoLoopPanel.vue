@@ -5,10 +5,11 @@
 // run ended (if there was one). Everything reads project.auto, which the
 // server's loop keeps current; nothing here advances the loop.
 import type { LocalPr, Project, Ticket } from '~/composables/useTracker'
-import { AUTO_PHASES, autoPending, type AutoLoop } from '~/utils/autoLoop'
+import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, type AutoLoop } from '~/utils/autoLoop'
+import { outcomeDocOf } from '~/utils/projectGraphs'
 
 const props = defineProps<{ project: Project; tickets: Ticket[] }>()
-const { prs } = useTracker()
+const { prs, docs } = useTracker()
 const { busy, requestStop, retry, turnOff } = useAutoLoop()
 
 const auto = computed<AutoLoop | null>(() => props.project.auto ?? null)
@@ -30,7 +31,11 @@ function since(iso: string) {
   return `${h}h ${m % 60}m`
 }
 
-const phaseIndex = computed(() => AUTO_PHASES.findIndex((p) => p.phase === auto.value?.phase))
+// The loop's stepper — or, once the project is finished, its one last phase.
+const phases = computed(() => (auto.value?.phase === 'reporting' ? [REPORT_PHASE] : AUTO_PHASES))
+const phaseIndex = computed(() => phases.value.findIndex((p) => p.phase === auto.value?.phase))
+
+const outcomeDoc = computed(() => outcomeDocOf(docs.value, props.project.id))
 
 const byKey = computed(() => new Map(props.tickets.map((t) => [t.key, t])))
 const prByKey = computed(() => new Map(prs.value.map((p: LocalPr) => [p.key, p])))
@@ -48,6 +53,13 @@ const pending = computed(() => {
 const phaseText = computed(() => {
   const a = auto.value
   if (!a) return ''
+  if ((a.phase === 'implementing' || a.phase === 'fixing') && a.prChecks > 0) {
+    return `Every ticket is finished but no PR has shown up — looking again (${a.prChecks} of ${NO_PR_RETRIES + 1} looks) before skipping the merge.`
+  }
+  if ((a.phase === 'merging' || a.phase === 'merging-fixes') && a.mergeDispatchedAt && !a.mergeReportedAt) {
+    const n = a.prs.length
+    return `Merge sweep on Sonnet 5 — landing ${n} ${a.phase === 'merging-fixes' ? 'fix ' : ''}PR${n === 1 ? '' : 's'}; moves on when the sweep reports back.`
+  }
   switch (a.phase) {
     case 'idle':
       return 'Between loops — picking up the next frontier.'
@@ -63,18 +75,36 @@ const phaseText = computed(() => {
       return `Fixing ${a.fixTickets.length} finding${a.fixTickets.length === 1 ? '' : 's'} both reviewers agreed on.`
     case 'merging-fixes':
       return `Merge sweep on Sonnet 5 — landing ${a.prs.length} fix PR${a.prs.length === 1 ? '' : 's'}.`
+    case 'reporting':
+      return a.reportedAt
+        ? `Outcome report ${a.reportDoc} is in — finishing up.`
+        : `Every ticket is finished. An Opus 5.5 session is writing the project's outcome report (≤${OUTCOME_WORD_LIMIT} words: what was built and how it works).`
   }
   return ''
 })
 
 const ticketDone = (t: Ticket) => t.status === 'done' || t.status === 'merged'
+
+// The watchdog's view of a pending ticket: its session stopped with the
+// ticket open, or already prompted to finish (then closed for it if it doesn't).
+function stallOf(t: Ticket): { icon: string; hint: string } | null {
+  const w = auto.value?.watch[t.key]
+  if (ticketDone(t) || !w?.stoppedSince) return null
+  if (w.nudgedAt) {
+    return {
+      icon: 'i-lucide-alarm-clock',
+      hint: `Its session stopped with ${t.key} open and was prompted to finish ${since(w.nudgedAt)} ago — the loop closes it if it stays stopped ${STALL_FORCE_MS / 60_000}m.`,
+    }
+  }
+  return { icon: 'i-lucide-hourglass', hint: `Its session stopped ${since(w.stoppedSince)} ago with ${t.key} still open — the loop prompts it to finish soon.` }
+}
 const prDone = (p: LocalPr) => p.status === 'merged' || p.status === 'closed'
 
 const endedText = computed(() => {
   const e = auto.value?.ended
   if (!e) return ''
   const when = new Date(e.at).toLocaleString()
-  if (e.reason === 'complete') return `Auto mode finished — no open work left (${when}).`
+  if (e.reason === 'complete') return `Auto mode finished — no open work left (${when}).${outcomeDoc.value ? '' : ' No outcome report was recorded.'}`
   if (e.reason === 'stopped') return `Auto mode stopped at the end of a loop, as asked (${when}).`
   return `Auto mode was turned off (${when}).`
 })
@@ -109,7 +139,7 @@ async function turnOffNow() {
 
     <!-- The phase stepper -->
     <ol class="mb-3 flex flex-wrap items-center gap-1 text-xs">
-      <template v-for="(p, i) in AUTO_PHASES" :key="p.phase">
+      <template v-for="(p, i) in phases" :key="p.phase">
         <li
           class="rounded-full px-2.5 py-1"
           :class="
@@ -122,7 +152,7 @@ async function turnOffNow() {
         >
           {{ p.label }}
         </li>
-        <UIcon v-if="i < AUTO_PHASES.length - 1" name="i-lucide-chevron-right" class="size-3 text-dimmed" />
+        <UIcon v-if="i < phases.length - 1" name="i-lucide-chevron-right" class="size-3 text-dimmed" />
       </template>
     </ol>
 
@@ -144,6 +174,9 @@ async function turnOffNow() {
         />
         <span class="font-mono">{{ t.key }}</span>
         <span class="max-w-48 truncate text-muted">{{ t.title }}</span>
+        <UTooltip v-if="stallOf(t)" :text="stallOf(t)!.hint">
+          <UIcon :name="stallOf(t)!.icon" class="size-3.5 text-warning" />
+        </UTooltip>
       </NuxtLink>
       <span
         v-for="p in pending.prs"
@@ -184,9 +217,10 @@ async function turnOffNow() {
       </template>
     </UAlert>
 
-    <!-- The big one -->
+    <!-- The big one — moot once the project is finished and only its report is left -->
+    <template v-if="auto.phase === 'reporting'" />
     <UButton
-      v-if="!auto.stopRequested"
+      v-else-if="!auto.stopRequested"
       block
       size="xl"
       color="warning"
@@ -198,7 +232,9 @@ async function turnOffNow() {
     </UButton>
     <div v-else class="flex items-center gap-3 rounded-md border border-warning/40 bg-warning/10 px-4 py-3">
       <UIcon name="i-lucide-octagon-pause" class="size-5 text-warning" />
-      <span class="text-sm font-medium">Stopping after loop {{ auto.loop }} — auto mode turns off once its fixes are merged.</span>
+      <span class="text-sm font-medium">
+        Stopping after loop {{ auto.loop }} — auto mode turns off once its fixes are merged (or after the outcome report, if that loop finishes the project).
+      </span>
       <UButton class="ml-auto" size="sm" color="neutral" variant="soft" :loading="busy === 'stop'" @click="requestStop(project, false).catch(() => {})">
         Keep going
       </UButton>
@@ -211,6 +247,7 @@ async function turnOffNow() {
         <li v-for="h in [...auto.history].reverse()" :key="`${h.loop}-${h.endedAt}`" class="flex flex-wrap gap-x-2">
           <span class="font-medium">Loop {{ h.loop }}</span>
           <span class="text-muted">{{ h.tickets.length }} ticket{{ h.tickets.length === 1 ? '' : 's' }}, {{ h.fixTickets.length }} fix{{ h.fixTickets.length === 1 ? '' : 'es' }}</span>
+          <span v-if="h.forced?.length" class="text-warning">closed by the loop: {{ h.forced.join(', ') }}</span>
           <a v-if="h.reviewKey" :href="`https://jreview.local/r/${h.reviewKey}`" target="_blank" class="text-primary hover:underline">review ↗</a>
           <span class="text-dimmed">{{ new Date(h.endedAt).toLocaleString() }}</span>
         </li>
@@ -218,8 +255,11 @@ async function turnOffNow() {
     </details>
   </section>
 
-  <p v-else-if="endedText" class="mb-6 flex items-center gap-2 text-xs text-muted">
+  <p v-else-if="endedText" class="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted">
     <UIcon name="i-lucide-infinity" class="size-4" />
     {{ endedText }}
+    <NuxtLink v-if="auto?.ended?.reason === 'complete' && outcomeDoc" :to="`/docs/${outcomeDoc.key}`" class="text-primary hover:underline">
+      Outcome report {{ outcomeDoc.key }}
+    </NuxtLink>
   </p>
 </template>

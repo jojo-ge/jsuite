@@ -131,10 +131,10 @@ describe('the built-in prompts', () => {
   // them changes, an unconfigured install starts saying something new.
   it('is the local-PR hand-off, with and without a branch', () => {
     expect(resolve().text).toBe(
-      '/jimplement TICK-42 in a worktree. When done open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and tear down the worktree.',
+      '/jimplement TICK-42 in a worktree. Commit, then open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and only once the PR exists and the work is complete mark the ticket done; then tear down the worktree.',
     )
     expect(resolve({ branch: 'tick-42-cart' }).text).toBe(
-      '/jimplement TICK-42 in a worktree on the existing branch tick-42-cart. When done open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and tear down the worktree.',
+      '/jimplement TICK-42 in a worktree on the existing branch tick-42-cart. Commit, then open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and only once the PR exists and the work is complete mark the ticket done; then tear down the worktree.',
     )
   })
 

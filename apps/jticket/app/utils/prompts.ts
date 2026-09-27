@@ -111,7 +111,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     command: '/jimplement',
     vars: TICKET_VARS,
     template:
-      '/jimplement {key} in a worktree{onBranch}. When done open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and tear down the worktree.',
+      '/jimplement {key} in a worktree{onBranch}. Commit, then open a LOCAL PR in jTicket (POST /api/prs) — no push, no GitHub — and only once the PR exists and the work is complete mark the ticket done; then tear down the worktree.',
   },
   'standard:master': {
     label: 'PR to master',

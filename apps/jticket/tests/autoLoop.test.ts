@@ -3,6 +3,7 @@ import {
   coerceAutoLoop,
   finishLoop,
   newAutoLoop,
+  NO_PR_RECHECK_MS,
   planStep,
   retryStep,
   type AutoLoop,
@@ -19,7 +20,7 @@ function t(key: string, patch: Partial<AutoWorldTicket> = {}): AutoWorldTicket {
   return { key, status: 'todo', frontier: true, hitl: false, claimed: false, ...patch }
 }
 function world(patch: Partial<AutoWorld> = {}): AutoWorld {
-  return { tickets: [], prs: [], tip: 'sha-base', review: null, ...patch }
+  return { tickets: [], prs: [], tip: 'sha-base', review: null, now: Date.parse(AT), ...patch }
 }
 
 describe('planStep — idle', () => {
@@ -40,8 +41,17 @@ describe('planStep — idle', () => {
     expect(planStep(paused, world({ tickets: [t('T-2')] }))).toMatchObject({ kind: 'startLoop', tickets: ['T-2'] })
   })
 
-  it('completes when no open work is left', () => {
-    expect(planStep(loop(), world({ tickets: [t('T-1', { status: 'merged', frontier: false })] }))).toEqual({ kind: 'complete' })
+  it('moves on to the outcome report when no open work is left', () => {
+    expect(planStep(loop(), world({ tickets: [t('T-1', { status: 'merged', frontier: false })] }))).toEqual({ kind: 'enterReport' })
+  })
+
+  it('writes the report even when a stop was requested, and with no branch to resolve', () => {
+    const done = world({ tip: null, tickets: [t('T-1', { status: 'done', frontier: false })] })
+    expect(planStep(loop({ stopRequested: true }), done)).toEqual({ kind: 'enterReport' })
+  })
+
+  it('completes with no report when the project has no tickets at all', () => {
+    expect(planStep(loop(), world())).toEqual({ kind: 'complete' })
   })
 
   it('turns off straight away when a stop was requested between loops', () => {
@@ -89,31 +99,91 @@ describe('planStep — implementing / fixing', () => {
     expect(step).toEqual({ kind: 'enterMerge', prs: ['PR-3', 'PR-4'] })
   })
 
-  it('skips the merge when there are no PRs: implementing → review, fixing → finish', () => {
-    const w = world({ tickets: [t('T-1', { status: 'done' }), t('T-2', { status: 'done' }), t('T-7', { status: 'done' })] })
-    expect(planStep(implementing({ dispatched: { 'T-1': AT, 'T-2': AT } }), w)).toEqual({ kind: 'enterReview' })
-    expect(planStep(loop({ phase: 'fixing', fixTickets: ['T-7'], dispatched: { 'T-7': AT } }), w)).toEqual({ kind: 'finishLoop' })
+  it('with no PRs, looks again twice 20s apart, then skips: implementing → review, fixing → finish', () => {
+    const w = (ms: number) => world({ now: Date.parse(AT) + ms, tickets: [t('T-1', { status: 'done' }), t('T-2', { status: 'done' }), t('T-7', { status: 'done' })] })
+    const impl = implementing({ dispatched: { 'T-1': AT, 'T-2': AT } })
+    // First look: none — record it.
+    expect(planStep(impl, w(0))).toEqual({ kind: 'recheckPrs' })
+    // Inside the 20s window: wait.
+    const once = { ...impl, prChecks: 1, prCheckAt: AT }
+    expect(planStep(once, w(NO_PR_RECHECK_MS - 1)).kind).toBe('wait')
+    // First retry at 20s: still none — record it.
+    expect(planStep(once, w(NO_PR_RECHECK_MS))).toEqual({ kind: 'recheckPrs' })
+    // Second retry at 40s: still none — skip.
+    const twice = { ...impl, prChecks: 2, prCheckAt: new Date(Date.parse(AT) + NO_PR_RECHECK_MS).toISOString() }
+    expect(planStep(twice, w(2 * NO_PR_RECHECK_MS - 1)).kind).toBe('wait')
+    expect(planStep(twice, w(2 * NO_PR_RECHECK_MS))).toEqual({ kind: 'enterReview' })
+    const fixing = loop({ phase: 'fixing', fixTickets: ['T-7'], dispatched: { 'T-7': AT }, prChecks: 2, prCheckAt: AT })
+    expect(planStep(fixing, w(NO_PR_RECHECK_MS))).toEqual({ kind: 'finishLoop' })
+  })
+
+  it('merges a PR that shows up during the re-checks', () => {
+    const once = implementing({ dispatched: { 'T-1': AT, 'T-2': AT }, prChecks: 1, prCheckAt: AT })
+    const w = world({
+      tickets: [t('T-1', { status: 'done' }), t('T-2', { status: 'done' })],
+      prs: [{ key: 'PR-9', ticketKey: 'T-1', status: 'open' }],
+    })
+    expect(planStep(once, w)).toEqual({ kind: 'enterMerge', prs: ['PR-9'] })
   })
 
   it('treats a deleted ticket as finished rather than waiting forever', () => {
-    expect(planStep(implementing({ dispatched: { 'T-1': AT, 'T-2': AT } }), world({ tickets: [] }))).toEqual({ kind: 'enterReview' })
+    const after = implementing({ dispatched: { 'T-1': AT, 'T-2': AT }, prChecks: 2, prCheckAt: AT })
+    expect(planStep(after, world({ tickets: [], now: Date.parse(AT) + NO_PR_RECHECK_MS }))).toEqual({ kind: 'enterReview' })
   })
 })
 
 describe('planStep — merging', () => {
-  it('dispatches the sweep once, then waits for every PR to land', () => {
+  const open = [{ key: 'PR-3', ticketKey: 'T-1', status: 'open' as const }, { key: 'PR-4', ticketKey: 'T-2', status: 'open' as const }]
+  const landed = [{ key: 'PR-3', ticketKey: 'T-1', status: 'merged' as const }]
+
+  it('dispatches the sweep once, then waits for its report — even once every PR landed', () => {
     const merging = loop({ phase: 'merging', prs: ['PR-3', 'PR-4'] })
-    expect(planStep(merging, world())).toEqual({ kind: 'dispatchMerge', prs: ['PR-3', 'PR-4'] })
+    expect(planStep(merging, world({ prs: open }))).toEqual({ kind: 'dispatchMerge', prs: ['PR-3', 'PR-4'] })
     const dispatched = { ...merging, mergeDispatchedAt: AT }
-    expect(
-      planStep(dispatched, world({ prs: [{ key: 'PR-3', ticketKey: 'T-1', status: 'merged' }, { key: 'PR-4', ticketKey: 'T-2', status: 'conflicted' }] })),
-    ).toEqual({ kind: 'wait', pending: ['PR-4'] })
+    expect(planStep(dispatched, world({ prs: [landed[0]!, { key: 'PR-4', ticketKey: 'T-2', status: 'merged' }] }))).toMatchObject({
+      kind: 'wait',
+      pending: [],
+    })
   })
 
-  it('moves on when all PRs landed: merging → review, merging-fixes → finish', () => {
-    const prs = [{ key: 'PR-3', ticketKey: 'T-1', status: 'merged' as const }]
-    expect(planStep(loop({ phase: 'merging', prs: ['PR-3'], mergeDispatchedAt: AT }), world({ prs }))).toEqual({ kind: 'enterReview' })
-    expect(planStep(loop({ phase: 'merging-fixes', prs: ['PR-3'], mergeDispatchedAt: AT }), world({ prs }))).toEqual({ kind: 'finishLoop' })
+  it('moves on once the sweep reported and all PRs landed: merging → review, merging-fixes → finish', () => {
+    const reported = { prs: ['PR-3'], mergeDispatchedAt: AT, mergeReportedAt: AT, mergeReport: { unmerged: [] } }
+    expect(planStep(loop({ phase: 'merging', ...reported }), world({ prs: landed }))).toEqual({ kind: 'enterReview' })
+    expect(planStep(loop({ phase: 'merging-fixes', ...reported }), world({ prs: landed }))).toEqual({ kind: 'finishLoop' })
+  })
+
+  it('pauses when the sweep reported but a PR did not land, with its reason', () => {
+    const state = loop({
+      phase: 'merging',
+      prs: ['PR-3', 'PR-4'],
+      mergeDispatchedAt: AT,
+      mergeReportedAt: AT,
+      mergeReport: { unmerged: [{ pr: 'PR-4', reason: 'conflict in cart.ts' }] },
+    })
+    const step = planStep(state, world({ prs: [landed[0]!, { key: 'PR-4', ticketKey: 'T-2', status: 'conflicted' }] }))
+    expect(step).toMatchObject({ kind: 'pause', reason: 'merge-incomplete' })
+    expect((step as any).detail).toContain('PR-4: conflict in cart.ts')
+  })
+
+  it('skips the sweep when every PR already landed before it was dispatched', () => {
+    expect(planStep(loop({ phase: 'merging', prs: ['PR-3'] }), world({ prs: landed }))).toEqual({ kind: 'enterReview' })
+  })
+
+  it('re-sweeps only the PRs still unmerged after a retry', () => {
+    const state = loop({
+      phase: 'merging',
+      prs: ['PR-3', 'PR-4'],
+      mergeDispatchedAt: AT,
+      mergeReportedAt: AT,
+      mergeReport: { unmerged: [{ pr: 'PR-4', reason: 'x' }] },
+      paused: { reason: 'merge-incomplete', detail: 'x', at: AT },
+    })
+    const retried = retryStep(state, { tickets: [] })
+    expect(retried).toMatchObject({ paused: null, mergeDispatchedAt: '', mergeReportedAt: '', mergeReport: null })
+    expect(planStep(retried, world({ prs: [landed[0]!, { key: 'PR-4', ticketKey: 'T-2', status: 'conflicted' }] }))).toEqual({
+      kind: 'dispatchMerge',
+      prs: ['PR-4'],
+    })
   })
 })
 
@@ -182,13 +252,103 @@ describe('pauses, retry, finish', () => {
     expect(next).toMatchObject({ enabled: true, loop: 4, phase: 'idle', tickets: [], stopRequested: false })
     expect(next.history.at(-1)).toMatchObject({ loop: 3, tickets: ['T-1'], fixTickets: ['T-5'], reviewKey: 'r1' })
 
+    // The stop carries into 'idle', which turns off — or reports first, if the project is done.
     const stopped = finishLoop({ ...done, stopRequested: true }, AT)
-    expect(stopped).toMatchObject({ enabled: false, stopRequested: false, loop: 4, ended: { reason: 'stopped' } })
+    expect(stopped).toMatchObject({ enabled: true, stopRequested: true, loop: 4, phase: 'idle' })
+    expect(planStep(stopped, world({ tickets: [t('T-9')] }))).toEqual({ kind: 'turnOff' })
   })
 
   it('coerceAutoLoop survives junk and keeps what is usable', () => {
     expect(coerceAutoLoop(null)).toBeNull()
     const c = coerceAutoLoop({ enabled: true, phase: 'nonsense', loop: -1, tickets: ['T-1', 3], dispatched: { 'T-1': AT } })!
     expect(c).toMatchObject({ enabled: true, phase: 'idle', loop: 1, tickets: ['T-1'], dispatched: { 'T-1': AT } })
+  })
+})
+
+describe('planStep — reporting', () => {
+  const reporting = (patch: Partial<AutoLoop> = {}) => loop({ phase: 'reporting', ...patch })
+
+  it('dispatches the report session once', () => {
+    expect(planStep(reporting(), world())).toEqual({ kind: 'dispatchReport' })
+  })
+
+  it('waits for the session to report back, then completes', () => {
+    expect(planStep(reporting({ reportDispatchedAt: AT }), world())).toMatchObject({ kind: 'wait' })
+    expect(planStep(reporting({ reportDispatchedAt: AT, reportedAt: AT, reportDoc: 'DOC-4' }), world())).toEqual({ kind: 'complete' })
+  })
+
+  it('holds on a failed dispatch until Retry step, which re-dispatches', () => {
+    const failed = reporting({ paused: { reason: 'dispatch-failed', detail: 'x', at: AT } })
+    expect(planStep(failed, world()).kind).toBe('wait')
+    const retried = retryStep(reporting({ reportDispatchedAt: AT, paused: failed.paused }), { tickets: [] })
+    expect(retried).toMatchObject({ paused: null, reportDispatchedAt: '', reportedAt: '' })
+    expect(planStep(retried, world())).toEqual({ kind: 'dispatchReport' })
+  })
+
+  it('coerceAutoLoop keeps the reporting phase and its stamps', () => {
+    const c = coerceAutoLoop({ enabled: true, phase: 'reporting', reportDispatchedAt: AT, reportDoc: 'DOC-2' })!
+    expect(c).toMatchObject({ phase: 'reporting', reportDispatchedAt: AT, reportedAt: '', reportDoc: 'DOC-2' })
+  })
+})
+
+describe('planStep — the watchdog', () => {
+  const T0 = Date.parse(AT)
+  const min = 60_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const implementing = (patch: Partial<AutoLoop> = {}) =>
+    loop({ phase: 'implementing', tickets: ['T-1'], dispatched: { 'T-1': AT }, agents: { 'T-1': 't-1' }, ...patch })
+  const open = [t('T-1', { status: 'in_progress', frontier: false, claimed: true })]
+
+  it('leaves a working session alone', () => {
+    expect(planStep(implementing(), world({ tickets: open, agents: { 'T-1': 'working' } }))).toMatchObject({ kind: 'wait', pending: ['T-1'] })
+  })
+
+  it('stands still when herdr has nothing to say about the session', () => {
+    expect(planStep(implementing(), world({ tickets: open, agents: {} }))).toMatchObject({ kind: 'wait' })
+  })
+
+  it('notes when a session stops with its ticket open, and forgets it when it works again', () => {
+    expect(planStep(implementing(), world({ tickets: open, agents: { 'T-1': 'stopped' } }))).toEqual({ kind: 'watch', key: 'T-1', stoppedSince: AT })
+    const stopped = implementing({ watch: { 'T-1': { stoppedSince: AT, nudgedAt: '' } } })
+    expect(planStep(stopped, world({ tickets: open, agents: { 'T-1': 'working' } }))).toEqual({ kind: 'watch', key: 'T-1', stoppedSince: '' })
+  })
+
+  it('nudges after STALL_NUDGE_MS stopped, once', () => {
+    const stopped = implementing({ watch: { 'T-1': { stoppedSince: AT, nudgedAt: '' } } })
+    expect(planStep(stopped, world({ tickets: open, agents: { 'T-1': 'stopped' }, now: T0 + 4 * min })).kind).toBe('wait')
+    expect(planStep(stopped, world({ tickets: open, agents: { 'T-1': 'stopped' }, now: T0 + 5 * min }))).toEqual({ kind: 'nudge', key: 'T-1' })
+  })
+
+  it('closes the ticket when it stays stopped STALL_FORCE_MS after the nudge', () => {
+    const nudged = implementing({ watch: { 'T-1': { stoppedSince: AT, nudgedAt: iso(T0 + 5 * min) } } })
+    const at = (m: number) => planStep(nudged, world({ tickets: open, agents: { 'T-1': 'stopped' }, now: T0 + m * min }))
+    expect(at(14).kind).toBe('wait')
+    expect(at(15)).toMatchObject({ kind: 'forceClose', key: 'T-1' })
+  })
+
+  it('gives a nudged session that worked and stopped again the full STALL_FORCE_MS', () => {
+    const again = implementing({ watch: { 'T-1': { stoppedSince: iso(T0 + 20 * min), nudgedAt: iso(T0 + 5 * min) } } })
+    const at = (m: number) => planStep(again, world({ tickets: open, agents: { 'T-1': 'stopped' }, now: T0 + m * min }))
+    expect(at(29).kind).toBe('wait')
+    expect(at(30)).toMatchObject({ kind: 'forceClose', key: 'T-1' })
+  })
+
+  it('closes the ticket AGENT_GONE_MS after its session disappears', () => {
+    const gone = implementing({ watch: { 'T-1': { stoppedSince: AT, nudgedAt: '' } } })
+    expect(planStep(gone, world({ tickets: open, agents: { 'T-1': 'gone' }, now: T0 + 30_000 })).kind).toBe('wait')
+    expect(planStep(gone, world({ tickets: open, agents: { 'T-1': 'gone' }, now: T0 + min }))).toMatchObject({ kind: 'forceClose', key: 'T-1' })
+  })
+
+  it('watches fix tickets too, and never a finished ticket', () => {
+    const fixing = loop({ phase: 'fixing', fixTickets: ['T-5'], dispatched: { 'T-5': AT }, watch: { 'T-5': { stoppedSince: AT, nudgedAt: '' } } })
+    expect(planStep(fixing, world({ tickets: [t('T-5', { status: 'in_progress' })], agents: { 'T-5': 'stopped' }, now: T0 + 5 * min }))).toEqual({ kind: 'nudge', key: 'T-5' })
+    const done = [t('T-5', { status: 'done', frontier: false })]
+    expect(planStep(fixing, world({ tickets: done, agents: { 'T-5': 'stopped' }, now: T0 + 60 * min })).kind).not.toBe('forceClose')
+  })
+
+  it('records forced tickets in the loop history', () => {
+    const next = finishLoop(loop({ loop: 2, phase: 'merging', forced: ['T-1'] }), AT)
+    expect(next.history.at(-1)).toMatchObject({ loop: 2, forced: ['T-1'] })
+    expect(next.forced).toEqual([])
   })
 })

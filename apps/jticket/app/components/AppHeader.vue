@@ -82,6 +82,8 @@ const links = computed(() => [
   // day headings carry the recency.
   { label: 'Finished', icon: 'i-lucide-circle-check', to: '/finished' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
+  // Linked projects (tickets blocking tickets across projects) and their outcome reports.
+  { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },
 ])
 </script>
 

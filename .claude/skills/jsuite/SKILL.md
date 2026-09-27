@@ -86,14 +86,29 @@ guide's way and records the link (`/api/projects/:id/worktree`).
 A standard project's **jButton** turns on **auto mode**: the jTicket server
 itself loops implement → merge → review → fix → merge. Each loop dispatches the
 AFK frontier into herdr on Opus 5.5 (`/jimplement`, local PRs), waits for every
-ticket, runs the merge sweep on Sonnet 5, asks jReview for a 2-reviewer
+ticket (no PR yet → it looks twice more, 20s apart, before skipping the merge),
+runs the merge sweep on Sonnet 5 and waits for the sweep to report back
+(`POST /api/projects/:id/auto/merge-report` — a PR it couldn't land pauses the
+loop with a Retry step), asks jReview for a 2-reviewer
 **consensus review** of that loop's diff (its Sonnet 5 `/jreview-consensus`
 session files only the findings both reviewers raised as AFK tickets straight
 into the project), implements those, merges again, then starts the next loop.
 HITL tickets are never auto-dispatched — with only HITL work left the loop
-waits on you. "Stop at the end of next loop" lets the loop in progress finish.
+waits on you. A watchdog stops loop-dispatched tickets hanging: a session that
+stops with its ticket open is prompted to finish after 5m; still stopped 10m
+later (or its session gone) the loop marks the ticket done itself and files the
+rest as an `auto-loop:carryover` ticket. "Stop at the end of next loop" lets the loop in progress finish.
+When no open ticket is left, one last Opus 5.5 session writes the project's
+**outcome report** — what was built and how it works, ≤500 words — as its
+`outcome`-labelled doc, and reports back
+(`POST /api/projects/:id/auto/outcome-report {doc}`) before auto mode turns off.
 State: `project.auto` (`POST /api/projects/:id/auto`); engine
 `server/plugins/autoLoop.ts`.
+jTicket's **Graphs** page (`/graphs`) shows linked projects: a ticket blocked
+by a ticket in another project links the two (there is no graph entity), each
+connected group is a graph named "first projects → last projects", drawn with
+each project's status and its outcome report. It only displays; every project
+is still kicked off by hand.
 
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR

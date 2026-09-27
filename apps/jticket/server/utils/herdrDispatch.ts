@@ -91,18 +91,27 @@ export async function dispatchTicketSession(
  * rebasing through conflicts.
  */
 export async function dispatchMergeSession(project: Project, prompt: string, opts: { model?: string } = {}) {
+  return dispatchProjectSession(project, 'merge', prompt, opts)
+}
+
+/**
+ * Start a project-level session (not tied to one ticket) in a NEW single-pane
+ * tab of the project's workspace, named 'PROJ-n · <job>'.
+ */
+export async function dispatchProjectSession(project: Project, job: string, prompt: string, opts: { model?: string } = {}) {
   const cwd = resolveRepoDir(project.repo)
+  const label = `${project.key} · ${job}`
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
-  // A fresh workspace's root tab becomes the merge tab; otherwise cut a new one.
+  // A fresh workspace's root tab becomes the job's tab; otherwise cut a new one.
   let tabId: string, paneId: string
   if (freshTab) {
-    await herdrJson(['tab', 'rename', freshTab.tabId, `${project.key} · merge`])
+    await herdrJson(['tab', 'rename', freshTab.tabId, label])
     ;({ tabId, paneId } = freshTab)
   } else {
-    ;({ tabId, paneId } = await createJobTab(workspaceId, `${project.key} · merge`, cwd))
+    ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
   }
-  await renamePane(paneId, `${project.key} · merge`)
-  const agent = await startClaudeIn(paneId, `merge-${project.key}`, prompt, modelArgs(opts.model))
+  await renamePane(paneId, label)
+  const agent = await startClaudeIn(paneId, `${job}-${project.key}`, prompt, modelArgs(opts.model))
   return { workspaceId, tabId, paneId, agent, project: project.key }
 }
 

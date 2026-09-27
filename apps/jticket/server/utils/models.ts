@@ -6,3 +6,6 @@ export const IMPLEMENT_MODEL = process.env.JTICKET_IMPLEMENT_MODEL?.trim() || 'c
 
 /** Auto-loop merge sweeps — the latest Sonnet: rebasing and POSTing merges. */
 export const MERGE_MODEL = process.env.JTICKET_MERGE_MODEL?.trim() || 'claude-sonnet-5'
+
+/** The auto loop's outcome report — the latest Opus: it reads the project's code and explains it. */
+export const REPORT_MODEL = process.env.JTICKET_REPORT_MODEL?.trim() || 'claude-opus-5-5'

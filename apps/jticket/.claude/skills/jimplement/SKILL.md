@@ -155,13 +155,34 @@ curl -s -X POST "$JTICKET/api/tickets/TICK-7/branch" -H 'content-type: applicati
 # → { "branch": "tick/TICK-7-persist-cart", ... }  (off the integration branch, local only)
 ```
 
-When the work is committed on that branch and the ticket recorded (§5), open the PR —
-the description becomes the squash commit body, so write it like one:
+**The order is fixed: commit → open the PR → mark the ticket `done`. Never the other way
+round.** A `done` ticket on a local-PR hand-off means "its PR exists and is ready to merge"
+— jTicket's auto loop starts the merge sweep the moment every ticket is `done`, and a PR
+that lands a few seconds later is skipped: never merged, never reviewed.
 
-```bash
-curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
-  -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage; survives refresh." }'
-```
+1. **Commit** the work on the ticket branch.
+2. **Open the PR** as soon as there is committed work to show. The description becomes
+   the squash commit body, so write it like one:
+
+   ```bash
+   curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
+     -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage; survives refresh." }'
+   ```
+
+   Check the response carries a PR `key`. If the call fails, the ticket is **not**
+   finished — fix what it complains about and open it again. Never mark a ticket `done`
+   whose PR didn't open.
+3. **Keep working if there's more to do.** An open PR is not a finished ticket. The PR
+   follows the branch, so further commits on it — review fixes, remaining acceptance
+   criteria, a red test — land in the same PR; don't open a second one. The ticket stays
+   `in_progress` throughout. Reword the description (`PATCH /api/prs/PR-n`) if the change
+   grew.
+4. **Mark the ticket `done`** (§5) only once the PR is open **and** the work is complete —
+   acceptance criteria met, suite green. That PATCH is the last step.
+
+If the ticket turns out to need no code change (already fixed, invalid, investigation
+only), there's nothing to merge: don't open an empty PR — record why in the resolution
+and mark it `done`.
 
 Do **not** merge it yourself — the merge button is the human's. Merging moves the ticket
 to `merged` and deletes the branch; a conflicted merge marks the PR `conflicted`, and the
@@ -211,8 +232,21 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/jso
   -d "$(jq -n --arg r "$(cat resolution.md)" '{status:"done", resolution:$r, assignee:"claude"}')"
 ```
 
+On the **local PR** path this PATCH comes **after** the PR is open (§4) — confirm it with
+`curl -s "$JTICKET/api/prs" | jq '.[] | select(.ticketKey=="TICK-7") | {key, status}'`
+before sending `status:"done"`. Recording the resolution earlier is fine; send it without
+`status` until the PR exists.
+
 Only mark `done` when the acceptance criteria are actually met and the suite is green. If
-they aren't, leave it `in_progress`, record what's left in the resolution, and say so.
+they aren't, leave it `in_progress` — with its PR open, if you opened one — record what's
+left in the resolution, and say so.
+
+**Dispatched by jTicket's auto loop** (the hand-off says so): nobody is watching the pane,
+and the loop waits on this ticket, so it always ends `done`. If the criteria can't be met,
+record what's done and what's left in the resolution, file the remainder as a new AFK
+ticket in the same project (§6), and mark this one `done` anyway. Never end the turn with
+the ticket open or with a question. A session that stops with the ticket open gets
+prompted to finish, and then has the ticket closed for it.
 
 ## 6. Advance the board
 
