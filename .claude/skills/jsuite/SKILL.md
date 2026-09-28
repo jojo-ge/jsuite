@@ -98,6 +98,9 @@ waits on you. A watchdog stops loop-dispatched tickets hanging: a session that
 stops with its ticket open is prompted to finish after 5m; still stopped 10m
 later (or its session gone) the loop marks the ticket done itself and files the
 rest as an `auto-loop:carryover` ticket. "Stop at the end of next loop" lets the loop in progress finish.
+After every phase change the loop closes the herdr panes it's finished with
+(done tickets' panes, merge/report panes, past reviews' jReview tabs) so they
+don't stack up; working or blocked agents and open tickets' panes are kept.
 When no open ticket is left, one last Opus 5.5 session writes the project's
 **outcome report** — what was built and how it works, ≤500 words — as its
 `outcome`-labelled doc, and reports back

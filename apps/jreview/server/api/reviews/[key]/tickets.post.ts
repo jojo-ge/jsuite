@@ -5,8 +5,10 @@ import type { Finding, Review } from '../../../../app/utils/reviewTypes'
  * project. Body: { findingIds?: string[] } — the findings to ticket (default:
  * all of them).
  *
- * Creates the project first (repo = the reviewed repo, so the tickets are
- * dispatchable from jTicket like any other), then imports one AFK bug ticket per
+ * Creates the project first (repo = the reviewed repo's main checkout — a
+ * review started from a worktree still lands in the codebase's own project
+ * list, not a new codebase — so the tickets are dispatchable from jTicket like
+ * any other), then imports one AFK bug ticket per
  * finding into it by key — never by title, which could match an older
  * project of the same name. Flips the review to `ticketed`; a second press is
  * a 409.
@@ -37,7 +39,7 @@ export default defineEventHandler(async (event) => {
       method: 'POST',
       body: {
         title: `Review: ${review.title}`,
-        repo: review.repoPath,
+        repo: await mainCheckout(review.repoPath),
         description: projectDescription(review, findings.length),
       },
     })

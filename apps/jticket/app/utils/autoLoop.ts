@@ -39,6 +39,9 @@
 // nothing is lost and the loop moves on. Hand-dispatched tickets are never
 // watched — only the loop's own.
 //
+// Cleanup: after every step that ends a phase, the loop closes the herdr
+// panes it's finished with (panesToClean) so they don't stack up.
+//
 // The state lives on the project (project.auto in jticket.json), so the loop
 // survives a restart and every change reaches the page over /api/stream.
 
@@ -523,4 +526,70 @@ export function autoPending(state: AutoLoop): { tickets: string[]; prs: string[]
   if (state.phase === 'fixing') return { tickets: state.fixTickets, prs: [] }
   if (state.phase === 'merging' || state.phase === 'merging-fixes') return { tickets: [], prs: state.prs }
   return { tickets: [], prs: [] }
+}
+
+// ── Herdr cleanup ───────────────────────────────────────────────────────────
+// Each loop dispatches a pane per ticket, a merge tab per sweep, and jReview
+// tabs per review — left alone they stack up in herdr loop after loop. So
+// after every step that ends a phase, the loop closes the panes it no longer
+// needs (closing a tab's last pane closes the tab; an emptied workspace goes
+// too and is recreated on the next dispatch).
+
+/** Steps after which the loop sweeps its finished herdr panes away. */
+export const CLEANUP_STEPS: ReadonlySet<AutoStep['kind']> = new Set<AutoStep['kind']>([
+  'startLoop',
+  'enterMerge',
+  'enterReview',
+  'enterFix',
+  'finishLoop',
+  'enterReport',
+  'complete',
+  'turnOff',
+])
+
+export interface HerdrPaneSeen {
+  paneId: string
+  tabLabel: string
+  /** The pane's herdr label — jTicket names every pane it dispatches into; a pane the human split has none. */
+  paneLabel: string
+  agentStatus: string
+}
+
+/** The jobs the loop runs as 'KEY · <job>' panes of their own. */
+const LOOP_JOBS = ['merge', 'outcome report']
+
+/**
+ * Which panes are finished loop work, safe to close. Never a pane whose agent
+ * is working or blocked, and never one the loop can't vouch for (unlabelled,
+ * a job it doesn't run, a ticket still open — HITL work waits in its pane).
+ * Closed: in the project's tabs ('KEY', 'KEY · …'), a done ticket's pane and
+ * the merge / outcome-report panes; in jReview's tabs ('review K', 'review K · n',
+ * 'triage K', 'triage K n'), everything of a review the loop has moved past.
+ */
+export function panesToClean(
+  panes: HerdrPaneSeen[],
+  ctx: { projectKey: string; doneTickets: ReadonlySet<string>; finishedReviews: ReadonlySet<string> },
+): string[] {
+  const jobLabels = new Set(LOOP_JOBS.map((j) => `${ctx.projectKey} · ${j}`))
+  const reviewTabs = [...ctx.finishedReviews].flatMap((k) => [`review ${k}`, `triage ${k}`])
+  const isProjectTab = (label: string) => label === ctx.projectKey || label.startsWith(`${ctx.projectKey} · `)
+  const isReviewTab = (label: string) =>
+    reviewTabs.some((base) => label === base || label.startsWith(`${base} `))
+  const ticketOf = (label: string) => label.split(' · ')[0]!
+
+  return panes
+    .filter((p) => p.agentStatus !== 'working' && p.agentStatus !== 'blocked')
+    .filter((p) => {
+      if (isReviewTab(p.tabLabel)) return true
+      if (!isProjectTab(p.tabLabel) || !p.paneLabel) return false
+      return jobLabels.has(p.paneLabel) || ctx.doneTickets.has(ticketOf(p.paneLabel))
+    })
+    .map((p) => p.paneId)
+}
+
+/** The reviews the loop is done with: every past loop's, and this loop's once it has left the review phase. */
+export function finishedReviews(state: AutoLoop): Set<string> {
+  const keys = state.history.map((h) => h.reviewKey)
+  if (state.phase !== 'reviewing') keys.push(state.reviewKey)
+  return new Set(keys.filter((k): k is string => !!k))
 }

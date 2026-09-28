@@ -109,6 +109,42 @@ const boardGroups = computed(() =>
 )
 const digestRows = computed(() => BUCKET_ORDER.flatMap((key) => bucketed.value[key]))
 
+// The Blocked rows, split by the jButton's flow (utils/autoForecast.ts): which
+// loop's frontier each one joins, and what no loop reaches. Standard projects
+// only — the jButton drives nothing else — so other boards keep one flat list.
+interface RowSection { key: string; label: string; icon: string; hint: string; tickets: Ticket[] }
+const forecast = computed(() =>
+  props.project && mode.value === 'standard' ? autoForecastFor(props.project, props.tickets, props.allTickets) : null,
+)
+const blockedSections = computed<RowSection[]>(() => {
+  const f = forecast.value
+  const rows = grouped.value.blocked
+  if (!f) return [{ key: 'all', label: '', icon: '', hint: '', tickets: rows }]
+  const byLoop = new Map<number, Ticket[]>()
+  for (const t of rows) {
+    const n = forecastLoopOf(f, t.id)
+    byLoop.set(n, [...(byLoop.get(n) ?? []), t])
+  }
+  const sections: RowSection[] = [...byLoop.keys()]
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b)
+    .map((n) => ({
+      key: `loop-${n}`,
+      label: `Loop ${n} frontier`,
+      icon: 'i-lucide-repeat',
+      hint: n === 2 ? 'freed once loop 1 lands' : `freed once loops 1–${n - 1} land`,
+      tickets: byLoop.get(n)!,
+    }))
+  const gated = byLoop.get(0)
+  if (gated?.length) {
+    sections.push({ key: 'gated', label: 'Needs a human first', icon: 'i-lucide-user', hint: 'HITL, or waiting on one — no loop reaches these', tickets: gated })
+  }
+  return sections
+})
+function sectionsOf(g: { key: GroupKey; tickets: Ticket[] }): RowSection[] {
+  return g.key === 'blocked' ? blockedSections.value : [{ key: 'all', label: '', icon: '', hint: '', tickets: g.tickets }]
+}
+
 const folded = reactive(new Set<GroupKey>(['notTakeable', 'blocked', 'done']))
 function toggleFold(key: GroupKey) {
   if (folded.has(key)) folded.delete(key)
@@ -460,52 +496,60 @@ function dispatchFor(t: Ticket) {
             <span class="text-xs text-muted">{{ g.tickets.length }} · {{ g.hint }}</span>
           </button>
           <div v-if="!folded.has(g.key)" class="mt-1 space-y-0.5">
-            <!-- A div, not a button: the done rows of an architect board nest a
-                 re-grill UButton, and the HTML parser closes a <button> at any
-                 nested one (which would break hydration). -->
-            <div
-              v-for="t in g.tickets"
-              :key="t.id"
-              role="button"
-              tabindex="0"
-              class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-elevated/40"
-              @click="emit('edit-ticket', t)"
-              @keydown.enter="emit('edit-ticket', t)"
-            >
-              <span class="size-1.5 shrink-0 rounded-full" :class="g.dot" />
-              <TicketTypeIcon :type="t.type" size="xs" />
-              <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
-              <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
-              <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
-              <span class="truncate text-sm">{{ t.title }}</span>
-              <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
-              <!-- Re-grill: a triaged candidate can be sent back to the interview -->
-              <UTooltip v-if="g.key === 'done' && regrillable(t)" text="Run the grilling again in herdr">
-                <UButton
-                  icon="i-lucide-terminal"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  class="ml-auto shrink-0"
-                  :loading="dispatching === t.id"
-                  :aria-label="`Re-run ${t.key}'s grilling in herdr`"
-                  @click.stop="dispatchTicket(t, mode)"
-                />
-              </UTooltip>
-              <template v-if="g.key === 'blocked' && blockersOf(t).length">
-                <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
-                <UBadge
-                  v-for="b in blockersOf(t)"
-                  :key="b.id"
-                  :color="blockerTone(b, allTickets, project)"
-                  variant="outline"
-                  size="sm"
-                  class="shrink-0 font-mono"
-                >
-                  {{ b.key }}
-                </UBadge>
-              </template>
-            </div>
+            <template v-for="sec in sectionsOf(g)" :key="sec.key">
+              <!-- Blocked rows on a standard board: one section per loop of the jButton's flow -->
+              <div v-if="sec.label" class="flex items-center gap-2 px-2 pt-2 pb-0.5 text-xs">
+                <UIcon :name="sec.icon" class="size-3.5 text-muted" />
+                <span class="font-semibold">{{ sec.label }}</span>
+                <span class="text-muted">{{ sec.tickets.length }} · {{ sec.hint }}</span>
+              </div>
+              <!-- A div, not a button: the done rows of an architect board nest a
+                   re-grill UButton, and the HTML parser closes a <button> at any
+                   nested one (which would break hydration). -->
+              <div
+                v-for="t in sec.tickets"
+                :key="t.id"
+                role="button"
+                tabindex="0"
+                class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-elevated/40"
+                @click="emit('edit-ticket', t)"
+                @keydown.enter="emit('edit-ticket', t)"
+              >
+                <span class="size-1.5 shrink-0 rounded-full" :class="g.dot" />
+                <TicketTypeIcon :type="t.type" size="xs" />
+                <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
+                <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
+                <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
+                <span class="truncate text-sm">{{ t.title }}</span>
+                <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
+                <!-- Re-grill: a triaged candidate can be sent back to the interview -->
+                <UTooltip v-if="g.key === 'done' && regrillable(t)" text="Run the grilling again in herdr">
+                  <UButton
+                    icon="i-lucide-terminal"
+                    color="neutral"
+                    variant="ghost"
+                    size="xs"
+                    class="ml-auto shrink-0"
+                    :loading="dispatching === t.id"
+                    :aria-label="`Re-run ${t.key}'s grilling in herdr`"
+                    @click.stop="dispatchTicket(t, mode)"
+                  />
+                </UTooltip>
+                <template v-if="g.key === 'blocked' && blockersOf(t).length">
+                  <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
+                  <UBadge
+                    v-for="b in blockersOf(t)"
+                    :key="b.id"
+                    :color="blockerTone(b, allTickets, project)"
+                    variant="outline"
+                    size="sm"
+                    class="shrink-0 font-mono"
+                  >
+                    {{ b.key }}
+                  </UBadge>
+                </template>
+              </div>
+            </template>
           </div>
         </template>
       </div>

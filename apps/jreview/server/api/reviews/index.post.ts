@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
   const key = await uniqueReviewKey(title)
 
   const inPlace = branch === 'HEAD' || branch === checkedOut
-  const guide = inPlace ? null : await codebaseWorktreeGuide(repoPath)
+  const guide = inPlace ? null : await codebaseWorktreeGuide(await mainCheckout(repoPath))
   const workdir = inPlace ? repoPath : await addReviewWorktree(repoPath, key, branch, guide?.root)
 
   const now = new Date().toISOString()

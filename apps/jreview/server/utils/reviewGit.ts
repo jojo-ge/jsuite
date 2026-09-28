@@ -147,6 +147,19 @@ export async function listBranches(repo: string): Promise<BranchList> {
   return { current, defaultBase: base, branches, prError }
 }
 
+/**
+ * The main checkout of whatever repo `dir` belongs to — `dir` itself unless
+ * it's a linked worktree. jTicket keys codebases by path, so anything handed to
+ * it names the main checkout, never a worktree. Falls back to `dir` when git
+ * can't say (or the main checkout is bare).
+ */
+export async function mainCheckout(dir: string): Promise<string> {
+  const listed = await git(dir, ['worktree', 'list', '--porcelain']).catch(() => '')
+  const [first, second] = listed.split('\n')
+  if (!first?.startsWith('worktree ') || second === 'bare') return dir
+  return first.slice('worktree '.length)
+}
+
 // ── Worktrees ────────────────────────────────────────────────────────────────
 // A branch that isn't checked out gets a detached worktree, so reviewers see
 // it as HEAD without jReview ever touching the human's own checkout. It goes

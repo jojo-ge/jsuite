@@ -18,6 +18,34 @@ const afkFrontier = computed(() =>
 const hitlFrontier = computed(() =>
   props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && isHitl(t)),
 )
+// How many loops pressing it would run — each a layer of the blocker graph the
+// AFK frontier works through (utils/autoForecast.ts). The review's fix tickets
+// ride inside their loop, so they never add one.
+const forecast = computed(() => autoForecastFor(props.project, props.tickets, props.allTickets))
+const loopCount = computed(() => forecast.value.loops.length)
+// With auto on, the count is where the loop in progress sits among them.
+const runningLoop = computed(() => {
+  const a = props.project.auto
+  return a?.enabled && a.phase !== 'idle' && a.phase !== 'reporting' ? a.loop : 0
+})
+const countLabel = computed(() => {
+  if (on.value) {
+    if (!runningLoop.value) return loopCount.value ? `${loopCount.value} to go` : ''
+    return `loop ${runningLoop.value} of ${runningLoop.value - 1 + loopCount.value}`
+  }
+  return `${loopCount.value} loop${loopCount.value === 1 ? '' : 's'}`
+})
+const countHint = computed(() => {
+  const n = loopCount.value
+  const gated = forecast.value.gated.length
+  const base = n
+    ? `${on.value ? 'Auto mode has' : 'Pressing it runs'} ${n} more loop${n === 1 ? '' : 's'} if every dispatched ticket finishes in its loop — one per layer of the blocker graph.`
+    : 'No AFK work the loop can reach — pressing it would wait for a human.'
+  return gated
+    ? `${base} ${gated} ticket${gated === 1 ? ' needs' : 's need'} a human first (HITL, or waiting on one) and no loop reaches ${gated === 1 ? 'it' : 'them'}.`
+    : base
+})
+
 // What would stop the server from saying yes — shown before the human confirms.
 const blocker = computed(() => {
   const p = props.project
@@ -49,6 +77,17 @@ async function confirmStart() {
 </script>
 
 <template>
+  <UTooltip v-if="countLabel" :text="countHint">
+    <UBadge
+      :color="on ? 'success' : loopCount ? 'neutral' : 'warning'"
+      variant="subtle"
+      size="md"
+      icon="i-lucide-repeat"
+      class="self-center tabular-nums"
+    >
+      {{ countLabel }}
+    </UBadge>
+  </UTooltip>
   <UTooltip :text="on ? 'jButton: auto mode is on — click to turn it off now' : 'jButton: run this project in auto loops'">
     <UButton
       icon="i-lucide-infinity"
@@ -80,6 +119,14 @@ async function confirmStart() {
             <span class="font-medium">{{ afkFrontier.length }}</span> AFK ticket{{ afkFrontier.length === 1 ? '' : 's' }} on the frontier now
             <template v-if="afkFrontier.length">— the first loop starts with them.</template>
             <template v-else>— the loop will wait until one appears.</template>
+          </p>
+          <p v-if="loopCount" class="mt-1">
+            That's about <span class="font-medium">{{ loopCount }} loop{{ loopCount === 1 ? '' : 's' }}</span>
+            <span class="text-muted">({{ forecast.loops.map((l) => l.length).join(' → ') }} tickets)</span> if
+            each ticket finishes in its loop — review fixes ride inside their loop.
+          </p>
+          <p v-if="forecast.gated.length" class="mt-1 text-muted">
+            {{ forecast.gated.length }} ticket{{ forecast.gated.length === 1 ? '' : 's' }} no loop reaches — HITL, or waiting on one.
           </p>
           <p v-if="hitlFrontier.length" class="mt-1 text-muted">
             {{ hitlFrontier.length }} HITL ticket{{ hitlFrontier.length === 1 ? ' is' : 's are' }} skipped — those stay yours to dispatch.

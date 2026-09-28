@@ -14,10 +14,13 @@
 import { basename } from 'node:path'
 import {
   CARRYOVER_LABEL,
+  CLEANUP_STEPS,
   OUTCOME_LABEL,
   coerceMergeReport,
   finishLoop,
+  finishedReviews,
   newAutoLoop,
+  panesToClean,
   planStep,
   retryStep,
   type AutoAgentSeen,
@@ -25,6 +28,7 @@ import {
   type AutoPause,
   type AutoStep,
   type AutoWorld,
+  type HerdrPaneSeen,
 } from '../../app/utils/autoLoop'
 import type { Project, Store, Ticket } from './store'
 import type { JreviewReview } from './jreview'
@@ -178,6 +182,7 @@ export async function advanceAutoLoop(projectId: string): Promise<AutoStep | nul
     if (!project?.auto?.enabled) return null
     const step = planStep(project.auto, { ...storeWorld(store, project), tip, review, now: Date.now(), agents })
     await apply(project.id, step)
+    if (CLEANUP_STEPS.has(step.kind)) await cleanUpHerdr(project.id)
     return step
   } catch (err) {
     console.error(`[jticket] auto loop tick failed for ${projectId}:`, err)
@@ -623,6 +628,51 @@ async function startReview(projectId: string) {
       auto.reviewRequestedAt = ''
       auto.paused = { reason: 'review-failed', detail: `jReview: ${errText(err)}`, at: now() }
     })
+  }
+}
+
+/**
+ * Close the herdr panes the loop is finished with (see panesToClean) so they
+ * don't stack up loop after loop. Best-effort: herdr down, or a pane that
+ * won't close, leaves things as they were — never pauses the loop.
+ */
+export async function cleanUpHerdr(projectId: string): Promise<number> {
+  try {
+    const store = loadStore()
+    const project = findProject(store, projectId)
+    if (!project?.auto) return 0
+    const doneTickets = new Set(
+      store.tickets
+        .filter((t) => t.projectId === project.id && (t.status === 'done' || t.status === 'merged'))
+        .map((t) => t.key),
+    )
+    const [tabList, paneList] = await Promise.all([herdrJson<any>(['tab', 'list']), herdrJson<any>(['pane', 'list'])])
+    const tabLabel = new Map<string, string>(
+      (tabList?.result?.tabs ?? []).map((t: any) => [t.tab_id, String(t.label ?? '')]),
+    )
+    const panes: HerdrPaneSeen[] = (paneList?.result?.panes ?? []).map((p: any) => ({
+      paneId: p.pane_id,
+      tabLabel: tabLabel.get(p.tab_id) ?? '',
+      paneLabel: String(p.label ?? ''),
+      agentStatus: String(p.agent_status ?? 'unknown'),
+    }))
+    const ids = panesToClean(panes, {
+      projectKey: project.key,
+      doneTickets,
+      finishedReviews: finishedReviews(project.auto),
+    })
+    let closed = 0
+    for (const id of ids) {
+      try {
+        await herdrJson(['pane', 'close', id])
+        closed++
+      } catch { /* already gone, or herdr refused — next time */ }
+    }
+    if (closed) invalidateHerdrState()
+    return closed
+  } catch (err) {
+    console.error(`[jticket] auto loop herdr cleanup failed for ${projectId}:`, errText(err))
+    return 0
   }
 }
 

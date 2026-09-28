@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   coerceAutoLoop,
   finishLoop,
+  finishedReviews,
   newAutoLoop,
+  panesToClean,
   NO_PR_RECHECK_MS,
   planStep,
   retryStep,
   type AutoLoop,
   type AutoWorld,
   type AutoWorldTicket,
+  type HerdrPaneSeen,
 } from '../app/utils/autoLoop'
 
 const AT = '2026-09-24T00:00:00.000Z'
@@ -350,5 +353,58 @@ describe('planStep — the watchdog', () => {
     const next = finishLoop(loop({ loop: 2, phase: 'merging', forced: ['T-1'] }), AT)
     expect(next.history.at(-1)).toMatchObject({ loop: 2, forced: ['T-1'] })
     expect(next.forced).toEqual([])
+  })
+})
+
+describe('panesToClean', () => {
+  const pane = (paneId: string, tabLabel: string, paneLabel: string, agentStatus = 'unknown'): HerdrPaneSeen => ({
+    paneId,
+    tabLabel,
+    paneLabel,
+    agentStatus,
+  })
+  const ctx = { projectKey: 'PROJ-4', doneTickets: new Set(['T-1', 'T-2']), finishedReviews: new Set(['proj-4-auto-loop-1-app']) }
+
+  it("closes a done ticket's pane and the loop's job panes in the project's tabs", () => {
+    const panes = [
+      pane('p1', 'PROJ-4', 'T-1 · Add the thing'),
+      pane('p2', 'PROJ-4 · 2', 'T-2 · Other', 'idle'),
+      pane('p3', 'PROJ-4 · merge 3', 'PROJ-4 · merge', 'done'),
+      pane('p4', 'PROJ-4 · outcome report', 'PROJ-4 · outcome report'),
+    ]
+    expect(panesToClean(panes, ctx)).toEqual(['p1', 'p2', 'p3', 'p4'])
+  })
+
+  it('keeps working/blocked agents, open tickets, unlabelled panes and jobs the loop does not run', () => {
+    const panes = [
+      pane('p1', 'PROJ-4', 'T-1 · still wrapping up', 'working'),
+      pane('p2', 'PROJ-4', 'T-2 · asking permission', 'blocked'),
+      pane('p3', 'PROJ-4 · T-3', 'T-3 · HITL, waiting on the human', 'idle'),
+      pane('p4', 'PROJ-4 · merge 7', '', 'idle'),
+      pane('p5', 'PROJ-4 · worktree', 'PROJ-4 · worktree', 'idle'),
+    ]
+    expect(panesToClean(panes, ctx)).toEqual([])
+  })
+
+  it("never touches another project's tabs, even with a matching ticket key", () => {
+    const panes = [pane('p1', 'PROJ-40', 'T-1 · x'), pane('p2', 'PROJ-40 · merge', 'PROJ-4 · merge'), pane('p3', 'notes', 'T-1 · x')]
+    expect(panesToClean(panes, ctx)).toEqual([])
+  })
+
+  it("closes a finished review's reviewer and triage tabs, not a live review's", () => {
+    const panes = [
+      pane('p1', 'review proj-4-auto-loop-1-app', 'reviewer 1 · x', 'done'),
+      pane('p2', 'review proj-4-auto-loop-1-app · 2', 'reviewer 3 · x'),
+      pane('p3', 'triage proj-4-auto-loop-1-app 2', 'consensus · x', 'idle'),
+      pane('p4', 'review proj-4-auto-loop-2-app', 'reviewer 1 · x', 'done'),
+      pane('p5', 'review proj-4-auto-loop-1-app-2', 'reviewer 1 · x', 'done'),
+    ]
+    expect(panesToClean(panes, ctx)).toEqual(['p1', 'p2', 'p3'])
+  })
+
+  it("counts this loop's review finished only once the loop has left the review phase", () => {
+    const history = [{ loop: 1, tickets: [], fixTickets: [], reviewKey: 'r-1', startedAt: AT, endedAt: AT }]
+    expect([...finishedReviews(loop({ phase: 'reviewing', reviewKey: 'r-2', history }))]).toEqual(['r-1'])
+    expect([...finishedReviews(loop({ phase: 'fixing', reviewKey: 'r-2', history }))]).toEqual(['r-1', 'r-2'])
   })
 })
