@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Auto mode's dashboard, above the board while the jButton is on: which loop,
-// which phase, what it's waiting on, why it paused — and the big "Stop at the
-// end of next loop" button. When auto mode is off it shows only how the last
+// Auto mode's strip, above the project page's tabs while the jButton is on:
+// which loop, which phase, what it's waiting on, why it paused — and the "Stop
+// at the end of next loop" button. Finished loops live in the Loops tab
+// (<AutoLoopHistory>). When auto mode is off it shows only how the last
 // run ended (if there was one). Everything reads project.auto, which the
 // server's loop keeps current; nothing here advances the loop.
 import type { LocalPr, Project, Ticket } from '~/composables/useTracker'
@@ -116,50 +117,74 @@ async function turnOffNow() {
 </script>
 
 <template>
-  <section v-if="on && auto" class="mb-8 rounded-lg border border-success/40 bg-success/5 p-4">
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <UIcon name="i-lucide-infinity" class="size-5 text-success" />
-      <h2 class="font-semibold">Auto mode · loop {{ auto.loop }}</h2>
-      <UBadge v-if="auto.paused" color="warning" variant="subtle" size="sm">
-        {{ auto.paused.reason === 'waiting-human' ? 'waiting on you' : 'paused' }}
-      </UBadge>
-      <span v-if="auto.phase !== 'idle'" class="text-xs text-muted">phase running {{ since(auto.phaseStartedAt) }}</span>
-      <UButton
-        class="ml-auto"
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-power"
-        :loading="busy === 'off'"
-        @click="turnOffNow"
-      >
-        Turn off now
-      </UButton>
+  <section v-if="on && auto" class="mb-6 rounded-lg border border-success/40 bg-success/5 px-4 py-3">
+    <!-- The strip: which loop, the phase stepper, and the stop controls -->
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div class="flex items-center gap-1.5">
+        <UIcon name="i-lucide-infinity" class="size-4 text-success" />
+        <h2 class="text-sm font-semibold">Loop {{ auto.loop }}</h2>
+        <UBadge v-if="auto.paused" color="warning" variant="subtle" size="sm">
+          {{ auto.paused.reason === 'waiting-human' ? 'waiting on you' : 'paused' }}
+        </UBadge>
+      </div>
+
+      <ol class="flex flex-wrap items-center gap-1 text-xs">
+        <template v-for="(p, i) in phases" :key="p.phase">
+          <li
+            class="rounded-full px-2 py-0.5"
+            :class="
+              i === phaseIndex
+                ? 'bg-success text-inverted font-medium'
+                : i < phaseIndex
+                  ? 'bg-success/15 text-success'
+                  : 'bg-elevated text-muted'
+            "
+          >
+            {{ p.label }}
+          </li>
+          <UIcon v-if="i < phases.length - 1" name="i-lucide-chevron-right" class="size-3 text-dimmed" />
+        </template>
+      </ol>
+      <span v-if="auto.phase !== 'idle'" class="text-xs text-muted">{{ since(auto.phaseStartedAt) }}</span>
+
+      <div class="ml-auto flex items-center gap-1">
+        <!-- Moot once the project is finished and only its report is left -->
+        <template v-if="auto.phase === 'reporting'" />
+        <UButton
+          v-else-if="!auto.stopRequested"
+          size="xs"
+          color="warning"
+          variant="soft"
+          icon="i-lucide-octagon-pause"
+          :loading="busy === 'stop'"
+          @click="requestStop(project, true).catch(() => {})"
+        >
+          Stop at the end of next loop
+        </UButton>
+        <template v-else>
+          <UTooltip text="Auto mode turns off once this loop's fixes are merged (or after the outcome report, if this loop finishes the project).">
+            <UBadge color="warning" variant="subtle" icon="i-lucide-octagon-pause">Stopping after loop {{ auto.loop }}</UBadge>
+          </UTooltip>
+          <UButton size="xs" color="neutral" variant="soft" :loading="busy === 'stop'" @click="requestStop(project, false).catch(() => {})">
+            Keep going
+          </UButton>
+        </template>
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-power"
+          :loading="busy === 'off'"
+          @click="turnOffNow"
+        >
+          Turn off now
+        </UButton>
+      </div>
     </div>
 
-    <!-- The phase stepper -->
-    <ol class="mb-3 flex flex-wrap items-center gap-1 text-xs">
-      <template v-for="(p, i) in phases" :key="p.phase">
-        <li
-          class="rounded-full px-2.5 py-1"
-          :class="
-            i === phaseIndex
-              ? 'bg-success text-inverted font-medium'
-              : i < phaseIndex
-                ? 'bg-success/15 text-success'
-                : 'bg-elevated text-muted'
-          "
-        >
-          {{ p.label }}
-        </li>
-        <UIcon v-if="i < phases.length - 1" name="i-lucide-chevron-right" class="size-3 text-dimmed" />
-      </template>
-    </ol>
-
-    <p class="mb-2 text-sm">{{ phaseText }}</p>
-
-    <!-- What the phase is waiting on -->
-    <div v-if="pending.tickets.length || pending.prs.length" class="mb-3 flex flex-wrap gap-1.5">
+    <!-- What the phase is doing, and what it's waiting on -->
+    <div class="mt-2 flex flex-wrap items-center gap-1.5">
+      <p class="mr-1 text-sm text-muted">{{ phaseText }}</p>
       <NuxtLink
         v-for="t in pending.tickets"
         :key="t.key"
@@ -192,18 +217,20 @@ async function turnOffNow() {
         <span class="font-mono">{{ p.key }}</span>
         <span class="text-muted">{{ p.status }}</span>
       </span>
-    </div>
-
-    <p v-if="auto.reviewKey" class="mb-3 text-xs">
-      <a :href="`https://jreview.local/r/${auto.reviewKey}`" target="_blank" class="text-primary hover:underline">
+      <a
+        v-if="auto.reviewKey"
+        :href="`https://jreview.local/r/${auto.reviewKey}`"
+        target="_blank"
+        class="text-xs text-primary hover:underline"
+      >
         This loop's review in jReview ↗
       </a>
-    </p>
+    </div>
 
     <!-- A pause, and the way out of it -->
     <UAlert
       v-if="auto.paused"
-      class="mb-3"
+      class="mt-3"
       :color="auto.paused.reason === 'waiting-human' ? 'info' : 'warning'"
       variant="subtle"
       :icon="auto.paused.reason === 'waiting-human' ? 'i-lucide-hand' : 'i-lucide-circle-pause'"
@@ -216,43 +243,6 @@ async function turnOffNow() {
         </UButton>
       </template>
     </UAlert>
-
-    <!-- The big one — moot once the project is finished and only its report is left -->
-    <template v-if="auto.phase === 'reporting'" />
-    <UButton
-      v-else-if="!auto.stopRequested"
-      block
-      size="xl"
-      color="warning"
-      icon="i-lucide-octagon-pause"
-      :loading="busy === 'stop'"
-      @click="requestStop(project, true).catch(() => {})"
-    >
-      Stop at the end of next loop
-    </UButton>
-    <div v-else class="flex items-center gap-3 rounded-md border border-warning/40 bg-warning/10 px-4 py-3">
-      <UIcon name="i-lucide-octagon-pause" class="size-5 text-warning" />
-      <span class="text-sm font-medium">
-        Stopping after loop {{ auto.loop }} — auto mode turns off once its fixes are merged (or after the outcome report, if that loop finishes the project).
-      </span>
-      <UButton class="ml-auto" size="sm" color="neutral" variant="soft" :loading="busy === 'stop'" @click="requestStop(project, false).catch(() => {})">
-        Keep going
-      </UButton>
-    </div>
-
-    <!-- Finished loops -->
-    <details v-if="auto.history.length" class="mt-3 text-xs">
-      <summary class="cursor-pointer text-muted">{{ auto.history.length }} finished loop{{ auto.history.length === 1 ? '' : 's' }}</summary>
-      <ul class="mt-2 flex flex-col gap-1">
-        <li v-for="h in [...auto.history].reverse()" :key="`${h.loop}-${h.endedAt}`" class="flex flex-wrap gap-x-2">
-          <span class="font-medium">Loop {{ h.loop }}</span>
-          <span class="text-muted">{{ h.tickets.length }} ticket{{ h.tickets.length === 1 ? '' : 's' }}, {{ h.fixTickets.length }} fix{{ h.fixTickets.length === 1 ? '' : 'es' }}</span>
-          <span v-if="h.forced?.length" class="text-warning">closed by the loop: {{ h.forced.join(', ') }}</span>
-          <a v-if="h.reviewKey" :href="`https://jreview.local/r/${h.reviewKey}`" target="_blank" class="text-primary hover:underline">review ↗</a>
-          <span class="text-dimmed">{{ new Date(h.endedAt).toLocaleString() }}</span>
-        </li>
-      </ul>
-    </details>
   </section>
 
   <p v-else-if="endedText" class="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted">

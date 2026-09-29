@@ -9,7 +9,7 @@ const toast = useToast()
 const { data: sessions, refresh } = await useFetch<GrillMeta[]>('/api/sessions')
 
 // ── Up next — HITL grilling tickets on jTicket's frontier ─────────────────────
-// Same rows jTicket's /next page renders, filtered to the grillings this app
+// jTicket's frontier, filtered to the grillings this app
 // exists for. Starting one dispatches it into herdr; the session then appears
 // in the list below once the interviewer opens the room.
 

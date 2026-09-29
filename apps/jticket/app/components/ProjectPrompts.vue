@@ -4,9 +4,10 @@
 // fire the defaults forever, and the page is for the tickets.
 import type { Project } from '~/composables/useTracker'
 
-const props = defineProps<{ project: Project }>()
+// pinnedOpen: it's the project page's Agents tab, so it starts open.
+const props = defineProps<{ project: Project; pinnedOpen?: boolean }>()
 
-const open = ref(false)
+const open = ref(!!props.pinnedOpen)
 const count = computed(() => Object.keys(props.project.prompts ?? {}).length)
 </script>
 
@@ -17,9 +18,10 @@ const count = computed(() => Object.keys(props.project.prompts ?? {}).length)
         type="button"
         class="flex w-full items-center gap-3 text-left"
         :aria-expanded="open"
+        :disabled="pinnedOpen"
         @click="open = !open"
       >
-        <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 shrink-0 text-dimmed" />
+        <UIcon v-if="!pinnedOpen" :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 shrink-0 text-dimmed" />
         <UIcon name="i-lucide-message-square-code" class="size-4 shrink-0 text-muted" />
         <div class="min-w-0 flex-1">
           <h2 class="text-sm font-semibold">Prompts</h2>

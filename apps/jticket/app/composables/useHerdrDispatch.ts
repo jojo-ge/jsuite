@@ -1,8 +1,8 @@
 // The hand-off machinery — the prompt that puts a ticket in front of an agent,
-// and the herdr dispatch that runs it without a copy-paste. Extracted from
-// /next so the project page (board header + ticket cards) shares the exact
-// same controls: one prompt-target preference, one dispatch queue, one set of
-// loading states, whichever page they are driven from.
+// and the herdr dispatch that runs it without a copy-paste. Shared state, so
+// every board (board header + ticket cards) drives the same controls: one
+// prompt-target preference, one dispatch queue, one set of loading states,
+// whichever page they are driven from.
 import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
 
 // Where the PR lands is a rhythm, not a constant: work that ships on its own
@@ -39,8 +39,7 @@ export function useHerdrDispatch() {
   })
   watch(promptTarget, (value) => localStorage.setItem('jticket-next-prompt', value))
 
-  // The picked standard:* kind, and a sample of the text it currently fires —
-  // /next prints it under the header so you can see what you're about to send.
+  // The picked standard:* kind, and a sample of the text it currently fires.
   const promptKind = computed<PromptKind>(() => `standard:${promptTarget.value}` as PromptKind)
   const prompt = computed(() => ({
     label: PROMPT_KIND_META[promptKind.value].label,

@@ -222,6 +222,10 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
           paused: null,
           baseSha: step.baseSha,
           tickets: step.tickets,
+          // A one-loop run: this loop is the only one — it stops at its own end.
+          stopRequested: auto.stopRequested || auto.once,
+          once: false,
+          only: [],
           fixTickets: [],
           dispatched: {},
           agents: {},
@@ -690,13 +694,14 @@ export function autoModeBlocker(store: Store, project: Project): string | null {
 export function setAutoMode(
   store: Store,
   project: Project,
-  patch: { enabled?: boolean; stopRequested?: boolean; retry?: boolean },
+  patch: { enabled?: boolean; stopRequested?: boolean; retry?: boolean; once?: boolean; only?: string[] },
 ): AutoLoop {
   const at = now()
   let auto = project.auto ?? newAutoLoop(at)
   if (patch.enabled === true && !auto.enabled) {
-    // A fresh start: whatever the last run left behind is history now.
-    auto = { ...newAutoLoop(at, auto), enabled: true, ended: null }
+    // A fresh start: whatever the last run left behind is history now. A
+    // one-loop run carries `once` (and its picks) into the first loop.
+    auto = { ...newAutoLoop(at, auto), enabled: true, ended: null, once: patch.once === true, only: patch.only ?? [] }
   } else if (patch.enabled === false && auto.enabled) {
     // Off now. Sessions already running in herdr are left alone.
     auto = { ...newAutoLoop(at, auto), enabled: false, ended: { reason: 'turned-off', at } }

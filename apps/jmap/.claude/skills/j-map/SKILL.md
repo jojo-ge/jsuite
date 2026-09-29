@@ -8,8 +8,8 @@ description: Map a codebase in jMap — creating a map creates a jMap-mode jTick
 jMap (https://jmap.local) maps a codebase through jTicket:
 
 1. Creating a map creates a **jMap-mode jTicket project** (repo = the mapped
-   directory) with a **scoping ticket**. Running that ticket in herdr (the Run
-   button on jTicket → Up next dispatches `/jmap-scope`) divides the repo into
+   directory) with a **scoping ticket**. Running that ticket in herdr (its herdr
+   button on the jTicket project's board dispatches `/jmap-scope`) divides the repo into
    domains — a scoping doc plus one `jmap:domain` ticket per part.
 2. Running the domain tickets (each dispatches `/jmap-domain`; "Run all" takes
    the whole frontier) documents every domain as a walkthrough doc on the
@@ -53,7 +53,7 @@ open "https://jmap.local/m/<key>"
 ```
 
 Tell the user: the scoping ticket is ready to Run in herdr from
-`https://jticket.local/next` (project `PROJ-n`), and the jMap room tracks
+its project board, `https://jticket.local/projects/PROJ-n`, and the jMap room tracks
 progress and holds the Synthesize button. Then stop — the mapping continues in
 herdr sessions dispatched from jTicket, without you.
 

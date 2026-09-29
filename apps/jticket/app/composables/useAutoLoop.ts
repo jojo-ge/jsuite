@@ -11,7 +11,7 @@ export function useAutoLoop() {
   const toast = useToast()
   const busy = useState<string>('jticket-auto-busy', () => '')
 
-  async function post(project: Project, body: Record<string, boolean>, what: string): Promise<AutoLoop | null> {
+  async function post(project: Project, body: Record<string, boolean | string[]>, what: string): Promise<AutoLoop | null> {
     busy.value = what
     try {
       const auto = await $fetch<AutoLoop>(`/api/projects/${project.id}/auto`, { method: 'POST', body })
@@ -33,6 +33,10 @@ export function useAutoLoop() {
   return {
     busy,
     start: (p: Project) => post(p, { enabled: true }, 'start'),
+    // One loop only (the board's "Run as loop"): over the given ticket keys,
+    // or the whole AFK frontier when none are given; auto turns off after it.
+    runLoop: (p: Project, tickets?: string[]) =>
+      post(p, { enabled: true, once: true, ...(tickets?.length ? { tickets } : {}) }, 'loop'),
     turnOff: (p: Project) => post(p, { enabled: false }, 'off'),
     requestStop: (p: Project, stop: boolean) => post(p, { stopRequested: stop }, 'stop'),
     retry: (p: Project) => post(p, { retry: true }, 'retry'),

@@ -38,6 +38,8 @@ export default defineEventHandler(async (event) => {
     repo: '',
     integrationBranch: '',
     starred: false,
+    position: null,
+    hidden: false,
     share: { key: blob.sharedKey, side: blob.side, peerName },
     // Hand-off prompts are machine-local — never shared, never pulled.
     prompts: {},

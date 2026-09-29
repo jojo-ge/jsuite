@@ -3,13 +3,12 @@
 // so a new ticket lands in the project you're looking at).
 const props = defineProps<{ defaultProjectId?: string | null }>()
 
-const { tickets, projects } = useTracker()
 const { openCreate } = useTrackerModals()
 
 // The codebase scope — the switcher next to the logo, and the gate on the
 // rest of the header: with nothing selected (first visit, forgotten repo)
 // there is no scope to navigate or create into, so only the picker link shows.
-const { selectedPath, codebases, refreshCodebases, current, label: codebaseLabel, select, scopedTickets } = useCodebase()
+const { selectedPath, codebases, refreshCodebases, current, label: codebaseLabel, select } = useCodebase()
 onMounted(() => { refreshCodebases().catch(() => {}) })
 
 const codebaseItems = computed(() => [
@@ -25,22 +24,6 @@ const codebaseItems = computed(() => [
     { label: 'Manage codebases…', icon: 'i-lucide-settings-2', to: '/codebases' },
   ],
 ])
-
-// Only the two counts the nav actually badges — the header is deliberately
-// narrow (jTicket lives on a vertical monitor), so anything that doesn't help
-// you choose a destination stays off it. Scoped: the badge answers "in this
-// codebase", like every page behind the links does.
-const projectById = computed(() => new Map(projects.value.map((p) => [p.id, p])))
-function projectOf(t: { projectId: string | null }) {
-  return t.projectId ? (projectById.value.get(t.projectId) ?? null) : null
-}
-
-const counts = computed(() => ({
-  running: scopedTickets.value.filter((t) => t.status === 'in_progress').length,
-  // The takeable edge across the codebase's projects — what /next lists.
-  // Ownership is per-project, so each ticket is judged against its own.
-  next: scopedTickets.value.filter((t) => isFrontier(t, tickets.value, projectOf(t))).length,
-}))
 
 // Whether the live stream is actually delivering. Shown rather than hidden: a
 // board that has quietly stopped updating looks exactly like a quiet board, and
@@ -58,29 +41,9 @@ function toggleTheme() {
   colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
 }
 
-// The three flow pages sit in flow order — what is takeable, what is moving,
-// what landed — so the nav itself reads as the loop. The board is the logo:
-// it's the home page, and a link named after the app already means "the board".
+// The board is the logo: it's the home page, and a link named after the app
+// already means "the board".
 const links = computed(() => [
-  {
-    label: 'Up next',
-    icon: 'i-lucide-flag',
-    to: '/next',
-    badge: counts.value.next || null,
-    badgeColor: 'primary' as const,
-  },
-  // Badged with the live in-progress count — the nav is where you notice you
-  // left three things running.
-  {
-    label: 'Running now',
-    icon: 'i-lucide-loader',
-    to: '/running',
-    badge: counts.value.running || null,
-    badgeColor: 'info' as const,
-  },
-  // No badge — a count of everything ever finished isn't news; the page's own
-  // day headings carry the recency.
-  { label: 'Finished', icon: 'i-lucide-circle-check', to: '/finished' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
   // Linked projects (tickets blocking tickets across projects) and their outcome reports.
   { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },

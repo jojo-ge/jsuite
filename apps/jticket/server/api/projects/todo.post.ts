@@ -24,8 +24,9 @@ export default defineEventHandler(async (event) => {
     mode: 'todo',
     repo: probe.path,
     integrationBranch: '',
-    // Never starred: /next is for dispatchable work, todos are grilled instead.
     starred: false,
+    position: null,
+    hidden: false,
     share: null,
     prompts: {},
     createdAt: ts,

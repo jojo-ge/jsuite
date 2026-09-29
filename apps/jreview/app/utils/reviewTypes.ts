@@ -147,6 +147,11 @@ export interface Review {
   worktreeGuide?: string
   status: ReviewStatus
   workspaceId?: string
+  /**
+   * When the watcher closed the review's herdr panes, once triage (or
+   * consensus) landed. Unset while a session in them is still busy.
+   */
+  panesClosedAt?: string
   reviewers: Reviewer[]
   triage: Triage
   findings: Finding[]
@@ -182,6 +187,16 @@ export const reviewerSettled = (r: Reviewer) => r.status === 'done' || r.status 
 export function readyForTriage(review: Pick<Review, 'reviewers' | 'consensus'>): boolean {
   if (review.consensus) return review.reviewers.every((r) => r.status === 'done')
   return review.reviewers.every(reviewerSettled) && review.reviewers.some((r) => r.status === 'done')
+}
+
+/**
+ * Whether a herdr tab label is one of this review's: its reviewer tabs
+ * ('review K', overflow 'review K · 2') or its triage tab ('triage K'). The
+ * trailing space keeps review 'foo' off 'review foo-2'. jTicket's auto-loop
+ * sweep (panesToClean) matches the same labels.
+ */
+export function isReviewTab(label: string, key: string): boolean {
+  return [`review ${key}`, `triage ${key}`].some((base) => label === base || label.startsWith(`${base} `))
 }
 
 /** A codebase jReview (or jTicket) has been pointed at before. */

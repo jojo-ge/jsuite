@@ -61,6 +61,17 @@ describe('planStep — idle', () => {
     expect(planStep(loop({ stopRequested: true }), world({ tickets: [t('T-1')] }))).toEqual({ kind: 'turnOff' })
   })
 
+  it('limits a one-loop run to its picked tickets', () => {
+    const step = planStep(loop({ once: true, only: ['T-3', 'T-1'] }), world({ tickets: [t('T-1'), t('T-2'), t('T-3')] }))
+    expect(step).toEqual({ kind: 'startLoop', tickets: ['T-1', 'T-3'], baseSha: 'sha-base' })
+  })
+
+  it('pauses when none of the picked tickets is on the AFK frontier any more', () => {
+    const step = planStep(loop({ only: ['T-1'] }), world({ tickets: [t('T-1', { frontier: false, claimed: true }), t('T-2')] }))
+    expect(step).toMatchObject({ kind: 'pause', reason: 'waiting-human' })
+    expect((step as any).detail).toContain('T-1')
+  })
+
   it('pauses when the integration branch does not resolve', () => {
     expect(planStep(loop(), world({ tip: null, tickets: [t('T-1')] }))).toMatchObject({ kind: 'pause', reason: 'no-branch' })
   })

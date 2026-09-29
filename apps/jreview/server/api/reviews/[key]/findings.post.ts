@@ -8,6 +8,10 @@ import { SEVERITIES, type Finding, type Severity } from '../../../../app/utils/r
  * dropped, severities coerced, reviewer slots clamped, ids reassigned f1…fn
  * in the order sent (the triager sends them most-severe first). Re-POSTing
  * replaces the set — until the human has split them into tickets.
+ *
+ * The first POST opens the review's page in the browser — the triage
+ * session's panes are closed by the watcher, so the page is where the human
+ * picks it up.
  */
 export default defineEventHandler(async (event) => {
   const key = sanitizeReviewKey(getRouterParam(event, 'key'))
@@ -56,5 +60,6 @@ export default defineEventHandler(async (event) => {
     r.triage.error = undefined
     r.triage.doneAt = new Date().toISOString()
   })
+  if (current.status !== 'triaged') void openReviewInBrowser(key)
   return { key: review.key, findings: review.findings.length, path: `/r/${review.key}` }
 })

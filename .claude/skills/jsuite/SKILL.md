@@ -97,7 +97,7 @@ HITL tickets are never auto-dispatched — with only HITL work left the loop
 waits on you. A watchdog stops loop-dispatched tickets hanging: a session that
 stops with its ticket open is prompted to finish after 5m; still stopped 10m
 later (or its session gone) the loop marks the ticket done itself and files the
-rest as an `auto-loop:carryover` ticket. "Stop at the end of next loop" lets the loop in progress finish.
+rest as an `auto-loop:carryover` ticket. "Stop at the end of next loop" lets the loop in progress finish. The board's Loop frontier / Loop selected button runs a single loop over the AFK frontier (or the ticked tickets), then turns auto off.
 After every phase change the loop closes the herdr panes it's finished with
 (done tickets' panes, merge/report panes, past reviews' jReview tabs) so they
 don't stack up; working or blocked agents and open tickets' panes are kept.
@@ -200,7 +200,9 @@ ticket per selected finding. A **consensus review** (`POST /api/reviews` with
 `reviewers: 2, consensus: {projectKey, loop}` — jTicket's auto loop) skips
 triage: once every reviewer is in, a Sonnet 5 `/jreview-consensus` session
 files the findings every reviewer raised straight into that project as tickets
-and POSTs their keys to `/api/reviews/:key/consensus`. Reviews live in
+and POSTs their keys to `/api/reviews/:key/consensus`. Once either hand-back
+lands the watcher closes the review's herdr panes (never a busy one), and a
+triaged review opens its page in the browser. Reviews live in
 `.data/jreview/`. Skills: `jreview-report`, `jreview-triage`,
 `jreview-consensus` (the dispatched sessions' contracts).
 

@@ -28,7 +28,7 @@ request.
 The index page lists every **HITL grilling ticket** on jTicket's frontier
 (`type: decision` + tag `hitl`, open/unblocked/unclaimed; `arch:candidate`
 tickets excluded — they grill through `/jarchitect-grill`), grouped
-by project in the same format as jTicket's own /next page. **Start** dispatches
+by project (the same grouping jTicket's boards use). **Start** dispatches
 the ticket into herdr through jTicket's dispatch endpoint (own tab, no focus
 steal) — a launcher, not a redirect: the interview runs in that herdr pane and
 you answer there. A session only appears in the list below if you ask that

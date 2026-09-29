@@ -100,7 +100,7 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/jso
 
 The resolution: the domain list (name — kind — one line each), the scoping doc
 key, and anything the domain mappers should collectively know. Then tell the
-user: N domain tickets are ready to Run in jTicket → Up next, and the map will
+user: N domain tickets are ready to Run from the jTicket project's board (`https://jticket.local/projects/PROJ-n`), and the map will
 be synthesized at jMap once their docs land.
 
 ## Never

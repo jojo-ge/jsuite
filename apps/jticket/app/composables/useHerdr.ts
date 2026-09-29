@@ -1,5 +1,5 @@
 // Herdr's shape, shared by every page that shows dispatch/go-to buttons.
-// One keyed fetch — /next and the project page reuse the same state, and the
+// One keyed fetch — every board reuses the same state, and the
 // server holds its own ~5s cache over the (multi-call) CLI reads.
 export interface HerdrTab {
   tabId: string

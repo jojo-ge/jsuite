@@ -72,11 +72,17 @@ export interface Project {
   // branch that the project's PRs target, and which lands as one PR when the
   // project is done. See server/utils/github.ts.
   integrationBranch: string
-  // Starred projects are the ones on deck: /next only surfaces frontier
-  // tickets (and merge queues) from starred projects. Everything else about a
-  // project is unaffected — its tickets still appear on /running, /finished
-  // and the board.
+  // Legacy: starred once put a project on the (removed) Up next page. Kept
+  // because sync, import and export still carry it; nothing reads it.
   starred: boolean
+  // The projects page's manual order and its Project backlog — both
+  // machine-local view state, like starred: never on the sync wire. position
+  // null means "never placed": those sort first, newest first, so a project
+  // jReview/jMap/the scan just made lands on top. PUT /api/projects/order
+  // numbers a whole list; hidden parks a project in the Project backlog
+  // section (its tickets, loop and links are untouched).
+  position: number | null
+  hidden: boolean
   // Two-party sync (spec DOC-30): null = local-only, and everything behaves
   // exactly as before. When set, the project's entities are partitioned by
   // owner side and the peer's half is read-only here — see ownership.ts.
@@ -138,8 +144,8 @@ export interface Ticket {
   promptMode: TicketPromptMode
   // When the ticket last became done. Stamped on the todo/in_progress → done
   // transition and cleared when it moves back out; null while unfinished. Kept
-  // separate from updatedAt, which any edit bumps — this is what /finished
-  // orders by. Never set directly by callers; see stampCompletion.
+  // separate from updatedAt, which any edit bumps — this is what
+  // ?finished=true orders by. Never set directly by callers; see stampCompletion.
   completedAt: string | null
   // Ownership on a shared project ('' / '' on local-only ones). `origin` is
   // the side that minted the ticket — immutable, it fixes the key's parity;
@@ -310,6 +316,8 @@ export function loadStore(): Store {
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
         starred: p.starred ?? false,
+        position: typeof p.position === 'number' ? p.position : null,
+        hidden: p.hidden === true,
         // Projects predating (or never entering) sync are local-only.
         share: p.share ?? null,
         // Projects predating prompt overrides use the defaults for everything.
@@ -427,7 +435,7 @@ export function isStatus(v: unknown): v is TicketStatus {
 
 // Both terminal states count as finished: 'done' answers "is the work built?"
 // and 'merged' additionally says its PR landed. Everything that used to ask
-// `status === 'done'` — blocking, the frontier's complement, /finished — asks
+// `status === 'done'` — blocking, the frontier's complement, ?finished=true — asks
 // this instead.
 export function isFinishedStatus(v: unknown): v is 'done' | 'merged' {
   return v === 'done' || v === 'merged'

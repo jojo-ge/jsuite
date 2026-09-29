@@ -12,7 +12,7 @@ Creating a map (directory + title) creates a **jMap-mode project in jTicket**
 (repo = the directory, so herdr dispatch has its cwd) and one scoping ticket.
 From there the whole process runs through jTicket's herdr buttons:
 
-1. **Scoping** — Run the scoping ticket from jTicket → Up next. The button
+1. **Scoping** — Run the scoping ticket from the jTicket project's board. The button
    dispatches `/jmap-scope TICK-n` into a herdr claude session, which explores
    the repo top-down, publishes a scoping doc on the project, and creates one
    `jmap:domain` ticket per part of the codebase (each with entry paths).

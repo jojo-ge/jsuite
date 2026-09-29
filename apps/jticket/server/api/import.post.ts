@@ -62,6 +62,8 @@ export default defineEventHandler(async (event) => {
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
       starred: p.starred === true,
+      position: null,
+      hidden: false,
       // Hand-off prompts are machine-local; a breakdown doesn't carry them.
       prompts: {},
       // Local-only until the share flow arms it — never set at creation.

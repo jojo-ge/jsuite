@@ -118,4 +118,5 @@ Zero agreed findings is a normal outcome — POST `{"ticketKeys": [],
 
 Then reply with one line — "N considered → M agreed → tickets …" plus the
 jReview URL (`https://jreview.local/r/<key>`) — and stop. Don't implement
-anything; the auto loop dispatches the tickets.
+anything; the auto loop dispatches the tickets. jReview closes this pane (and
+the reviewers') once you've gone idle.

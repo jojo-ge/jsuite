@@ -13,8 +13,9 @@ export default defineEventHandler(async (event) => {
     mode: coerceProjectMode(body.mode),
     repo: body.repo?.trim() ?? '',
     integrationBranch: body.integrationBranch?.trim() ?? '',
-    // Unstarred by default — a new project earns its /next slot explicitly.
     starred: body.starred === true,
+    position: null,
+    hidden: false,
     // Local-only until the share flow arms it — never set at creation.
     share: null,
     // Hand-off prompts start empty — every kind falls through to the global

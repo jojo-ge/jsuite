@@ -97,4 +97,6 @@ each `detail` becomes a ticket description, so make it stand on its own.
 
 Then reply with one line — "N reported → M distinct" plus the jReview URL
 (`https://jreview.local/r/<key>`) — and stop. **Don't create tickets.** The
-human decides that in jReview.
+human decides that in jReview. Don't open the page or close this pane either:
+the POST opens the review in the browser, and jReview closes this pane (and the
+reviewers') once you've gone idle.

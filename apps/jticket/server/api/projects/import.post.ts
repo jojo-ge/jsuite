@@ -80,6 +80,8 @@ export default defineEventHandler(async (event) => {
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
     // Starring is a local "what's on deck" flag, so it doesn't travel.
     starred: false,
+    position: null,
+    hidden: false,
     // Nor do the hand-off prompts: like `repo`, they describe how the
     // exporting machine dispatches agents, not what the project is.
     prompts: {},

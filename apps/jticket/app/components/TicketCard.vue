@@ -121,9 +121,6 @@ const ring = computed(() => {
           </UBadge>
         </div>
         <p class="mt-1 truncate font-medium">{{ ticket.title }}</p>
-        <p v-if="ticket.description" class="mt-1 line-clamp-2 text-sm text-muted">
-          {{ markdownPreview(ticket.description) }}
-        </p>
       </div>
       <UDropdownMenu
         :items="[
@@ -174,7 +171,7 @@ const ring = computed(() => {
         </UBadge>
       </template>
 
-      <!-- The hand-off, right on the card — same controls as /next's rows -->
+      <!-- The hand-off, right on the card -->
       <div v-if="dispatch && frontier" class="ml-auto flex items-center gap-1.5">
         <!-- The hand-off text isn't the stock one — the command label alone
              would not say so. See the project's Prompts panel / the ticket. -->

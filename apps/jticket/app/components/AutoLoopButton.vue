@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The jButton — auto mode's on/off switch in the project header. Turning it
 // on goes through a confirmation modal (it will spend real sessions); turning
-// it off is immediate and leaves any running herdr sessions alone. The big
+// it off is immediate and leaves any running herdr sessions alone. The
 // "Stop at the end of next loop" button lives in <AutoLoopPanel>.
 import type { Project, Ticket } from '~/composables/useTracker'
 

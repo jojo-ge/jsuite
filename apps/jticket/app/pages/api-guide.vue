@@ -31,10 +31,11 @@ const importExample =`curl -s http://localhost:43000/api/import \\
 const endpoints = [
   { m: 'GET', p: '/api/projects', d: 'List projects (?repo= narrows to one codebase — path, ~/…, or slug); rows carry derived repoPath' },
   { m: 'POST', p: '/api/projects/todo', d: "Get-or-create a codebase's TODO project { repo } — idempotent, one todo-mode project per codebase" },
-  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch?, starred? } — starred defaults false; only starred projects surface on /next' },
+  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch?, starred? } — starred is legacy and read by nothing' },
   { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its tickets' },
-  { m: 'PATCH', p: '/api/projects/:id', d: "Update a project; `prompts` merges per kind (a kind set to '' falls back to the global default)" },
-  { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (tickets → backlog)' },
+  { m: 'PATCH', p: '/api/projects/:id', d: "Update a project; `prompts` merges per kind (a kind set to '' falls back to the global default). `hidden: true` parks it in the projects page's Project backlog (view only — tickets and loops carry on); `position` is its place in the manual order (null = never placed, sorts first)" },
+  { m: 'PUT', p: '/api/projects/order', d: 'Renumber the projects page order { ids: [top, …] } — each named project gets position = its index; others keep theirs' },
+  { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (its tickets become unassigned)' },
   { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, attachments)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
   { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch, local PRs (with commits) and matching GitHub PRs (?force=1 skips the 30s cache)" },
@@ -397,9 +398,8 @@ const methodColor: Record<string, string> = {
         <p class="mb-3 text-sm text-muted">
           Moving a ticket to <code>done</code> stamps <code>completedAt</code>; moving it back out clears
           it. <code>?finished=true</code> returns done tickets newest-completion-first, and
-          <code>?since=</code> narrows that to a window — the API behind the
-          <NuxtLink to="/finished" class="text-primary hover:underline">Recently finished</NuxtLink>
-          page, and the quickest way for an agent to write up what it landed today.
+          <code>?since=</code> narrows that to a window — the quickest way for an
+          agent to write up what it landed today.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ finishedExample }}</code></pre>
       </section>

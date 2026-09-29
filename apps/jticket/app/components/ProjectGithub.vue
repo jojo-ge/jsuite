@@ -8,7 +8,9 @@
 // the rest of the project page never waits on GitHub.
 import type { Project } from '~/composables/useTracker'
 
-const props = defineProps<{ project: Project }>()
+// pinnedOpen: the panel is its own tab on the project page, so it starts
+// open and drops the fold chevron.
+const props = defineProps<{ project: Project; pinnedOpen?: boolean }>()
 // Nothing to configure inline — "connect a repo" opens the project edit modal
 // the page already owns.
 const emit = defineEmits<{ configure: [] }>()
@@ -209,8 +211,7 @@ const prs = computed(() => data.value?.prs ?? [])
 const localPrs = computed(() => data.value?.localPrs ?? [])
 
 // ── Local PRs — created, merged and closed right here ──
-// The merge-sweep hand-off (same prompt/dispatch as /next's merge queue): the
-// PR list here is already exactly the queue — open + conflicted, this project.
+// The merge-sweep hand-off: the PR list here is already exactly the queue — open + conflicted, this project.
 const { available: herdrAvailable, refresh: refreshHerdr } = useHerdr()
 const queueKeys = computed(() => {
   const n = (k: string) => Number(k.split('-').pop()) || 0
@@ -291,8 +292,8 @@ async function closePr(pr: LocalPrRow) {
 
 // The whole panel folds, closed by default — the project page is for the
 // tickets; PRs open on demand. The header keeps the count so a waiting queue
-// still announces itself.
-const open = ref(false)
+// still announces itself. Pinned open when it's a tab of its own.
+const open = ref(!!props.pinnedOpen)
 
 // ── jDiff reviews — dispatched from here, findings reported back to jTicket ──
 // An integration-branch review files findings as review:finding tickets in
@@ -308,6 +309,8 @@ async function refreshReviewStatus() {
 }
 let reviewTick: ReturnType<typeof setInterval> | undefined
 watch(open, (o) => {
+  // Client-only: pinned open, this fires during SSR, where timers are refused.
+  if (import.meta.server) return
   if (o && !reviewTick) {
     refreshReviewStatus()
     reviewTick = setInterval(refreshReviewStatus, 8_000)
@@ -454,11 +457,13 @@ async function createPr() {
     <div class="mb-2 flex items-center gap-2">
       <button
         type="button"
-        class="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-elevated/40"
+        class="-mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left"
+        :class="!pinnedOpen && 'hover:bg-elevated/40'"
         :aria-expanded="open"
+        :disabled="pinnedOpen"
         @click="open = !open"
       >
-        <UIcon :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 text-muted" />
+        <UIcon v-if="!pinnedOpen" :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-4 text-muted" />
         <UIcon name="i-lucide-git-pull-request" class="size-4 text-muted" />
         <h2 class="text-sm font-semibold uppercase tracking-wide text-muted">Pull requests</h2>
         <span v-if="data?.configured" class="text-xs text-muted">{{ prs.length }}</span>

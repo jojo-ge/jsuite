@@ -2,7 +2,7 @@
 import type { CodeMap, MapProgress, ProgressTicket } from '~/utils/mapTypes'
 
 // The map room. ALL the work lives in jTicket — scoping, domain mapping, and
-// synthesis are tickets run in herdr from jTicket's /next page. This page
+// synthesis are tickets run in herdr from the jTicket project's board. This page
 // watches that progress, creates the synthesis ticket when the docs are in,
 // and renders the finished map once the synthesis session POSTs it back.
 
@@ -177,7 +177,7 @@ const statusLabel = (s: ProgressTicket['status']) => (s === 'in_progress' ? 'run
             </div>
             <p v-if="scopingTickets.length && scopingTickets[0]!.status === 'todo'" class="text-xs text-muted">
               Run this ticket in herdr from
-              <a href="https://jticket.local/next" target="_blank" class="text-primary underline">jTicket → Up next</a>
+              <a :href="progress?.project?.url ?? 'https://jticket.local/projects'" target="_blank" class="text-primary underline">jTicket → {{ progress?.project?.key ?? 'the project' }}</a>
               — the Run button dispatches <code>/jmap-scope</code>. It will create one ticket per domain below.
             </p>
           </section>
@@ -215,8 +215,8 @@ const statusLabel = (s: ProgressTicket['status']) => (s === 'in_progress' ? 'run
             </div>
             <p v-if="domainTickets.length && !progress.allDone" class="text-xs text-muted">
               Run these in herdr from
-              <a href="https://jticket.local/next" target="_blank" class="text-primary underline">jTicket → Up next</a>
-              (each dispatches <code>/jmap-domain</code>; "Run all" takes the whole frontier).
+              <a :href="progress?.project?.url ?? 'https://jticket.local/projects'" target="_blank" class="text-primary underline">jTicket → {{ progress?.project?.key ?? 'the project' }}</a>
+              (each dispatches <code>/jmap-domain</code>; "Run all" on the board takes the whole frontier).
             </p>
           </section>
 
@@ -238,7 +238,7 @@ const statusLabel = (s: ProgressTicket['status']) => (s === 'in_progress' ? 'run
             </div>
             <p v-if="openSynthesis" class="text-xs text-muted">
               Run it in herdr from
-              <a href="https://jticket.local/next" target="_blank" class="text-primary underline">jTicket → Up next</a>
+              <a :href="progress?.project?.url ?? 'https://jticket.local/projects'" target="_blank" class="text-primary underline">jTicket → {{ progress?.project?.key ?? 'the project' }}</a>
               — the Run button dispatches <code>/jmap-synthesize</code>. The map appears here the moment that
               session posts the graph back.
             </p>

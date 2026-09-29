@@ -6,8 +6,8 @@ export default defineEventHandler(async (event) => {
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   // On a shared project the title/description/mode belong to the link creator
-  // (spec DOC-30). Machine-local fields — repo, integration branch, starred —
-  // stay editable on both sides and never cross the wire.
+  // (spec DOC-30). Machine-local fields — repo, integration branch, starred,
+  // position, hidden — stay editable on both sides and never cross the wire.
   if (body.title !== undefined || body.description !== undefined || body.mode !== undefined) {
     const refused = projectMetadataError(project.share)
     if (refused) throw createError({ statusCode: 403, statusMessage: refused })
@@ -17,6 +17,19 @@ export default defineEventHandler(async (event) => {
   if (body.description !== undefined) project.description = body.description.trim()
   if (body.mode !== undefined) project.mode = coerceProjectMode(body.mode)
   if (body.starred !== undefined) project.starred = body.starred === true
+  if (body.position !== undefined) {
+    project.position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : null
+  }
+  if (body.hidden !== undefined) {
+    const unhiding = project.hidden && body.hidden !== true
+    project.hidden = body.hidden === true
+    // Unhiding brings a project back on top of the placed ones (below only
+    // never-placed new projects) — that's usually why it was unhidden.
+    if (unhiding && body.position === undefined) {
+      const placed = store.projects.map((p) => p.position).filter((n): n is number => n !== null)
+      project.position = placed.length ? Math.min(...placed) - 1 : null
+    }
+  }
   // The GitHub link. '' on either clears it; the branch is validated here so a
   // hand-set name can't smuggle a git flag into the branch endpoints.
   if (body.repo !== undefined) {

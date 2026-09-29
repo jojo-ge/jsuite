@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
         `Codebase map of \`${repoPath}\`, driven by jMap (https://jmap.local/m/${key}).`,
         '',
         'How this project works:',
-        `1. Run the scoping ticket in herdr (the Run button on /next dispatches \`/jmap-scope\`). It explores the repo, publishes a scoping doc here, and creates one \`jmap:domain\` ticket per part of the codebase.`,
+        `1. Run the scoping ticket in herdr (its herdr button on this project's board dispatches \`/jmap-scope\`). It explores the repo, publishes a scoping doc here, and creates one \`jmap:domain\` ticket per part of the codebase.`,
         `2. Run the domain tickets (each dispatches \`/jmap-domain\`). Each maps its part, publishes a walkthrough doc on this project, and resolves its ticket.`,
         `3. When the docs are in, the map room at https://jmap.local/m/${key} creates a synthesis ticket (dispatches \`/jmap-synthesize\`) — running it unifies the docs into the interactive map.`,
         '',

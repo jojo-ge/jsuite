@@ -24,12 +24,9 @@ pnpm dev          # http://localhost:43000
 | Route | What it shows |
 | --- | --- |
 | `/` | Board — every project and its tickets, plus docs and the backlog |
-| `/next` | **Up next** — the frontier across every project: open, unblocked, unclaimed tickets, each with its `/jimplement` hand-off command |
 | `/prompts` | **Prompts** — the suite-wide hand-off prompt defaults every codebase and project inherits and can override |
 | `/codebase` | **Codebase settings** — the selected codebase's worktree guide (how it does worktrees, and the branches connected to one) and its prompt overrides |
-| `/running` | **Running now** — every in-progress ticket grouped by its project, with a link through to the project |
-| `/finished` | **Recently finished** — every done ticket in completion order, newest first, grouped by the day it landed |
-| `/projects` · `/projects/PROJ-1` | Project hub and project detail |
+| `/projects` · `/projects/PROJ-1` | Project hub and project detail — the board (frontier cards with their hand-off and herdr buttons), overview, docs, pull requests, agents and loops tabs |
 | `/docs` · `/docs/DOC-1` | Docs list and a doc's block document |
 | `/api-guide` | Full HTTP API reference, live in the app |
 
@@ -46,7 +43,7 @@ pnpm dev          # http://localhost:43000
   - `labels`: free-form strings, plus the **tags**: exactly one of `afk` (agent-runnable) or `hitl` (needs a human; gets its own herdr tab) — the server adds `afk` when neither is sent — and optional `prototype` (throwaway work that must never ship; combines with any type). Filter with `GET /api/tickets?label=<label>`. Legacy writes (`"type": "AFK"|"HITL"`, `wayfinder:<sub-type>` labels) are still accepted and folded into this shape; `./jsuite setup` migrates stored tickets.
   - `resolution`: the answer recorded when the ticket resolves (GFM markdown); `""` until then.
   - `blockedBy`: ids of tickets that must finish first
-  - `completedAt`: ISO timestamp of when the ticket last became `done`; `null` while unfinished. **Set by the server on the status change, never by the caller** — PATCHing it is ignored. Re-saving an already-done ticket keeps the original stamp, so fixing a resolution doesn't move it up `/finished`; moving a ticket out of `done` clears it, and moving it back stamps afresh. Tickets finished before the field existed were backfilled from `updatedAt`.
+  - `completedAt`: ISO timestamp of when the ticket last became `done`; `null` while unfinished. **Set by the server on the status change, never by the caller** — PATCHing it is ignored. Re-saving an already-done ticket keeps the original stamp, so fixing a resolution doesn't move it up the `?finished=true` order; moving a ticket out of `done` clears it, and moving it back stamps afresh. Tickets finished before the field existed were backfilled from `updatedAt`.
   - GET responses also attach derived booleans **`blocked`**, **`claimed`**, **`frontier`** (never persisted). `frontier` means takeable *here*: on a shared project a ticket the peer owns, or one mid-ownership-transfer, is read-only and undispatchable on this machine, so it never reads as frontier.
 Every `description` / `resolution` field is **plain GFM markdown** and is
 rendered as such in the UI (via the shared `@jsuite/documents` renderer). Card
@@ -206,7 +203,7 @@ The loop, per ticket:
 
 1. **Cut the ticket branch** — `POST /api/tickets/:id/branch` cuts
    `tick/<TICK-n>-<slug>` off the integration branch, **local only**, and records
-   it on the ticket (`ticket.branch`). The *Up next* page does this automatically
+   it on the ticket (`ticket.branch`). A board's hand-off does this automatically
    when you copy a "Local PR" hand-off prompt, and bakes the branch name into the
    prompt.
 2. **Open the PR** — `POST /api/prs { ticket }` (agents) or the *New local PR*
@@ -234,8 +231,8 @@ GitHub** (the read-only `gh pr list` view, usually just the roll-up).
 
 ### Herdr dispatch
 
-When the [Herdr](https://herdr.dev) server is running, the prompts on */next*
-don't have to go through the clipboard — each row and each "Merge N PRs" button
+When the [Herdr](https://herdr.dev) server is running, the hand-off prompts on a
+board don't have to go through the clipboard — each ticket card and the "Merge N PRs" button
 grows a **herdr** twin that builds the terminal itself over Herdr's socket CLI
 (`server/utils/herdr.ts`):
 

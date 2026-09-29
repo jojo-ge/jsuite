@@ -1,4 +1,4 @@
-import { readyForTriage } from '../../app/utils/reviewTypes'
+import { readyForTriage, type Review } from '../../app/utils/reviewTypes'
 
 // The review watcher: jReview's only moving part. Every few seconds it looks
 // at each review still in `reviewing` and checks the shared document pool for
@@ -9,20 +9,31 @@ import { readyForTriage } from '../../app/utils/reviewTypes'
 // waits for EVERY reviewer's report and dispatches the consensus session
 // instead — it files agreed findings into jTicket and skips triage.
 //
+// Once a review is triaged (or ticketed, for a consensus review) the watcher
+// closes its herdr panes (closeReviewPanes). The session that POSTed is
+// usually still finishing its last reply, so a busy pane is left for a later
+// sweep; after CLOSE_WINDOW_MS the watcher stops trying and leaves whatever is
+// still busy to the human (a skipped reviewer stuck on a prompt, say).
+//
 // Server-side on purpose: triage fires whether or not a browser is open.
 
 const TICK_MS = 4_000
+/** How often one finished review's panes are re-checked while a session in them is busy. */
+const CLOSE_RETRY_MS = 12_000
+/** How long after triage lands the watcher keeps trying to close the panes. */
+const CLOSE_WINDOW_MS = 10 * 60_000
 
 export default defineNitroPlugin((nitroApp) => {
   let running = false
+  const lastCloseTry = new Map<string, number>()
 
   async function tick() {
     if (running) return
     running = true
     try {
       for (const review of await listReviews()) {
-        if (review.status !== 'reviewing') continue
-        await watchReview(review.key)
+        if (review.status === 'reviewing') await watchReview(review.key)
+        else if (review.status === 'triaged' || review.status === 'ticketed') await closePanes(review)
       }
     } catch (err) {
       console.error('[jreview] watcher tick failed:', err)
@@ -56,6 +67,24 @@ export default defineNitroPlugin((nitroApp) => {
       return changed
     })
     if (fireTriage) await dispatchTriage(key)
+  }
+
+  async function closePanes(review: Review) {
+    if (review.panesClosedAt) return
+    // Reviews finished before this sweep existed (or given up on) are left alone.
+    const doneAt = Date.parse(review.triage.doneAt ?? '')
+    if (!doneAt || Date.now() - doneAt > CLOSE_WINDOW_MS) return
+    if (Date.now() - (lastCloseTry.get(review.key) ?? 0) < CLOSE_RETRY_MS) return
+    lastCloseTry.set(review.key, Date.now())
+    try {
+      if (!(await closeReviewPanes(review.key))) return
+    } catch {
+      return // herdr down — next sweep
+    }
+    lastCloseTry.delete(review.key)
+    await updateReview(review.key, (r) => {
+      r.panesClosedAt = new Date().toISOString()
+    }).catch(() => {}) // deleted meanwhile
   }
 
   const timer = setInterval(tick, TICK_MS)

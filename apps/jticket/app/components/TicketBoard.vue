@@ -18,11 +18,14 @@ const props = defineProps<{
   wayfinder?: boolean
   // The project description — the map body on a wayfinder project.
   body?: string
-  // The project these tickets belong to. When given, the board grows the same
-  // hand-off controls as /next: a run-all into herdr, per-card copy/dispatch
-  // buttons, and the workspace/tab chips — so kickoff never needs a trip to
-  // the Up next page.
+  // The project these tickets belong to. When given, the board grows the
+  // hand-off controls: a run-all into herdr, per-card copy/dispatch buttons,
+  // and the workspace/tab chips — kickoff happens right here.
   project?: Project | null
+  // The page around the board already hosts the description and the hand-off
+  // settings (the project page's Overview and Agents tabs), so the banner
+  // drops them and keeps only counts, run-all, views and create.
+  lean?: boolean
 }>()
 const emit = defineEmits<{
   'new-ticket': []
@@ -166,31 +169,24 @@ function stateOf(t: Ticket): BucketKey {
   return bucketOf(t, props.allTickets, props.project)
 }
 
-// ── Hand-off + herdr — the same machinery /next runs, via useHerdrDispatch ──
-// State (prompt target, dispatching, run-all progress) is shared with /next,
-// so a dispatch started there shows as busy here and vice versa.
+// ── Hand-off + herdr, via useHerdrDispatch ──
+// State (prompt target, dispatching, run-all progress) is shared app-wide, so
+// a dispatch started on one board shows as busy on every other.
 const {
   herdrUp,
   promptTarget,
   commandLabel,
   isCustomPrompt,
-  workspaceFor,
-  projectTabs,
-  focusHerdr,
   dispatching,
   dispatchTicket,
   runningAll,
   runAllProgress,
   runAll,
-  cleaningUp,
-  cleanupHerdr,
   copied,
   copyCommand,
 } = useHerdrDispatch()
 
 const mode = computed<ProjectMode>(() => props.project?.mode ?? 'standard')
-const herdrWorkspace = computed(() => (props.project ? workspaceFor(props.project) : null))
-const herdrTabs = computed(() => (props.project ? projectTabs(props.project) : []))
 
 // ── Picking which frontier tickets run ──
 // Run-all fires the whole frontier by default; tick a card's checkbox and it
@@ -234,6 +230,36 @@ async function runAllFrontier() {
   )
   // A pick is a one-shot batch choice — clear it once the batch has gone, so
   // the next Run all means the whole frontier again and not a stale subset.
+  picked.value = new Set()
+}
+
+// ── Run as loop — one jButton loop over the same rows ──
+// Implement → merge → review → fix, once, then auto turns itself off. Only the
+// AFK rows go in: the loop never dispatches HITL work.
+const { busy: autoBusy, runLoop } = useAutoLoop()
+const loopRows = computed(() => runRows.value.filter((t) => !isHitl(t)))
+const loopBlocker = computed(() => {
+  const p = props.project
+  if (!p) return ''
+  if (!p.repo) return 'This project has no repo — set one first'
+  if (!p.integrationBranch) return 'Cut an integration branch first (the Branch button) — the loop merges into it'
+  if (!loopRows.value.length) return 'Only HITL tickets are picked — the loop runs AFK work only'
+  return ''
+})
+const loopHint = computed(() => {
+  if (loopBlocker.value) return loopBlocker.value
+  const n = loopRows.value.length
+  const skipped = runRows.value.length - n
+  const what = pickedFrontier.value.length ? `the ${n} ticked AFK` : `all ${n} AFK frontier`
+  return `One auto loop over ${what} ${n === 1 ? 'ticket' : 'tickets'}: implement, merge, 2-reviewer review, fix — then auto turns off${skipped ? ` (${skipped} HITL skipped)` : ''}`
+})
+async function runAsLoop() {
+  const p = props.project
+  if (!p || loopBlocker.value) return
+  const keys = loopRows.value.map((t) => t.key)
+  if (!window.confirm(`Run one auto loop on ${p.key} over ${keys.join(', ')}?\n\nImplement (Opus 5.5) → merge into ${p.integrationBranch} → 2-reviewer review → fix, then auto mode turns off.`)) return
+  // No picks → no list: the loop takes whatever the AFK frontier is when it starts.
+  await runLoop(p, pickedFrontier.value.length ? keys : undefined).catch(() => {})
   picked.value = new Set()
 }
 
@@ -284,10 +310,10 @@ function dispatchFor(t: Ticket) {
       <span v-else class="text-muted">No tickets yet</span>
 
       <div class="ml-auto flex flex-wrap items-center gap-2">
-        <!-- Kickoff, right from the board — the same controls as /next -->
+        <!-- Kickoff, right from the board -->
         <template v-if="project && counts.frontier">
           <USelect
-            v-if="mode === 'standard'"
+            v-if="mode === 'standard' && !lean"
             v-model="promptTarget"
             :items="HANDOFF_PROMPT_OPTIONS"
             value-key="value"
@@ -296,9 +322,11 @@ function dispatchFor(t: Ticket) {
             class="w-52"
             aria-label="Where the hand-off prompt points its PR"
           />
-          <UTooltip v-if="autoOn" text="Auto mode is driving this project — the jButton dispatches the frontier each loop">
-            <UBadge color="success" variant="subtle" icon="i-lucide-infinity">Auto mode</UBadge>
-          </UTooltip>
+          <template v-if="autoOn">
+            <UTooltip v-if="!lean" text="Auto mode is driving this project — the jButton dispatches the frontier each loop">
+              <UBadge color="success" variant="subtle" icon="i-lucide-infinity">Auto mode</UBadge>
+            </UTooltip>
+          </template>
           <UTooltip
             v-else-if="herdrUp"
             :text="
@@ -320,58 +348,22 @@ function dispatchFor(t: Ticket) {
               <template v-else>Run all ({{ counts.frontier }})</template>
             </UButton>
           </UTooltip>
-        </template>
-        <template v-if="project && herdrUp && herdrWorkspace">
-          <UTooltip :text="`Go to the ${project.title} workspace in herdr`">
+          <UTooltip v-if="!autoOn && herdrUp && mode === 'standard'" :text="loopHint">
             <UButton
-              icon="i-lucide-app-window"
-              color="neutral"
+              icon="i-lucide-repeat-1"
               variant="soft"
               size="xs"
-              :aria-label="`Focus the ${project.title} workspace in herdr`"
-              @click="focusHerdr({ workspace: herdrWorkspace.workspaceId })"
+              :loading="autoBusy === 'loop'"
+              :disabled="!!loopBlocker || !!runningAll"
+              @click="runAsLoop"
             >
-              herdr
+              {{ pickedFrontier.length ? 'Loop selected' : 'Loop frontier' }} ({{ loopRows.length }})
             </UButton>
           </UTooltip>
-          <UButton
-            v-for="tab in herdrTabs"
-            :key="tab.tabId"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            class="font-mono text-xs"
-            :aria-label="`Focus herdr tab ${tab.label}`"
-            @click="focusHerdr({ tab: tab.tabId })"
-          >
-            <span
-              class="mr-1 inline-block size-1.5 rounded-full"
-              :class="{
-                'bg-info': tab.agentStatus === 'working',
-                'bg-warning': tab.agentStatus === 'blocked',
-                'bg-success': tab.agentStatus === 'idle' || tab.agentStatus === 'done',
-                'bg-neutral-400': !tab.agentStatus || tab.agentStatus === 'unknown',
-              }"
-            />
-            {{ tab.label }}
-          </UButton>
-          <UTooltip
-            v-if="herdrTabs.length"
-            :text="`Close ${project.key}'s herdr tabs (asks first if an agent is still busy)`"
-          >
-            <UButton
-              icon="i-lucide-paintbrush"
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              :loading="cleaningUp === project.id"
-              :aria-label="`Close ${project.key}'s herdr tabs`"
-              @click="cleanupHerdr(project)"
-            />
-          </UTooltip>
         </template>
+        <HerdrTabChips v-if="project && !lean" :project="project" />
         <UButton
-          v-if="renderedBody"
+          v-if="renderedBody && !lean"
           :icon="wayfinder ? 'i-lucide-book-open' : 'i-lucide-align-left'"
           trailing-icon="i-lucide-maximize-2"
           size="xs"

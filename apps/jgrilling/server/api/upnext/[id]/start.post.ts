@@ -3,7 +3,7 @@
  * dispatch endpoint. The interview runs in the herdr terminal — the human
  * answers there — and only a question they ask for escalates into this app.
  * HITL work gets its own tab, so ownTab is always set — same as jTicket's
- * /next page does for HITL rows.
+ * boards do for HITL tickets.
  */
 export default defineEventHandler(async (event) => {
   const id = String(getRouterParam(event, 'id'))
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   }
   const project = await $fetch<any>(jticketUrl(`/api/projects/${ticket.projectId}`), { timeout: 3000 })
 
-  // Same mode split as jTicket's /next page: wayfinder tickets are worked via
+  // Same mode split as jTicket's boards: wayfinder tickets are worked via
   // /jwayfinder, everything else via /jimplement — plus the grilling routing.
   const base = project.mode === 'wayfinder' ? `/jwayfinder ${ticket.key}` : `/jimplement ${ticket.key}`
   const prompt =

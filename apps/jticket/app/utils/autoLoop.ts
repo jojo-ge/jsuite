@@ -19,7 +19,9 @@
 //   merging-fixes  the merge sweep over the fix PRs
 //
 // then the next loop starts from 'idle' — unless a stop was requested, in which
-// case auto mode turns itself off. Every step with nothing to do is skipped
+// case auto mode turns itself off. A one-loop run (the board's "Run as loop")
+// is auto mode started with `once`: the loop it starts asks to stop at its own
+// end, and `only` narrows that loop to the tickets the human picked. Every step with nothing to do is skipped
 // (no PRs → no merge; no new commits → no review; no agreed findings → no fix).
 //
 // When 'idle' finds no open ticket left, the project is finished — even on a
@@ -97,6 +99,10 @@ export interface AutoLoop {
   enabled: boolean
   /** "Stop at the end of next loop" — the loop in progress finishes, then auto turns off. */
   stopRequested: boolean
+  /** A one-loop run: the next loop to start turns this into stopRequested. */
+  once: boolean
+  /** Ticket keys the next loop is limited to ([] = the whole AFK frontier); cleared once it starts. */
+  only: string[]
   /** 1-based; the loop in progress (or about to start, while idle). */
   loop: number
   phase: AutoPhase
@@ -178,6 +184,8 @@ export function newAutoLoop(at: string, prev?: AutoLoop | null): AutoLoop {
   return {
     enabled: false,
     stopRequested: false,
+    once: false,
+    only: [],
     loop: (prev?.history.at(-1)?.loop ?? 0) + 1,
     phase: 'idle',
     phaseStartedAt: at,
@@ -218,6 +226,8 @@ export function coerceAutoLoop(raw: any): AutoLoop | null {
     ...base,
     enabled: raw.enabled === true,
     stopRequested: raw.stopRequested === true,
+    once: raw.once === true,
+    only: strs(raw.only),
     loop: Number.isInteger(raw.loop) && raw.loop > 0 ? raw.loop : 1,
     phase: PHASES.includes(raw.phase) ? raw.phase : 'idle',
     loopStartedAt: str(raw.loopStartedAt) || base.loopStartedAt,
@@ -354,9 +364,17 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       // Between loops: nothing is in flight, so a stop takes effect now.
       if (state.stopRequested) return { kind: 'turnOff' }
       if (!world.tip) return { kind: 'pause', reason: 'no-branch', detail: 'the integration branch does not resolve in the repo' }
-      const afk = world.tickets.filter((t) => t.frontier && !t.hitl).map((t) => t.key).sort(byKey)
+      const picked = (t: AutoWorldTicket) => !state.only.length || state.only.includes(t.key)
+      const afk = world.tickets.filter((t) => t.frontier && !t.hitl && picked(t)).map((t) => t.key).sort(byKey)
       if (afk.length) return { kind: 'startLoop', tickets: afk, baseSha: world.tip }
       if (state.paused?.reason === 'waiting-human') return { kind: 'wait', pending: open.map((t) => t.key), note: state.paused.detail }
+      if (state.only.length) {
+        return {
+          kind: 'pause',
+          reason: 'waiting-human',
+          detail: `none of the picked tickets (${state.only.join(', ')}) is on the AFK frontier any more — turn auto off and pick again`,
+        }
+      }
       const hitl = open.filter((t) => t.frontier && t.hitl).map((t) => t.key)
       return {
         kind: 'pause',
@@ -565,6 +583,9 @@ const LOOP_JOBS = ['merge', 'outcome report']
  * Closed: in the project's tabs ('KEY', 'KEY · …'), a done ticket's pane and
  * the merge / outcome-report panes; in jReview's tabs ('review K', 'review K · n',
  * 'triage K', 'triage K n'), everything of a review the loop has moved past.
+ * jReview closes those same tabs itself once the consensus lands (its
+ * isReviewTab), so this is the backstop — a pane already gone just fails to
+ * close and is skipped.
  */
 export function panesToClean(
   panes: HerdrPaneSeen[],

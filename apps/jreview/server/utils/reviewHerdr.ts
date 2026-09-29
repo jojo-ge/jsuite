@@ -1,4 +1,6 @@
 import { basename } from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import {
   ensureHerdrWorkspace,
   acquirePackedPane,
@@ -6,8 +8,11 @@ import {
   renamePane,
   startClaudeIn,
   herdrJson,
+  invalidateHerdrState,
 } from '@jsuite/herdr'
-import type { Review } from '../../app/utils/reviewTypes'
+import { isReviewTab, type Review } from '../../app/utils/reviewTypes'
+
+const pExecFile = promisify(execFile)
 
 // Driving Herdr (the terminal workspace manager) from jReview.
 //
@@ -25,6 +30,12 @@ import type { Review } from '../../app/utils/reviewTypes'
 //     A consensus review gets `/jreview-consensus <key>` on CONSENSUS_MODEL in
 //     that tab instead: it files the findings every reviewer raised into the
 //     caller's jTicket project and POSTs the ticket keys to /consensus.
+//
+// Once that hand-back lands the watcher closes the review's panes (every pane
+// in its 'review K' / 'triage K' tabs — never one whose agent is still working
+// or blocked), and a triaged review opens its page in the browser instead.
+// jTicket's auto loop sweeps the same tabs for its consensus reviews; closing
+// is idempotent, so whichever gets there first wins and the other finds nothing.
 
 /** Every session is pinned to Opus 5.5; JREVIEW_MODEL overrides it. */
 export const REVIEW_MODEL = process.env.JREVIEW_MODEL?.trim() || 'claude-opus-5-5'
@@ -136,5 +147,39 @@ export async function dispatchTriage(key: string): Promise<void> {
       if (fresh.triage.status === 'done') return
       Object.assign(fresh.triage, { status: 'failed', error })
     }).catch(() => {})
+  }
+}
+
+/**
+ * Close every herdr pane in the review's tabs whose agent isn't working or
+ * blocked (closing a tab's last pane closes the tab; an emptied workspace goes
+ * too, and is recreated on the next dispatch). Returns true when none of the
+ * review's panes are left open. Throws only when herdr can't be listed; a pane
+ * that won't close (jTicket's sweep got it first) is simply skipped.
+ */
+export async function closeReviewPanes(key: string): Promise<boolean> {
+  const [tabList, paneList] = await Promise.all([herdrJson<any>(['tab', 'list']), herdrJson<any>(['pane', 'list'])])
+  const tabLabel = new Map<string, string>((tabList?.result?.tabs ?? []).map((t: any) => [t.tab_id, String(t.label ?? '')]))
+  const mine = (paneList?.result?.panes ?? []).filter((p: any) => isReviewTab(tabLabel.get(p.tab_id) ?? '', key))
+  const busy = mine.filter((p: any) => p.agent_status === 'working' || p.agent_status === 'blocked')
+  let closed = 0
+  for (const p of mine) {
+    if (busy.includes(p)) continue
+    try {
+      await herdrJson(['pane', 'close', p.pane_id])
+      closed++
+    } catch { /* already gone */ }
+  }
+  if (closed) invalidateHerdrState()
+  return busy.length === 0
+}
+
+/** Open the review's page in the default browser. Best-effort; JREVIEW_OPEN_BROWSER=0 turns it off. */
+export async function openReviewInBrowser(key: string): Promise<void> {
+  if (process.env.JREVIEW_OPEN_BROWSER?.trim() === '0') return
+  try {
+    await pExecFile('open', [`https://jreview.local/r/${key}`])
+  } catch (err: any) {
+    console.error(`[jreview] could not open ${key} in the browser:`, String(err?.message ?? err))
   }
 }

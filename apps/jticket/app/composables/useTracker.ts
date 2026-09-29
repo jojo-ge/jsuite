@@ -31,9 +31,13 @@ export interface Project {
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string
-  // Starred = on deck: only starred projects surface on /next. Tickets are
-  // unaffected everywhere else (/running, /finished, the board).
+  // Legacy: starred once put a project on the (removed) Up next page. Kept
+  // because sync, import and export still carry it; nothing reads it.
   starred: boolean
+  // The projects page's manual order (null = never placed: sorts first,
+  // newest first) and its Project backlog. Machine-local view state.
+  position: number | null
+  hidden: boolean
   share: ProjectShare | null
   // This project's hand-off prompt overrides, keyed by PromptKind — only the
   // kinds it overrides are present. Machine-local (never on the sync wire);
@@ -82,7 +86,7 @@ export interface Ticket {
   prompt: string
   promptMode: TicketPromptMode
   // When the ticket last became done; null while unfinished. Stamped by the
-  // server on the status change, not by callers — see /finished.
+  // server on the status change, not by callers.
   completedAt: string | null
   // Which half of a shared project it belongs to ('' on local-only projects).
   // Peer-owned tickets are read-only and undispatchable — see peerNameOf.
@@ -200,6 +204,14 @@ export function useTracker() {
     await $fetch(`/api/projects/${id}`, { method: 'PATCH', body: input })
     await refresh()
   }
+  // Drag-to-reorder: renumber a list, top first. Applied locally first so the
+  // dropped row doesn't snap back while the write lands.
+  async function reorderProjects(ids: string[]) {
+    const at = new Map(ids.map((id, i) => [id, i]))
+    projects.value = projects.value.map((p) => (at.has(p.id) ? { ...p, position: at.get(p.id)! } : p))
+    await $fetch('/api/projects/order', { method: 'PUT', body: { ids } })
+    await refresh()
+  }
   async function deleteProject(id: string) {
     await $fetch(`/api/projects/${id}`, { method: 'DELETE' })
     await refresh()
@@ -252,6 +264,7 @@ export function useTracker() {
     refresh,
     createProject,
     updateProject,
+    reorderProjects,
     deleteProject,
     createTicket,
     updateTicket,

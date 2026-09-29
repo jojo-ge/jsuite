@@ -31,6 +31,8 @@ export default defineEventHandler(async (event) => {
     repo: probe.path,
     integrationBranch: '',
     starred: false,
+    position: null,
+    hidden: false,
     share: null,
     prompts: {},
     createdAt: ts,

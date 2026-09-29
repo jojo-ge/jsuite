@@ -1,6 +1,6 @@
 /**
  * The Synthesize button: create the synthesis TICKET on the jTicket project
- * (label jmap:synthesize → the Run button on /next dispatches
+ * (label jmap:synthesize → its herdr button on the project board dispatches
  * `/jmap-synthesize TICK-n` into herdr). The session it starts reads the
  * domain docs, builds the graph, and hands it back via
  * POST /api/maps/:key/synthesis — jMap runs nothing itself.
