@@ -11,17 +11,36 @@
 //     tickets       — with enabled: true, limit the first loop to these keys;
 //                     409 unless at least one is an AFK frontier ticket (HITL
 //                     and off-frontier picks are dropped)
+//     orchestration — with enabled: true, { mode: 'sessions' | 'orchestrated',
+//                     budget: 1…4 } — how implementing / fixing dispatch;
+//                     kept for later runs. Left out = the last run's setting
+//     plan          — with enabled: true, walk the project's Run setup plan
+//                     (project.runPlan) step by step instead of looping; 409
+//                     with the problems when it can't run as built
 //   enabled: false  — off now; sessions already running in herdr carry on
 //   stopRequested   — true = finish the loop in progress, then turn off;
 //                     false = keep going after all
 //   retry           — clear a pause and re-run the step it stopped on
+//   continue        — run plan: pass the gate step in progress
 //
 // Returns the project's loop state. The loop itself is advanced by
 // server/plugins/autoLoop.ts; enabling nudges the first tick straight away.
+import { coerceOrchestration } from '../../../../app/utils/autoLoop'
+import { PLAN_STEP_LABELS } from '../../../../app/utils/runPlan'
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body =
-    (await readBody<{ enabled?: unknown; stopRequested?: unknown; retry?: unknown; once?: unknown; tickets?: unknown }>(event)) ?? {}
+    (await readBody<{
+      enabled?: unknown
+      stopRequested?: unknown
+      retry?: unknown
+      once?: unknown
+      tickets?: unknown
+      orchestration?: unknown
+      plan?: unknown
+      continue?: unknown
+    }>(event)) ?? {}
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
@@ -30,6 +49,17 @@ export default defineEventHandler(async (event) => {
   if (enabling) {
     const blocked = autoModeBlocker(store, project)
     if (blocked) throw createError({ statusCode: 409, statusMessage: blocked })
+  }
+
+  // A run plan: the Run setup tab's, runnable as built.
+  const plan = enabling && body.plan === true ? project.runPlan : undefined
+  if (enabling && body.plan === true) {
+    if (!plan?.steps.length) throw createError({ statusCode: 409, statusMessage: `${project.key} has no run plan — build one in the Run setup tab first` })
+    const problems = runPlanProblems(store, project, plan)
+    if (problems.length) throw createError({ statusCode: 409, statusMessage: problems.map((p) => p.message).join(' '), data: { problems } })
+    if (!plan.steps.some((s) => s.kind === 'implement')) {
+      throw createError({ statusCode: 409, statusMessage: `the plan has no ${PLAN_STEP_LABELS.implement} step — nothing would run` })
+    }
   }
 
   // The picks a one-loop run is limited to — only the ones the loop could take.
@@ -58,9 +88,12 @@ export default defineEventHandler(async (event) => {
     retry: body.retry === true,
     once: enabling && body.once === true,
     only,
+    orchestration: enabling ? (coerceOrchestration(body.orchestration) ?? undefined) : undefined,
+    plan: plan ?? undefined,
+    continueGate: body.continue === true,
   })
   saveStore(store)
 
-  if (enabling || body.retry === true) void advanceAutoLoop(project.id)
+  if (enabling || body.retry === true || body.continue === true) void advanceAutoLoop(project.id)
   return auto
 })

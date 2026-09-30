@@ -9,3 +9,6 @@ export const MERGE_MODEL = process.env.JTICKET_MERGE_MODEL?.trim() || 'claude-so
 
 /** The auto loop's outcome report — the latest Opus: it reads the project's code and explains it. */
 export const REPORT_MODEL = process.env.JTICKET_REPORT_MODEL?.trim() || 'claude-opus-5-5'
+
+/** Orchestrated auto loops — one session per phase that runs the tickets through Opus subagents. */
+export const ORCHESTRATE_MODEL = process.env.JTICKET_ORCHESTRATE_MODEL?.trim() || 'claude-fable-5-1'

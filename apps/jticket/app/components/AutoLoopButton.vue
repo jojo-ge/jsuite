@@ -4,6 +4,7 @@
 // it off is immediate and leaves any running herdr sessions alone. The
 // "Stop at the end of next loop" button lives in <AutoLoopPanel>.
 import type { Project, Ticket } from '~/composables/useTracker'
+import { DEFAULT_ORCHESTRATION, ORCHESTRATION_BUDGET_MAX, type AutoMode } from '~/utils/autoLoop'
 
 const props = defineProps<{ project: Project; tickets: Ticket[]; allTickets: Ticket[] }>()
 const { busy, start, turnOff } = useAutoLoop()
@@ -11,6 +12,16 @@ const { busy, start, turnOff } = useAutoLoop()
 const on = computed(() => !!props.project.auto?.enabled)
 const confirmOpen = ref(false)
 const error = ref('')
+
+// How implementing / fixing dispatch — seeded from the last run's setting.
+const mode = ref<AutoMode>(DEFAULT_ORCHESTRATION.mode)
+const budget = ref(DEFAULT_ORCHESTRATION.budget)
+const orchestrated = computed(() => mode.value === 'orchestrated')
+const modeItems = [
+  { label: 'One session per ticket', value: 'sessions', description: 'Every ticket at once, each in its own Opus 5.5 session and worktree. Fastest, heaviest.' },
+  { label: 'Orchestrated', value: 'orchestrated', description: 'One Fable 5.1 session runs the tickets through Opus 5.5 subagents in pooled worktrees, deciding what runs side by side. Lighter, slower.' },
+]
+const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX }, (_, i) => ({ label: `${i + 1} at a time`, value: i + 1 }))
 
 const afkFrontier = computed(() =>
   props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && !isHitl(t)),
@@ -29,6 +40,9 @@ const runningLoop = computed(() => {
   return a?.enabled && a.phase !== 'idle' && a.phase !== 'reporting' ? a.loop : 0
 })
 const countLabel = computed(() => {
+  const a = props.project.auto
+  // A run plan counts its own steps, not forecast loops.
+  if (on.value && a?.plan) return a.phase === 'reporting' ? '' : `step ${Math.min(a.cursor + 1, a.plan.steps.length)} of ${a.plan.steps.length}`
   if (on.value) {
     if (!runningLoop.value) return loopCount.value ? `${loopCount.value} to go` : ''
     return `loop ${runningLoop.value} of ${runningLoop.value - 1 + loopCount.value}`
@@ -36,6 +50,7 @@ const countLabel = computed(() => {
   return `${loopCount.value} loop${loopCount.value === 1 ? '' : 's'}`
 })
 const countHint = computed(() => {
+  if (on.value && props.project.auto?.plan) return 'Auto mode is walking the Run setup plan — see the Run setup tab.'
   const n = loopCount.value
   const gated = forecast.value.gated.length
   const base = n
@@ -62,13 +77,16 @@ async function onClick() {
     return
   }
   error.value = ''
+  const o = props.project.auto?.orchestration ?? DEFAULT_ORCHESTRATION
+  mode.value = o.mode
+  budget.value = o.budget
   confirmOpen.value = true
 }
 
 async function confirmStart() {
   error.value = ''
   try {
-    await start(props.project)
+    await start(props.project, { mode: mode.value, budget: budget.value })
     confirmOpen.value = false
   } catch (err: any) {
     error.value = String(err?.data?.statusMessage ?? err?.data?.message ?? err?.message ?? err)
@@ -109,11 +127,23 @@ async function confirmStart() {
           you stop it or the project runs out of work:
         </p>
         <ol class="flex list-decimal flex-col gap-1.5 pl-5">
-          <li><span class="font-medium">Implement</span> — every AFK ticket on the frontier goes to herdr on <span class="font-mono text-xs">Opus 5.5</span>.</li>
+          <li v-if="orchestrated">
+            <span class="font-medium">Implement</span> — a <span class="font-mono text-xs">Fable 5.1</span> orchestrator works the AFK frontier through
+            <span class="font-mono text-xs">Opus 5.5</span> subagents, at most {{ budget }} at a time, and spec-checks each ticket against its acceptance criteria before marking it done.
+          </li>
+          <li v-else><span class="font-medium">Implement</span> — every AFK ticket on the frontier goes to herdr on <span class="font-mono text-xs">Opus 5.5</span>.</li>
           <li><span class="font-medium">Merge</span> — once they're all done, a merge sweep on <span class="font-mono text-xs">Sonnet 5</span> lands their PRs on <span class="font-mono text-xs">{{ project.integrationBranch || 'the integration branch' }}</span>.</li>
           <li><span class="font-medium">Review</span> — two <span class="font-mono text-xs">Opus 5.5</span> reviewers in jReview read this loop's changes; a <span class="font-mono text-xs">Sonnet 5</span> session files only the findings <em>both</em> raised as tickets here.</li>
-          <li><span class="font-medium">Fix</span> — those tickets go to herdr on <span class="font-mono text-xs">Opus 5.5</span>, then a second merge sweep lands them.</li>
+          <li>
+            <span class="font-medium">Fix</span> — those tickets
+            <template v-if="orchestrated">go to a fresh orchestrator the same way</template>
+            <template v-else>go to herdr on <span class="font-mono text-xs">Opus 5.5</span></template>, then a second merge sweep lands them.
+          </li>
         </ol>
+        <div class="flex flex-col gap-2">
+          <URadioGroup v-model="mode" :items="modeItems" legend="How tickets are dispatched" />
+          <USelect v-if="orchestrated" v-model="budget" :items="budgetItems" size="sm" class="w-40" />
+        </div>
         <div class="rounded-md border border-default bg-elevated/40 px-3 py-2">
           <p>
             <span class="font-medium">{{ afkFrontier.length }}</span> AFK ticket{{ afkFrontier.length === 1 ? '' : 's' }} on the frontier now

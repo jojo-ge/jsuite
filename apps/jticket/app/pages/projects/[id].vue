@@ -47,8 +47,8 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'overview' | 'docs' | 'prs' | 'agents' | 'loops'
-const PROJECT_TABS: ProjectTab[] = ['board', 'overview', 'docs', 'prs', 'agents', 'loops']
+type ProjectTab = 'board' | 'run' | 'overview' | 'docs' | 'prs' | 'agents' | 'loops'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'overview', 'docs', 'prs', 'agents', 'loops']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
@@ -69,6 +69,10 @@ const openPrCount = computed(() =>
 const loopCount = computed(() => project.value?.auto?.history?.length ?? 0)
 const tabItems = computed(() => [
   { label: 'Board', value: 'board', icon: 'i-lucide-layout-list', badge: stats.value.tickets || undefined },
+  // Run setup — build a run plan by hand (standard projects: auto mode drives only those).
+  ...(project.value?.mode === 'standard'
+    ? [{ label: 'Run setup', value: 'run', icon: 'i-lucide-list-ordered', badge: project.value.runPlan?.steps.length || undefined }]
+    : []),
   { label: 'Overview', value: 'overview', icon: 'i-lucide-align-left' },
   { label: 'Docs', value: 'docs', icon: 'i-lucide-file-text', badge: projectDocs.value.length || undefined },
   { label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined },
@@ -398,6 +402,9 @@ async function removeProject() {
 
         <!-- Loops — the jButton's finished loops -->
         <AutoLoopHistory v-else-if="tab === 'loops'" :project="project" />
+
+        <!-- Run setup — the human's own run plan for auto mode -->
+        <RunSetup v-else-if="tab === 'run' && project.mode === 'standard'" :project="project" :tickets="projectTickets" :all-tickets="tickets" />
       </template>
     </UContainer>
 

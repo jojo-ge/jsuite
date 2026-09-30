@@ -3,7 +3,7 @@
 // (server/plugins/autoLoop.ts); every change it makes lands in
 // project.auto and reaches the page over /api/stream.
 import type { Project, Ticket } from '~/composables/useTracker'
-import type { AutoLoop } from '~/utils/autoLoop'
+import type { AutoLoop, AutoOrchestration } from '~/utils/autoLoop'
 import { forecastLoops, type AutoForecast } from '~/utils/autoForecast'
 
 export function useAutoLoop() {
@@ -11,7 +11,7 @@ export function useAutoLoop() {
   const toast = useToast()
   const busy = useState<string>('jticket-auto-busy', () => '')
 
-  async function post(project: Project, body: Record<string, boolean | string[]>, what: string): Promise<AutoLoop | null> {
+  async function post(project: Project, body: Record<string, unknown>, what: string): Promise<AutoLoop | null> {
     busy.value = what
     try {
       const auto = await $fetch<AutoLoop>(`/api/projects/${project.id}/auto`, { method: 'POST', body })
@@ -32,11 +32,17 @@ export function useAutoLoop() {
 
   return {
     busy,
-    start: (p: Project) => post(p, { enabled: true }, 'start'),
+    // `orchestration` left out keeps the last run's setting.
+    start: (p: Project, orchestration?: AutoOrchestration) => post(p, { enabled: true, ...(orchestration ? { orchestration } : {}) }, 'start'),
     // One loop only (the board's "Run as loop"): over the given ticket keys,
     // or the whole AFK frontier when none are given; auto turns off after it.
     runLoop: (p: Project, tickets?: string[]) =>
       post(p, { enabled: true, once: true, ...(tickets?.length ? { tickets } : {}) }, 'loop'),
+    // Walk the project's Run setup plan step by step instead of looping.
+    startPlan: (p: Project, orchestration?: AutoOrchestration) =>
+      post(p, { enabled: true, plan: true, ...(orchestration ? { orchestration } : {}) }, 'plan'),
+    // Run plan: pass the gate step in progress.
+    continueGate: (p: Project) => post(p, { continue: true }, 'continue'),
     turnOff: (p: Project) => post(p, { enabled: false }, 'off'),
     requestStop: (p: Project, stop: boolean) => post(p, { stopRequested: stop }, 'stop'),
     retry: (p: Project) => post(p, { retry: true }, 'retry'),

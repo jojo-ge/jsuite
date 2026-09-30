@@ -85,7 +85,11 @@ Connect worktree button dispatches an agent that checks the branch out the
 guide's way and records the link (`/api/projects/:id/worktree`).
 A standard project's **jButton** turns on **auto mode**: the jTicket server
 itself loops implement → merge → review → fix → merge. Each loop dispatches the
-AFK frontier into herdr on Opus 5.5 (`/jimplement`, local PRs), waits for every
+AFK frontier into herdr on Opus 5.5 (`/jimplement`, local PRs) — or, in
+**orchestrated** mode (the confirm modal's choice, for lighter machine load),
+one Fable 5.1 `/jorchestrate` session per phase that runs the tickets through
+Opus 5.5 subagents in pooled worktrees, at most the budget (1–4) in flight,
+spec-checking each before marking it done — waits for every
 ticket (no PR yet → it looks twice more, 20s apart, before skipping the merge),
 runs the merge sweep on Sonnet 5 and waits for the sweep to report back
 (`POST /api/projects/:id/auto/merge-report` — a PR it couldn't land pauses the
@@ -260,6 +264,7 @@ triaged review opens its page in the browser. Reviews live in
 | build a feature and hand-code its core as a problem ("with jcode") | `jcode` — ship as usual, then publish the core as a sandbox kata; the page dispatches `jcode-mark` to mark attempts |
 | a thorough multi-reviewer code review of a branch, findings → tickets | jReview (https://jreview.local) — New review; the dispatched sessions run `jreview-report` / `jreview-triage` |
 | run a project hands-off: implement the frontier, merge, review, fix, repeat | the project's **jButton** (auto mode) in jTicket — the server drives the loop; `jreview-consensus` files agreed review findings |
+| run a hand-built sequence: pick the tickets per step, put merges / reviews / gates where you want them | the project's **Run setup** tab in jTicket builds a run plan (implement · merge · review · gate steps); **Start plan** walks it on the jButton's engine — reviews are 1–4 reviewer consensus reviews from a chosen checkpoint, their findings always fixed and merged inside the step |
 | map a codebase / architecture map of a repo | `j-map` (dispatched tickets run `jmap-scope` / `jmap-domain`) |
 | find + triage deepening opportunities in a codebase | jTicket's Improve-architecture button (dispatched tickets run `jarchitect-scan` / `jarchitect-grill`) |
 | check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, no fix) |

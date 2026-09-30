@@ -65,7 +65,7 @@ DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgri
 # list in sync with its row here.
 SKILLS_MANIFEST=(
   ".|jsuite"
-  "apps/jticket|jimplement jwayfinder to-jticket to-jspec to-jdoc jarchitect-scan jarchitect-grill jreproduce"
+  "apps/jticket|jimplement jorchestrate jwayfinder to-jticket to-jspec to-jdoc jarchitect-scan jarchitect-grill jreproduce"
   "apps/jdiff|jdiff-review jdiff-ask jdiff-tour jdiff-chains"
   "apps/jchart|j-chart"
   "apps/jexplain|j-explain"

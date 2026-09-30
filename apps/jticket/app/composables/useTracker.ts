@@ -1,5 +1,6 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
 import type { AutoLoop } from '~/utils/autoLoop'
+import type { RunPlan } from '~/utils/runPlan'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
@@ -46,6 +47,8 @@ export interface Project {
   // Auto mode (the jButton) — the server-driven implement → merge → review →
   // fix loop; see ~/utils/autoLoop.ts. Absent/null = never turned on.
   auto?: AutoLoop | null
+  // The Run setup tab's plan — see ~/utils/runPlan.ts. Absent/null = none drafted.
+  runPlan?: RunPlan | null
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,

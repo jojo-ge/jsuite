@@ -124,7 +124,8 @@ touching.
 - Typecheck regularly; run single test files as you go; run the full suite once at the end.
 - Scope the change to the ticket. Work you discover that belongs to a *different* ticket
   goes on the board (§6), not into this diff.
-- Once done, use `/code-review` to review the work.
+- Once done, use `/code-review` to review the work — unless the hand-off comes from an
+  orchestrator (jTicket's orchestrated auto loop), which spec-checks it instead.
 
 ### Commits and the PR
 
@@ -178,7 +179,9 @@ that lands a few seconds later is skipped: never merged, never reviewed.
    `in_progress` throughout. Reword the description (`PATCH /api/prs/PR-n`) if the change
    grew.
 4. **Mark the ticket `done`** (§5) only once the PR is open **and** the work is complete —
-   acceptance criteria met, suite green. That PATCH is the last step.
+   acceptance criteria met, suite green. That PATCH is the last step. Under an
+   orchestrator, the orchestrator marks it done after its spec check: your last step is
+   the report back.
 
 If the ticket turns out to need no code change (already fixed, invalid, investigation
 only), there's nothing to merge: don't open an empty PR — record why in the resolution

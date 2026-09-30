@@ -17,14 +17,26 @@ import {
   CLEANUP_STEPS,
   OUTCOME_LABEL,
   coerceMergeReport,
+  claimVerdict,
+  coerceOrchestration,
+  currentPlanStep,
+  advancePlan,
+  enterPlanStep,
+  finishPlan,
+  withPlanHistory,
   finishLoop,
   finishedReviews,
   newAutoLoop,
+  newOrchestrator,
   panesToClean,
+  phaseTickets,
   planStep,
   retryStep,
+  AGENT_GONE_MS,
   type AutoAgentSeen,
   type AutoLoop,
+  type AutoOrchestration,
+  type ClaimVerdict,
   type AutoPause,
   type AutoStep,
   type AutoWorld,
@@ -34,6 +46,7 @@ import type { Project, Store, Ticket } from './store'
 import type { JreviewReview } from './jreview'
 import { outcomeReportPrompt } from './outcomeReport'
 import { outcomeDocOf } from '../../app/utils/projectGraphs'
+import { planProblems, samePrefix, type PlanProblem, type PlanTicket, type RunPlan } from '../../app/utils/runPlan'
 
 /** Consensus reviews are two reviewers: a finding both raise is worth a fix ticket. */
 export const AUTO_REVIEWERS = 2
@@ -94,6 +107,7 @@ async function reviewState(key: string | null): Promise<AutoWorld['review']> {
  */
 async function agentsSeen(auto: AutoLoop, store: Store, project: Project): Promise<Record<string, AutoAgentSeen>> {
   if (auto.phase !== 'implementing' && auto.phase !== 'fixing') return {}
+  if (auto.orchestration.mode === 'orchestrated') return {}
   const keys = (auto.phase === 'implementing' ? auto.tickets : auto.fixTickets).filter((k) => {
     const t = store.tickets.find((x) => x.key === k && x.projectId === project.id)
     return auto.dispatched[k] && t && t.status !== 'done' && t.status !== 'merged'
@@ -109,6 +123,26 @@ async function agentsSeen(auto: AutoLoop, store: Store, project: Project): Promi
     else if (agent?.status === 'idle' || agent?.status === 'done' || agent?.status === 'blocked') seen[k] = 'stopped'
   }
   return seen
+}
+
+/**
+ * Orchestrated mode: herdr's view of the phase's orchestrator. Undefined =
+ * unknown (none dispatched, herdr down), which the watchdog leaves alone — but
+ * an orchestrator whose name was never recorded (a restart mid-dispatch)
+ * counts as gone once AGENT_GONE_MS × 2 have passed, so it gets replaced.
+ */
+async function orchestratorSeen(auto: AutoLoop): Promise<AutoAgentSeen | undefined> {
+  if (auto.orchestration.mode !== 'orchestrated' || (auto.phase !== 'implementing' && auto.phase !== 'fixing')) return undefined
+  const o = auto.orchestrator
+  if (!o.dispatchedAt) return undefined
+  if (!o.agent) return Date.now() - Date.parse(o.dispatchedAt) > AGENT_GONE_MS * 2 ? 'gone' : undefined
+  const byName = await herdrAgents()
+  if (!byName) return undefined
+  const status = byName.get(o.agent)
+  if (status === undefined) return 'gone'
+  if (status === 'working') return 'working'
+  if (status === 'idle' || status === 'done' || status === 'blocked') return 'stopped'
+  return undefined
 }
 
 /** herdr's named agents → status; null when herdr can't be asked. */
@@ -176,11 +210,12 @@ export async function advanceAutoLoop(projectId: string): Promise<AutoStep | nul
     const tip = await integrationTip(p0)
     const review = p0.auto.phase === 'reviewing' ? await reviewState(p0.auto.reviewKey) : null
     const agents = await agentsSeen(p0.auto, before, p0)
+    const orchestrator = await orchestratorSeen(p0.auto)
 
     const store = loadStore()
     const project = findProject(store, projectId)
     if (!project?.auto?.enabled) return null
-    const step = planStep(project.auto, { ...storeWorld(store, project), tip, review, now: Date.now(), agents })
+    const step = planStep(project.auto, { ...storeWorld(store, project), tip, review, now: Date.now(), agents, orchestrator })
     await apply(project.id, step)
     if (CLEANUP_STEPS.has(step.kind)) await cleanUpHerdr(project.id)
     return step
@@ -209,7 +244,31 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
 
     case 'turnOff':
       updateAuto(projectId, (auto) => {
-        Object.assign(auto, newAutoLoop(at, auto), { enabled: false, ended: { reason: 'stopped', at } })
+        Object.assign(auto, newAutoLoop(at, withPlanHistory(auto, at)), { enabled: false, ended: { reason: 'stopped', at } })
+      })
+      return
+
+    case 'enterPlanStep':
+      updateAuto(projectId, (auto) => {
+        Object.assign(auto, enterPlanStep(auto, step, at))
+      })
+      return
+
+    case 'skipPlanStep':
+      updateAuto(projectId, (auto) => {
+        Object.assign(auto, advancePlan(auto, at, step.tip, step.reason))
+      })
+      return
+
+    case 'nextPlanStep':
+      updateAuto(projectId, (auto) => {
+        Object.assign(auto, advancePlan(auto, at, step.tip))
+      })
+      return
+
+    case 'finishPlan':
+      updateAuto(projectId, (auto) => {
+        Object.assign(auto, finishPlan(auto, at, step.report))
       })
       return
 
@@ -231,6 +290,7 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
           agents: {},
           watch: {},
           forced: [],
+          orchestrator: newOrchestrator(),
           prs: [],
           prChecks: 0,
           prCheckAt: '',
@@ -286,6 +346,7 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
         auto.phase = 'fixing'
         auto.phaseStartedAt = at
         auto.fixTickets = step.tickets
+        auto.orchestrator = newOrchestrator()
         auto.prChecks = 0
         auto.prCheckAt = ''
       })
@@ -321,6 +382,21 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
     case 'nudge':
       return nudgeTicket(projectId, step.key)
 
+    case 'dispatchOrchestrator':
+      return dispatchOrchestrator(projectId)
+
+    case 'watchOrchestrator':
+      updateAuto(projectId, (auto) => {
+        auto.orchestrator = { ...auto.orchestrator, watch: { ...auto.orchestrator.watch, stoppedSince: step.stoppedSince } }
+      })
+      return
+
+    case 'nudgeOrchestrator':
+      return nudgeOrchestrator(projectId)
+
+    case 'restartOrchestrator':
+      return restartOrchestrator(projectId, step.reason)
+
     case 'forceClose':
       updateAuto(projectId, (auto, store, project) => {
         forceCloseTicket(store, project, step.key, step.reason)
@@ -337,24 +413,7 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
  */
 async function dispatchTickets(projectId: string, keys: string[]) {
   for (const key of keys) {
-    // Cut the ticket's local branch first, as the hand-off button does — the
-    // local-PR prompt names it. Best-effort: a failed cut still hands off.
-    {
-      const store = loadStore()
-      const ticket = store.tickets.find((t) => t.key === key)
-      if (ticket && !ticket.branch) {
-        const cut = await cutTicketBranch(store, ticket).catch(() => null)
-        if (cut) {
-          const fresh = loadStore()
-          const t = fresh.tickets.find((x) => x.key === key)
-          if (t && !t.branch) {
-            t.branch = cut.branch
-            t.updatedAt = now()
-            saveStore(fresh)
-          }
-        }
-      }
-    }
+    await ensureTicketBranch(key)
 
     let prompt = ''
     let claimed = false as boolean
@@ -383,6 +442,26 @@ async function dispatchTickets(projectId: string, keys: string[]) {
       })
       return
     }
+  }
+}
+
+/**
+ * Cut the ticket's local branch before its work starts, as the hand-off
+ * button does — the local-PR prompt names it. Best-effort: a failed cut still
+ * hands off (the agent cuts one itself).
+ */
+async function ensureTicketBranch(key: string) {
+  const store = loadStore()
+  const ticket = store.tickets.find((t) => t.key === key)
+  if (!ticket || ticket.branch) return
+  const cut = await cutTicketBranch(store, ticket).catch(() => null)
+  if (!cut) return
+  const fresh = loadStore()
+  const t = fresh.tickets.find((x) => x.key === key)
+  if (t && !t.branch) {
+    t.branch = cut.branch
+    t.updatedAt = now()
+    saveStore(fresh)
   }
 }
 
@@ -614,8 +693,8 @@ async function startReview(projectId: string) {
       repoPath: resolveRepoDir(project.repo),
       branch: project.integrationBranch,
       base: auto.baseSha,
-      title: `${project.key} · auto loop ${auto.loop} · ${basename(project.repo.trim()) || project.title}`,
-      reviewers: AUTO_REVIEWERS,
+      title: `${project.key} · ${auto.plan ? `run plan ${auto.loop}, step ${auto.cursor + 1}` : `auto loop ${auto.loop}`} · ${basename(project.repo.trim()) || project.title}`,
+      reviewers: currentPlanStep(auto)?.kind === 'review' ? currentPlanStep(auto)!.reviewers : AUTO_REVIEWERS,
       consensus: { projectKey: project.key, loop: auto.loop },
     }
     auto.reviewRequestedAt = now()
@@ -680,6 +759,269 @@ export async function cleanUpHerdr(projectId: string): Promise<number> {
   }
 }
 
+// ── Orchestrated mode ───────────────────────────────────────────────────────
+
+/** The orchestrator's hand-off — one line (herdr submits it as typed input); /jorchestrate carries the rest. */
+export function orchestratorPrompt(projectKey: string, phase: string, keys: string[], budget: number): string {
+  return (
+    `/jorchestrate ${projectKey} — jTicket's auto loop, ${phase} phase: ${keys.join(', ')}, at most ${budget} in flight. ` +
+    `Don't ask questions — record each one as a follow-up HITL ticket in ${projectKey} — and never end your turn while a subagent you started is still running.`
+  )
+}
+
+/** What the watchdog types into an orchestrator that stopped with tickets open. One line. */
+export function orchestratorNudgePrompt(projectKey: string, pending: string[]): string {
+  return (
+    `jTicket's auto loop is still waiting on ${pending.join(', ')} in ${projectKey} and this session has stopped. Carry on with /jorchestrate: ` +
+    `GET the queue, finish what's in flight, claim what's left. Don't ask questions — record each one as a follow-up HITL ticket in ${projectKey}. If you stay stopped, the loop replaces this session.`
+  )
+}
+
+/**
+ * Appended to the prompt an implementer subagent gets from a claim (whatever
+ * overrides shaped the rest) — where it and the local-PR hand-off disagree,
+ * this wins: the orchestrator owns the worktree, the spec check and "done".
+ */
+export function orchestratedTicketInstruction(ticketKey: string, projectKey: string): string {
+  return (
+    `You are an implementer subagent under jTicket's orchestrated auto loop; where this differs from the hand-off above, this wins. ` +
+    `Work in the worktree your orchestrator gives you — don't create one or tear it down. ` +
+    `Skip /jimplement's /code-review step: your orchestrator spec-checks the work against ${ticketKey}'s acceptance criteria, and the loop reviews the whole diff at the end. ` +
+    `Do NOT mark ${ticketKey} done — stop once its local PR is open, the acceptance criteria are met and the suite is green, and report back the PR key, what you built, and anything left undone. ` +
+    `If you can't complete it, record what's done and what's left in its resolution, file the remainder as a new AFK ticket in ${projectKey}, and say so. Don't ask questions — record each one as a follow-up HITL ticket in ${projectKey} and carry on.`
+  )
+}
+
+async function dispatchOrchestrator(projectId: string) {
+  let prompt = ''
+  let project = undefined as Project | undefined
+  const state = updateAuto(projectId, (auto, store, p) => {
+    if (!auto.enabled || auto.paused || auto.orchestrator.dispatchedAt) return false
+    // HITL tickets (a run plan's) are the human's — the orchestrator never sees them.
+    const afk = phaseTickets(auto).filter((k) => {
+      const t = store.tickets.find((x) => x.key === k && x.projectId === p.id)
+      return !t || !isHitl(t)
+    })
+    prompt = orchestratorPrompt(p.key, auto.phase, afk, auto.orchestration.budget)
+    project = p
+    auto.orchestrator = { ...newOrchestrator(auto.orchestrator.runs + 1), dispatchedAt: now() }
+  })
+  if (!state?.enabled || !project) return
+  try {
+    const { agent, paneId } = await dispatchProjectSession(project, 'orchestrate', prompt, { model: ORCHESTRATE_MODEL })
+    updateAuto(projectId, (auto) => {
+      auto.orchestrator = { ...auto.orchestrator, agent, paneId }
+    })
+  } catch (err) {
+    updateAuto(projectId, (auto) => {
+      auto.orchestrator = newOrchestrator(Math.max(0, auto.orchestrator.runs - 1))
+      auto.paused = { reason: 'dispatch-failed', detail: `orchestrator: ${errText(err)}`, at: now() }
+    })
+  }
+}
+
+/** Prompt a stopped orchestrator to carry on. Claimed first; a failed prompt still counts (the replacement follows). */
+async function nudgeOrchestrator(projectId: string) {
+  let agent = ''
+  let text = ''
+  const state = updateAuto(projectId, (auto, store, project) => {
+    const o = auto.orchestrator
+    if (!auto.enabled || !o.dispatchedAt || o.watch.nudgedAt) return false
+    const open = phaseTickets(auto).filter((k) => {
+      const t = store.tickets.find((x) => x.key === k)
+      return t && t.status !== 'done' && t.status !== 'merged'
+    })
+    agent = o.agent
+    text = orchestratorNudgePrompt(project.key, open)
+    auto.orchestrator = { ...o, watch: { ...o.watch, nudgedAt: now() } }
+  })
+  if (!state?.enabled || !agent) return
+  try {
+    await herdrJson(['agent', 'prompt', agent, text])
+  } catch (err) {
+    console.error(`[jticket] auto loop could not nudge its orchestrator (${agent}):`, errText(err))
+  }
+}
+
+/**
+ * Replace a stalled or vanished orchestrator: its in-flight tickets go back
+ * to be claimed (each keeps its branch and whatever was committed on it, with
+ * a comment saying why), its pane is closed, and the next tick dispatches a
+ * fresh one — up to ORCHESTRATOR_MAX_RUNS a phase.
+ */
+async function restartOrchestrator(projectId: string, reason: string) {
+  let paneId = ''
+  updateAuto(projectId, (auto, store, project) => {
+    if (!auto.orchestrator.dispatchedAt) return false
+    paneId = auto.orchestrator.paneId
+    const at = now()
+    for (const k of phaseTickets(auto)) {
+      const t = store.tickets.find((x) => x.key === k && x.projectId === project.id)
+      if (!auto.dispatched[k] || !t || t.status === 'done' || t.status === 'merged') continue
+      delete auto.dispatched[k]
+      t.comments.push({
+        id: newId('cmt'),
+        author: 'jticket auto loop',
+        body: `The loop's orchestrator was replaced while ${k} was in flight: ${reason}. The next orchestrator picks it up again${t.branch ? ` from \`${t.branch}\`` : ''}.`,
+        createdAt: at,
+        ...entityOwnership(project.share),
+      })
+      t.updatedAt = at
+    }
+    auto.orchestrator = newOrchestrator(auto.orchestrator.runs)
+  })
+  if (!paneId) return
+  try {
+    await herdrJson(['pane', 'close', paneId])
+    invalidateHerdrState()
+  } catch { /* already gone */ }
+}
+
+export interface OrchestratorClaim {
+  ticket: string
+  title: string
+  /** The ticket's local branch (cut off the integration branch). */
+  branch: string
+  integrationBranch: string
+  /** The implementer subagent's prompt — the local-PR hand-off plus orchestratedTicketInstruction. */
+  prompt: string
+  /** True when this ticket was already claimed — the same claim handed back. */
+  again: boolean
+  inFlight: string[]
+  budget: number
+}
+
+/**
+ * POST /api/projects/:id/auto/claim — the orchestrator takes `key` for one of
+ * its subagents. Refused (409, `wait: true` in the error data) while the
+ * budget is full; the claim is recorded before the branch is cut.
+ */
+export async function claimForOrchestrator(projectId: string, key: string): Promise<OrchestratorClaim> {
+  const out: { verdict?: ClaimVerdict } = {}
+  updateAuto(projectId, (auto, store, project) => {
+    const v = (out.verdict = claimVerdict(auto, storeWorld(store, project), key))
+    if (!v.ok || v.again) return false
+    auto.dispatched = { ...auto.dispatched, [key]: now() }
+  })
+  const v = out.verdict ?? claimVerdict(null, { tickets: [] }, key)
+  if (!v.ok) throw createError({ statusCode: v.status, statusMessage: v.message, data: { wait: v.wait } })
+
+  await ensureTicketBranch(key)
+  const store = loadStore()
+  const project = findProject(store, projectId)!
+  const ticket = store.tickets.find((t) => t.key === key && t.projectId === project.id)
+  if (!ticket) throw createError({ statusCode: 404, statusMessage: `${key} no longer exists` })
+  const auto = project.auto!
+  return {
+    ticket: key,
+    title: ticket.title,
+    branch: ticket.branch,
+    integrationBranch: project.integrationBranch,
+    prompt: `${localPrPrompt(store, project, ticket)} ${orchestratedTicketInstruction(key, project.key)}`,
+    again: v.again,
+    inFlight: phaseTickets(auto).filter((k) => {
+      const t = store.tickets.find((x) => x.key === k)
+      return auto.dispatched[k] && t && t.status !== 'done' && t.status !== 'merged'
+    }),
+    budget: auto.orchestration.budget,
+  }
+}
+
+/** GET /api/projects/:id/auto/queue — the orchestrator's view of its phase. */
+export function orchestratorQueue(store: Store, project: Project) {
+  const auto = project.auto
+  if (!auto?.enabled || auto.orchestration.mode !== 'orchestrated') {
+    throw createError({ statusCode: 409, statusMessage: `${project.key} is not running an orchestrated auto loop` })
+  }
+  const tickets = phaseTickets(auto).map((k) => {
+    const t = store.tickets.find((x) => x.key === k && x.projectId === project.id)
+    const status = t?.status ?? 'done'
+    const done = status === 'done' || status === 'merged'
+    return {
+      key: k,
+      title: t?.title ?? '(deleted)',
+      status,
+      branch: t?.branch ?? '',
+      // 'human' = HITL: not yours to claim; the loop waits for the human to finish it.
+      state: done ? 'finished' : auto.dispatched[k] ? 'in-flight' : t && isHitl(t) ? 'human' : 'waiting',
+    }
+  })
+  return {
+    project: project.key,
+    phase: auto.phase,
+    loop: auto.loop,
+    budget: auto.orchestration.budget,
+    repo: resolveRepoDir(project.repo),
+    integrationBranch: project.integrationBranch,
+    inFlight: tickets.filter((t) => t.state === 'in-flight').map((t) => t.key),
+    tickets,
+  }
+}
+
+// ── Run plans (the Run setup tab) ───────────────────────────────────────────
+
+/**
+ * Every ticket a plan's blockers can name: the project's, plus whatever
+ * outside it they wait on (those can't be placed in the plan, so an open one
+ * is a problem).
+ */
+function planTickets(store: Store, project: Project): PlanTicket[] {
+  const mine = store.tickets.filter((t) => t.projectId === project.id)
+  const byId = new Map(store.tickets.map((t) => [t.id, t]))
+  const inProject = new Set(mine.map((t) => t.id))
+  const outside = [...new Set(mine.flatMap((t) => t.blockedBy))].filter((id) => !inProject.has(id))
+  return [...mine, ...outside.map((id) => byId.get(id)).filter((t): t is Ticket => !!t)].map((t) => ({
+    key: t.key,
+    status: t.status,
+    blockedBy: t.blockedBy.map((id) => byId.get(id)?.key).filter((k): k is string => !!k),
+  }))
+}
+
+/**
+ * What stops `plan` from running on `project` — [] when nothing does. Steps
+ * a running plan has already started are frozen: not re-checked. Tickets from
+ * outside the project can't be placed in it.
+ */
+export function runPlanProblems(store: Store, project: Project, plan: RunPlan, frozen = 0): PlanProblem[] {
+  const mine = new Set(store.tickets.filter((t) => t.projectId === project.id).map((t) => t.key))
+  const problems = planProblems(plan, planTickets(store, project), { frozen })
+  plan.steps.forEach((s, i) => {
+    if (i < frozen) return
+    for (const k of s.tickets) {
+      if (!mine.has(k) && store.tickets.some((t) => t.key === k)) problems.push({ stepId: s.id, message: `${k} belongs to another project.` })
+    }
+  })
+  return problems
+}
+
+/** How many of a running plan's steps are frozen: those finished, and the one in progress. */
+export function frozenSteps(auto: AutoLoop | null | undefined): number {
+  if (!auto?.enabled || !auto.plan) return 0
+  return auto.cursor + (auto.phase === 'idle' ? 0 : 1)
+}
+
+/**
+ * PUT /api/projects/:id/run-plan — save the Run setup draft. A draft may be
+ * half-built (the problems come back for the page to show). While a plan is
+ * running, the draft IS the running plan: its started steps can't change, and
+ * the rest must be runnable, since the loop picks them up as it goes.
+ */
+export function saveRunPlan(store: Store, project: Project, plan: RunPlan): { plan: RunPlan; problems: PlanProblem[] } {
+  const auto = project.auto
+  const frozen = frozenSteps(auto)
+  const problems = runPlanProblems(store, project, plan, frozen)
+  if (auto?.enabled && auto.plan) {
+    if (!samePrefix(auto.plan, plan, frozen)) {
+      throw createError({ statusCode: 409, statusMessage: `steps 1–${frozen} have already started — only the steps after them can change while the plan runs` })
+    }
+    if (problems.length) throw createError({ statusCode: 409, statusMessage: problems.map((p) => p.message).join(' '), data: { problems } })
+    auto.plan = structuredClone(plan)
+  }
+  project.runPlan = plan
+  project.updatedAt = now()
+  return { plan, problems }
+}
+
 // ── The jButton's controls (POST /api/projects/:id/auto) ────────────────────
 
 /** Why a project can't go into auto mode — null when it can. */
@@ -694,7 +1036,18 @@ export function autoModeBlocker(store: Store, project: Project): string | null {
 export function setAutoMode(
   store: Store,
   project: Project,
-  patch: { enabled?: boolean; stopRequested?: boolean; retry?: boolean; once?: boolean; only?: string[] },
+  patch: {
+    enabled?: boolean
+    stopRequested?: boolean
+    retry?: boolean
+    once?: boolean
+    only?: string[]
+    orchestration?: AutoOrchestration
+    /** With enabled: true — walk this run plan instead of looping. */
+    plan?: RunPlan
+    /** Run plan: pass the gate in progress. */
+    continueGate?: boolean
+  },
 ): AutoLoop {
   const at = now()
   let auto = project.auto ?? newAutoLoop(at)
@@ -702,10 +1055,14 @@ export function setAutoMode(
     // A fresh start: whatever the last run left behind is history now. A
     // one-loop run carries `once` (and its picks) into the first loop.
     auto = { ...newAutoLoop(at, auto), enabled: true, ended: null, once: patch.once === true, only: patch.only ?? [] }
+    if (patch.plan) auto = { ...auto, once: false, only: [], plan: structuredClone(patch.plan), cursor: 0 }
+    // How this run dispatches — fixed while it runs, remembered for the next.
+    if (patch.orchestration) auto.orchestration = coerceOrchestration(patch.orchestration) ?? auto.orchestration
   } else if (patch.enabled === false && auto.enabled) {
     // Off now. Sessions already running in herdr are left alone.
-    auto = { ...newAutoLoop(at, auto), enabled: false, ended: { reason: 'turned-off', at } }
+    auto = { ...newAutoLoop(at, withPlanHistory(auto, at)), enabled: false, ended: { reason: 'turned-off', at } }
   }
+  if (patch.continueGate && auto.enabled && auto.phase === 'gate') auto = { ...auto, gatePassed: true }
   if (typeof patch.stopRequested === 'boolean' && auto.enabled) auto = { ...auto, stopRequested: patch.stopRequested }
   if (patch.retry && auto.enabled) auto = retryStep(auto, storeWorld(store, project))
   project.auto = auto

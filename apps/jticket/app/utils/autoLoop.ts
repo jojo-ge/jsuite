@@ -41,13 +41,44 @@
 // nothing is lost and the loop moves on. Hand-dispatched tickets are never
 // watched — only the loop's own.
 //
+// Orchestration: how implementing / fixing hand their tickets to herdr.
+// 'sessions' (the default) is the above — one session per ticket, all at
+// once. 'orchestrated' trades wall clock for load: ONE Fable orchestrator
+// session per phase (/jorchestrate) works the phase's tickets through Opus
+// subagents inside its own claude process, deciding itself which to run side
+// by side and which one after another. The server holds the cap: a ticket
+// runs only once the orchestrator claims it (POST …/auto/claim), and a claim
+// past `budget` tickets in flight is refused. Each subagent's work is
+// spec-checked by the orchestrator before the ticket is marked done; the
+// loop's review at the end stays as it is. The watchdog then watches the one
+// orchestrator instead of each ticket: stopped with tickets open → nudged;
+// still stopped, or gone → replaced by a fresh one (its in-flight tickets are
+// un-claimed so the next one picks them up from their branches), at most
+// ORCHESTRATOR_MAX_RUNS times a phase before the loop pauses.
+//
+// Run plans (app/utils/runPlan.ts): auto mode with a script. Started with
+// `plan`, the run copies the project's Run setup plan into `plan` and walks it
+// step by step instead of looping — `cursor` is the step in progress. Each step
+// is one of the phases above with the human's parameters: implement is
+// 'implementing' over the step's tickets (HITL ones are waited on, never
+// dispatched; one not on the frontier yet waits), merge is 'merging' over the
+// plan's open PRs, review is 'reviewing' from the step's checkpoint and always
+// runs on through 'fixing' and 'merging-fixes', and gate is 'gate' until the
+// human presses Continue. Where the loop would move to its next phase, a plan
+// moves to its next step, recording the integration tip as that step's
+// checkpoint (reviews name a checkpoint as their base). A step with nothing to
+// do is skipped. After the last step the plan is done: the outcome report runs
+// if no open ticket is left, and auto mode turns off.
+//
 // Cleanup: after every step that ends a phase, the loop closes the herdr
 // panes it's finished with (panesToClean) so they don't stack up.
 //
 // The state lives on the project (project.auto in jticket.json), so the loop
 // survives a restart and every change reaches the page over /api/stream.
 
-export type AutoPhase = 'idle' | 'implementing' | 'merging' | 'reviewing' | 'fixing' | 'merging-fixes' | 'reporting'
+import { coerceRunPlan, reviewBaseSha, type PlanStepKind, type RunPlan } from './runPlan'
+
+export type AutoPhase = 'idle' | 'implementing' | 'merging' | 'reviewing' | 'fixing' | 'merging-fixes' | 'gate' | 'reporting'
 
 export const AUTO_PHASES: ReadonlyArray<{ phase: Exclude<AutoPhase, 'idle'>; label: string }> = [
   { phase: 'implementing', label: 'Implement' },
@@ -77,11 +108,55 @@ export type AutoPauseReason =
   | 'merge-incomplete'
   /** The project lost its repo or integration branch. */
   | 'no-branch'
+  /** ORCHESTRATOR_MAX_RUNS orchestrators in a row stopped with tickets open — Retry step starts a fresh one. */
+  | 'orchestrator-failed'
 
 export interface AutoPause {
   reason: AutoPauseReason
   detail: string
   at: string
+}
+
+/** How implementing / fixing hand tickets to herdr — see the header. */
+export type AutoMode = 'sessions' | 'orchestrated'
+
+export interface AutoOrchestration {
+  mode: AutoMode
+  /** Orchestrated only: the most tickets in flight at once (claimed, not yet done). */
+  budget: number
+}
+
+export const ORCHESTRATION_BUDGET_MAX = 4
+export const DEFAULT_ORCHESTRATION: AutoOrchestration = { mode: 'sessions', budget: 2 }
+
+/** The phase's orchestrator session (orchestrated mode). */
+export interface AutoOrchestrator {
+  /** When it was handed to herdr ('' = not yet, or replaced). Claimed before the dispatch. */
+  dispatchedAt: string
+  /** Its herdr agent name ('' until the dispatch returns). */
+  agent: string
+  paneId: string
+  /** Orchestrators this phase has started — a replacement counts. */
+  runs: number
+  watch: AutoWatch
+}
+
+/** A phase that has started this many orchestrators, all of which stopped short, pauses. */
+export const ORCHESTRATOR_MAX_RUNS = 3
+
+/** What one step of a run plan did — kept on the run while it goes, then in its history record. */
+export interface PlanStepRecord {
+  stepId: string
+  kind: PlanStepKind
+  tickets: string[]
+  fixTickets: string[]
+  prs: string[]
+  reviewKey: string | null
+  forced?: string[]
+  /** Why it was skipped ('' = it ran). */
+  skipped: string
+  startedAt: string
+  endedAt: string
 }
 
 export interface AutoLoopRecord {
@@ -90,6 +165,10 @@ export interface AutoLoopRecord {
   fixTickets: string[]
   /** Tickets the watchdog had to close itself. */
   forced?: string[]
+  /** Set when the loop ran orchestrated. */
+  orchestrated?: boolean
+  /** Set when this was a run plan, not a loop: what each of its steps did. */
+  plan?: PlanStepRecord[]
   reviewKey: string | null
   startedAt: string
   endedAt: string
@@ -103,6 +182,8 @@ export interface AutoLoop {
   once: boolean
   /** Ticket keys the next loop is limited to ([] = the whole AFK frontier); cleared once it starts. */
   only: string[]
+  /** How implementing / fixing dispatch — kept from run to run, set when the jButton starts it. */
+  orchestration: AutoOrchestration
   /** 1-based; the loop in progress (or about to start, while idle). */
   loop: number
   phase: AutoPhase
@@ -123,6 +204,8 @@ export interface AutoLoop {
   watch: Record<string, AutoWatch>
   /** Tickets the watchdog closed itself this loop. */
   forced: string[]
+  /** Orchestrated mode: the current phase's orchestrator. */
+  orchestrator: AutoOrchestrator
   /** The PRs the current merge sweep is landing. */
   prs: string[]
   /** How many times this phase's tickets were all finished with no PR to merge — see NO_PR_RETRIES. */
@@ -144,9 +227,21 @@ export interface AutoLoop {
   reportedAt: string
   /** The outcome report doc it wrote (DOC-n), once reported. */
   reportDoc: string
+  /** The run plan being walked (null = the plain loop). Steps after the cursor may still be edited. */
+  plan: RunPlan | null
+  /** Run plan: the index of the step in progress — or, while 'idle', about to start. */
+  cursor: number
+  /** Run plan: when the step in progress started. */
+  stepStartedAt: string
+  /** Run plan: the steps already finished (or skipped). */
+  planLog: PlanStepRecord[]
+  /** Run plan: stepId (or 'start') → the integration tip when it finished — a review's base. */
+  checkpoints: Record<string, string>
+  /** Run plan: the human pressed Continue on the gate in progress. */
+  gatePassed: boolean
   history: AutoLoopRecord[]
   /** Why auto mode last turned itself off. */
-  ended: null | { reason: 'stopped' | 'complete' | 'turned-off'; at: string }
+  ended: null | { reason: 'stopped' | 'complete' | 'turned-off' | 'plan-finished'; at: string }
 }
 
 export interface AutoWatch {
@@ -186,6 +281,7 @@ export function newAutoLoop(at: string, prev?: AutoLoop | null): AutoLoop {
     stopRequested: false,
     once: false,
     only: [],
+    orchestration: prev?.orchestration ?? { ...DEFAULT_ORCHESTRATION },
     loop: (prev?.history.at(-1)?.loop ?? 0) + 1,
     phase: 'idle',
     phaseStartedAt: at,
@@ -198,6 +294,7 @@ export function newAutoLoop(at: string, prev?: AutoLoop | null): AutoLoop {
     agents: {},
     watch: {},
     forced: [],
+    orchestrator: newOrchestrator(),
     prs: [],
     prChecks: 0,
     prCheckAt: '',
@@ -209,12 +306,43 @@ export function newAutoLoop(at: string, prev?: AutoLoop | null): AutoLoop {
     reportDispatchedAt: '',
     reportedAt: '',
     reportDoc: '',
+    plan: null,
+    cursor: 0,
+    stepStartedAt: '',
+    planLog: [],
+    checkpoints: {},
+    gatePassed: false,
     history: prev?.history ?? [],
     ended: prev?.ended ?? null,
   }
 }
 
-const PHASES: AutoPhase[] = ['idle', 'implementing', 'merging', 'reviewing', 'fixing', 'merging-fixes', 'reporting']
+/** A phase's orchestrator before anything was dispatched — `runs` carries a count over. */
+export function newOrchestrator(runs = 0): AutoOrchestrator {
+  return { dispatchedAt: '', agent: '', paneId: '', runs, watch: { stoppedSince: '', nudgedAt: '' } }
+}
+
+/** An orchestration setting off the wire or the disk — null when there's nothing usable. */
+export function coerceOrchestration(raw: any): AutoOrchestration | null {
+  if (!raw || typeof raw !== 'object') return null
+  const mode: AutoMode = raw.mode === 'orchestrated' ? 'orchestrated' : raw.mode === 'sessions' ? 'sessions' : DEFAULT_ORCHESTRATION.mode
+  const n = Number(raw.budget)
+  const budget = Number.isInteger(n) ? Math.min(ORCHESTRATION_BUDGET_MAX, Math.max(1, n)) : DEFAULT_ORCHESTRATION.budget
+  return { mode, budget }
+}
+
+function coerceOrchestrator(raw: any): AutoOrchestrator {
+  if (!raw || typeof raw !== 'object') return newOrchestrator()
+  return {
+    dispatchedAt: str(raw.dispatchedAt),
+    agent: str(raw.agent),
+    paneId: str(raw.paneId),
+    runs: Number.isInteger(raw.runs) && raw.runs > 0 ? raw.runs : 0,
+    watch: { stoppedSince: str(raw.watch?.stoppedSince), nudgedAt: str(raw.watch?.nudgedAt) },
+  }
+}
+
+const PHASES: AutoPhase[] = ['idle', 'implementing', 'merging', 'reviewing', 'fixing', 'merging-fixes', 'gate', 'reporting']
 const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
@@ -228,6 +356,7 @@ export function coerceAutoLoop(raw: any): AutoLoop | null {
     stopRequested: raw.stopRequested === true,
     once: raw.once === true,
     only: strs(raw.only),
+    orchestration: coerceOrchestration(raw.orchestration) ?? { ...DEFAULT_ORCHESTRATION },
     loop: Number.isInteger(raw.loop) && raw.loop > 0 ? raw.loop : 1,
     phase: PHASES.includes(raw.phase) ? raw.phase : 'idle',
     loopStartedAt: str(raw.loopStartedAt) || base.loopStartedAt,
@@ -239,6 +368,7 @@ export function coerceAutoLoop(raw: any): AutoLoop | null {
     agents: raw.agents && typeof raw.agents === 'object' ? { ...raw.agents } : {},
     watch: coerceWatch(raw.watch),
     forced: strs(raw.forced),
+    orchestrator: coerceOrchestrator(raw.orchestrator),
     prs: strs(raw.prs),
     prChecks: Number.isInteger(raw.prChecks) && raw.prChecks > 0 ? raw.prChecks : 0,
     prCheckAt: str(raw.prCheckAt),
@@ -250,6 +380,15 @@ export function coerceAutoLoop(raw: any): AutoLoop | null {
     reportDispatchedAt: str(raw.reportDispatchedAt),
     reportedAt: str(raw.reportedAt),
     reportDoc: str(raw.reportDoc),
+    plan: coerceRunPlan(raw.plan),
+    cursor: Number.isInteger(raw.cursor) && raw.cursor > 0 ? raw.cursor : 0,
+    stepStartedAt: str(raw.stepStartedAt),
+    planLog: Array.isArray(raw.planLog) ? raw.planLog.filter((r: any) => r && typeof r === 'object' && typeof r.stepId === 'string') : [],
+    checkpoints:
+      raw.checkpoints && typeof raw.checkpoints === 'object'
+        ? Object.fromEntries(Object.entries(raw.checkpoints).filter((e): e is [string, string] => typeof e[1] === 'string'))
+        : {},
+    gatePassed: raw.gatePassed === true,
     history: Array.isArray(raw.history) ? raw.history.slice(-AUTO_HISTORY_CAP) : [],
     ended: raw.ended && typeof raw.ended === 'object' ? raw.ended : null,
   }
@@ -311,6 +450,8 @@ export interface AutoWorld {
    * here is unknown (herdr down, agent never recorded) and is left alone.
    */
   agents?: Record<string, AutoAgentSeen>
+  /** Orchestrated mode: herdr's view of the phase's orchestrator — missing = unknown, left alone. */
+  orchestrator?: AutoAgentSeen
 }
 
 export type AutoAgentSeen = 'working' | 'stopped' | 'gone'
@@ -334,6 +475,14 @@ export type AutoStep =
   | { kind: 'watch'; key: string; stoppedSince: string }
   | { kind: 'nudge'; key: string }
   | { kind: 'forceClose'; key: string; reason: string }
+  | { kind: 'dispatchOrchestrator' }
+  | { kind: 'watchOrchestrator'; stoppedSince: string }
+  | { kind: 'nudgeOrchestrator' }
+  | { kind: 'restartOrchestrator'; reason: string }
+  | { kind: 'enterPlanStep'; phase: 'implementing' | 'merging' | 'reviewing' | 'gate'; tickets: string[]; prs: string[]; baseSha: string; tip: string }
+  | { kind: 'skipPlanStep'; reason: string; tip: string }
+  | { kind: 'nextPlanStep'; tip: string }
+  | { kind: 'finishPlan'; report: boolean }
 
 const finished = (t: AutoWorldTicket | undefined) => !t || t.status === 'done' || t.status === 'merged'
 const landed = (p: AutoWorldPr | undefined) => !p || p.status === 'merged' || p.status === 'closed'
@@ -353,9 +502,13 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
   if (state.paused && state.paused.reason !== 'waiting-human') return { kind: 'wait', pending: [], note: state.paused.detail }
 
   const ticket = (k: string) => world.tickets.find((t) => t.key === k)
+  // Where the loop would move on to its next phase, a run plan moves on to its next step.
+  const plan = !!state.plan
+  const nextStep: AutoStep = { kind: 'nextPlanStep', tip: world.tip ?? '' }
 
   switch (state.phase) {
     case 'idle': {
+      if (plan) return planIdleStep(state, world)
       // No open ticket left: the project is finished — write its outcome
       // report, whether or not a stop was asked for (an empty project has
       // nothing to report).
@@ -388,29 +541,47 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
     case 'implementing':
     case 'fixing': {
       const keys = state.phase === 'implementing' ? state.tickets : state.fixTickets
-      const toDispatch = keys.filter((k) => !state.dispatched[k] && !finished(ticket(k)))
-      if (toDispatch.length) return { kind: 'dispatchTickets', keys: toDispatch }
       const pending = keys.filter((k) => !finished(ticket(k)))
-      const watched = watchStep(state, world, pending)
-      if (watched) return watched
-      if (pending.length) return { kind: 'wait', pending }
+      // A run plan's HITL tickets are the human's: waited on, never dispatched.
+      const afk = pending.filter((k) => !ticket(k)?.hitl)
+      if (state.orchestration.mode === 'orchestrated') {
+        if (afk.length) return orchestratorStep(state, world, afk)
+      } else {
+        // A run plan's ticket goes out once it's on the frontier — one still
+        // blocked, or claimed by hand, waits its turn.
+        const toDispatch = afk.filter((k) => !state.dispatched[k] && (!plan || ticket(k)?.frontier))
+        if (toDispatch.length) return { kind: 'dispatchTickets', keys: toDispatch }
+        const watched = watchStep(state, world, pending)
+        if (watched) return watched
+      }
+      if (pending.length) {
+        const human = pending.filter((k) => ticket(k)?.hitl)
+        const held = afk.filter((k) => !state.dispatched[k] && !ticket(k)?.frontier)
+        const note = [
+          human.length ? `waiting on you for ${human.join(', ')} (HITL)` : '',
+          held.length ? `${held.join(', ')} ${held.length === 1 ? 'is' : 'are'} blocked or claimed — dispatched once free` : '',
+        ].filter(Boolean).join('; ')
+        return { kind: 'wait', pending, ...(note ? { note } : {}) }
+      }
       const prs = world.prs
         .filter((p) => keys.includes(p.ticketKey) && (p.status === 'open' || p.status === 'conflicted'))
         .map((p) => p.key)
         .sort(byKey)
-      if (prs.length) return { kind: 'enterMerge', prs }
+      // A run plan merges only where the human put a merge step.
+      if (prs.length) return plan && state.phase === 'implementing' ? nextStep : { kind: 'enterMerge', prs }
       // No PR yet. Look again NO_PR_RETRIES times, NO_PR_RECHECK_MS apart,
       // before deciding this phase had nothing to merge.
       // (first look at 0s, retries at 20s and 40s; the 40s one skips).
       const due = state.prCheckAt ? Date.parse(state.prCheckAt) + NO_PR_RECHECK_MS : 0
       if (world.now < due) return { kind: 'wait', pending: [], note: 'every ticket is finished but no PR has shown up yet' }
       if (state.prChecks < NO_PR_RETRIES) return { kind: 'recheckPrs' }
+      if (plan) return nextStep
       return state.phase === 'implementing' ? { kind: 'enterReview' } : { kind: 'finishLoop' }
     }
 
     case 'merging':
     case 'merging-fixes': {
-      const next: AutoStep = state.phase === 'merging' ? { kind: 'enterReview' } : { kind: 'finishLoop' }
+      const next: AutoStep = plan ? nextStep : state.phase === 'merging' ? { kind: 'enterReview' } : { kind: 'finishLoop' }
       const pending = state.prs.filter((k) => !landed(world.prs.find((p) => p.key === k)))
       if (!state.mergeDispatchedAt) return pending.length ? { kind: 'dispatchMerge', prs: pending } : next
       // The sweep says when it's finished; until then it may still be rebasing.
@@ -431,7 +602,7 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
     case 'reviewing': {
       if (!state.reviewRequestedAt) {
         // Nothing landed this loop (every ticket finished without a PR) — nothing to review.
-        if (world.tip && world.tip === state.baseSha) return { kind: 'finishLoop' }
+        if (world.tip && world.tip === state.baseSha) return plan ? nextStep : { kind: 'finishLoop' }
         return { kind: 'startReview' }
       }
       if (!state.reviewKey) {
@@ -443,7 +614,13 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       }
       if (world.review.status !== 'ticketed') return { kind: 'wait', pending: [state.reviewKey] }
       const fixes = [...world.review.ticketKeys].sort(byKey)
-      return fixes.length ? { kind: 'enterFix', tickets: fixes } : { kind: 'finishLoop' }
+      return fixes.length ? { kind: 'enterFix', tickets: fixes } : plan ? nextStep : { kind: 'finishLoop' }
+    }
+
+    case 'gate': {
+      if (state.gatePassed) return nextStep
+      const note = state.plan?.steps[state.cursor]?.note
+      return { kind: 'wait', pending: [], note: `gate — press Continue when you're ready${note ? `: ${note}` : ''}` }
     }
 
     case 'reporting': {
@@ -451,6 +628,175 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       if (!state.reportedAt) return { kind: 'wait', pending: [], note: 'waiting for the outcome report session to report back' }
       return { kind: 'complete' }
     }
+  }
+}
+
+/**
+ * A run plan between steps: start the step at the cursor — or skip it when it
+ * has nothing to do — or, past the last step, finish the plan.
+ */
+function planIdleStep(state: AutoLoop, world: AutoWorld): AutoStep {
+  const plan = state.plan!
+  const step = plan.steps[state.cursor]
+  if (!step) return { kind: 'finishPlan', report: !!world.tickets.length && world.tickets.every(finished) }
+  // Between steps nothing is in flight, so a stop takes effect now.
+  if (state.stopRequested) return { kind: 'turnOff' }
+  if (!world.tip) return { kind: 'pause', reason: 'no-branch', detail: 'the integration branch does not resolve in the repo' }
+  const tip = world.tip
+  const enter = (phase: Extract<AutoStep, { kind: 'enterPlanStep' }>['phase'], patch: { tickets?: string[]; prs?: string[]; baseSha?: string } = {}): AutoStep => ({
+    kind: 'enterPlanStep',
+    phase,
+    tickets: patch.tickets ?? [],
+    prs: patch.prs ?? [],
+    baseSha: patch.baseSha ?? tip,
+    tip,
+  })
+  switch (step.kind) {
+    case 'implement': {
+      const open = step.tickets.filter((k) => !finished(world.tickets.find((t) => t.key === k)))
+      return open.length ? enter('implementing', { tickets: open }) : { kind: 'skipPlanStep', reason: 'every ticket in it was already finished', tip }
+    }
+    case 'merge': {
+      // Every open PR of the plan's tickets so far — review fixes included, and
+      // anything an earlier sweep left behind.
+      const ours = new Set(state.planLog.flatMap((r) => [...r.tickets, ...r.fixTickets]))
+      const prs = world.prs
+        .filter((p) => ours.has(p.ticketKey) && (p.status === 'open' || p.status === 'conflicted'))
+        .map((p) => p.key)
+        .sort(byKey)
+      return prs.length ? enter('merging', { prs }) : { kind: 'skipPlanStep', reason: 'no open PR to merge', tip }
+    }
+    case 'review': {
+      const checkpoints = { ...state.checkpoints, start: state.checkpoints.start || tip }
+      const base = reviewBaseSha(plan, state.cursor, checkpoints)
+      return base === tip ? { kind: 'skipPlanStep', reason: 'nothing landed since its base', tip } : enter('reviewing', { baseSha: base })
+    }
+    case 'gate':
+      return enter('gate')
+  }
+}
+
+/** The run plan's step in progress (or about to start), if a plan is running. */
+export function currentPlanStep(state: AutoLoop) {
+  return state.plan?.steps[state.cursor] ?? null
+}
+
+/**
+ * The run plan's record of the step in progress, as it stands — `skipped`
+ * set when it never ran.
+ */
+export function planStepRecord(state: AutoLoop, at: string, skipped = ''): PlanStepRecord | null {
+  const step = currentPlanStep(state)
+  if (!step) return null
+  const ran = !skipped
+  return {
+    stepId: step.id,
+    kind: step.kind,
+    tickets: ran && step.kind === 'implement' ? state.tickets : [],
+    fixTickets: ran && step.kind === 'review' ? state.fixTickets : [],
+    prs: ran ? state.prs : [],
+    reviewKey: ran && step.kind === 'review' ? state.reviewKey : null,
+    ...(ran && state.forced.length ? { forced: state.forced } : {}),
+    skipped,
+    startedAt: state.stepStartedAt || at,
+    endedAt: at,
+  }
+}
+
+/** A run plan's step is over: log it, checkpoint the tip, and move the cursor on. */
+export function advancePlan(state: AutoLoop, at: string, tip: string, skipped = ''): AutoLoop {
+  const record = planStepRecord(state, at, skipped)
+  const step = currentPlanStep(state)
+  const cleared = newAutoLoop(at, state)
+  return {
+    ...state,
+    ...stepFields(cleared),
+    phase: 'idle',
+    phaseStartedAt: at,
+    paused: null,
+    cursor: state.cursor + 1,
+    stepStartedAt: '',
+    gatePassed: false,
+    planLog: record ? [...state.planLog, record] : state.planLog,
+    checkpoints: { ...state.checkpoints, ...(state.checkpoints.start ? {} : { start: tip }), ...(step ? { [step.id]: tip } : {}) },
+  }
+}
+
+/** The per-phase working fields — what a new step (or loop) starts from empty. */
+export function stepFields(s: AutoLoop): Partial<AutoLoop> {
+  return {
+    baseSha: s.baseSha,
+    tickets: s.tickets,
+    fixTickets: s.fixTickets,
+    dispatched: s.dispatched,
+    agents: s.agents,
+    watch: s.watch,
+    forced: s.forced,
+    orchestrator: s.orchestrator,
+    prs: s.prs,
+    prChecks: s.prChecks,
+    prCheckAt: s.prCheckAt,
+    mergeDispatchedAt: s.mergeDispatchedAt,
+    mergeReportedAt: s.mergeReportedAt,
+    mergeReport: s.mergeReport,
+    reviewRequestedAt: s.reviewRequestedAt,
+    reviewKey: s.reviewKey,
+  }
+}
+
+/** Start the run plan's step at the cursor (planIdleStep chose how). */
+export function enterPlanStep(state: AutoLoop, step: Extract<AutoStep, { kind: 'enterPlanStep' }>, at: string): AutoLoop {
+  return {
+    ...state,
+    ...stepFields(newAutoLoop(at, state)),
+    phase: step.phase,
+    phaseStartedAt: at,
+    stepStartedAt: at,
+    paused: null,
+    gatePassed: false,
+    baseSha: step.baseSha,
+    tickets: step.tickets,
+    prs: step.prs,
+    checkpoints: state.checkpoints.start ? state.checkpoints : { ...state.checkpoints, start: step.tip },
+  }
+}
+
+/**
+ * Past the run plan's last step: its history record goes in, then either the
+ * outcome report runs (no open ticket left) or auto mode turns off.
+ */
+export function finishPlan(state: AutoLoop, at: string, report: boolean): AutoLoop {
+  const next = newAutoLoop(at, withPlanHistory(state, at))
+  return report
+    ? { ...next, enabled: true, phase: 'reporting', phaseStartedAt: at, ended: null }
+    : { ...next, enabled: false, ended: { reason: 'plan-finished', at } }
+}
+
+/** A run plan ending early (stopped, turned off) still leaves its record. */
+export function withPlanHistory(state: AutoLoop, at: string): AutoLoop {
+  if (!state.plan || (!state.planLog.length && state.phase === 'idle')) return state
+  // The step it stopped in counts as far as it got.
+  const partial = state.phase !== 'idle' ? planStepRecord(state, at) : null
+  const log = partial ? { ...state, planLog: [...state.planLog, partial] } : state
+  return { ...state, history: [...state.history, planHistoryRecord(log, at)].slice(-AUTO_HISTORY_CAP) }
+}
+
+/**
+ * The run plan is done (or stopped): one history record for the whole run,
+ * with what each step did.
+ */
+export function planHistoryRecord(state: AutoLoop, at: string): AutoLoopRecord {
+  const log = state.planLog
+  return {
+    loop: state.loop,
+    tickets: log.flatMap((r) => r.tickets),
+    fixTickets: log.flatMap((r) => r.fixTickets),
+    ...(log.some((r) => r.forced?.length) ? { forced: log.flatMap((r) => r.forced ?? []) } : {}),
+    ...(state.orchestration.mode === 'orchestrated' ? { orchestrated: true } : {}),
+    plan: log,
+    reviewKey: log.filter((r) => r.reviewKey).at(-1)?.reviewKey ?? null,
+    startedAt: state.loopStartedAt,
+    endedAt: at,
   }
 }
 
@@ -487,21 +833,98 @@ export function watchStep(state: AutoLoop, world: AutoWorld, pending: string[]):
 }
 
 /**
+ * Orchestrated mode's step while the phase has open tickets: start its
+ * orchestrator, then watch that one session the way watchStep watches a
+ * ticket's — stopped → noted → nudged → replaced; gone → replaced.
+ */
+export function orchestratorStep(state: AutoLoop, world: AutoWorld, pending: string[]): AutoStep {
+  const o = state.orchestrator
+  const wait: AutoStep = { kind: 'wait', pending }
+  if (!o.dispatchedAt) {
+    if (o.runs >= ORCHESTRATOR_MAX_RUNS) {
+      return {
+        kind: 'pause',
+        reason: 'orchestrator-failed',
+        detail: `${o.runs} orchestrators in a row stopped with ${pending.join(', ')} still open — Retry step starts a fresh one`,
+      }
+    }
+    return { kind: 'dispatchOrchestrator' }
+  }
+  const seen = world.orchestrator
+  if (!seen) return wait
+  if (seen === 'working') return o.watch.stoppedSince ? { kind: 'watchOrchestrator', stoppedSince: '' } : wait
+  if (!o.watch.stoppedSince) return { kind: 'watchOrchestrator', stoppedSince: new Date(world.now).toISOString() }
+  const stoppedFor = world.now - Date.parse(o.watch.stoppedSince)
+  if (seen === 'gone') {
+    return stoppedFor >= AGENT_GONE_MS ? { kind: 'restartOrchestrator', reason: 'its herdr session is gone (pane closed or claude exited)' } : wait
+  }
+  if (!o.watch.nudgedAt) return stoppedFor >= STALL_NUDGE_MS ? { kind: 'nudgeOrchestrator' } : wait
+  if (stoppedFor >= STALL_FORCE_MS && world.now - Date.parse(o.watch.nudgedAt) >= STALL_FORCE_MS) {
+    return { kind: 'restartOrchestrator', reason: 'it stopped with tickets still open and did not carry on after being prompted to' }
+  }
+  return wait
+}
+
+/** The phase's ticket keys (implementing / fixing), else []. */
+export function phaseTickets(state: AutoLoop): string[] {
+  return state.phase === 'implementing' ? state.tickets : state.phase === 'fixing' ? state.fixTickets : []
+}
+
+/** Orchestrated mode: the phase's claimed, unfinished tickets — what counts against the budget. */
+export function inFlight(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>): string[] {
+  return phaseTickets(state).filter((k) => state.dispatched[k] && !finished(world.tickets.find((t) => t.key === k)))
+}
+
+export type ClaimVerdict =
+  | { ok: true; again: boolean }
+  | { ok: false; status: 404 | 409; wait: boolean; message: string }
+
+/**
+ * May the orchestrator claim `key` now? Only a ticket of the running phase,
+ * not finished, and only while fewer than `budget` are in flight — `wait`
+ * marks the refusal that clears itself once a ticket in flight is done. A
+ * ticket already claimed is handed back again (`again`), so a repeated claim
+ * is harmless.
+ */
+export function claimVerdict(state: AutoLoop | null | undefined, world: Pick<AutoWorld, 'tickets'>, key: string): ClaimVerdict {
+  const no = (status: 404 | 409, message: string, wait = false): ClaimVerdict => ({ ok: false, status, wait, message })
+  if (!state?.enabled) return no(409, 'auto mode is off')
+  if (state.orchestration.mode !== 'orchestrated') return no(409, 'the loop is not running orchestrated — it dispatches its own sessions')
+  if (state.phase !== 'implementing' && state.phase !== 'fixing') return no(409, `the loop is ${state.phase} — there is nothing to claim`)
+  const keys = phaseTickets(state)
+  if (!keys.includes(key)) return no(404, `${key} is not one of this phase's tickets (${keys.join(', ')})`)
+  const t = world.tickets.find((x) => x.key === key)
+  if (finished(t)) return no(409, `${key} is already finished`)
+  if (state.dispatched[key]) return { ok: true, again: true }
+  if (t?.hitl) return no(409, `${key} is HITL — the human works it; the loop waits for them`)
+  if (state.plan && t && !t.frontier) return no(409, `${key} is blocked or claimed by someone else — claim it once it's free`, true)
+  const flying = inFlight(state, world)
+  if (flying.length >= state.orchestration.budget) {
+    return no(409, `${flying.length} of ${state.orchestration.budget} tickets already in flight (${flying.join(', ')}) — finish one first`, true)
+  }
+  return { ok: true, again: false }
+}
+
+/**
  * Retry step: clear a pause and let the current step run again. Tickets the
  * loop dispatched that nobody ever claimed (still todo, unassigned) are handed
  * to herdr again; a sweep or review that never got going is re-asked.
  */
 export function retryStep(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>): AutoLoop {
   const next: AutoLoop = { ...state, paused: null, dispatched: { ...state.dispatched }, agents: { ...state.agents }, watch: { ...state.watch } }
-  const keys = state.phase === 'implementing' ? state.tickets : state.phase === 'fixing' ? state.fixTickets : []
+  const keys = phaseTickets(state)
+  // Orchestrated: a phase with no orchestrator left gets a fresh one, and the
+  // tickets the last one had in flight go back to be claimed again.
+  const orphaned = state.orchestration.mode === 'orchestrated' && !state.orchestrator.dispatchedAt
   for (const k of keys) {
     const t = world.tickets.find((x) => x.key === k)
-    if (t && t.status === 'todo' && !t.claimed) {
+    if (t && ((t.status === 'todo' && !t.claimed) || (orphaned && !finished(t)))) {
       delete next.dispatched[k]
       delete next.agents[k]
     }
     delete next.watch[k]
   }
+  if (keys.length) next.orchestrator = { ...state.orchestrator, runs: 0 }
   if (state.phase === 'merging' || state.phase === 'merging-fixes') {
     next.mergeDispatchedAt = ''
     next.mergeReportedAt = ''
@@ -530,6 +953,7 @@ export function finishLoop(state: AutoLoop, at: string): AutoLoop {
     tickets: state.tickets,
     fixTickets: state.fixTickets,
     ...(state.forced.length ? { forced: state.forced } : {}),
+    ...(state.orchestration.mode === 'orchestrated' ? { orchestrated: true } : {}),
     reviewKey: state.reviewKey,
     startedAt: state.loopStartedAt,
     endedAt: at,
@@ -563,6 +987,9 @@ export const CLEANUP_STEPS: ReadonlySet<AutoStep['kind']> = new Set<AutoStep['ki
   'enterReport',
   'complete',
   'turnOff',
+  'nextPlanStep',
+  'skipPlanStep',
+  'finishPlan',
 ])
 
 export interface HerdrPaneSeen {
@@ -574,7 +1001,7 @@ export interface HerdrPaneSeen {
 }
 
 /** The jobs the loop runs as 'KEY · <job>' panes of their own. */
-const LOOP_JOBS = ['merge', 'outcome report']
+const LOOP_JOBS = ['merge', 'outcome report', 'orchestrate']
 
 /**
  * Which panes are finished loop work, safe to close. Never a pane whose agent
@@ -610,7 +1037,10 @@ export function panesToClean(
 
 /** The reviews the loop is done with: every past loop's, and this loop's once it has left the review phase. */
 export function finishedReviews(state: AutoLoop): Set<string> {
-  const keys = state.history.map((h) => h.reviewKey)
+  const keys = [
+    ...state.history.flatMap((h) => [h.reviewKey, ...(h.plan ?? []).map((r) => r.reviewKey)]),
+    ...state.planLog.map((r) => r.reviewKey),
+  ]
   if (state.phase !== 'reviewing') keys.push(state.reviewKey)
   return new Set(keys.filter((k): k is string => !!k))
 }

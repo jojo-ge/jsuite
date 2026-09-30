@@ -11,6 +11,7 @@ import { isLegacyTicket, normalizeTicketKind, defaultTicketType } from './ticket
 import type { TicketType } from './ticketTypes'
 import type { WorktreeGuide, WorktreeLink } from './worktrees'
 import { coerceAutoLoop, type AutoLoop } from '../../app/utils/autoLoop'
+import { coerceRunPlan, type RunPlan } from '../../app/utils/runPlan'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
@@ -96,6 +97,10 @@ export interface Project {
   // server drives (app/utils/autoLoop.ts). Absent/null = never turned on.
   // Machine-local like `prompts`: never on the sync wire.
   auto?: AutoLoop | null
+  // The Run setup tab's plan (app/utils/runPlan.ts) — the human's own steps
+  // for auto mode to walk. Absent/null = none drafted. A running plan is a
+  // copy on auto.plan; saving while it runs updates both. Machine-local.
+  runPlan?: RunPlan | null
   createdAt: string
   updatedAt: string
 }
@@ -323,6 +328,7 @@ export function loadStore(): Store {
         // Projects predating prompt overrides use the defaults for everything.
         prompts: cleanPromptOverrides(p.prompts),
         auto: coerceAutoLoop(p.auto),
+        runPlan: coerceRunPlan(p.runPlan),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —

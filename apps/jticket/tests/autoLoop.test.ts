@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  claimVerdict,
   coerceAutoLoop,
+  coerceOrchestration,
   finishLoop,
   finishedReviews,
   newAutoLoop,
   panesToClean,
   NO_PR_RECHECK_MS,
+  ORCHESTRATOR_MAX_RUNS,
+  newOrchestrator,
   planStep,
   retryStep,
   type AutoLoop,
@@ -364,6 +368,100 @@ describe('planStep — the watchdog', () => {
     const next = finishLoop(loop({ loop: 2, phase: 'merging', forced: ['T-1'] }), AT)
     expect(next.history.at(-1)).toMatchObject({ loop: 2, forced: ['T-1'] })
     expect(next.forced).toEqual([])
+  })
+})
+
+describe('orchestrated mode', () => {
+  const T0 = Date.parse(AT)
+  const min = 60_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const orch = { mode: 'orchestrated' as const, budget: 2 }
+  const running = (patch: Partial<AutoLoop> = {}) =>
+    loop({
+      orchestration: orch,
+      phase: 'implementing',
+      tickets: ['T-1', 'T-2', 'T-3'],
+      orchestrator: { ...newOrchestrator(1), dispatchedAt: AT, agent: 'orchestrate-p-1' },
+      ...patch,
+    })
+  const open = [t('T-1', { status: 'in_progress', claimed: true }), t('T-2'), t('T-3')]
+
+  it('starts one orchestrator for the phase instead of a session per ticket', () => {
+    const fresh = loop({ orchestration: orch, phase: 'implementing', tickets: ['T-1', 'T-2'] })
+    expect(planStep(fresh, world({ tickets: [t('T-1'), t('T-2')] }))).toEqual({ kind: 'dispatchOrchestrator' })
+    const fixing = loop({ orchestration: orch, phase: 'fixing', fixTickets: ['T-5'] })
+    expect(planStep(fixing, world({ tickets: [t('T-5')] }))).toEqual({ kind: 'dispatchOrchestrator' })
+  })
+
+  it('waits on a working orchestrator — and on one herdr has nothing to say about', () => {
+    expect(planStep(running(), world({ tickets: open, orchestrator: 'working' }))).toMatchObject({ kind: 'wait', pending: ['T-1', 'T-2', 'T-3'] })
+    expect(planStep(running(), world({ tickets: open }))).toMatchObject({ kind: 'wait' })
+  })
+
+  it('moves on to the merge like sessions mode once every ticket is finished', () => {
+    const done = [t('T-1', { status: 'done' }), t('T-2', { status: 'done' }), t('T-3', { status: 'done' })]
+    const prs = [{ key: 'PR-1', ticketKey: 'T-1', status: 'open' as const }]
+    expect(planStep(running(), world({ tickets: done, prs, orchestrator: 'working' }))).toEqual({ kind: 'enterMerge', prs: ['PR-1'] })
+  })
+
+  it('notes a stopped orchestrator, nudges it after STALL_NUDGE_MS, replaces it STALL_FORCE_MS after the nudge', () => {
+    const w = (state: AutoLoop, m: number, seen: 'stopped' | 'working' = 'stopped') =>
+      planStep(state, world({ tickets: open, orchestrator: seen, now: T0 + m * min }))
+    expect(w(running(), 0)).toEqual({ kind: 'watchOrchestrator', stoppedSince: AT })
+    const stopped = running({ orchestrator: { ...running().orchestrator, watch: { stoppedSince: AT, nudgedAt: '' } } })
+    expect(w(stopped, 0, 'working')).toEqual({ kind: 'watchOrchestrator', stoppedSince: '' })
+    expect(w(stopped, 4).kind).toBe('wait')
+    expect(w(stopped, 5)).toEqual({ kind: 'nudgeOrchestrator' })
+    const nudged = running({ orchestrator: { ...running().orchestrator, watch: { stoppedSince: AT, nudgedAt: iso(T0 + 5 * min) } } })
+    expect(w(nudged, 14).kind).toBe('wait')
+    expect(w(nudged, 15)).toMatchObject({ kind: 'restartOrchestrator' })
+  })
+
+  it('replaces a vanished orchestrator after AGENT_GONE_MS', () => {
+    const gone = running({ orchestrator: { ...running().orchestrator, watch: { stoppedSince: AT, nudgedAt: '' } } })
+    expect(planStep(gone, world({ tickets: open, orchestrator: 'gone', now: T0 + 30_000 })).kind).toBe('wait')
+    expect(planStep(gone, world({ tickets: open, orchestrator: 'gone', now: T0 + min }))).toMatchObject({ kind: 'restartOrchestrator' })
+  })
+
+  it(`pauses once ${ORCHESTRATOR_MAX_RUNS} orchestrators stopped short; Retry step starts a fresh one and frees their tickets`, () => {
+    const spent = running({ orchestrator: newOrchestrator(ORCHESTRATOR_MAX_RUNS), dispatched: { 'T-1': AT } })
+    expect(planStep(spent, world({ tickets: open }))).toMatchObject({ kind: 'pause', reason: 'orchestrator-failed' })
+    const next = retryStep({ ...spent, paused: { reason: 'orchestrator-failed', detail: 'x', at: AT } }, { tickets: open })
+    expect(next.orchestrator.runs).toBe(0)
+    expect(next.dispatched).toEqual({})
+    expect(planStep(next, world({ tickets: open }))).toEqual({ kind: 'dispatchOrchestrator' })
+  })
+
+  it('claims hold the budget: phase tickets only, never past `budget` in flight, a repeat claim handed back', () => {
+    const state = running({ dispatched: { 'T-1': AT } })
+    expect(claimVerdict(state, { tickets: open }, 'T-2')).toEqual({ ok: true, again: false })
+    expect(claimVerdict(state, { tickets: open }, 'T-1')).toEqual({ ok: true, again: true })
+    const full = running({ dispatched: { 'T-1': AT, 'T-2': AT } })
+    expect(claimVerdict(full, { tickets: open }, 'T-3')).toMatchObject({ ok: false, status: 409, wait: true })
+    // A finished ticket frees its place.
+    const oneDone = [t('T-1', { status: 'done' }), t('T-2'), t('T-3')]
+    expect(claimVerdict(full, { tickets: oneDone }, 'T-3')).toEqual({ ok: true, again: false })
+    expect(claimVerdict(full, { tickets: oneDone }, 'T-1')).toMatchObject({ ok: false, wait: false })
+    expect(claimVerdict(state, { tickets: open }, 'T-9')).toMatchObject({ ok: false, status: 404 })
+    expect(claimVerdict(loop({ phase: 'implementing', tickets: ['T-1'] }), { tickets: open }, 'T-1')).toMatchObject({ ok: false, status: 409 })
+    expect(claimVerdict(running({ phase: 'merging' }), { tickets: open }, 'T-2')).toMatchObject({ ok: false, status: 409 })
+  })
+
+  it('the setting survives loops and restarts, and is coerced into range', () => {
+    const next = finishLoop(running({ loop: 2 }), AT)
+    expect(next.orchestration).toEqual(orch)
+    expect(next.orchestrator).toEqual(newOrchestrator())
+    expect(next.history.at(-1)).toMatchObject({ loop: 2, orchestrated: true })
+    expect(coerceAutoLoop({ enabled: true, orchestration: orch })!.orchestration).toEqual(orch)
+    expect(coerceAutoLoop({ enabled: true })!.orchestration).toEqual({ mode: 'sessions', budget: 2 })
+    expect(coerceOrchestration({ mode: 'orchestrated', budget: 99 })).toEqual({ mode: 'orchestrated', budget: 4 })
+    expect(coerceOrchestration({ mode: 'weird', budget: 0 })).toEqual({ mode: 'sessions', budget: 1 })
+    expect(coerceOrchestration(null)).toBeNull()
+  })
+
+  it("closes a finished phase's orchestrator pane like the loop's other jobs", () => {
+    const panes: HerdrPaneSeen[] = [{ paneId: 'p1', tabLabel: 'P-1 · orchestrate', paneLabel: 'P-1 · orchestrate', agentStatus: 'idle' }]
+    expect(panesToClean(panes, { projectKey: 'P-1', doneTickets: new Set(), finishedReviews: new Set() })).toEqual(['p1'])
   })
 })
 

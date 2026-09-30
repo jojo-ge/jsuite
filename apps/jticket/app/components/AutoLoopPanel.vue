@@ -6,12 +6,13 @@
 // run ended (if there was one). Everything reads project.auto, which the
 // server's loop keeps current; nothing here advances the loop.
 import type { LocalPr, Project, Ticket } from '~/composables/useTracker'
-import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, type AutoLoop } from '~/utils/autoLoop'
+import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, inFlight, type AutoLoop } from '~/utils/autoLoop'
 import { outcomeDocOf } from '~/utils/projectGraphs'
+import { PLAN_STEP_LABELS } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[] }>()
 const { prs, docs } = useTracker()
-const { busy, requestStop, retry, turnOff } = useAutoLoop()
+const { busy, requestStop, retry, turnOff, continueGate } = useAutoLoop()
 
 const auto = computed<AutoLoop | null>(() => props.project.auto ?? null)
 const on = computed(() => !!auto.value?.enabled)
@@ -32,9 +33,22 @@ function since(iso: string) {
   return `${h}h ${m % 60}m`
 }
 
-// The loop's stepper — or, once the project is finished, its one last phase.
-const phases = computed(() => (auto.value?.phase === 'reporting' ? [REPORT_PHASE] : AUTO_PHASES))
-const phaseIndex = computed(() => phases.value.findIndex((p) => p.phase === auto.value?.phase))
+// The loop's stepper — or a run plan's steps — or, once the project is
+// finished, its one last phase.
+const plan = computed(() => (auto.value?.phase === 'reporting' ? null : auto.value?.plan ?? null))
+const phases = computed(() => {
+  if (auto.value?.phase === 'reporting') return [REPORT_PHASE]
+  if (plan.value) return plan.value.steps.map((s) => ({ phase: s.id, label: PLAN_STEP_LABELS[s.kind] }))
+  return AUTO_PHASES
+})
+const phaseIndex = computed(() =>
+  plan.value ? auto.value!.cursor : phases.value.findIndex((p) => p.phase === auto.value?.phase),
+)
+const planStepNo = computed(() => (plan.value ? `Step ${auto.value!.cursor + 1}` : ''))
+const reviewers = computed(() => {
+  const s = plan.value?.steps[auto.value!.cursor]
+  return s?.kind === 'review' ? s.reviewers : 2
+})
 
 const outcomeDoc = computed(() => outcomeDocOf(docs.value, props.project.id))
 
@@ -61,6 +75,29 @@ const phaseText = computed(() => {
     const n = a.prs.length
     return `Merge sweep on Sonnet 5 — landing ${n} ${a.phase === 'merging-fixes' ? 'fix ' : ''}PR${n === 1 ? '' : 's'}; moves on when the sweep reports back.`
   }
+  if ((a.phase === 'implementing' || a.phase === 'fixing') && a.orchestration.mode === 'orchestrated') {
+    const n = (a.phase === 'implementing' ? a.tickets : a.fixTickets).length
+    const what = a.phase === 'implementing' ? `${n} frontier ticket${n === 1 ? '' : 's'}` : `${n} agreed finding${n === 1 ? '' : 's'}`
+    if (!a.orchestrator.dispatchedAt) return `Starting a Fable 5.1 orchestrator for ${what}.`
+    return `A Fable 5.1 orchestrator is working ${what} through Opus 5.5 subagents — ${flying.value.length} of ${a.orchestration.budget} in flight, each spec-checked before it's done.`
+  }
+  if (plan.value) {
+    const n = a.tickets.length
+    switch (a.phase) {
+      case 'idle':
+        return 'Between steps — starting the next one.'
+      case 'implementing':
+        return `${planStepNo.value}: implementing ${n} ticket${n === 1 ? '' : 's'} on Opus 5.5.`
+      case 'reviewing':
+        return a.reviewKey
+          ? `${planStepNo.value}: ${reviewers.value === 1 ? 'an Opus 5.5 reviewer is' : `${reviewers.value} Opus 5.5 reviewers are`} reading the changes since this step's checkpoint; ${reviewers.value === 1 ? 'its findings come' : 'findings they all raise come'} back as tickets, then get fixed and merged.`
+          : `${planStepNo.value}: asking jReview for a review of the changes since this step's checkpoint.`
+      case 'gate': {
+        const note = plan.value.steps[a.cursor]?.note
+        return `${planStepNo.value}: gate — press Continue when you're ready.${note ? ` ${note}` : ''}`
+      }
+    }
+  }
   switch (a.phase) {
     case 'idle':
       return 'Between loops — picking up the next frontier.'
@@ -86,6 +123,24 @@ const phaseText = computed(() => {
 
 const ticketDone = (t: Ticket) => t.status === 'done' || t.status === 'merged'
 
+// Orchestrated mode: the tickets its orchestrator has claimed and not finished.
+const flying = computed(() => {
+  const a = auto.value
+  if (!a) return []
+  return inFlight(a, { tickets: props.tickets.map((t) => ({ key: t.key, status: t.status, frontier: false, hitl: false, claimed: !!t.assignee })) })
+})
+
+// The watchdog's view of the orchestrator — as stallOf, for the one session.
+const orchestratorStall = computed(() => {
+  const a = auto.value
+  if (!a || a.orchestration.mode !== 'orchestrated' || (a.phase !== 'implementing' && a.phase !== 'fixing')) return null
+  const w = a.orchestrator.watch
+  if (!w.stoppedSince) return null
+  return w.nudgedAt
+    ? `The orchestrator stopped with tickets open and was prompted to carry on ${since(w.nudgedAt)} ago — the loop replaces it if it stays stopped ${STALL_FORCE_MS / 60_000}m.`
+    : `The orchestrator stopped ${since(w.stoppedSince)} ago with tickets still open — the loop prompts it to carry on soon.`
+})
+
 // The watchdog's view of a pending ticket: its session stopped with the
 // ticket open, or already prompted to finish (then closed for it if it doesn't).
 function stallOf(t: Ticket): { icon: string; hint: string } | null {
@@ -106,7 +161,8 @@ const endedText = computed(() => {
   if (!e) return ''
   const when = new Date(e.at).toLocaleString()
   if (e.reason === 'complete') return `Auto mode finished — no open work left (${when}).${outcomeDoc.value ? '' : ' No outcome report was recorded.'}`
-  if (e.reason === 'stopped') return `Auto mode stopped at the end of a loop, as asked (${when}).`
+  if (e.reason === 'stopped') return `Auto mode stopped at the end of a ${auto.value?.history.at(-1)?.plan ? 'plan step' : 'loop'}, as asked (${when}).`
+  if (e.reason === 'plan-finished') return `The run plan finished (${when}) — open tickets remain; plan the next run in the Run setup tab.`
   return `Auto mode was turned off (${when}).`
 })
 
@@ -122,7 +178,10 @@ async function turnOffNow() {
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
       <div class="flex items-center gap-1.5">
         <UIcon name="i-lucide-infinity" class="size-4 text-success" />
-        <h2 class="text-sm font-semibold">Loop {{ auto.loop }}</h2>
+        <h2 class="text-sm font-semibold">
+          <template v-if="plan">Run plan · step {{ Math.min(auto.cursor + 1, plan.steps.length) }} of {{ plan.steps.length }}</template>
+          <template v-else>Loop {{ auto.loop }}</template>
+        </h2>
         <UBadge v-if="auto.paused" color="warning" variant="subtle" size="sm">
           {{ auto.paused.reason === 'waiting-human' ? 'waiting on you' : 'paused' }}
         </UBadge>
@@ -132,6 +191,7 @@ async function turnOffNow() {
         <template v-for="(p, i) in phases" :key="p.phase">
           <li
             class="rounded-full px-2 py-0.5"
+            :title="plan ? `Step ${i + 1}` : undefined"
             :class="
               i === phaseIndex
                 ? 'bg-success text-inverted font-medium'
@@ -148,10 +208,19 @@ async function turnOffNow() {
       <span v-if="auto.phase !== 'idle'" class="text-xs text-muted">{{ since(auto.phaseStartedAt) }}</span>
 
       <div class="ml-auto flex items-center gap-1">
-        <!-- Moot once the project is finished and only its report is left -->
-        <template v-if="auto.phase === 'reporting'" />
+        <!-- Stop is moot once the project is finished and only its report is left -->
         <UButton
-          v-else-if="!auto.stopRequested"
+          v-if="auto.phase === 'gate'"
+          size="xs"
+          color="success"
+          icon="i-lucide-play"
+          :loading="busy === 'continue'"
+          @click="continueGate(project).catch(() => {})"
+        >
+          Continue
+        </UButton>
+        <UButton
+          v-if="auto.phase !== 'reporting' && !auto.stopRequested"
           size="xs"
           color="warning"
           variant="soft"
@@ -159,11 +228,15 @@ async function turnOffNow() {
           :loading="busy === 'stop'"
           @click="requestStop(project, true).catch(() => {})"
         >
-          Stop at the end of next loop
+          {{ plan ? 'Stop after this step' : 'Stop at the end of next loop' }}
         </UButton>
-        <template v-else>
-          <UTooltip text="Auto mode turns off once this loop's fixes are merged (or after the outcome report, if this loop finishes the project).">
-            <UBadge color="warning" variant="subtle" icon="i-lucide-octagon-pause">Stopping after loop {{ auto.loop }}</UBadge>
+        <template v-else-if="auto.phase !== 'reporting'">
+          <UTooltip
+            :text="plan ? 'Auto mode turns off once the step in progress is finished; the rest of the plan stays in Run setup.' : 'Auto mode turns off once this loop\'s fixes are merged (or after the outcome report, if this loop finishes the project).'"
+          >
+            <UBadge color="warning" variant="subtle" icon="i-lucide-octagon-pause">
+              {{ plan ? `Stopping after step ${auto.cursor + 1}` : `Stopping after loop ${auto.loop}` }}
+            </UBadge>
           </UTooltip>
           <UButton size="xs" color="neutral" variant="soft" :loading="busy === 'stop'" @click="requestStop(project, false).catch(() => {})">
             Keep going
@@ -185,6 +258,9 @@ async function turnOffNow() {
     <!-- What the phase is doing, and what it's waiting on -->
     <div class="mt-2 flex flex-wrap items-center gap-1.5">
       <p class="mr-1 text-sm text-muted">{{ phaseText }}</p>
+      <UTooltip v-if="orchestratorStall" :text="orchestratorStall">
+        <UIcon name="i-lucide-alarm-clock" class="size-4 text-warning" />
+      </UTooltip>
       <NuxtLink
         v-for="t in pending.tickets"
         :key="t.key"
@@ -193,8 +269,8 @@ async function turnOffNow() {
         :class="ticketDone(t) && 'opacity-60'"
       >
         <UIcon
-          :name="ticketDone(t) ? 'i-lucide-circle-check' : t.status === 'in_progress' ? 'i-lucide-loader-circle' : 'i-lucide-circle-dashed'"
-          :class="[ticketDone(t) ? 'text-success' : 'text-muted', t.status === 'in_progress' && 'animate-spin']"
+          :name="ticketDone(t) ? 'i-lucide-circle-check' : t.status === 'in_progress' || flying.includes(t.key) ? 'i-lucide-loader-circle' : 'i-lucide-circle-dashed'"
+          :class="[ticketDone(t) ? 'text-success' : 'text-muted', !ticketDone(t) && (t.status === 'in_progress' || flying.includes(t.key)) && 'animate-spin']"
           class="size-3.5"
         />
         <span class="font-mono">{{ t.key }}</span>
@@ -223,7 +299,7 @@ async function turnOffNow() {
         target="_blank"
         class="text-xs text-primary hover:underline"
       >
-        This loop's review in jReview ↗
+        This {{ plan ? 'step' : 'loop' }}'s review in jReview ↗
       </a>
     </div>
 

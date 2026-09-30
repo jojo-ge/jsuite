@@ -17,6 +17,7 @@ DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
 # mattpocock/skills and is installed by the `skills` CLI instead.
 JSKILLS=(
   jimplement
+  jorchestrate
   jwayfinder
   to-jticket
   to-jspec
