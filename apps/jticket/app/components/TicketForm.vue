@@ -37,6 +37,7 @@ interface FormState {
   type: TicketType
   agency: AgencyTag
   prototype: boolean
+  paused: boolean
   status: TicketStatus
   projectId: string | null
   assignee: string
@@ -59,6 +60,7 @@ function blank(): FormState {
     type: (mode && MODE_DEFAULT_TYPE[mode]) || 'task',
     agency: 'afk',
     prototype: false,
+    paused: false,
     status: 'todo',
     projectId: props.defaultProjectId ?? null,
     assignee: '',
@@ -94,6 +96,7 @@ function reset() {
       type: t.type,
       agency: isHitl(t) ? 'hitl' : 'afk',
       prototype: isPrototype(t),
+      paused: isPaused(t),
       status: t.status,
       projectId: t.projectId,
       assignee: t.assignee ?? '',
@@ -191,8 +194,8 @@ async function save() {
   try {
     // Preserve every other label (mode labels like arch:* ride here); set the
     // well-known tags from the pickers.
-    const otherLabels = (live.value?.labels ?? []).filter((l) => l !== 'afk' && l !== 'hitl' && l !== 'prototype')
-    const labels = [form.agency, ...(form.prototype ? ['prototype'] : []), ...otherLabels]
+    const otherLabels = (live.value?.labels ?? []).filter((l) => l !== 'afk' && l !== 'hitl' && l !== 'prototype' && l !== 'paused')
+    const labels = [form.agency, ...(form.prototype ? ['prototype'] : []), ...(form.paused ? ['paused'] : []), ...otherLabels]
     const payload = {
       title: form.title,
       description: form.description,
@@ -294,6 +297,7 @@ defineExpose({ save, reset, saving, canSave })
           </UButton>
         </UFieldGroup>
         <UCheckbox v-model="form.prototype" :label="`${TICKET_TAG_META.prototype.label} — ${TICKET_TAG_META.prototype.hint.toLowerCase()}`" />
+        <UCheckbox v-model="form.paused" :label="`${TICKET_TAG_META.paused.label} — ${TICKET_TAG_META.paused.hint.toLowerCase()}`" />
       </div>
     </UFormField>
 

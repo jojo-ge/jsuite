@@ -24,10 +24,10 @@ const modeItems = [
 const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX }, (_, i) => ({ label: `${i + 1} at a time`, value: i + 1 }))
 
 const afkFrontier = computed(() =>
-  props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && !isHitl(t)),
+  props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && !isHitl(t) && !isPaused(t)),
 )
 const hitlFrontier = computed(() =>
-  props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && isHitl(t)),
+  props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && (isHitl(t) || isPaused(t))),
 )
 // How many loops pressing it would run — each a layer of the blocker graph the
 // AFK frontier works through (utils/autoForecast.ts). The review's fix tickets
@@ -156,10 +156,10 @@ async function confirmStart() {
             each ticket finishes in its loop — review fixes ride inside their loop.
           </p>
           <p v-if="forecast.gated.length" class="mt-1 text-muted">
-            {{ forecast.gated.length }} ticket{{ forecast.gated.length === 1 ? '' : 's' }} no loop reaches — HITL, or waiting on one.
+            {{ forecast.gated.length }} ticket{{ forecast.gated.length === 1 ? '' : 's' }} no loop reaches — HITL, paused, or waiting on one.
           </p>
           <p v-if="hitlFrontier.length" class="mt-1 text-muted">
-            {{ hitlFrontier.length }} HITL ticket{{ hitlFrontier.length === 1 ? ' is' : 's are' }} skipped — those stay yours to dispatch.
+            {{ hitlFrontier.length }} HITL or paused ticket{{ hitlFrontier.length === 1 ? ' is' : 's are' }} skipped — those stay yours to dispatch.
           </p>
         </div>
         <p class="text-muted">

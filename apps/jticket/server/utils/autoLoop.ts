@@ -181,7 +181,7 @@ function storeWorld(store: Store, project: Project): Pick<AutoWorld, 'tickets' |
       key: t.key,
       status: t.status,
       frontier: ticketIsFrontier(t, all, project.share),
-      hitl: isHitl(t),
+      hitl: isHitl(t) || isPaused(t),
       claimed: !!t.assignee,
     })),
     prs: store.prs
@@ -800,7 +800,7 @@ async function dispatchOrchestrator(projectId: string) {
     // HITL tickets (a run plan's) are the human's — the orchestrator never sees them.
     const afk = phaseTickets(auto).filter((k) => {
       const t = store.tickets.find((x) => x.key === k && x.projectId === p.id)
-      return !t || !isHitl(t)
+      return !t || !(isHitl(t) || isPaused(t))
     })
     prompt = orchestratorPrompt(p.key, auto.phase, afk, auto.orchestration.budget)
     project = p
@@ -943,7 +943,7 @@ export function orchestratorQueue(store: Store, project: Project) {
       status,
       branch: t?.branch ?? '',
       // 'human' = HITL: not yours to claim; the loop waits for the human to finish it.
-      state: done ? 'finished' : auto.dispatched[k] ? 'in-flight' : t && isHitl(t) ? 'human' : 'waiting',
+      state: done ? 'finished' : auto.dispatched[k] ? 'in-flight' : t && (isHitl(t) || isPaused(t)) ? 'human' : 'waiting',
     }
   })
   return {

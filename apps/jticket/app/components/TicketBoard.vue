@@ -140,7 +140,7 @@ const blockedSections = computed<RowSection[]>(() => {
     }))
   const gated = byLoop.get(0)
   if (gated?.length) {
-    sections.push({ key: 'gated', label: 'Needs a human first', icon: 'i-lucide-user', hint: 'HITL, or waiting on one — no loop reaches these', tickets: gated })
+    sections.push({ key: 'gated', label: 'Needs a human first', icon: 'i-lucide-user', hint: 'HITL, paused, or waiting on one — no loop reaches these', tickets: gated })
   }
   return sections
 })
@@ -185,6 +185,7 @@ const {
   copied,
   copyCommand,
 } = useHerdrDispatch()
+const { togglePaused } = useTracker()
 
 const mode = computed<ProjectMode>(() => props.project?.mode ?? 'standard')
 
@@ -237,13 +238,13 @@ async function runAllFrontier() {
 // Implement → merge → review → fix, once, then auto turns itself off. Only the
 // AFK rows go in: the loop never dispatches HITL work.
 const { busy: autoBusy, runLoop } = useAutoLoop()
-const loopRows = computed(() => runRows.value.filter((t) => !isHitl(t)))
+const loopRows = computed(() => runRows.value.filter((t) => !isHitl(t) && !isPaused(t)))
 const loopBlocker = computed(() => {
   const p = props.project
   if (!p) return ''
   if (!p.repo) return 'This project has no repo — set one first'
   if (!p.integrationBranch) return 'Cut an integration branch first (the Branch button) — the loop merges into it'
-  if (!loopRows.value.length) return 'Only HITL tickets are picked — the loop runs AFK work only'
+  if (!loopRows.value.length) return 'Only HITL or paused tickets are picked — the loop runs unpaused AFK work only'
   return ''
 })
 const loopHint = computed(() => {
@@ -251,7 +252,7 @@ const loopHint = computed(() => {
   const n = loopRows.value.length
   const skipped = runRows.value.length - n
   const what = pickedFrontier.value.length ? `the ${n} ticked AFK` : `all ${n} AFK frontier`
-  return `One auto loop over ${what} ${n === 1 ? 'ticket' : 'tickets'}: implement, merge, 2-reviewer review, fix — then auto turns off${skipped ? ` (${skipped} HITL skipped)` : ''}`
+  return `One auto loop over ${what} ${n === 1 ? 'ticket' : 'tickets'}: implement, merge, 2-reviewer review, fix — then auto turns off${skipped ? ` (${skipped} HITL or paused skipped)` : ''}`
 })
 async function runAsLoop() {
   const p = props.project
@@ -278,7 +279,7 @@ function dispatchFor(t: Ticket) {
     custom: isCustomPrompt(t, mode.value),
     copied: copied.value === t.id,
     dispatching: dispatching.value === t.id,
-    herdr: herdrUp.value && !(autoOn.value && !isHitl(t)),
+    herdr: herdrUp.value && !(autoOn.value && !isHitl(t) && !isPaused(t)),
   }
 }
 </script>
@@ -504,6 +505,7 @@ function dispatchFor(t: Ticket) {
                 role="button"
                 tabindex="0"
                 class="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-elevated/40"
+                :class="isPaused(t) && 'bg-muted opacity-60 grayscale hover:opacity-100'"
                 @click="emit('edit-ticket', t)"
                 @keydown.enter="emit('edit-ticket', t)"
               >
@@ -540,6 +542,18 @@ function dispatchFor(t: Ticket) {
                     {{ b.key }}
                   </UBadge>
                 </template>
+                <UTooltip v-if="!isFinished(t.status)" :text="isPaused(t) ? 'Unpause — the auto loop may take it again' : 'Pause — the auto loop skips it until you unpause'">
+                  <UButton
+                    :icon="isPaused(t) ? 'i-lucide-play' : 'i-lucide-pause'"
+                    :color="isPaused(t) ? 'warning' : 'neutral'"
+                    :variant="isPaused(t) ? 'soft' : 'ghost'"
+                    size="xs"
+                    class="shrink-0"
+                    :class="g.key === 'blocked' && blockersOf(t).length ? '' : 'ml-auto'"
+                    :aria-label="`${isPaused(t) ? 'Unpause' : 'Pause'} ${t.key}`"
+                    @click.stop="togglePaused(t)"
+                  />
+                </UTooltip>
               </div>
             </template>
           </div>

@@ -6,7 +6,7 @@ import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
 export type TicketType = 'story' | 'task' | 'bug' | 'review' | 'verification' | 'research' | 'decision' | 'docs'
 export type AgencyTag = 'afk' | 'hitl'
-export type TicketTag = AgencyTag | 'prototype'
+export type TicketTag = AgencyTag | 'prototype' | 'paused'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
@@ -229,6 +229,11 @@ export function useTracker() {
     await $fetch(`/api/tickets/${id}`, { method: 'PATCH', body: input })
     await refresh()
   }
+  // Pause / unpause for the auto loop — flips the 'paused' label, nothing else.
+  async function togglePaused(t: Ticket) {
+    const labels = isPaused(t) ? t.labels.filter((l) => l !== 'paused') : [...t.labels, 'paused']
+    await updateTicket(t.id, { labels })
+  }
   async function deleteTicket(id: string) {
     await $fetch(`/api/tickets/${id}`, { method: 'DELETE' })
     await refresh()
@@ -271,6 +276,7 @@ export function useTracker() {
     deleteProject,
     createTicket,
     updateTicket,
+    togglePaused,
     deleteTicket,
     addComment,
     deleteComment,
@@ -491,10 +497,16 @@ export const TICKET_TAG_META: Record<TicketTag, { label: string; hint: string; i
   afk: { label: 'AFK', hint: 'An agent can take it end to end', icon: 'i-lucide-bot', color: 'neutral', variant: 'subtle' },
   hitl: { label: 'HITL', hint: 'Needs a human — gets its own herdr tab', icon: 'i-lucide-user', color: 'warning', variant: 'subtle' },
   prototype: { label: 'Prototype', hint: 'Throwaway work — never ships', icon: 'i-lucide-flask-conical', color: 'secondary', variant: 'outline' },
+  paused: { label: 'Paused', hint: 'The auto loop skips it until you unpause it', icon: 'i-lucide-pause', color: 'warning', variant: 'outline' },
 }
 
 export function isHitl(ticket: Pick<Ticket, 'labels'>): boolean {
   return (ticket.labels ?? []).includes('hitl')
+}
+
+// Paused by hand — the auto loop skips it like HITL until the label comes off.
+export function isPaused(ticket: Pick<Ticket, 'labels'>): boolean {
+  return (ticket.labels ?? []).includes('paused')
 }
 
 export function isPrototype(ticket: Pick<Ticket, 'labels'>): boolean {
@@ -503,7 +515,7 @@ export function isPrototype(ticket: Pick<Ticket, 'labels'>): boolean {
 
 // The well-known tags a ticket carries, agency first.
 export function ticketTags(ticket: Pick<Ticket, 'labels'>): TicketTag[] {
-  return [isHitl(ticket) ? 'hitl' : 'afk', ...(isPrototype(ticket) ? ['prototype' as const] : [])]
+  return [isHitl(ticket) ? 'hitl' : 'afk', ...(isPrototype(ticket) ? ['prototype' as const] : []), ...(isPaused(ticket) ? ['paused' as const] : [])]
 }
 
 // ── Architect labels ──
