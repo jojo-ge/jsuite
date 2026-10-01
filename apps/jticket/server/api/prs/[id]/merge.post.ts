@@ -1,6 +1,8 @@
 // The merge button. Squash-merges the PR's head branch onto its base (the
 // integration branch) with plumbing — no checkout, the working tree is never
-// touched — then deletes the head branch and moves the ticket to 'merged'.
+// touched — then deletes the head branch and moves the ticket to 'merged'. A
+// PR bringing upstream history the base lacks lands as a real merge instead
+// (mergedAs: 'merge'), so upstream stays an ancestor of the base.
 // Everything stays local; pushing the integration branch is a separate,
 // explicit action (POST /api/projects/:id/sync).
 //
@@ -54,6 +56,7 @@ export default defineEventHandler(async (event) => {
   return {
     ...withPrDerived(store, pr, path),
     headDeleted: result.headDeleted,
+    mergedAs: result.mergedAs,
     jdiffBaseUrl: jdiffBranchUrl(path, pr.baseBranch),
   }
 })

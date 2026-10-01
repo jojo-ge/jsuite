@@ -1,7 +1,9 @@
 // Local pull requests — the git side.
 //
 // A local PR is jTicket's own review unit: a ticket branch squash-merged onto
-// the project's integration branch by the app itself, no GitHub involved. The
+// the project's integration branch by the app itself, no GitHub involved. A PR
+// that brings the integration branch up to date with upstream is the one
+// exception — it lands as a real merge so upstream stays an ancestor. The
 // merge is done with plumbing (merge-tree → commit-tree → update-ref) so it
 // never checks anything out and never touches the user's working tree — the
 // merge button works whatever is checked out, half-edited or not. A conflict is
@@ -90,8 +92,21 @@ async function worktreeIsClean(dir: string): Promise<boolean> {
 }
 
 export type SquashResult =
-  | { ok: true; commit: string; parent: string; headDeleted: boolean }
+  | { ok: true; commit: string; parent: string; headDeleted: boolean; mergedAs: 'squash' | 'merge' }
   | { ok: false; conflictFiles: string[] }
+
+// Whether `head` carries upstream (origin/HEAD) commits that `base` lacks — a
+// "bring the branch up to date" PR. Squashing one lands upstream's files but
+// not its commits, so the base still branches off the old upstream and every
+// diff measured from the merge base (a GitHub PR, path-filtered CI) shows
+// upstream's changes as the branch's own. No origin/HEAD: nothing to protect.
+async function bringsUpstreamHistory(path: string, baseOid: string, headOid: string): Promise<boolean> {
+  const upstream = (await tryGit(path, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/HEAD']))?.trim()
+  if (!upstream) return false
+  const forkPoint = (await tryGit(path, ['merge-base', headOid, upstream]))?.trim()
+  if (!forkPoint) return false
+  return (await tryGit(path, ['merge-base', '--is-ancestor', forkPoint, baseOid])) === null
+}
 
 /**
  * Squash-merge `head` onto `base` without touching any working tree, then (on
@@ -146,7 +161,9 @@ export async function squashMergePr(
     })
   }
 
-  const commit = (await git(path, ['commit-tree', tree, '-p', baseOid, '-m', message])).trim()
+  const mergedAs = (await bringsUpstreamHistory(path, baseOid, headOid)) ? 'merge' : 'squash'
+  const parents = mergedAs === 'merge' ? ['-p', baseOid, '-p', headOid] : ['-p', baseOid]
+  const commit = (await git(path, ['commit-tree', tree, ...parents, '-m', message])).trim()
   // Guarded by the old oid: if base moved since we looked, fail instead of
   // silently dropping whatever moved it.
   await git(path, ['update-ref', `refs/heads/${base}`, commit, baseOid])
@@ -162,10 +179,10 @@ export async function squashMergePr(
     headDeleted = (await tryGit(path, ['branch', '-D', head])) !== null
   }
 
-  // `parent` is the squash commit's sole parent (the base tip it landed on) —
+  // `parent` is the squash commit's sole parent (a merge's first) — the base tip it landed on —
   // recorded on the PR so parent..commit can be reviewed after the head branch
   // is gone.
-  return { ok: true, commit, parent: baseOid, headDeleted }
+  return { ok: true, commit, parent: baseOid, headDeleted, mergedAs }
 }
 
 /** Resolve a PR by id or key. */
