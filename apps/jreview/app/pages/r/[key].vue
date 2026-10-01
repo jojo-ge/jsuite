@@ -5,7 +5,7 @@
 // the triage report, and each reviewer's jExplain report, rendered inline.
 // Everything mirrors .data/jreview/<key>.json over the /watch SSE; the
 // watcher plugin on the server moves the review along, never this page.
-import type { Review, Reviewer } from '~/utils/reviewTypes'
+import { unticketedFindings, type Review, type Reviewer } from '~/utils/reviewTypes'
 
 const route = useRoute()
 const key = computed(() => String(route.params.key))
@@ -68,10 +68,13 @@ async function loadDoc() {
 watch(() => [active.value?.id, active.value?.ready], loadDoc, { immediate: true })
 
 // ── Finding selection for the ticket split ───────────────────────────────────
+// Only findings that aren't tickets yet can be picked.
 const deselected = ref(new Set<string>())
-const selectedCount = computed(
-  () => (review.value?.findings ?? []).filter((f) => !deselected.value.has(f.id)).length,
-)
+const openFindings = computed(() => (review.value ? unticketedFindings(review.value) : []))
+const selectedCount = computed(() => openFindings.value.filter((f) => !deselected.value.has(f.id)).length)
+// Where the button files them: wherever the first batch went, else the jTicket
+// project the review belongs to, else a new project.
+const ticketTarget = computed(() => review.value?.tickets?.projectKey ?? review.value?.project ?? null)
 function setSelected(id: string, on: boolean) {
   const next = new Set(deselected.value)
   on ? next.delete(id) : next.add(id)
@@ -119,15 +122,17 @@ async function redispatchTriage() {
 async function splitIntoTickets() {
   const r = review.value
   if (!r) return
-  const ids = r.findings.filter((f) => !deselected.value.has(f.id)).map((f) => f.id)
-  if (!window.confirm(`Create a new jTicket project with ${ids.length} ticket${ids.length === 1 ? '' : 's'}?`)) return
+  const ids = openFindings.value.filter((f) => !deselected.value.has(f.id)).map((f) => f.id)
+  const n = `${ids.length} ticket${ids.length === 1 ? '' : 's'}`
+  const target = ticketTarget.value
+  if (!window.confirm(target ? `Add ${n} to ${target}?` : `Create a new jTicket project with ${n}?`)) return
   busy.value = 'tickets'
   try {
     const res = await $fetch<{ projectKey: string; url: string }>(`/api/reviews/${key.value}/tickets`, {
       method: 'POST',
       body: { findingIds: ids },
     })
-    toast.add({ title: `${res.projectKey} created`, description: `${ids.length} tickets in jTicket.`, icon: 'i-lucide-ticket', color: 'success' })
+    toast.add({ title: target ? `Added to ${res.projectKey}` : `${res.projectKey} created`, description: `${n} in jTicket.`, icon: 'i-lucide-ticket', color: 'success' })
   } catch (err) {
     fail('Could not create tickets', err)
   } finally {
@@ -176,6 +181,7 @@ const statusColor = computed(() => {
           <span class="font-mono">{{ review.repoPath }}</span> · <span class="font-mono">{{ review.base }}...{{ review.branch }}</span>
           <template v-if="review.pr"> · <a :href="review.pr.url" target="_blank" class="hover:underline">PR #{{ review.pr.number }}</a></template>
           <template v-if="review.worktree"> · worktree</template>
+          <template v-if="review.project"> · <a :href="`https://jticket.local/projects/${review.project}?tab=review&review=${review.key}`" target="_blank" class="hover:underline">{{ review.project }} ↗</a></template>
         </p>
       </div>
     </header>
@@ -300,21 +306,25 @@ const statusColor = computed(() => {
                 Filed by the consensus session for {{ review.consensus.loop ? `auto loop ${review.consensus.loop}` : 'jTicket' }}.
               </p>
             </template>
-            <template v-else-if="review.status === 'triaged'">
-              <p class="mb-2 text-muted">{{ selectedCount }} of {{ review.findings.length }} findings selected.</p>
+            <template v-if="!review.consensus && (review.status === 'triaged' || (review.status === 'ticketed' && openFindings.length))">
+              <p class="mb-2 text-muted" :class="review.tickets && 'mt-2'">
+                {{ selectedCount }} of {{ openFindings.length }} {{ review.tickets ? 'remaining ' : '' }}findings selected.
+              </p>
               <UButton
                 icon="i-lucide-ticket"
-                label="Split into jTicket project"
+                :label="ticketTarget ? `Add to ${ticketTarget}` : 'Split into jTicket project'"
                 :disabled="!selectedCount"
                 :loading="busy === 'tickets'"
                 block
                 @click="splitIntoTickets"
               />
             </template>
-            <p v-else-if="review.consensus" class="text-muted">
+            <p v-else-if="review.consensus && !review.tickets" class="text-muted">
               Filed straight into {{ review.consensus.projectKey }} — one ticket per finding every reviewer raised.
             </p>
-            <p v-else class="text-muted">Yours to press once triage is in — one ticket per finding, in a new project.</p>
+            <p v-else-if="!review.tickets" class="text-muted">
+              Yours to press once triage is in — one ticket per finding, {{ review.project ? `added to ${review.project}` : 'in a new project' }}.
+            </p>
           </div>
         </section>
       </aside>
@@ -370,7 +380,7 @@ const statusColor = computed(() => {
               v-for="f in review.findings"
               :key="f.id"
               :finding="f"
-              :selectable="review.status === 'triaged'"
+              :selectable="(review.status === 'triaged' || review.status === 'ticketed') && openFindings.includes(f)"
               :selected="!deselected.has(f.id)"
               @update:selected="setSelected(f.id, $event)"
             />

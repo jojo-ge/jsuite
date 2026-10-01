@@ -1,7 +1,9 @@
 <script setup lang="ts">
-// The project's GitHub side, on the project page: which repo it points at, the
-// state of its integration branch, and every open PR that belongs to it — each
-// row linking into jDiff (local diff review) and github.com.
+// The project's PRs, on the project page: its local PRs (ticket branches
+// squash-merged onto the integration branch right here) and every open GitHub
+// PR that belongs to it — each row linking into jDiff (local diff review) and
+// github.com. The integration branch itself — cutting it, pushing it, the
+// roll-up PR — is the Branches tab (ProjectBranches).
 //
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
@@ -82,9 +84,8 @@ interface GithubInfo {
 
 const toast = useToast()
 const { refresh: refreshTracker, tickets, prs: trackerPrs } = useTracker()
-// Cutting the branch is shared with the project header's button — same action,
-// same in-flight state, and `revision` tells us when the other one changed it.
-const { creating, revision, invalidate, createBranch: cutBranch } = useIntegrationBranch()
+// `revision` bumps when the integration branch is cut, adopted or unset.
+const { revision } = useIntegrationBranch()
 
 const force = ref<string | undefined>(undefined)
 const { data, pending, error, refresh } = useFetch<GithubInfo>(
@@ -102,16 +103,7 @@ let tick: ReturnType<typeof setInterval> | undefined
 onMounted(() => { tick = setInterval(() => { now.value = new Date() }, 60_000) })
 onUnmounted(() => { if (tick) clearInterval(tick) })
 
-// ── Cutting the integration branch ──
-// The name is editable here (the header button just takes the suggestion).
-const branchName = ref('')
-watch(data, (d) => { if (d && !branchName.value) branchName.value = d.suggestedBranch }, { immediate: true })
-
-async function createBranch() {
-  await cutBranch(props.project.id, branchName.value)
-}
-
-// Somebody else changed the branch — the header button, or another tab.
+// Somebody changed the branch — the Branches tab, the header, or another tab.
 watch(revision, () => reload())
 
 // Somebody else changed a PR — an agent merging over the API, a herdr sweep
@@ -128,84 +120,6 @@ const prFingerprint = computed(() =>
 watch(prFingerprint, () => refresh())
 
 const errorText = branchErrorText
-
-// ── Adopting a branch that already exists ──
-// The integration branch doesn't have to have been cut here: point the project
-// at a branch somebody made by hand and everything else (PR matching, the
-// roll-up link) works the same.
-interface BranchCandidate {
-  name: string
-  oid: string
-  subject: string
-  committedAt: string
-  local: boolean
-  remote: boolean
-  isDefault: boolean
-}
-
-const pickerOpen = ref(false)
-const branchQuery = ref('')
-const debouncedQuery = ref('')
-const fetchStamp = ref<string | undefined>(undefined)
-const picking = ref('')
-let queryTimer: ReturnType<typeof setTimeout> | undefined
-
-watch(branchQuery, (q) => {
-  clearTimeout(queryTimer)
-  queryTimer = setTimeout(() => { debouncedQuery.value = q }, 250)
-})
-onUnmounted(() => clearTimeout(queryTimer))
-
-const {
-  data: branchData,
-  pending: branchPending,
-  refresh: refreshBranches,
-} = useFetch<{ branches: BranchCandidate[]; current: string }>(
-  () => `/api/projects/${props.project.id}/branches`,
-  { query: { q: debouncedQuery, fetch: fetchStamp }, lazy: true, server: false, immediate: false },
-)
-
-function openPicker() {
-  pickerOpen.value = true
-  branchQuery.value = ''
-  debouncedQuery.value = ''
-  refreshBranches()
-}
-
-// ↻ — prune and re-fetch origin, so a branch a teammate pushed a minute ago shows up.
-function refetchBranches() {
-  fetchStamp.value = String(Date.now())
-  refreshBranches()
-}
-
-async function useBranch(name: string) {
-  picking.value = name
-  try {
-    await $fetch(`/api/projects/${props.project.id}`, {
-      method: 'PATCH',
-      body: { integrationBranch: name },
-    })
-    toast.add({
-      title: `Integration branch set to ${name}`,
-      description: 'PRs targeting it now show up on this project.',
-      color: 'success',
-      icon: 'i-lucide-git-branch',
-    })
-    pickerOpen.value = false
-    await refreshTracker()
-    invalidate()
-  } catch (err: any) {
-    toast.add({ title: 'Could not set the branch', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
-  } finally {
-    picking.value = ''
-  }
-}
-
-async function clearBranch() {
-  await $fetch(`/api/projects/${props.project.id}`, { method: 'PATCH', body: { integrationBranch: '' } })
-  await refreshTracker()
-  invalidate()
-}
 
 const prs = computed(() => data.value?.prs ?? [])
 const localPrs = computed(() => data.value?.localPrs ?? [])
@@ -296,8 +210,8 @@ async function closePr(pr: LocalPrRow) {
 const open = ref(!!props.pinnedOpen)
 
 // ── jDiff reviews — dispatched from here, findings reported back to jTicket ──
-// An integration-branch review files findings as review:finding tickets in
-// this project; a local-PR review comments them onto the PR's ticket. The
+// A local-PR review comments its findings onto the PR's ticket (whole-branch
+// reviews are the Review tab's jReview runs). The
 // running state comes from jDiff's job registry, polled only while the panel
 // is open; jDiff being down just means no badges, never an error.
 interface ReviewStatus { available: boolean; running: string[] }
@@ -325,23 +239,6 @@ onUnmounted(() => { if (reviewTick) clearInterval(reviewTick) })
 const reviewRunning = (branch: string) => reviewStatus.value.running.includes(`branch/${branch}`)
 
 const dispatchingReview = ref('')
-async function runIntegrationReview() {
-  dispatchingReview.value = 'integration'
-  try {
-    const res = await $fetch<{ agent: string; attached: boolean }>(
-      `/api/projects/${props.project.id}/review`,
-      { method: 'POST' },
-    )
-    toast.add(res.attached
-      ? { title: 'A review is already running for this branch', description: 'Attached to it — this run keeps its original context.', color: 'neutral', icon: 'i-lucide-sparkles' }
-      : { title: 'Review dispatched to herdr', description: `Agent ${res.agent} — findings will be filed as ${props.project.key} tickets.`, color: 'success', icon: 'i-lucide-sparkles' })
-  } catch (err: any) {
-    toast.add({ title: 'Could not dispatch the review', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
-  } finally {
-    dispatchingReview.value = ''
-    refreshReviewStatus()
-  }
-}
 async function runPrReview(pr: LocalPrRow) {
   dispatchingReview.value = pr.id
   try {
@@ -362,41 +259,6 @@ const expandedPrs = reactive(new Set<string>())
 function togglePr(id: string) {
   if (expandedPrs.has(id)) expandedPrs.delete(id)
   else expandedPrs.add(id)
-}
-
-// ── The only remote actions: sync the integration branch, open the roll-up ──
-const syncing = ref(false)
-async function syncBranch() {
-  syncing.value = true
-  try {
-    const res = await $fetch<{ branch: string }>(`/api/projects/${props.project.id}/sync`, { method: 'POST' })
-    toast.add({ title: `Pushed ${res.branch} to origin`, color: 'success', icon: 'i-lucide-upload' })
-  } catch (err: any) {
-    toast.add({ title: 'Could not push the integration branch', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
-  } finally {
-    syncing.value = false
-    reload()
-  }
-}
-
-const rollingUp = ref(false)
-async function openRollupPr() {
-  rollingUp.value = true
-  try {
-    const res = await $fetch<{ url: string; created: boolean }>(`/api/projects/${props.project.id}/integration-pr`, { method: 'POST' })
-    toast.add({
-      title: res.created ? 'Roll-up PR opened' : 'Roll-up PR already open',
-      description: res.url,
-      color: 'success',
-      icon: 'i-lucide-git-pull-request',
-    })
-    if (res.url) window.open(res.url, '_blank')
-  } catch (err: any) {
-    toast.add({ title: 'Could not open the roll-up PR', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
-  } finally {
-    rollingUp.value = false
-    reload()
-  }
 }
 
 // ── Opening a local PR by hand (agents use POST /api/prs directly) ──
@@ -543,103 +405,24 @@ async function createPr() {
           </UButton>
         </div>
 
-        <!-- Has an integration branch -->
-        <div v-if="data.branch" class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2 text-sm">
+        <!-- The integration branch — managed on the Branches tab -->
+        <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2 text-sm">
           <UIcon name="i-lucide-git-branch" class="size-4 shrink-0 text-muted" />
-          <span class="font-mono text-xs">{{ data.branch.name }}</span>
-          <UBadge v-if="data.branch.remote" color="success" variant="subtle" size="sm">on origin</UBadge>
-          <UBadge v-else color="warning" variant="subtle" size="sm">local only</UBadge>
-          <span class="text-xs text-muted">integration branch · off {{ data.defaultBranch }}</span>
-          <div class="ml-auto flex gap-1">
-            <UTooltip text="Point at a different branch">
-              <UButton
-                icon="i-lucide-search"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                aria-label="Change the integration branch"
-                @click="openPicker"
-              />
-            </UTooltip>
-            <UTooltip text="Unset the integration branch">
-              <UButton
-                icon="i-lucide-unlink"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                aria-label="Unset the integration branch"
-                @click="clearBranch"
-              />
-            </UTooltip>
-            <UButton
-              :to="data.branch.jdiffUrl"
-              target="_blank"
-              external
-              icon="i-lucide-git-compare"
-              size="xs"
-              color="neutral"
-              variant="ghost"
-            >
-              Review
-            </UButton>
-            <UTooltip text="Run the jDiff review on the integration branch — findings become project tickets">
-              <UButton
-                icon="i-lucide-sparkles"
-                size="xs"
-                color="secondary"
-                variant="soft"
-                :loading="dispatchingReview === 'integration' || reviewRunning(data.branch.name)"
-                @click="runIntegrationReview"
-              >
-                {{ reviewRunning(data.branch.name) ? 'Reviewing…' : 'Run review' }}
-              </UButton>
-            </UTooltip>
-            <UTooltip text="Push the integration branch to origin — the only remote write in the local flow">
-              <UButton
-                icon="i-lucide-upload"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :loading="syncing"
-                @click="syncBranch"
-              >
-                Sync
-              </UButton>
-            </UTooltip>
-            <UTooltip text="Push, then open (or find) the roll-up PR on GitHub">
-              <UButton
-                icon="i-lucide-external-link"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :loading="rollingUp"
-                @click="openRollupPr"
-              >
-                Roll-up PR
-              </UButton>
-            </UTooltip>
-          </div>
-        </div>
-        <!-- The integration branch's worktree, made the codebase's way -->
-        <IntegrationWorktree v-if="data.branch" :project="project" />
-
-        <!-- No integration branch yet — cut one -->
-        <div v-else class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2">
-          <UIcon name="i-lucide-git-branch" class="size-4 shrink-0 text-muted" />
-          <UInput v-model="branchName" size="xs" class="w-72 font-mono" :placeholder="data.suggestedBranch" />
-          <UButton icon="i-lucide-git-branch-plus" size="xs" :loading="creating === project.id" @click="createBranch">
-            Create integration branch
-          </UButton>
-          <span class="text-xs text-muted">empty branch off {{ data.defaultBranch }}, pushed to origin</span>
+          <template v-if="data.branch">
+            <span class="font-mono text-xs">{{ data.branch.name }}</span>
+            <span class="text-xs text-muted">integration branch · local PRs land here</span>
+          </template>
+          <span v-else class="text-xs text-muted">No integration branch yet — local PRs need one to land on.</span>
           <UButton
-            icon="i-lucide-search"
+            :to="{ query: { tab: 'branches' } }"
+            icon="i-lucide-arrow-right"
+            trailing
             size="xs"
             color="neutral"
             variant="ghost"
-            class="w-full justify-start sm:w-auto"
-            @click="openPicker"
+            class="ml-auto"
           >
-            or use an existing branch
+            {{ data.branch ? 'Push, pull, roll-up PR' : 'Set one up' }}
           </UButton>
         </div>
       </div>
@@ -905,71 +688,6 @@ async function createPr() {
           >
             Open PR
           </UButton>
-        </div>
-      </template>
-    </UModal>
-
-    <!-- Branch picker — every branch in the repo, local and on origin -->
-    <UModal
-      v-model:open="pickerOpen"
-      title="Use an existing branch"
-      description="Search the repo's branches and point this project at one. Nothing is created or pushed."
-      :ui="{ content: 'sm:max-w-2xl' }"
-    >
-      <template #body>
-        <div class="flex items-center gap-2">
-          <UInput
-            v-model="branchQuery"
-            icon="i-lucide-search"
-            placeholder="Search by branch name or commit message…"
-            autofocus
-            class="flex-1"
-          />
-          <UTooltip text="Fetch from origin first">
-            <UButton
-              icon="i-lucide-refresh-cw"
-              color="neutral"
-              variant="ghost"
-              :loading="branchPending"
-              aria-label="Refresh from origin"
-              @click="refetchBranches"
-            />
-          </UTooltip>
-        </div>
-
-        <div class="mt-3 max-h-[55vh] overflow-y-auto rounded-lg border border-default">
-          <div v-if="branchPending && !branchData" class="py-10 text-center text-sm text-muted">Reading branches…</div>
-          <p v-else-if="!branchData?.branches.length" class="py-10 text-center text-sm text-muted">
-            No branch matches “{{ branchQuery }}”.
-          </p>
-          <template v-else>
-          <button
-            v-for="b in branchData?.branches ?? []"
-            :key="b.name"
-            type="button"
-            class="flex w-full items-center gap-2 border-b border-default/60 px-3 py-2 text-left text-sm last:border-0 hover:bg-elevated/40 disabled:opacity-50"
-            :disabled="!!picking"
-            @click="useBranch(b.name)"
-          >
-            <UIcon
-              :name="picking === b.name ? 'i-lucide-loader-circle' : 'i-lucide-git-branch'"
-              class="size-4 shrink-0 text-muted"
-              :class="picking === b.name ? 'animate-spin' : ''"
-            />
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <span class="truncate font-mono text-xs">{{ b.name }}</span>
-                <UBadge v-if="b.name === branchData?.current" color="primary" variant="subtle" size="sm">Current</UBadge>
-                <UBadge v-if="b.isDefault" color="neutral" variant="subtle" size="sm">Default</UBadge>
-                <UBadge v-if="!b.remote" color="warning" variant="subtle" size="sm">local only</UBadge>
-                <UBadge v-else-if="!b.local" color="neutral" variant="outline" size="sm">on origin</UBadge>
-              </div>
-              <p class="truncate text-xs text-muted">{{ b.subject }}</p>
-            </div>
-            <span class="shrink-0 font-mono text-xs text-muted">{{ b.oid }}</span>
-            <span class="shrink-0 text-xs text-muted">{{ agoLabel(b.committedAt, now) }}</span>
-          </button>
-          </template>
         </div>
       </template>
     </UModal>

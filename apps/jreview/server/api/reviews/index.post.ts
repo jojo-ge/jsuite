@@ -1,10 +1,10 @@
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
-import { DEFAULT_REVIEWERS, MAX_REVIEWERS, type Review, type ReviewConsensus } from '../../../app/utils/reviewTypes'
+import { DEFAULT_REVIEWERS, MAX_REVIEWERS, PROJECT_KEY_SHAPE, type Review, type ReviewConsensus } from '../../../app/utils/reviewTypes'
 
 /**
- * Start a review. Body: { repoPath, branch?, base?, title?, reviewers?, consensus? }
+ * Start a review. Body: { repoPath, branch?, base?, title?, reviewers?, consensus?, project? }
  *
  * - `branch` — what to review (default: whatever is checked out). A branch
  *   that isn't checked out is reviewed in a detached worktree, so the human's
@@ -12,6 +12,8 @@ import { DEFAULT_REVIEWERS, MAX_REVIEWERS, type Review, type ReviewConsensus } f
  *   jTicket worktree guide names one, else .data/jreview/worktrees/<key>.
  * - `base` — the target / fixed point (default: the branch's open PR's base —
  *   the parent branch, for a stacked PR — else origin's default branch).
+ * - `project` — the jTicket project the review belongs to (its Review tab):
+ *   findings are later added to it as tickets instead of a new project.
  *
  * Records the review with REVIEWER_COUNT queued reviewers — each with a
  * pre-assigned document key in the shared pool — then hands them to herdr in
@@ -52,11 +54,22 @@ export default defineEventHandler(async (event) => {
   let consensus: ReviewConsensus | undefined
   if (body.consensus !== undefined && body.consensus !== null) {
     const projectKey = String(body.consensus?.projectKey ?? '').trim()
-    if (!/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(projectKey)) {
+    if (!PROJECT_KEY_SHAPE.test(projectKey)) {
       throw createError({ statusCode: 400, message: 'consensus.projectKey must be a jTicket project key (PROJ-n)' })
     }
     const loop = Number(body.consensus?.loop)
     consensus = { projectKey, ...(Number.isInteger(loop) && loop > 0 ? { loop } : {}) }
+  }
+
+  let project: string | undefined
+  if (body.project !== undefined && body.project !== null && body.project !== '') {
+    project = String(body.project).trim()
+    if (!PROJECT_KEY_SHAPE.test(project)) {
+      throw createError({ statusCode: 400, message: 'project must be a jTicket project key (PROJ-n)' })
+    }
+    if (consensus) {
+      throw createError({ statusCode: 400, message: 'a consensus review files into consensus.projectKey — drop `project`' })
+    }
   }
 
   const repoName = basename(repoPath)
@@ -90,6 +103,7 @@ export default defineEventHandler(async (event) => {
     findings: [],
     tickets: null,
     ...(consensus ? { consensus } : {}),
+    ...(project ? { project } : {}),
     createdAt: now,
     updatedAt: now,
   }

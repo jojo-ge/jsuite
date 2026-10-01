@@ -9,6 +9,10 @@
 // POSTs the merged findings back here. Turning findings into jTicket tickets
 // is the human's button — no agent does it.
 //
+// A PROJECT review (jTicket's Review tab) runs the same pipeline but belongs to
+// one jTicket project: the human adds findings to THAT project as tickets —
+// a few at a time if they like — instead of splitting them into a new one.
+//
 // A CONSENSUS review (jTicket's auto loop) skips all of that: once every
 // reviewer is in, a consensus session keeps only the findings every reviewer
 // raised and files each straight into the caller's jTicket project as a ticket.
@@ -85,6 +89,8 @@ export interface Finding {
   detail: string
   /** Reviewer slots that raised it — more than one means it was a duplicate. */
   reviewers: number[]
+  /** The jTicket ticket this finding became, once the human added it. */
+  ticketKey?: string
 }
 
 export interface ReviewTickets {
@@ -157,6 +163,12 @@ export interface Review {
   findings: Finding[]
   tickets: ReviewTickets | null
   consensus?: ReviewConsensus
+  /**
+   * The jTicket project this review belongs to, when jTicket's Review tab
+   * started it: findings are added to it as tickets rather than a new project,
+   * and the finished review opens there instead of here.
+   */
+  project?: string
   createdAt: string
   updatedAt: string
 }
@@ -170,10 +182,31 @@ export interface ReviewMeta {
   base: string
   status: ReviewStatus
   findingCount: number
+  /** Findings already added to jTicket as tickets. */
+  ticketedCount: number
+  reviewersDone: number
+  reviewerCount: number
   projectKey?: string
+  /** The jTicket project the review belongs to (`Review.project`). */
+  project?: string
   consensus?: boolean
+  /** The auto-loop iteration that asked, for a consensus review. */
+  loop?: number
   createdAt: string
   updatedAt: string
+}
+
+/** A jTicket project key — PROJ-n. */
+export const PROJECT_KEY_SHAPE = /^[A-Za-z][A-Za-z0-9]*-\d+$/
+
+/**
+ * Findings that can still become tickets. A review split before findings
+ * carried `ticketKey` recorded only the ticket keys, not which findings were
+ * picked — treat it as fully split, or a second press would duplicate them.
+ */
+export function unticketedFindings(review: Pick<Review, 'findings' | 'tickets'>): Finding[] {
+  const legacySplit = !!review.tickets?.ticketKeys.length && !review.findings.some((f) => f.ticketKey)
+  return legacySplit ? [] : review.findings.filter((f) => !f.ticketKey)
 }
 
 /** Reviewers that no longer hold up triage. */

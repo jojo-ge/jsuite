@@ -162,7 +162,7 @@ The project header carries the branch: a **Branch** button while the project has
 a repo but no integration branch (one click — same call as below), which becomes
 a chip naming the branch and linking to its jDiff review once it exists.
 
-The project page then shows a **Pull requests** section:
+The project page's **Branches** tab manages the integration branch:
 
 - **Cut the branch** — `POST /api/projects/:id/integration-branch` runs
   `git branch <name> origin/<default>` + `git push -u origin <name>` and records
@@ -176,6 +176,20 @@ The project page then shows a **Pull requests** section:
   teammate pushed a minute ago shows up). Picking one just sets
   `integrationBranch` — nothing is created or pushed. The same search sits
   behind the 🔍 on a project that already has a branch, for repointing it.
+- **Where it stands** — `GET /api/projects/:id/branch-status` compares the
+  branch with `origin/<branch>` (commits a push would send, commits a pull would
+  bring, diverged or not) and with `origin/<default>` (ahead/behind), plus the
+  worktree it's checked out in. `?fetch=1` fetches both branches first — the
+  tab does on open and on ↻; otherwise it reads the refs the clone has.
+- **Push / pull** — *Push* is `POST /api/projects/:id/sync` (below). *Pull*
+  (`POST /api/projects/:id/branch-pull`) fast-forwards the local branch to
+  origin's, for commits pushed from elsewhere — inside the worktree that has it
+  checked out, else by moving the ref (compare-and-swap). It never merges: a
+  diverged branch is a 409, left for a human.
+- **The roll-up PR** and the branch's **worktree** (below) sit on the same tab.
+
+The **Pull requests** tab lists the project's PRs:
+
 - **The PR list** — `GET /api/projects/:id/github` returns the repo's open PRs
   that belong to this project, matched three ways:
 
@@ -224,15 +238,41 @@ The loop, per ticket:
 4. **Conflicts refuse cleanly** — the repo is left exactly as it was, the PR
    turns `conflicted` with the file list on the row. Rebase the ticket branch
    onto the integration branch, then hit merge again.
-5. **Sync** — `POST /api/projects/:id/sync` (the *Sync* button) pushes the
-   integration branch to origin: the only remote write in the flow. The
-   *Roll-up PR* button (`POST /api/projects/:id/integration-pr`) pushes and then
-   opens — or finds — the one real GitHub PR, integration → default branch,
-   via `gh`.
+5. **Push** — `POST /api/projects/:id/sync` (the Branches tab's *Push* button)
+   pushes the integration branch to origin: the only remote write in the flow.
+   The *Open roll-up PR* button (`POST /api/projects/:id/integration-pr`) pushes
+   and then opens — or finds — the one real GitHub PR, integration → default
+   branch, via `gh`.
 
-The project page's *Pull requests* section shows both lists: **Local pull
+The project page's *Pull requests* tab shows both lists: **Local pull
 requests** (with per-PR commit fold-outs, merge/close buttons) above **On
 GitHub** (the read-only `gh pr list` view, usually just the roll-up).
+
+### Review tab (jReview)
+
+The project page's **Review** tab runs [jReview](../jreview/README.md) over the
+project's branches and turns what it finds into tickets **in this project**.
+
+- **Start review** — `POST /api/projects/:id/reviews { branch?, base?, reviewers? }`
+  proxies jReview's `POST /api/reviews` with `project: <KEY>`. The branch
+  defaults to the integration branch (a branch only on origin is
+  `origin/<name>`), the target to the branch's PR base else the default branch,
+  and 1–4 Opus reviewers (default 4) run in herdr, then a triager merges their
+  findings. When triage lands, jReview opens the browser on this tab
+  (`?tab=review&review=<key>`).
+- **Follow it** — `GET /api/projects/:id/reviews` lists the project's reviews
+  (the ones this tab started, plus the auto loop's consensus reviews,
+  read-only); `GET /api/projects/:id/reviews/:key` is one of them whole. The tab
+  polls while a review is in flight. Reviewer and triage reports are jExplain
+  documents in the shared pool and open inline. Retry/skip a reviewer or retry
+  the triager with `POST /api/projects/:id/reviews/:key/action
+  { action: 'retry-reviewer' | 'skip-reviewer' | 'retry-triage', n? }`.
+- **Add findings as tickets** — tick findings and press *Add N to <KEY>*:
+  `POST /api/projects/:id/reviews/:key/tickets { findingIds }` has jReview file
+  one AFK `bug` ticket per finding (labelled `jreview`, `review:finding`,
+  `severity:*`, `category:*`) into this project. jReview records each finding's
+  ticket key, so a finding is never added twice and the rest can be added
+  later. A review belongs to one project, and every route checks it.
 
 ### Herdr dispatch
 

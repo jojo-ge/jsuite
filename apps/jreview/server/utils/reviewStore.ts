@@ -107,8 +107,13 @@ export function reviewMeta(r: Review): ReviewMeta {
     base: r.base,
     status: r.status,
     findingCount: r.findings.length,
+    ticketedCount: r.findings.filter((f) => f.ticketKey).length,
+    reviewersDone: r.reviewers.filter((x) => x.status === 'done').length,
+    reviewerCount: r.reviewers.length,
     projectKey: r.tickets?.projectKey,
+    project: r.project,
     consensus: r.consensus ? true : undefined,
+    loop: r.consensus?.loop,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }

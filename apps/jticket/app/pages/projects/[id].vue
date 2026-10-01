@@ -47,8 +47,8 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'run' | 'overview' | 'docs' | 'prs' | 'agents' | 'loops'
-const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'overview', 'docs', 'prs', 'agents', 'loops']
+type ProjectTab = 'board' | 'run' | 'overview' | 'docs' | 'branches' | 'prs' | 'review' | 'agents' | 'loops'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'overview', 'docs', 'branches', 'prs', 'review', 'agents', 'loops']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
@@ -56,7 +56,8 @@ const tab = computed<ProjectTab>({
     return (PROJECT_TABS as string[]).includes(q) ? (q as ProjectTab) : 'board'
   },
   set: (value) => {
-    router.replace({ query: { ...route.query, tab: value === 'board' ? undefined : value } })
+    // ?review= belongs to the Review tab; leaving it drops the selection.
+    router.replace({ query: { ...route.query, tab: value === 'board' ? undefined : value, review: value === 'review' ? route.query.review : undefined } })
   },
 })
 // Open local PRs — the PRs tab's badge, so a waiting queue still shows while
@@ -75,7 +76,9 @@ const tabItems = computed(() => [
     : []),
   { label: 'Overview', value: 'overview', icon: 'i-lucide-align-left' },
   { label: 'Docs', value: 'docs', icon: 'i-lucide-file-text', badge: projectDocs.value.length || undefined },
+  { label: 'Branches', value: 'branches', icon: 'i-lucide-git-branch' },
   { label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined },
+  { label: 'Review', value: 'review', icon: 'i-lucide-scan-search' },
   { label: 'Agents', value: 'agents', icon: 'i-lucide-message-square-code' },
   ...(loopCount.value ? [{ label: 'Loops', value: 'loops', icon: 'i-lucide-repeat', badge: loopCount.value }] : []),
 ])
@@ -371,8 +374,14 @@ async function removeProject() {
           </div>
         </section>
 
-        <!-- GitHub — the project's integration branch and its open PRs -->
+        <!-- Branches — the integration branch: cut/adopt, push, pull, roll-up PR -->
+        <ProjectBranches v-else-if="tab === 'branches'" :project="project" @configure="openEditProject(project)" />
+
+        <!-- Pull requests — local PRs onto the integration branch, and GitHub's -->
         <ProjectGithub v-else-if="tab === 'prs'" :project="project" pinned-open @configure="openEditProject(project)" />
+
+        <!-- Review — jReview runs over this project's branches; findings → tickets here -->
+        <ProjectReviews v-else-if="tab === 'review'" :project="project" @configure="openEditProject(project)" />
 
         <!-- Agents — how hand-offs reach an agent: the PR target, the herdr
              workspace, and the prompts themselves -->

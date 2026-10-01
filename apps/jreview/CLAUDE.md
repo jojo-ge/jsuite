@@ -11,7 +11,8 @@ polls the shared document pool; when every reviewer is settled it
 dispatches one TRIAGE session (`/jreview-triage <key>`), which dedupes the
 reports, publishes `jreview-<key>-triage`, and POSTs the merged findings to
 `/api/reviews/:key/findings`. The human's button then splits them into a new
-jTicket project. See README.md for the flow and API.
+jTicket project — or, for a review jTicket's project Review tab started
+(`review.project`), adds them to that project. See README.md for the flow and API.
 
 Rules that matter here:
 
@@ -24,9 +25,13 @@ Rules that matter here:
   triaging` inside `updateReview` (serialised per key) before dispatching, so
   two ticks can't start two triagers. Don't move triage firing into the page.
 - **The ticket split is human-only.** `POST /api/reviews/:key/tickets` is
-  called by the room's button; no skill or session may call it. It creates
-  the project with `POST /api/projects` and imports tickets by project KEY
-  (import resolves titles, which could hit an older same-named project).
+  called by the room's button or jTicket's Review tab (proxying its button);
+  no skill or session may call it. The target is `projectKey`, else wherever
+  the first batch went, else `review.project`, else a new project (`POST
+  /api/projects`). Tickets are imported by project KEY (import resolves
+  titles, which could hit an older same-named project). Each finding records
+  its `ticketKey`, so already-ticketed findings are skipped and the rest can
+  follow later — into the same project only.
 - **Every write goes through `updateReview`** — dispatch, the watcher and the
   findings POST touch the same file seconds apart. `writeReview` is
   temp-file + rename so `/watch` never reads a torn file.

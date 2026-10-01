@@ -33,7 +33,8 @@ const pExecFile = promisify(execFile)
 //
 // Once that hand-back lands the watcher closes the review's panes (every pane
 // in its 'review K' / 'triage K' tabs — never one whose agent is still working
-// or blocked), and a triaged review opens its page in the browser instead.
+// or blocked), and a triaged review opens in the browser instead — on its
+// jTicket project's Review tab when it belongs to one.
 // jTicket's auto loop sweeps the same tabs for its consensus reviews; closing
 // is idempotent, so whichever gets there first wins and the other finds nothing.
 
@@ -174,11 +175,19 @@ export async function closeReviewPanes(key: string): Promise<boolean> {
   return busy.length === 0
 }
 
-/** Open the review's page in the default browser. Best-effort; JREVIEW_OPEN_BROWSER=0 turns it off. */
-export async function openReviewInBrowser(key: string): Promise<void> {
+/**
+ * Open the finished review where the human picks it up: its jTicket project's
+ * Review tab when it belongs to one, else its page here. Best-effort;
+ * JREVIEW_OPEN_BROWSER=0 turns it off.
+ */
+export async function openReviewInBrowser(review: Pick<Review, 'key' | 'project'>): Promise<void> {
   if (process.env.JREVIEW_OPEN_BROWSER?.trim() === '0') return
+  const { key, project } = review
+  const url = project
+    ? `${JTICKET_PUBLIC}/projects/${encodeURIComponent(project)}?tab=review&review=${encodeURIComponent(key)}`
+    : `https://jreview.local/r/${key}`
   try {
-    await pExecFile('open', [`https://jreview.local/r/${key}`])
+    await pExecFile('open', [url])
   } catch (err: any) {
     console.error(`[jreview] could not open ${key} in the browser:`, String(err?.message ?? err))
   }

@@ -21,6 +21,13 @@ const severityColor = (s: Finding['severity']) =>
             {{ finding.severity }}
           </UBadge>
           <span class="min-w-0 flex-1 font-medium">{{ finding.title }}</span>
+          <a
+            v-if="finding.ticketKey"
+            :href="`https://jticket.local/tickets/${finding.ticketKey}`"
+            target="_blank"
+            class="shrink-0 font-mono text-xs text-primary hover:underline"
+            @click.stop
+          >{{ finding.ticketKey }} ↗</a>
           <UIcon :name="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="mt-1 size-4 shrink-0 text-muted" />
         </button>
         <p class="mt-1 text-sm text-muted">{{ finding.summary }}</p>

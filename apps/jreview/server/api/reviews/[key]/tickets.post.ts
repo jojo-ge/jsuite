@@ -1,17 +1,21 @@
-import type { Finding, Review } from '../../../../app/utils/reviewTypes'
+import { PROJECT_KEY_SHAPE, unticketedFindings, type Finding, type Review } from '../../../../app/utils/reviewTypes'
 
 /**
- * The human's button: split the triaged findings into tickets in a NEW jTicket
- * project. Body: { findingIds?: string[] } — the findings to ticket (default:
- * all of them).
+ * The human's button: turn triaged findings into jTicket tickets. Body:
+ * { findingIds?: string[], projectKey?: string } — the findings to ticket
+ * (default: all of them) and the project to add them to.
  *
- * Creates the project first (repo = the reviewed repo's main checkout — a
+ * The target is `projectKey`, else the project the findings already went to,
+ * else the project the review belongs to (`review.project` — jTicket's Review
+ * tab), else a NEW project (repo = the reviewed repo's main checkout — a
  * review started from a worktree still lands in the codebase's own project
- * list, not a new codebase — so the tickets are dispatchable from jTicket like
- * any other), then imports one AFK bug ticket per
- * finding into it by key — never by title, which could match an older
- * project of the same name. Flips the review to `ticketed`; a second press is
- * a 409.
+ * list — so the tickets are dispatchable from jTicket like any other).
+ * One AFK bug ticket per finding is imported into it by key — never by title,
+ * which could match an older project of the same name.
+ *
+ * Findings that already became tickets are skipped, so the button can be
+ * pressed again for the ones left over — but only into the same project.
+ * Each finding records its `ticketKey`; the review flips to `ticketed`.
  */
 const inFlight = new Set<string>()
 
@@ -21,28 +25,46 @@ export default defineEventHandler(async (event) => {
 
   const review = await readReview(key)
   if (!review) throw createError({ statusCode: 404, message: `No such review: ${key}` })
-  if (review.status === 'ticketed') {
-    throw createError({ statusCode: 409, message: `already split into ${review.tickets?.projectKey}` })
+  if (review.consensus) {
+    throw createError({ statusCode: 409, message: `review ${key} is a consensus review — its session files its own tickets` })
   }
-  if (review.status !== 'triaged') {
+  if (review.status !== 'triaged' && review.status !== 'ticketed') {
     throw createError({ statusCode: 409, message: `review is still ${review.status} — tickets come after triage` })
   }
 
+  const asked = String(body.projectKey ?? '').trim()
+  if (asked && !PROJECT_KEY_SHAPE.test(asked)) {
+    throw createError({ statusCode: 400, message: 'projectKey must be a jTicket project key (PROJ-n)' })
+  }
+  const filedInto = review.tickets?.projectKey
+  if (asked && filedInto && asked !== filedInto) {
+    throw createError({ statusCode: 409, message: `this review's findings already went to ${filedInto} — add the rest there` })
+  }
+  const target = asked || filedInto || review.project || ''
+
   const wanted = Array.isArray(body.findingIds) ? new Set(body.findingIds.map(String)) : null
-  const findings = review.findings.filter((f) => !wanted || wanted.has(f.id))
-  if (!findings.length) throw createError({ statusCode: 400, message: 'no findings selected' })
+  const findings = unticketedFindings(review).filter((f) => !wanted || wanted.has(f.id))
+  if (!findings.length) {
+    throw createError({ statusCode: 400, message: wanted ? 'the selected findings are already tickets' : 'every finding is already a ticket' })
+  }
 
   if (inFlight.has(key)) throw createError({ statusCode: 409, message: 'already creating tickets for this review' })
   inFlight.add(key)
   try {
-    const project = await jticketCall<{ key: string }>('/api/projects', {
-      method: 'POST',
-      body: {
-        title: `Review: ${review.title}`,
-        repo: await mainCheckout(review.repoPath),
-        description: projectDescription(review, findings.length),
-      },
-    })
+    let projectKey = target
+    if (projectKey) {
+      await jticketCall(`/api/projects/${encodeURIComponent(projectKey)}`) // 404s cleanly when it's gone
+    } else {
+      const project = await jticketCall<{ key: string }>('/api/projects', {
+        method: 'POST',
+        body: {
+          title: `Review: ${review.title}`,
+          repo: await mainCheckout(review.repoPath),
+          description: projectDescription(review, findings.length),
+        },
+      })
+      projectKey = project.key
+    }
     const imported = await jticketCall<{ tickets: { key: string }[] }>('/api/import', {
       method: 'POST',
       body: {
@@ -50,22 +72,32 @@ export default defineEventHandler(async (event) => {
           title: f.title,
           description: ticketDescription(review, f),
           type: 'bug',
-          project: project.key,
+          project: projectKey,
           labels: ['afk', 'jreview', 'review:finding', `severity:${f.severity}`, `category:${f.category}`],
           acceptanceCriteria: ['The failure scenario described above no longer occurs, and a test covers it'],
         })),
       },
     })
-    const tickets = {
-      projectKey: project.key,
-      ticketKeys: imported.tickets.map((t) => t.key),
-      createdAt: new Date().toISOString(),
-    }
-    await updateReview(key, (r) => {
-      r.tickets = tickets
+    // Import answers in the order it was sent — finding i became ticket i.
+    const byFinding = new Map(findings.map((f, i) => [f.id, imported.tickets[i]?.key]))
+    const updated = await updateReview(key, (r) => {
+      for (const f of r.findings) {
+        const ticketKey = byFinding.get(f.id)
+        if (ticketKey) f.ticketKey = ticketKey
+      }
+      const added = [...byFinding.values()].filter((k): k is string => !!k)
+      r.tickets = {
+        projectKey,
+        ticketKeys: [...(r.tickets?.ticketKeys ?? []), ...added],
+        createdAt: r.tickets?.createdAt ?? new Date().toISOString(),
+      }
       r.status = 'ticketed'
     })
-    return { ...tickets, url: `${JTICKET_PUBLIC}/projects/${project.key}` }
+    return {
+      ...updated.tickets!,
+      added: imported.tickets.map((t) => t.key),
+      url: `${JTICKET_PUBLIC}/projects/${projectKey}`,
+    }
   } finally {
     inFlight.delete(key)
   }

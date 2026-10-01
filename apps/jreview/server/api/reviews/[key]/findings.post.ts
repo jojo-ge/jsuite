@@ -9,9 +9,9 @@ import { SEVERITIES, type Finding, type Severity } from '../../../../app/utils/r
  * in the order sent (the triager sends them most-severe first). Re-POSTing
  * replaces the set — until the human has split them into tickets.
  *
- * The first POST opens the review's page in the browser — the triage
- * session's panes are closed by the watcher, so the page is where the human
- * picks it up.
+ * The first POST opens the review in the browser — its jTicket project's
+ * Review tab when it belongs to one, else its page here. The triage session's
+ * panes are closed by the watcher, so that page is where the human picks it up.
  */
 export default defineEventHandler(async (event) => {
   const key = sanitizeReviewKey(getRouterParam(event, 'key'))
@@ -60,6 +60,6 @@ export default defineEventHandler(async (event) => {
     r.triage.error = undefined
     r.triage.doneAt = new Date().toISOString()
   })
-  if (current.status !== 'triaged') void openReviewInBrowser(key)
+  if (current.status !== 'triaged') void openReviewInBrowser(current)
   return { key: review.key, findings: review.findings.length, path: `/r/${review.key}` }
 })

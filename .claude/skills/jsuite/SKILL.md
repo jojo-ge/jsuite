@@ -24,7 +24,7 @@ cd ~/code/anyway/jsuite && ./jsuite start    # apps + Caddy edge
 | jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser — grillings themselves run in the terminal |
 | jCode | https://jcode.local | 43006 | hand-code the part that matters as a standalone problem — Claude ships the feature, then poses its core as a sandbox kata: brief → hints → answer, marked in herdr |
 | jMap | https://jmap.local | 43007 | codebase cartographer — domains, herdr mapper fleet, interactive map |
-| jReview | https://jreview.local | 43008 | four herdr reviewers run the global `/code-review`, a triager dedupes, you split the findings into jTicket tickets (or, for jTicket's auto loop, 2 reviewers + a consensus session file only agreed findings) |
+| jReview | https://jreview.local | 43008 | four herdr reviewers run the global `/code-review`, a triager dedupes, you split the findings into jTicket tickets — or, started from a jTicket project's Review tab, add them to that project (or, for jTicket's auto loop, 2 reviewers + a consensus session file only agreed findings) |
 
 Always include the scheme and port: `https://<app>.local`. Plain HTTP on
 that port returns a 400, not a redirect.
@@ -200,7 +200,10 @@ findings, publishes a triage document and POSTs the deduplicated findings
 back. The reports and findings render in the review room. **Splitting the
 findings into tickets is the human's button**, never an agent's: it creates a
 new jTicket project (repo = the reviewed repo) with one `review:finding`
-ticket per selected finding. A **consensus review** (`POST /api/reviews` with
+ticket per selected finding. A review started from a jTicket project's
+**Review** tab (`project: <KEY>`) adds its findings to that project instead,
+in as many batches as you like (each finding records its ticket key), and
+opens on that tab when triage lands. A **consensus review** (`POST /api/reviews` with
 `reviewers: 2, consensus: {projectKey, loop}` — jTicket's auto loop) skips
 triage: once every reviewer is in, a Sonnet 5 `/jreview-consensus` session
 files the findings every reviewer raised straight into that project as tickets

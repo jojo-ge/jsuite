@@ -37,7 +37,13 @@ Runs at https://jreview.local (port 43008) behind the jSuite edge.
 5. **Tickets** — your button. Untick any findings you don't want, press
    *Split into jTicket project*: a new project (repo = the reviewed repo)
    with one `bug` ticket per finding, tagged `afk` and labelled
-   `review:finding`, `severity:<s>`, `category:<c>`.
+   `review:finding`, `severity:<s>`, `category:<c>`. Each finding remembers
+   its ticket, so leftovers can be added to the same project later.
+
+A review can also start from a jTicket project's **Review** tab
+(`POST /api/reviews` with `project: <KEY>`). It runs the same way, but its
+findings are added to that project (*Add to <KEY>*, here or in jTicket), and
+when triage lands the browser opens on the jTicket tab instead of this room.
 
 The room (`/r/<key>`) shows the pipeline live over SSE and renders every
 report inline (Findings · Triage report · Reviewer 1–4).
@@ -46,17 +52,17 @@ report inline (Findings · Triage report · Reviewer 1–4).
 
 | Route | Method | Notes |
 | --- | --- | --- |
-| `/api/reviews` | GET | list (meta) |
+| `/api/reviews` | GET | list (meta); `?project=KEY` narrows to one jTicket project's (its own + its auto loop's consensus reviews) |
 | `/api/repos` | GET / DELETE | remembered codebases (+ jTicket's); `DELETE ?path=` forgets one |
 | `/api/repos/pick` | GET | native macOS folder picker |
 | `/api/branches?repo=` | GET | branches, current, default target, open PR per branch |
-| `/api/reviews` | POST | `{ repoPath, branch?, base?, title? }` → `{ key, path }`; dispatches reviewers in the background |
+| `/api/reviews` | POST | `{ repoPath, branch?, base?, title?, reviewers?, project? }` → `{ key, path }`; dispatches reviewers in the background |
 | `/api/reviews/:key` | GET / DELETE | the review record; delete keeps docs and tickets |
 | `/api/reviews/:key/watch` | GET | SSE mirror of the review file |
 | `/api/reviews/:key/reviewers/:n/dispatch` | POST | retry / restart one reviewer |
 | `/api/reviews/:key/reviewers/:n/skip` | POST | give up on one reviewer so triage can proceed |
 | `/api/reviews/:key/triage/dispatch` | POST | retry / restart the triager |
 | `/api/reviews/:key/findings` | POST | the triager's hand-back `{ findings }` → `triaged` |
-| `/api/reviews/:key/tickets` | POST | the human's split `{ findingIds? }` → new jTicket project |
+| `/api/reviews/:key/tickets` | POST | the human's split `{ findingIds?, projectKey? }` → tickets in `projectKey`, the project the first batch went to, `review.project`, or a new project; skips findings already ticketed |
 
 Plus `/api/documents/**` and `/api/charts/**` from the shared layers.
