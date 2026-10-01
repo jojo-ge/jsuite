@@ -73,7 +73,7 @@ export function autoForecastFor(project: Project, tickets: Ticket[], all: Ticket
         id: t.id,
         inProject: inProject.has(t.id),
         open,
-        hitl: isHitl(t),
+        hitl: isHitl(t) || isPaused(t),
         takeable: t.status === 'todo' && !t.assignee && !t.transfer && !peerNameOf(t, project),
         running: open && (t.status !== 'todo' || !!t.assignee),
         blockedBy: t.blockedBy,

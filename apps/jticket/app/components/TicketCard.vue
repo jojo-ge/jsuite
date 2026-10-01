@@ -21,7 +21,7 @@ const emit = defineEmits<{ edit: [Ticket]; delete: [Ticket]; copy: [Ticket]; run
 // Did this ticket just move under us? `changed` is filled by the live stream,
 // and entries expire on their own — so the ring is only ever about the last few
 // seconds, never a state the card has to have cleared.
-const { changed, projects, prs } = useTracker()
+const { changed, projects, prs, togglePaused } = useTracker()
 const moved = computed(() => !!changed.value[props.ticket.id])
 
 // "See the changes" — the ticket's diff in jDiff, via its local PR (exact
@@ -81,7 +81,7 @@ const ring = computed(() => {
   <UCard
     :ui="{ body: 'p-4 sm:p-4' }"
     class="cursor-pointer transition hover:ring-2 hover:ring-primary/40"
-    :class="ring"
+    :class="[ring, isPaused(ticket) && 'bg-muted opacity-60 grayscale hover:opacity-100']"
     @click="emit('edit', ticket)"
   >
     <div class="flex items-start justify-between gap-3">
@@ -122,6 +122,16 @@ const ring = computed(() => {
         </div>
         <p class="mt-1 truncate font-medium">{{ ticket.title }}</p>
       </div>
+      <UTooltip v-if="!isFinished(ticket.status)" :text="isPaused(ticket) ? 'Unpause — the auto loop may take it again' : 'Pause — the auto loop skips it until you unpause'">
+        <UButton
+          :icon="isPaused(ticket) ? 'i-lucide-play' : 'i-lucide-pause'"
+          :color="isPaused(ticket) ? 'warning' : 'neutral'"
+          :variant="isPaused(ticket) ? 'soft' : 'ghost'"
+          size="sm"
+          :aria-label="`${isPaused(ticket) ? 'Unpause' : 'Pause'} ${ticket.key}`"
+          @click.stop="togglePaused(ticket)"
+        />
+      </UTooltip>
       <UDropdownMenu
         :items="[
           [{ label: 'Edit', icon: 'i-lucide-pencil', onSelect: () => emit('edit', ticket) }],

@@ -86,6 +86,12 @@ export function isHitl(ticket: { labels?: readonly string[] }): boolean {
   return (ticket.labels ?? []).includes('hitl')
 }
 
+// Paused by hand: the auto loop treats it like HITL (skips it, never
+// dispatches it) until the human takes the label off.
+export function isPaused(ticket: { labels?: readonly string[] }): boolean {
+  return (ticket.labels ?? []).includes('paused')
+}
+
 // A stored ticket still in a pre-types shape — what the setup migration and
 // the loader look for.
 export function isLegacyTicket(t: { type?: unknown; labels?: readonly string[] }): boolean {
