@@ -59,6 +59,8 @@ export async function herdrJson(args) {
     try {
       const parsed = JSON.parse(msg)
       msg = parsed?.error?.message ?? parsed?.message ?? msg
+      // Keep the code (agent_prompt_stalled, timeout) — callers match on it.
+      if (parsed?.error?.code && !msg.includes(parsed.error.code)) msg = `${parsed.error.code}: ${msg}`
     } catch { /* plain text */ }
     throw new HerdrError(`herdr: ${msg.slice(0, 300)}`, 502)
   }
@@ -298,14 +300,24 @@ export async function startClaudeIn(paneId, name, prompt, opts = {}) {
   // Submit the prompt. Hand-offs start with a slash command, and pasting '/'
   // into claude can race its command popup — the encoded Enter gets eaten and
   // herdr reports agent_prompt_stalled with the text left sitting in the input.
-  // On a stall: esc to dismiss any popup and clear the input, then resubmit.
+  // Only --wait reports that stall: without it, success just means the bytes
+  // were written. --until working|blocked returns as soon as the turn starts
+  // instead of waiting for it to finish. A stall doesn't prove the prompt was
+  // lost, so check the status first — esc on a working agent would interrupt it.
+  // On a real stall: esc to dismiss any popup and clear the input, then resubmit.
   for (let attempt = 1; ; attempt++) {
     try {
-      await herdrJson(['agent', 'prompt', agentName, prompt])
+      await herdrJson([
+        'agent', 'prompt', agentName, prompt,
+        '--wait', '--until', 'working', '--until', 'blocked', '--timeout', '20000',
+      ])
       break
     } catch (err) {
       const msg = String(err?.message ?? err)
-      if (!msg.includes('stalled') || attempt >= 3) throw err
+      if (!msg.includes('stalled') && !msg.includes('timeout')) throw err
+      const status = (await herdrJson(['agent', 'get', agentName]).catch(() => null))?.result?.agent?.agent_status
+      if (status === 'working' || status === 'blocked') break
+      if (attempt >= 3) throw err
       await herdrJson(['agent', 'send-keys', agentName, 'esc']).catch(() => {})
       await herdrJson(['agent', 'send-keys', agentName, 'esc']).catch(() => {})
       await new Promise((r) => setTimeout(r, 750))
