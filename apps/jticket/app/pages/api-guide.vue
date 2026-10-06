@@ -78,6 +78,8 @@ const endpoints = [
   { m: 'POST', p: '/api/tickets/:id/comments', d: 'Add a comment { author, body }' },
   { m: 'DELETE', p: '/api/tickets/:id/comments/:cid', d: 'Delete one comment' },
   { m: 'POST', p: '/api/import', d: 'Bulk-create a whole breakdown at once' },
+  { m: 'GET', p: '/api/graphs', d: 'Every project graph (projects linked by cross-project blockers): id G-KEY, name, projects (key, layer, tickets finished, outcomeDoc), links with the ticket pairs behind them' },
+  { m: 'GET', p: '/api/graphs/:id', d: 'One graph — by its id (G-KEY, any case) or the key of any project in it' },
   { m: 'GET', p: '/api/docs', d: 'List docs (?projectId= &repo= &status= &label=)' },
   { m: 'POST', p: '/api/docs', d: 'Create a doc { title, blocks?|documentKey?, project?, labels?, status? }' },
   { m: 'GET', p: '/api/docs/:id', d: 'Get one doc (id or key)' },

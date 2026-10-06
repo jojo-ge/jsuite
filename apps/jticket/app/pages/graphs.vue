@@ -22,7 +22,17 @@ const graphs = computed(() =>
   ),
 )
 
-const selected = computed(() => graphs.value.find((g) => g.id === route.query.g) ?? graphs.value[0] ?? null)
+// ?g= takes the graph id (G-KEY, any case) — what you paste to Claude and back.
+const selected = computed(() => {
+  const ref = String(route.query.g ?? '').toUpperCase()
+  return graphs.value.find((g) => g.id === ref) ?? graphs.value[0] ?? null
+})
+const copiedId = ref('')
+async function copyId(id: string) {
+  await navigator.clipboard.writeText(id)
+  copiedId.value = id
+  setTimeout(() => copiedId.value === id && (copiedId.value = ''), 1500)
+}
 function pick(id: string) {
   router.replace({ query: { ...route.query, g: id } })
 }
@@ -88,7 +98,18 @@ const summaries = computed(
             @click="pick(g.id)"
           >
             <UIcon name="i-lucide-waypoints" class="size-4 shrink-0" :class="selected?.id === g.id ? 'text-primary' : 'text-muted'" />
+            <span class="shrink-0 font-mono text-xs text-muted">{{ g.id }}</span>
             <span class="min-w-0 flex-1 truncate font-medium">{{ g.name }}</span>
+            <UTooltip text="Copy the graph id — Claude resolves it via GET /api/graphs/:id">
+              <UButton
+                :icon="copiedId === g.id ? 'i-lucide-check' : 'i-lucide-clipboard'"
+                :color="copiedId === g.id ? 'success' : 'neutral'"
+                variant="ghost"
+                size="xs"
+                :aria-label="`Copy ${g.id}`"
+                @click.stop="copyId(g.id)"
+              />
+            </UTooltip>
             <span class="shrink-0 text-xs text-muted">{{ summaries.get(g.id) }}</span>
           </button>
         </div>

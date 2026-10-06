@@ -35,7 +35,7 @@ export interface ProjectLink {
 }
 
 export interface ProjectGraph {
-  /** Stable while the membership holds: the earliest-created member's id. */
+  /** "G-<KEY>" from the earliest-created member's key — stable while that project stays in the graph. */
   id: string
   /** "Start, Start → End, End" — the projects nothing leads into, then the ones that lead nowhere. */
   name: string
@@ -128,7 +128,7 @@ function shapeGraph(
   members.forEach(layerOf)
 
   return {
-    id: members[0]!,
+    id: `G-${byProject.get(members[0]!)!.key}`,
     name: `${titles(starts)} → ${titles(ends)}`,
     projects: [...members].sort((a, b) => layer[a]! - layer[b]! || byCreated(a, b)),
     links: links.map((l) => ({ ...l, pairs: [...l.pairs].sort((a, b) => a.blocked.localeCompare(b.blocked, undefined, { numeric: true })) })),
