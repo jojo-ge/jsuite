@@ -7,8 +7,8 @@ import type { BranchInfo, BranchList, PullRequest } from '../../app/utils/review
 
 const exec = promisify(execFile)
 
-async function git(repo: string, args: string[]): Promise<string> {
-  const { stdout } = await exec('git', ['-C', repo, ...args], { timeout: 15_000, maxBuffer: 8 * 1024 * 1024 })
+async function git(repo: string, args: string[], timeout = 15_000): Promise<string> {
+  const { stdout } = await exec('git', ['-C', repo, ...args], { timeout, maxBuffer: 8 * 1024 * 1024 })
   return stdout.trim()
 }
 
@@ -171,7 +171,9 @@ const worktreeRoot = () => appDataDir('jreview/worktrees')
 export async function addReviewWorktree(repo: string, key: string, branch: string, root = ''): Promise<string> {
   const dir = root ? join(root, `jreview-${key}`) : join(worktreeRoot(), key)
   try {
-    await git(repo, ['worktree', 'add', '--detach', dir, branch])
+    // A full checkout of a big repo (13k+ files) routinely runs past 15s;
+    // give this call room the other, cheap git calls don't need.
+    await git(repo, ['worktree', 'add', '--detach', dir, branch], 180_000)
   } catch (err: any) {
     throw createError({
       statusCode: 500,

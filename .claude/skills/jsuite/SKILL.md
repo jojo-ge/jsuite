@@ -115,7 +115,11 @@ jTicket's **Graphs** page (`/graphs`) shows linked projects: a ticket blocked
 by a ticket in another project links the two (there is no graph entity), each
 connected group is a graph named "first projects → last projects", drawn with
 each project's status and its outcome report. It only displays; every project
-is still kicked off by hand.
+is still kicked off by hand. Each graph has an id `G-<KEY>` (its earliest
+project's key — stable while that project stays linked), shown on the page
+with a copy button. When the user names one, resolve it with
+`GET :43000/api/graphs/G-KEY` (a member project key works too); `GET
+/api/graphs` lists them all.
 
 **jDiff** — a local GitHub client that's really good at diffs. `gh` lists open
 PRs; `git` fetches and diffs locally. Reviews local branches before any PR

@@ -15,7 +15,7 @@ describe('projectGraphs', () => {
     const tickets = [t('a1', 'a'), t('a2', 'a', ['a1']), t('b1', 'b', ['a2']), t('b2', 'b', ['a1']), t('c1', 'c', ['b1'])]
     const [g, ...rest] = projectGraphs(projects, tickets)
     expect(rest).toEqual([])
-    expect(g).toMatchObject({ id: 'a', name: 'Hollywood A → Hollywood C', projects: ['a', 'b', 'c'], starts: ['a'], ends: ['c'] })
+    expect(g).toMatchObject({ id: 'G-A', name: 'Hollywood A → Hollywood C', projects: ['a', 'b', 'c'], starts: ['a'], ends: ['c'] })
     expect(g!.layer).toEqual({ a: 0, b: 1, c: 2 })
     expect(g!.links.find((l) => l.from === 'a')!.pairs).toEqual([
       { blocker: 'A2', blocked: 'B1' },
