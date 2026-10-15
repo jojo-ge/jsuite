@@ -1,6 +1,6 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file each straight into the loop's jTicket project as an AFK bug ticket, and POST the ticket keys back to jReview. Invoked as `/jreview-consensus <key>` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
+description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file each into the loop's jTicket project as a bug ticket (AFK when it serves the project's goal, HITL when it's out of scope), and POST the ticket keys back to jReview. Invoked as `/jreview-consensus <key>` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
 ---
 
 # jreview-consensus
@@ -8,7 +8,8 @@ description: Close a consensus jReview run for jTicket's auto loop — read ever
 jTicket's auto loop asked jReview for a **consensus review**: several reviewers
 ran independently over the same diff (this loop's changes) and each published a
 jExplain report. Your job is to find the findings **every** reviewer raised and
-turn each one into a jTicket ticket the loop will implement next. Anything only
+turn each one into a jTicket ticket — one the loop implements next, or, when
+it's outside the project's goal, one the human decides on. Anything only
 some reviewers raised is dropped — agreement is the filter. You run in the
 reviewed checkout (cwd), so you can read the code.
 
@@ -52,11 +53,38 @@ usually with `**Where:**` and `**Category:**` lines.
 - Count the distinct findings you weighed (agreed or not) — that's
   `considered`.
 
-## 3. File the tickets into jTicket
+## 3. Scope — AFK or HITL
 
-One AFK bug ticket per agreed finding, into `consensus.projectKey` **by key**,
-with no `blockedBy` — they must land on the loop's frontier. Write the JSON to
-a file and post it:
+Agreement says a finding is right, not that it belongs in this project. An AFK
+ticket lands on the loop's frontier, gets implemented on this branch, and the
+next review reads that new code — so out-of-scope work snowballs. Read the
+project's goal first:
+
+```sh
+curl -s http://localhost:43000/api/projects/<consensus.projectKey>
+```
+
+An agreed finding is **HITL** (the loop waits on the human) when fixing it
+would:
+
+- **promote or extract code into a shared layer** — a design system, a
+  component kit, a shared package — or land mostly outside the layer the
+  project's goal lives in. "This should be a DS primitive" is a separate
+  piece of work, not a fix;
+- **build on code a previous review ticket added** whose own work was
+  already out of the project's goal — review-of-review chains stop with the
+  human.
+
+Everything else — a defect in code that serves the project's goal — is AFK.
+When unsure, HITL. Count the HITL ones — that's `deferred`.
+
+## 4. File the tickets into jTicket
+
+One bug ticket per agreed finding, into `consensus.projectKey` **by key**,
+with no `blockedBy`. AFK findings carry the `afk` label and land on the loop's
+frontier; HITL findings carry `hitl` instead, plus `review:out-of-scope`, and
+their description adds a `**Why HITL:**` line naming which rule above applies.
+Write the JSON to a file and post it:
 
 ```json
 {
@@ -102,7 +130,7 @@ Agreed by every reviewer in jReview [<title>](https://jreview.local/r/<key>) —
 
 No agreed findings → skip this step entirely.
 
-## 4. Hand the keys back — last
+## 5. Hand the keys back — last
 
 This POST flips the review to *ticketed*, which is what the auto loop waits
 on, so send it only after the tickets exist:
@@ -116,7 +144,9 @@ curl -s -X POST http://localhost:43008/api/reviews/<key>/consensus \
 Zero agreed findings is a normal outcome — POST `{"ticketKeys": [],
 "considered": <n>, "kept": 0}` so the loop moves on.
 
-Then reply with one line — "N considered → M agreed → tickets …" plus the
+`ticketKeys` and `kept` include the HITL tickets — they exist in the project.
+
+Then reply with one line — "N considered → M agreed (D deferred to HITL) → tickets …" plus the
 jReview URL (`https://jreview.local/r/<key>`) — and stop. Don't implement
 anything; the auto loop dispatches the tickets. jReview closes this pane (and
 the reviewers') once you've gone idle.
