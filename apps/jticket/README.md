@@ -2,8 +2,8 @@
 
 A lean, local task tracker — **projects** and **tickets** with title,
 description, acceptance criteria, and blocked-by edges — plus **docs**, draft
-Confluence-style pages. It is **not connected to Jira or Confluence** and has no
-relation to them. It exists so LLM skills (e.g. Matt Pocock's `to-tickets`, or the
+Confluence-style pages. It is not connected to Confluence, and reaches Jira only
+through the opt-in ticket sync below. It exists so LLM skills (e.g. Matt Pocock's `to-tickets`, or the
 local `to-jspec`) can author a breakdown or a document *locally first*, for you to
 review and edit before you author anything to Jira/Confluence by hand.
 
@@ -360,6 +360,31 @@ Overrides are **machine-local**, like `repo` and the ticket branches: they say
 how *this* machine dispatches agents, not what the work is. They never ride the
 sync wire, they don't travel in a project bundle, and they stay editable on
 both sides of a shared project.
+
+## Jira sync
+
+A ticket labelled `jira:<KEY>` mirrors that Jira issue, and the two are kept in step both
+ways: title ↔ summary, status ↔ status category (`todo` ↔ To Do, `in_progress` ↔ any
+in-progress status, `done`/`merged` ↔ Done, moved with the first transition Jira offers
+into that category). Descriptions and comments are not synced, and a new ticket or issue on
+either side is not created on the other.
+
+Only the projects listed in `.data/jticket/jira.json` sync:
+
+```json
+{ "email": "you@year13.com.au", "token": "<Atlassian API token>", "projects": ["PROJ-35"] }
+```
+
+`site` defaults to `year13au.atlassian.net`; `JIRA_SITE`, `JIRA_EMAIL` and `JIRA_API_TOKEN`
+override the file. With no file, no token or no project, nothing runs. The server makes one
+pass a minute (`server/plugins/jira-sync.ts`); `POST /api/jira-sync` runs one now and answers
+what moved.
+
+Each field is merged against the last value both sides agreed on
+(`.data/jticket/jira-sync.json`). The side that changed wins, and when both changed the one
+updated more recently wins. A ticket seen for the first time takes Jira's values. A push Jira
+refuses (no transition into that status, say) leaves the agreed value as it was, so the next
+pass tries again; the reason is logged as `[jira-sync]`.
 
 ## Wayfinder mode
 
