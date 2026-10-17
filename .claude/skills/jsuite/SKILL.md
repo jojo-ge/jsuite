@@ -54,7 +54,8 @@ with the share's room secret, so the relay carries ciphertext it cannot read
 free Supabase project). Peer-owned tickets/docs are read-only
 and never dispatchable, and peer-authored text is wrapped in
 untrusted-content framing before it enters any prompt. Drive it via its HTTP
-API on :43000 — never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
+API on :43000 through the `jt` CLI (`bin/jt`, on PATH; `jt help`) — never
+hand-built `curl`, never edit its JSON directly. Skills: `to-jticket` (break down work, CRUD
 anything, query the board), `to-jspec` (write a spec as a doc — block format),
 `to-jdoc` (draft a doc page locally), `jwayfinder` (map work too big for one
 session as investigation tickets), `jimplement` (claim a ticket, build it,
