@@ -44,6 +44,7 @@ function toggleTheme() {
 // The board is the logo: it's the home page, and a link named after the app
 // already means "the board".
 const links = computed(() => [
+  { label: 'Today', icon: 'i-lucide-sun', to: '/today' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
   // Linked projects (tickets blocking tickets across projects) and their outcome reports.
   { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },

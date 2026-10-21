@@ -12,13 +12,15 @@ Confluence-style pages. It is not connected to Jira or Confluence and has no rel
 to them. It exists so a breakdown or a document can be authored **locally first**, for
 the user to review and edit before they hand-author anything elsewhere.
 
-Everything is a plain HTTP call against `$JTICKET` (below). There is no CLI.
+Every call goes through `jt` (on PATH; `jt help`), a thin CLI over jTicket's HTTP API —
+never hand-built `curl`. `jt get|post|patch|put|delete PATH [JSON]` reaches any endpoint
+without a verb; `field=@file.md` reads a value from a file; lists print tab-separated
+rows (`--json` for raw). The full API is in `reference/api.md`.
 
 ## 0. Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
 If it is **down**, tell the user and stop — do not write files as a fallback, and do
@@ -107,27 +109,24 @@ One-off reads and writes. Resolve the target first (keys are the friendly handle
 
 ```bash
 # read the board
-curl -s "$JTICKET/api/projects"
-curl -s "$JTICKET/api/tickets?projectId=PROJ-2&status=todo"
-curl -s "$JTICKET/api/tickets/TICK-4"
+jt projects
+jt ls projectId=PROJ-2 status=todo
+jt show TICK-4
 
 # add one ticket to an existing project
-curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' -d '{
-  "title": "Persist the cart", "description": "…", "type": "story", "labels": ["afk"],
-  "projectId": "PROJ-2", "acceptanceCriteria": ["Survives refresh"], "blockedBy": ["TICK-3"] }'
+jt new PROJ-2 "Persist the cart" description=@desc.md type=story labels=afk \
+  acceptanceCriteria="Survives refresh" blockedBy=TICK-3     # prints the new key
+# acceptanceCriteria splits on newlines, labels / blockedBy on commas
 
 # update
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-4" -H 'content-type: application/json' \
-  -d '{ "status": "done" }'
+jt set TICK-4 status=done
 
 # attach a screenshot to a ticket: upload, then embed the returned markdown in
 # the description / resolution / a comment (see reference/api.md "Attachments")
-curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
-  -d '{"file":"/tmp/shot.png","name":"tick-4-shot.png"}' | jq -r .markdown
+jt post /api/attachments '{"file":"/tmp/shot.png","name":"tick-4-shot.png"}' | jq -r .markdown
 
 # comment on a ticket (author = your own name; body is GFM markdown)
-curl -s "$JTICKET/api/tickets/TICK-4/comments" -H 'content-type: application/json' \
-  -d '{ "author": "claude", "body": "Blocked on the schema question — see TICK-3." }'
+jt comment TICK-4 "Blocked on the schema question — see TICK-3."   # author: $JT_AUTHOR or claude
 ```
 
 ### Codebases
@@ -139,19 +138,17 @@ a known repo's `owner/name` slug):
 
 ```bash
 # everything in the codebase you are working in
-curl -s "$JTICKET/api/projects?repo=$PWD"
-curl -s "$JTICKET/api/tickets?repo=$PWD&status=todo"    # backlog (no-project) tickets excluded
-curl -s "$JTICKET/api/docs?repo=$PWD"
+jt projects repo=$PWD
+jt ls repo=$PWD status=todo    # backlog (no-project) tickets excluded
+jt get "/api/docs?repo=$PWD"
 
 # the codebase's TODO project — idempotent get-or-create, the ONLY way a
 # todo-mode project is made (one per codebase; response carries created: true/false)
-curl -s "$JTICKET/api/projects/todo" -H 'content-type: application/json' \
-  -d "{ \"repo\": \"$PWD\" }"
+jt post /api/projects/todo "{ \"repo\": \"$PWD\" }"
 
 # add a todo: a title-only ticket in that project (todos are one-liners the
 # human exercises with the Grill button — don't pad them with descriptions)
-curl -s "$JTICKET/api/tickets" -H 'content-type: application/json' \
-  -d '{ "title": "Work out the caching story", "projectId": "PROJ-7" }'
+jt new PROJ-7 "Work out the caching story"
 ```
 
 ### GitHub
@@ -161,25 +158,22 @@ A project can be wired to a local clone, which turns on its pull-request view:
 ```bash
 # repos this tracker has been pointed at before — prefer one of these over
 # guessing a path (each row carries its slug and which projects use it)
-curl -s "$JTICKET/api/repos"
+jt get /api/repos
 
 # wire the project to a repo (path, '~' allowed — the same path jDiff takes)
-curl -s -X PATCH "$JTICKET/api/projects/PROJ-3" -H 'content-type: application/json' \
-  -d '{ "repo": "~/code/my-repo" }'
+jt patch /api/projects/PROJ-3 '{ "repo": "~/code/my-repo" }'
 
 # cut the integration branch: an EMPTY branch off the default branch, pushed to
 # origin, that this project's PRs target. Idempotent — an existing branch is adopted.
-curl -s "$JTICKET/api/projects/PROJ-3/integration-branch" \
-  -H 'content-type: application/json' -d '{}'    # or { "branch": "...", "base": "..." }
+jt post /api/projects/PROJ-3/integration-branch '{}'    # or { "branch": "...", "base": "..." }
 
 # …or adopt a branch that already exists: search the repo's branches (local and
 # on origin) and set the one you want — nothing is created or pushed
-curl -s "$JTICKET/api/projects/PROJ-3/branches?q=checkout"
-curl -s -X PATCH "$JTICKET/api/projects/PROJ-3" -H 'content-type: application/json' \
-  -d '{ "integrationBranch": "release/checkout" }'
+jt get "/api/projects/PROJ-3/branches?q=checkout"
+jt patch /api/projects/PROJ-3 '{ "integrationBranch": "release/checkout" }'
 
 # the project's open PRs, each with a jDiff link and a github.com link
-curl -s "$JTICKET/api/projects/PROJ-3/github"
+jt get /api/projects/PROJ-3/github
 ```
 
 A PR belongs to a project if its **head** is the integration branch (the roll-up PR),

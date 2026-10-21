@@ -23,14 +23,17 @@ Two rules hold for the whole run:
   claim past the budget is refused. Your plan fits under it.
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
 P=PROJ-2   # the project key you were invoked with
 ```
+
+Every jTicket call goes through `jt` (on PATH; `jt help`), never hand-built `curl` —
+in your own calls and in every prompt you hand a subagent. `jt claim` exits **75**
+when the budget is full.
 
 ## 1. Read the queue and every ticket
 
 ```bash
-curl -s "$JTICKET/api/projects/$P/auto/queue"
+jt queue $P
 # → { phase, budget, repo, integrationBranch, inFlight, tickets: [{key, title, status, branch, state}] }
 ```
 
@@ -42,7 +45,7 @@ waits for them), or `finished`.
 For each ticket not finished, read what you need to plan:
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-7" | jq '{title, description, acceptanceCriteria, comments, blockedBy}'
+jt show TICK-7 | jq '{title, description, acceptanceCriteria, comments, blockedBy}'
 ```
 
 Done when you know, for every open ticket, which parts of the code it touches.
@@ -70,8 +73,8 @@ Get the codebase's worktree guide and follow it for creating, setting up and
 tearing down (the `/jimplement` skill, §4, covers `ready` / `stale` / `missing`):
 
 ```bash
-REPO="$(curl -s "$JTICKET/api/projects/$P/auto/queue" | jq -r .repo)"
-curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=$REPO" | jq '{state, changed, body: .guide.body}'
+REPO="$(jt queue $P | jq -r .repo)"
+jt get "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" | jq '{state, changed, body: .guide.body}'
 ```
 
 Create each slot detached (`git worktree add --detach <path>`) so no ticket
@@ -84,11 +87,11 @@ For each ticket in the wave:
 1. **Claim it.**
 
    ```bash
-   curl -s -X POST "$JTICKET/api/projects/$P/auto/claim" -H 'content-type: application/json' -d '{"ticket":"TICK-7"}'
+   jt claim $P TICK-7
    # → { ticket, branch, integrationBranch, prompt, again, inFlight, budget }
    ```
 
-   A 409 with `data.wait: true` means the budget is full — or, in a run plan,
+   Exit 75 (a 409 with `data.wait: true`) means the budget is full — or, in a run plan,
    the ticket is still blocked or claimed by hand: run the rest of the wave
    first and claim it again after. Any other refusal means the ticket is no longer yours to run
    — take it out of the plan.
@@ -113,7 +116,7 @@ all of the wave's reviewers in one message:
 
 > Spec-review TICK-7. Diff: `git -C <repo> diff <integrationBranch>...<branch>`
 > (commits: `git -C <repo> log <integrationBranch>..<branch> --oneline`). Spec:
-> `curl -s $JTICKET/api/tickets/TICK-7 | jq '{description, acceptanceCriteria, comments}'`
+> `jt show TICK-7 | jq '{description, acceptanceCriteria, comments}'`
 > — the newer comment wins where one contradicts the description. Report:
 > (a) acceptance criteria missing or partial; (b) behaviour in the diff nobody
 > asked for; (c) criteria that look implemented but wrongly. Quote the
@@ -126,9 +129,9 @@ last ticket is done, and it deletes each ticket branch after merging it, which
 git refuses while a worktree has that branch checked out.
 
 - **PASS** — check the PR exists
-  (`curl -s "$JTICKET/api/prs?ticket=TICK-7&status=open"` is non-empty), then
+  (`jt prs ticket=TICK-7 status=open` is non-empty), then
   mark it done:
-  `curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' -d '{"status":"done"}'`
+  `jt set TICK-7 status=done`
 - **FAIL** — send the findings back to the same implementer (`SendMessage` to
   its agent; if it's gone, a fresh implementer on the same slot and branch)
   and spec-check again once it reports. After **two** failed fix rounds, stop
@@ -146,7 +149,7 @@ Repeat 4–5 until the queue shows every ticket you can claim `finished`
 (`human` ones are the human's, not yours to wait on):
 
 ```bash
-curl -s "$JTICKET/api/projects/$P/auto/queue" | jq '[.tickets[] | select(.state != "finished" and .state != "human")] | length'   # 0
+jt queue $P | jq '[.tickets[] | select(.state != "finished" and .state != "human")] | length'   # 0
 ```
 
 Then tear every slot down the way the guide says (`git worktree remove`
