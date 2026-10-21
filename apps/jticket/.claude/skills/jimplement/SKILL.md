@@ -18,13 +18,17 @@ breakdown at all yet, that's `/to-jticket` in tickets mode first.
 ## Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
 If it is **down**, tell the user and stop — do not fall back to implementing from memory
 or from files, and do not start the server yourself unless they ask. The start command is
 `pnpm dev` in the jTicket repo (`~/code/jTicket`).
+
+Every call below goes through `jt` (on PATH; `jt help`), never hand-built `curl`. It
+prints a ticket or project as JSON, lists as tab-separated rows (`--json` for raw), reads a
+field from a file with `field=@file.md`, and reaches any endpoint without a verb as
+`jt get|post|patch|put|delete PATH [JSON]`.
 
 API reference: the `to-jticket` skill's [reference/api.md](../to-jticket/reference/api.md).
 Markdown dialect for anything you write into a description or resolution: the `to-jspec`
@@ -36,13 +40,13 @@ The user invokes with a ticket key, a project key, a name, or nothing at all.
 
 ```bash
 # they named a ticket
-curl -s "$JTICKET/api/tickets/TICK-7"
+jt show TICK-7
 
 # they named a project — take the first frontier ticket, in key order
-curl -s "$JTICKET/api/tickets?projectId=PROJ-2&frontier=true" | jq '.[0]'
+jt ls projectId=PROJ-2 frontier=true --json | jq '.[0]'
 
 # they named nothing — show the board and ask which project
-curl -s "$JTICKET/api/projects"
+jt projects
 ```
 
 The **frontier** is `todo` + unblocked + unclaimed + takeable on this machine (on a
@@ -66,8 +70,7 @@ answer its question, and never merge it or open a PR from it.
 Assignee first, so a concurrent session skips it. The assignee *is* the claim.
 
 ```bash
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' \
-  -d '{ "assignee": "claude", "status": "in_progress" }'
+jt set TICK-7 assignee=claude status=in_progress
 ```
 
 ## 3. Load the context
@@ -81,8 +84,8 @@ curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/jso
 - Any doc the description links (`GET /api/docs/DOC-n` → `.body`).
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-7" | jq '{title, description, acceptanceCriteria, blockedBy, comments}'
-curl -s "$JTICKET/api/tickets/TICK-3" | jq -r '.resolution'
+jt show TICK-7 | jq '{title, description, acceptanceCriteria, blockedBy, comments}'
+jt show TICK-3 | jq -r '.resolution'
 ```
 
 If the ticket contradicts the codebase, or the acceptance criteria can't be met as
@@ -99,8 +102,8 @@ a script of its own), so jTicket keeps each codebase's answer as its **worktree
 guide** — ask for it before creating anything:
 
 ```bash
-REPO="$(curl -s "$JTICKET/api/projects/PROJ-2" | jq -r .repo)"
-curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=$REPO" \
+REPO="$(jt project PROJ-2 | jq -r .repo)"
+jt get "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" \
   | jq '{state, changed, root: .guide.root, body: .guide.body}'
 ```
 
@@ -152,7 +155,7 @@ jTicket already cut (`on the existing branch tick/TICK-7-…`); work on that bra
 doesn't, cut one first:
 
 ```bash
-curl -s -X POST "$JTICKET/api/tickets/TICK-7/branch" -H 'content-type: application/json' -d '{}'
+jt branch TICK-7
 # → { "branch": "tick/TICK-7-persist-cart", ... }  (off the integration branch, local only)
 ```
 
@@ -166,8 +169,7 @@ that lands a few seconds later is skipped: never merged, never reviewed.
    the squash commit body, so write it like one:
 
    ```bash
-   curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
-     -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage; survives refresh." }'
+   jt post /api/prs '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage; survives refresh." }'
    ```
 
    Check the response carries a PR `key`. If the call fails, the ticket is **not**
@@ -212,8 +214,7 @@ the human, a mid-flight progress note, why you're handing the ticket back — go
 **comment** under your own name:
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-7/comments" -H 'content-type: application/json' \
-  -d '{ "author": "claude", "body": "AC 2 can'\''t be met as written — the cart API has no totals endpoint. Handing back." }'
+jt comment TICK-7 "AC 2 can't be met as written — the cart API has no totals endpoint. Handing back."
 ```
 
 ```markdown
@@ -231,12 +232,11 @@ curl -s "$JTICKET/api/tickets/TICK-7/comments" -H 'content-type: application/jso
 ```
 
 ```bash
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' \
-  -d "$(jq -n --arg r "$(cat resolution.md)" '{status:"done", resolution:$r, assignee:"claude"}')"
+jt set TICK-7 status=done resolution=@resolution.md assignee=claude
 ```
 
 On the **local PR** path this PATCH comes **after** the PR is open (§4) — confirm it with
-`curl -s "$JTICKET/api/prs" | jq '.[] | select(.ticketKey=="TICK-7") | {key, status}'`
+`jt prs ticket=TICK-7`
 before sending `status:"done"`. Recording the resolution earlier is fine; send it without
 `status` until the PR exists.
 
@@ -262,7 +262,7 @@ Building always turns up more than the ticket held. Before reporting:
 - Then confirm the frontier moved:
 
 ```bash
-curl -s "$JTICKET/api/tickets?projectId=PROJ-2" \
+jt ls projectId=PROJ-2 --json \
   | jq '.[] | {key, title, status, blockedBy, blocked, frontier}'
 ```
 
