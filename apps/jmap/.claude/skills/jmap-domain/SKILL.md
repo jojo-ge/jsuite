@@ -1,37 +1,43 @@
 ---
 name: jmap-domain
-description: Run a jMap domain-mapping ticket — explore one part of the codebase, publish its walkthrough doc on the jTicket project, and resolve the ticket. Use when "/jmap-domain <TICK-n>" is invoked (jTicket dispatches these into herdr on jMap-mode projects).
+description: Run a jMap domain-mapping ticket — explore one part of the codebase, publish its walkthrough doc (labelled jmap:domain + the ticket key) on the jTicket project, and resolve the ticket. Use when "/jmap-domain [TICK-n]" is invoked (jTicket dispatches these into herdr on jMap-mode projects).
+argument-hint: "[TICK-n]"
 disable-model-invocation: true
 ---
 
 # jmap-domain — map one domain and document it
 
 You were dispatched to run ONE domain-mapping ticket of a jMap-mode jTicket
-project. Your output is a walkthrough document — it is both the human-readable
-tour of this part of the codebase AND the input jMap's synthesis pass eats to
-build the system map, so the Dependencies section is not optional. Everything
-lands in jTicket; you never write files.
+project. Your output is a walkthrough document — both the human-readable tour
+of this part of the codebase AND the input jMap's synthesis pass eats to build
+the system map, so the Dependencies section is not optional.
 
-Invocation: `/jmap-domain <TICK-n>`
+Standing rules:
+- **Everything lands in jTicket.** The only files you write are scratch
+  request bodies in a temp dir (the scratchpad dir if one exists, else
+  `mktemp -d`) — never in the repo, never as the deliverable.
+- Mapping is **read-only**: no branches, PRs or repo edits.
+- jTicket is driven with the `jt` CLI (on PATH after `./jsuite setup`, else
+  `~/code/jsuite/bin/jt`; `$JTICKET_URL` overrides the base). Values starting
+  with `@` are read from a file; raw verbs take `@file.json` or `-` (stdin).
+
+Invocation: `/jmap-domain [TICK-n]`
 
 ## 0. Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
-If down: tell the user jTicket isn't running
-(`cd ~/code/anyway/jsuite && ./jsuite start`) and STOP. Never fall back to
-writing files.
+If down: tell the user jTicket isn't running (`cd ~/code/jsuite && ./jsuite
+status`, then `./jsuite start`) and STOP. Never fall back to writing files.
 
 ## 1. Read your ticket, claim it
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-n"      # description: the domain, its entry paths
-curl -s "$JTICKET/api/projects/<PROJ-key>" # sibling "Map: …" tickets = the other domains
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d '{"assignee": "claude", "status": "in_progress"}'
+jt show TICK-n            # description: the domain, its entry paths
+jt project PROJ-key       # sibling "Map: …" tickets = the other domains
+jt set TICK-n assignee=claude status=in_progress
 ```
 
 Note the names of the sibling domains — your Dependencies section must refer
@@ -49,7 +55,7 @@ territory, record the dependency and turn back rather than mapping their side.
 One block document on the project. Structure (the j-explain vocabulary):
 
 ```bash
-curl -s -X POST "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
+cat > "$TMP/doc.json" <<'JSON'
 { "title": "<domain name> — walkthrough",
   "project": "<PROJ-key>",
   "labels": ["jmap", "jmap:domain", "TICK-n"],
@@ -65,6 +71,7 @@ curl -s -X POST "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<
   ],
   "glossary": { "term": "definition" } }
 JSON
+jt post /api/docs "@$TMP/doc.json"      # -> { key: "DOC-n", documentKey: "…", … }
 ```
 
 Non-negotiable rules:
@@ -77,18 +84,20 @@ Non-negotiable rules:
 
 ## 4. Resolve your ticket
 
+Write `$TMP/resolution.md`: a one-paragraph summary of the domain, the doc key
+(DOC-n), and the dependency list repeated one line each. Then:
+
 ```bash
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d "$(jq -n --arg r "$(cat resolution.md)" '{status: "done", resolution: $r, assignee: "claude"}')"
+jt set TICK-n status=done assignee=claude resolution="@$TMP/resolution.md"
 ```
 
-The resolution: a one-paragraph summary of the domain, the doc key (DOC-n),
-and the dependency list repeated in one line each. Then stop — the map is
-synthesized in jMap once enough domains are documented.
+Then stop — the map is synthesized in jMap once enough domains are documented.
 
 ## Never
 
 - Never cut branches, open PRs, or modify the repo — mapping is read-only.
 - Never map a sibling domain's internals — record the edge and turn back.
-- Never end without resolving the ticket; if truly blocked, post a comment
-  (`POST /api/tickets/TICK-n/comments`) saying why and leave it in_progress.
+- Never end without resolving the ticket; if truly blocked, `jt comment
+  TICK-n "why"` (author `claude` by default — a raw POST to
+  `/api/tickets/TICK-n/comments` without `author` is anonymous) and leave it
+  in_progress.

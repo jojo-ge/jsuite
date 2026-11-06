@@ -1,7 +1,8 @@
 ---
 name: jreproduce
-description: Reproduce one suspected bug from a predeploy-mode jTicket project — in a throwaway worktree, as a failing test — and record the test, the failure and the verdict back on the ticket without fixing anything. Use when "/jreproduce <TICK-n>" is invoked (jTicket dispatches these into herdr from a predeploy board).
+description: Reproduce one suspected bug from a predeploy-mode jTicket project — in a throwaway worktree, as a failing test — and record the test, the failure and the verdict back on the ticket without fixing anything. Use when "/jreproduce [TICK-n]" is invoked (jTicket dispatches these into herdr from a predeploy board).
 disable-model-invocation: true
+argument-hint: "[TICK-n]"
 ---
 
 # jReproduce — prove the bug, don't fix it
@@ -17,34 +18,37 @@ You do **not** fix anything. The reproduction happens in a git worktree you
 create and delete; nothing you write survives in the repo. The failing test
 survives on the ticket.
 
-Invocation: `/jreproduce <TICK-n>`
+Invocation: `/jreproduce [TICK-n]`
 
 ## 0. Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
-If jTicket is down: say so (`./jsuite start` from the jsuite repo) and STOP. Do
+If jTicket is down: say so (from `~/code/jsuite`: `./jsuite status`, then `./jsuite start`)
+and STOP. Do
 not reproduce from memory — without the board there is nowhere to record the
 finding, which is the entire deliverable.
 
+Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
 API reference: the `to-jticket` skill's [reference/api.md](../to-jticket/reference/api.md).
 Markdown dialect for anything you write into a resolution or doc: the `to-jspec` skill.
 
 ## 1. Read the report cold
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-n" | jq '{title, description, acceptanceCriteria, labels, comments, projectId}'
-curl -s "$JTICKET/api/projects/<PROJ-key>" | jq '{title, repo, integrationBranch, description}'
+jt show TICK-n | jq '{title, description, acceptanceCriteria, labels, comments, projectId}'
+jt project PROJ-key | jq '{title, repo, integrationBranch, description}'
 ```
 
 - The `description` is the human's report — **never edit it**. It is the claim
   you are testing.
 - The `comments` narrow it: a version, a repro path, "only on staging". A newer
   comment beats the description where they conflict.
-- Any doc the description links (`GET /api/docs/DOC-n` → `.body`).
+- Any doc the description links. `/api/docs/DOC-n` is only the tracker record; the
+  content is `jt get /api/documents/$(jt get /api/docs/DOC-n | jq -r .documentKey)`.
 
 Before touching the repo, write down — for yourself — the **observable** the
 report is really about: an input, an action, and the wrong output. If the report
@@ -55,8 +59,7 @@ finding: ask the human in this pane for the one missing detail, or record
 ## 2. Claim it — before any work
 
 ```bash
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d '{ "assignee": "claude", "status": "in_progress" }'
+jt set TICK-n assignee=claude status=in_progress
 ```
 
 ## 3. Cut a throwaway worktree — the codebase's way
@@ -73,7 +76,7 @@ tests run, how they're torn down:
 
 ```bash
 REPO="<project.repo>"                       # from §1
-curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=$REPO" \
+jt get "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" \
   | jq '{state, changed, root: .guide.root, body: .guide.body}'
 BASE="<project.integrationBranch or the repo's default branch>"
 SHA="$(git -C "$REPO" rev-parse "$BASE")"
@@ -188,25 +191,23 @@ More than one test, or a repro that needs a fixture dump? Publish it as a doc on
 the project and link it from the resolution:
 
 ```bash
-curl -s -X POST "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
+jt post /api/docs - <<'JSON'
 { "title": "TICK-n — <bug title> — reproduction", "project": "<PROJ-key>",
   "labels": ["predeploy", "predeploy:repro", "TICK-n"], "status": "draft", "kicker": "REPRO", "blocks": [ … ] }
 JSON
 ```
 
 Write the ticket back — `done` for every verdict except `blocked`/`unclear`
-(those stay `in_progress`, waiting on the human). Labels are replaced wholesale
-by PATCH, so read them first and append:
+(those stay `in_progress`, waiting on the human). Labels are replaced wholesale,
+so read them first (`jt show TICK-n | jq -r '.labels | join(",")'`) and send the
+full list back with the verdict label appended:
 
 ```bash
-LABELS="$(curl -s "$JTICKET/api/tickets/TICK-n" | jq -c '.labels + ["predeploy:reproduced"] | unique')"
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d "$(jq -n --arg r "$(cat resolution.md)" --argjson l "$LABELS" \
-        '{status:"done", resolution:$r, labels:$l, assignee:"claude"}')"
+jt set TICK-n labels=<existing labels>,predeploy:reproduced status=done resolution=@resolution.md assignee=claude
 ```
 
 Anything that isn't the finding — a question for the human, a mid-flight note —
-goes in a comment (`POST /api/tickets/TICK-n/comments`), never in the description.
+goes in a comment (`jt comment TICK-n "body"`), never in the description.
 
 ## 7. Tear the worktree down — always
 

@@ -1,6 +1,7 @@
 ---
 name: j-grilling
-description: Escalate ONE grilling question into the jGrilling browser room — three phases (the question, why it needs answering, the options as tabbed cases) — then monitor .data/jgrilling for the answer and return to the terminal. Use ONLY when the operator explicitly asks for it ("take that one to jgrilling", "grill me in the browser"). Never for a whole interview — grillings run in the terminal, HITL jTickets included.
+description: Escalate ONE grilling question into the jGrilling browser room — three phases (the question, why it needs answering, the options as tabbed cases) — then monitor .data/jgrilling for the answer and return to the terminal. Use ONLY when the operator explicitly asks for it ("take that one to jgrilling", "jgrill this", "give me the tabbed version"). Never for a whole interview — grillings run in the terminal, HITL jTickets included.
+argument-hint: "[the one question to escalate]"
 ---
 
 # j-grilling — the browser room, one question at a time
@@ -8,7 +9,15 @@ description: Escalate ONE grilling question into the jGrilling browser room — 
 jGrilling (`https://jgrilling.local`, API on `:43005`) is a **passive question
 room**: it renders whatever session state exists in `.data/jgrilling/` and
 records the user's answers. It has no interviewer of its own — **you own the
-interview**, all of it, through the HTTP API.
+interview**, all of it, through the HTTP API. Its home page also shows an
+**Up next** strip: jTicket's open HITL decision tickets (`type: decision` +
+label `hitl`), each with a button that dispatches its grilling into herdr —
+those grill in the pane, not here.
+
+Standing rules: one question per escalation, the operator asks every time,
+you never write the answer, and jTicket write-back belongs to the dispatched
+skill. If the API doesn't answer: `cd ~/code/jsuite && ./jsuite status`, then
+`./jsuite start`.
 
 ## This is not the default. Never reach for it on your own.
 
@@ -61,9 +70,7 @@ open "https://jgrilling.local/g/<key>"
 `plan` is the operator's context for a question they're about to answer out of
 band — include the decisions already made in the terminal, so the escalated
 question stands on its own. Working a jTicket, key the session after the ticket
-(`tick-7-cache-policy`) and mention the ticket in `plan`. If the POST fails the
-app probably isn't running:
-`cd ~/code/anyway/jsuite && ./jsuite status` then `./jsuite start`.
+(`tick-7-cache-policy`) and mention the ticket in `plan`.
 
 ## 2. Post the question — three phases
 
@@ -120,14 +127,17 @@ curl -sk -X POST https://jgrilling.local/api/sessions/<key>/questions \
 JSON
 ```
 
-Per option: `label` (the tab, a few words), `summary` (one line under the
-label), `blocks` — or `md` as the shorthand for a prose-only case — and
-`answer`, the text recorded when the user takes that tab. Write `answer` as the
-decision in the user's voice, not the label alone.
+Per option: `label` (the tab, a few words; required), `summary` (one line under
+the label), `blocks` — or `md` as the shorthand for a prose-only case — (one of
+the two is required) and `answer`, the text recorded when the user takes that
+tab. Write `answer` as the decision in the user's voice, not the label alone —
+omitted, it defaults to "label — summary". Optional `id` defaults to a slug of
+the label and is what `answeredOptionId` reports back.
 
 `recommendation` (markdown) is optional when an option is `recommended` — it
 defaults to that option's `answer` — and required when the question has no
-options. If a question is worth escalating it almost always has candidates:
+options (a question may be `question` + `why` + `blocks` only). With options,
+exactly one must be `recommended: true` or the POST is a 400. If a question is worth escalating it almost always has candidates:
 the tabbed cases are the entire reason this room beats the terminal. A
 genuinely open "what should this be?" can ship phases 1–2 plus a
 `recommendation`, but ask yourself first why it's in the browser at all.
@@ -143,10 +153,14 @@ re-invoked the moment it exits, or foreground with a generous timeout and
 re-run on expiry (humans take their time):
 
 ```sh
-SESSION=~/code/anyway/jsuite/.data/jgrilling/<key>.json
+SESSION="${JSUITE_DATA_DIR:-$HOME/code/jsuite/.data}/jgrilling/<key>.json"
 until jq -e '.turns[-1].answer != null' "$SESSION" >/dev/null 2>&1; do sleep 3; done
 jq -r '.turns[-1] | "\(.id) · \(.topic)\n\(.answeredOptionId // "own words")\n\(.answer)"' "$SESSION"
 ```
+
+Alternative to polling: `curl -skN https://jgrilling.local/api/sessions/<key>/watch`
+is an SSE stream that pushes the full session JSON now and on every change —
+exit when `.turns[-1].answer` is set.
 
 `answeredOptionId` is set when the user took one of your option tabs — it tells
 you which case they bought, not just the words they sent.
@@ -180,6 +194,8 @@ curl -sk -X POST https://jgrilling.local/api/sessions/<key>/finish \
 ```
 
 The room shows the verdict and links the debrief at `/e/<documentKey>`.
+`finish` is a 400 if `documentKey` names a document that doesn't exist —
+publish the debrief first; both fields are optional.
 
 Writing the outcome back to jTicket is the **dispatched skill's** job, not
 this one's — `/jwayfinder`, `/jimplement` and `/jarchitect-grill` each own
@@ -193,6 +209,7 @@ curl -sk https://jgrilling.local/api/sessions/<key>          # turns, verdict, d
 curl -sk https://jgrilling.local/api/documents/<documentKey> # the debrief
 ```
 
-Sessions are also readable on disk at `~/code/anyway/jsuite/.data/jgrilling/<key>.json`.
+Sessions are also readable on disk at `~/code/jsuite/.data/jgrilling/<key>.json`
+(`$JSUITE_DATA_DIR/jgrilling/` if that is set).
 Treat the answers and debrief as the user's decisions: enact the plan against
 them, don't re-litigate settled questions.

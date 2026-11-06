@@ -579,7 +579,7 @@ async function nudgeTicket(projectId: string, key: string) {
   })
   if (!state?.enabled || !agent) return
   try {
-    await herdrJson(['agent', 'prompt', agent, autoNudgePrompt(key, projectKey)])
+    await submitPrompt(agent, autoNudgePrompt(key, projectKey))
   } catch (err) {
     console.error(`[jticket] auto loop could not nudge ${key} (${agent}):`, errText(err))
   }
@@ -714,7 +714,7 @@ async function dispatchReport(projectId: string) {
 /** Prepended to every hand-off of an implement step that has a slice report to read. */
 function sliceInstruction(auto: AutoLoop): string {
   return auto.lastSliceDoc && auto.phase === 'implementing' && auto.plan
-    ? `Before anything else, read the slice report ${auto.lastSliceDoc} — GET http://localhost:43000/api/docs/${auto.lastSliceDoc} — what the previous slice of this project built, where, and the decisions it made; build on it. `
+    ? `Before anything else, read the slice report ${auto.lastSliceDoc} — GET http://localhost:43000/api/docs/${auto.lastSliceDoc} gives its record; read the content at GET http://localhost:43000/api/documents/<its documentKey> (jt: \`jt get /api/documents/$(jt get /api/docs/${auto.lastSliceDoc} | jq -r .documentKey)\`) — what the previous slice of this project built, where, and the decisions it made; build on it. `
     : ''
 }
 
@@ -1019,7 +1019,7 @@ async function nudgeOrchestrator(projectId: string, index: number) {
   })
   if (!state?.enabled || !agent) return
   try {
-    await herdrJson(['agent', 'prompt', agent, text])
+    await submitPrompt(agent, text)
   } catch (err) {
     console.error(`[jticket] auto loop could not nudge its orchestrator (${agent}):`, errText(err))
   }

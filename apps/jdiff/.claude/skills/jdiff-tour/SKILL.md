@@ -1,7 +1,8 @@
 ---
 name: jdiff-tour
-description: Generate the fine-grained DETAIL walkthrough of a code change for jDiff — 20-40 stops that engage with the actual logic — and POST it back to the jDiff API. Use when "/jdiff-tour <args>" is invoked (jDiff dispatches these into herdr).
+description: Generate the fine-grained DETAIL walkthrough of a code change for jDiff — 20-40 stops that engage with the actual logic — and POST it back to the jDiff API. Use when "/jdiff-tour [args]" is invoked (jDiff dispatches these into herdr).
 disable-model-invocation: true
+argument-hint: '[number=N|branch=B range=A...B head=SHA]'
 ---
 
 # jdiff-tour — the detail walkthrough of one code change
@@ -35,7 +36,7 @@ curl -s --max-time 3 -o /dev/null "$JDIFF/" && echo up || echo down
 ```
 
 If down: tell the user jDiff isn't running
-(`cd ~/code/jojo/jsuite && ./jsuite start`) and STOP.
+(`cd ~/code/jsuite && ./jsuite start`) and STOP.
 
 ## 2. Read the change — all of it
 

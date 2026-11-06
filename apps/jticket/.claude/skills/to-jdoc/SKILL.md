@@ -18,12 +18,13 @@ shared document (`documentKey`: title page, blocks, glossary).
 
 ## Before you start
 
-1. Confirm the app is running. The base URL is always
-   `https://jticket.local` — the jSuite Caddy edge serves it there. Never
-   guess a localhost port. Quick check:
+1. Confirm the app is running. Every call goes through `jt` (on PATH after
+   `./jsuite setup`, else `~/code/jsuite/bin/jt`), which talks to jTicket's
+   fixed port, `http://localhost:43000` (`$JTICKET_URL` overrides; the Caddy
+   edge also serves it at `https://jticket.local`). Quick check:
    ```bash
-   curl -sk https://jticket.local/api/docs >/dev/null && echo up \
-     || echo "not up — run: ~/code/anyway/jsuite/jsuite start"
+   jt projects >/dev/null && echo up \
+     || echo "not up — from ~/code/jsuite: ./jsuite status, then ./jsuite start"
    ```
 
 ## The content format: blocks
@@ -42,10 +43,10 @@ per-block notes pin to those ids.
 
 ## Create a doc: `POST /api/docs`
 
+Write the doc to a file, then post it (`jt post /api/docs @doc.json`, or `-` for stdin):
+
 ```bash
-curl -sk https://jticket.local/api/docs \
-  -H 'content-type: application/json' \
-  -d @- <<'JSON'
+cat > doc.json <<'JSON'
 {
   "title": "Checkout revamp — design notes",
   "project": "Checkout",
@@ -67,6 +68,7 @@ curl -sk https://jticket.local/api/docs \
   ]
 }
 JSON
+jt post /api/docs @doc.json
 ```
 
 Fields:
@@ -104,8 +106,7 @@ back with their stored `src` (GET `/api/documents/<documentKey>` has it) —
 media a republish no longer references is pruned.
 
 ```bash
-curl -sk -X PATCH https://jticket.local/api/docs/DOC-3 \
-  -H 'content-type: application/json' -d @revised-blocks.json
+jt patch /api/docs/DOC-3 @revised-blocks.json     # {"blocks": [...]}
 ```
 
 ## Other endpoints
@@ -121,9 +122,9 @@ curl -sk -X PATCH https://jticket.local/api/docs/DOC-3 \
 
 The user reviews in either app — hovering a block and pinning notes. Read them
 off disk or the API:
-- `~/code/anyway/jsuite/.data/jexplain/<documentKey>.json` — the document
-- `~/code/anyway/jsuite/.data/jexplain/<documentKey>.notes.json` — their notes
-- chart edits land in `~/code/anyway/jsuite/.data/jchart/<chartKey>.json`
+- `~/code/jsuite/.data/jexplain/<documentKey>.json` — the document
+- `~/code/jsuite/.data/jexplain/<documentKey>.notes.json` — their notes
+- chart edits land in `~/code/jsuite/.data/jchart/<chartKey>.json`
 
 ## Workflow tips
 

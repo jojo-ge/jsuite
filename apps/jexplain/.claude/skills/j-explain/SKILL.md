@@ -1,3 +1,8 @@
+---
+name: j-explain
+description: Explain something as a blog-style article in jExplain — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc / to-jspec / j-grilling / jcode payloads.
+---
+
 # j-explain
 
 Explain a concept, a PR, a system, or a decision as a **blog-style article** in the jExplain app — rich typed blocks instead of a wall of text, with **live editable charts** (shared with jChart) and per-block notes that come back to you.
@@ -8,9 +13,11 @@ Use this when the user asks you to *explain* something and deserves better than 
 
 **You can make diagrams from right here.** A `chart` block takes inline Mermaid and the server turns it into a real, live Excalidraw canvas embedded in the article — no separate jChart round-trip, no image files. Reach for one whenever the explanation has a *shape*: a request path, a state machine, a before/after architecture, who-calls-what. See the **chart** block below.
 
+Standing rules: always set a stable `key` so `--replace` keeps the URL; read notes back from the files, not a paste; a `chart` block with neither `mermaid` nor `chartKey` is **silently dropped**, so give every chart one or the other. Script: `~/.claude/skills/j-explain/scripts/explain.py` (installed by `./jsuite setup`; source at `~/code/jsuite/apps/jexplain/.claude/skills/j-explain/scripts/explain.py`).
+
 ## Workflow
 
-1. **Author the payload.** Write a single JSON file (scratchpad dir if one exists) with the shape below. Think like a good tech-blog writer: open with why it matters, alternate prose with evidence (code, diffs, charts), close with takeaways.
+1. **Author the payload.** Write a single JSON file (scratchpad dir) with the shape below. Think like a good tech-blog writer: open with why it matters, alternate prose with evidence (code, diffs, charts), close with takeaways.
 
 2. **Publish it.**
    ```
@@ -21,13 +28,13 @@ Use this when the user asks you to *explain* something and deserves better than 
 3. **Tell the user how to use it.** In the browser they can:
    - Read it as an article — glossary terms show definitions on hover.
    - **Edit any chart directly on its canvas** (full Excalidraw) — it's the same chart object jChart opens; "Open in jChart" jumps to the full workbench with shape-level notes.
-   - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail.
-   - Click **Copy notes for Claude** when done.
+   - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail. A note can carry **screenshots** (pasted/uploaded) and **sketches** drawn in the rail — some feedback is faster to draw an arrow at than to describe.
+   - Press the rail's copy button when done — **Copy summary for Claude** while there are no notes, **Copy notes for Claude** once there are.
 
-4. **Read the result back.** Either the pasted markdown, or directly:
-   - `~/code/anyway/jsuite/.data/jexplain/<key>.json` — the document
-   - `~/code/anyway/jsuite/.data/jexplain/<key>.notes.json` — `{ general, notes: [{ blockId, label, text }] }`
-   - `~/code/anyway/jsuite/.data/jchart/<chartKey>.json` + `.notes.json` — each chart's live scene and shape notes (the user may have redrawn the diagram — the scene is the truth, not your original mermaid)
+4. **Read the result back.** Either the pasted markdown, or directly (paths printed by the script; the data root is `$JSUITE_DATA_DIR` if set, else `~/code/jsuite/.data`):
+   - `.data/jexplain/<key>.json` — the document
+   - `.data/jexplain/<key>.notes.json` — `{ general, generalAttachments?, notes: [{ id, blockId, label, text, attachments? }] }`; an attachment is `{ id, src, kind: "shot" | "sketch", caption? }` with the bytes under `.data/jexplain/media/<key>/notes/` (served at `src`). Read the pictures — a sketch often IS the feedback.
+   - `.data/jchart/<chartKey>.json` + `.notes.json` — each chart's live scene and shape notes (the user may have redrawn the diagram — the scene is the truth, not your original mermaid)
 
 5. **Act on it.** Revise the payload and re-run with `--replace`.
 
@@ -77,7 +84,7 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
   "commentary": "Everything else in the PR is plumbing for this line." }
 ```
 
-**chart** — a live Excalidraw canvas, embedded. **This is how you make a diagram in an explainer.** Write Mermaid inline (any kind Mermaid supports: flowchart, sequence, state, class, ER…) and the server materialises it into the **shared jChart store**, keeping only a `chartKey` reference in the block. Optional: `chartKey` (to reuse/name one), `height` (px, default 420), `caption`.
+**chart** — a live Excalidraw canvas, embedded. **This is how you make a diagram in an explainer.** Write Mermaid inline (any kind Mermaid supports: flowchart, sequence, state, class, ER…) and the server materialises it into the **shared jChart store**, keeping only a `chartKey` reference in the block. Optional: `chartKey` (to reuse/name one), `height` (px, default 420), `caption`. A chart block with neither `mermaid` nor `chartKey` is dropped silently.
 ```json
 { "type": "chart", "title": "Request path", "caption": "Where the stale read happens.",
   "mermaid": "flowchart LR\n  A[Req] --> B{Hit?}\n  B -->|yes| C[Return]\n  B -->|no| D[Fetch]" }
@@ -100,9 +107,9 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 
 **compare** — options table, markdown cells: `{ "type": "compare", "title": "…", "columns": ["", "Before", "After"], "rows": [["Latency", "800ms", "**120ms**"]] }`
 
-**timeline** — chronology: `{ "type": "timeline", "events": [{ "when": "14:02", "title": "Deploy", "md": "…" }] }`
+**timeline** — chronology: `{ "type": "timeline", "title": "…", "events": [{ "when": "14:02", "title": "Deploy", "md": "…" }] }` (`title` optional)
 
-**takeaway** — closing card: `{ "type": "takeaway", "points": ["One **markdown** bullet each."] }`
+**takeaway** — closing card: `{ "type": "takeaway", "title": "…", "points": ["One **markdown** bullet each."] }` (`title` optional)
 
 ## Writing guidance
 
@@ -114,8 +121,8 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 
 ## Notes
 
-- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The app's home page is <https://jexplain.local>.
-- The app is jExplain in the jSuite (`~/code/anyway/jsuite/apps/jexplain`, port 43004). Start everything with `jsuite start`.
+- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The same pool is served by jGrilling (:43005, debriefs) and jCode (kata briefs). The app's home page is <https://jexplain.local>.
+- The app is jExplain in the jSuite (`~/code/jsuite/apps/jexplain`, port 43004). If publishing fails: `cd ~/code/jsuite && ./jsuite status`, then `./jsuite start`.
 - Charts live in the shared chart pool — deleting an explainer never deletes its charts.
 - Publishing goes to `POST /api/documents` (explain.py handles this). For a document that should sit on the jTicket board with project/status/labels, use `/to-jdoc` instead — same format, plus a tracker record.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JEXPLAIN_BROWSER`.

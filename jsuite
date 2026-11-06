@@ -281,6 +281,19 @@ cmd_setup() {
       ok "$skill (from $app)"
     done
   done
+  # Shims on PATH: `jsuite` and `jt` (bin/jt — the jTicket CLI every skill drives
+  # the board through). ~/.local/bin is the conventional user bin; a shim that
+  # points at an old checkout is repointed.
+  bold "shims -> $HOME/.local/bin"
+  mkdir -p "$HOME/.local/bin"
+  ln -sfn "$HERE/jsuite" "$HOME/.local/bin/jsuite"
+  ln -sfn "$HERE/bin/jt" "$HOME/.local/bin/jt"
+  ok "jsuite, jt"
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) warn "~/.local/bin is not on PATH — add: export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+  esac
+
   # The mattpocock/skills CLI prompts for which skills/agents to install, so it
   # needs a real terminal; skip quietly otherwise.
   if [[ -t 0 ]]; then

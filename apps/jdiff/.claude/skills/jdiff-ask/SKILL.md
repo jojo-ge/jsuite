@@ -1,7 +1,8 @@
 ---
 name: jdiff-ask
-description: Answer a jDiff reviewer's preset question about one specific line of a code change, grounded in the repo, and POST the answer back to the jDiff API. Use when "/jdiff-ask <args>" is invoked (jDiff dispatches these into herdr).
+description: Answer a jDiff reviewer's preset question about one specific line of a code change, grounded in the repo, and POST the answer back to the jDiff API. Use when "/jdiff-ask [args]" is invoked (jDiff dispatches these into herdr).
 disable-model-invocation: true
+argument-hint: '[number=N|branch=B range=A...B head=SHA path=FILE line=N side=LEFT|RIGHT question=ID]'
 ---
 
 # jdiff-ask — answer one question about one line of a change
@@ -48,7 +49,7 @@ curl -s --max-time 3 -o /dev/null "$JDIFF/" && echo up || echo down
 ```
 
 If down: tell the user jDiff isn't running
-(`cd ~/code/jojo/jsuite && ./jsuite start`) and STOP.
+(`cd ~/code/jsuite && ./jsuite start`) and STOP.
 
 ## 2. Gather context, then answer
 

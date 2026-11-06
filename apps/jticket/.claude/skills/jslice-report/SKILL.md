@@ -1,27 +1,33 @@
 ---
 name: jslice-report
-description: Write a run plan's slice report into jTicket — a facts-only record of what one slice of a project built, where it lives, the decisions it made and what the next slice must know — then report back to the auto loop, which waits on it before starting the next implement step. Invoked as `/jslice-report <PROJ-n> step=<n> from=<sha> to=<sha> [previous=DOC-m]` by jTicket's run plan between steps. Not for general use.
+description: Write a run plan's slice report into jTicket — a facts-only record of what one slice of a project built, where it lives, the decisions it made and what the next slice must know — then report back to the auto loop, which waits on it before starting the next implement step. Invoked as `/jslice-report [PROJ-n] step=[n] from=[sha] to=[sha] previous=[DOC-m]` by jTicket's run plan before an implement step whose integration tip moved since the last report. Not for general use.
 disable-model-invocation: true
+argument-hint: "[PROJ-n step=n from=sha to=sha previous=DOC-m]"
 ---
 
 # jslice-report
 
 jTicket's run plan runs a project in slices: an implement step, its merges
-and reviews, then the next implement step. Before each implement step after
-the first, **you** write the slice report: what the slice that just landed
-built and decided, for the next step's sessions to read before they touch
-code. They read nothing else about the slice. You write it; you change no
-code and no ticket.
+and reviews, then the next implement step. Before an implement step after
+the first — only when the integration tip moved since the last report —
+**you** write the slice report: what the slice that just landed built and
+decided, for the next step's sessions to read before they touch code. They
+read nothing else about the slice. You write it; you change no code and no
+ticket. Facts only, at most 300 words; report back (§3) is the last step and
+the loop waits on it.
 
 Arguments: the project key; `step=` the implement step about to start (its
 sessions are your readers); `from=` and `to=` the integration branch
 commits the slice spans; `previous=` the last slice report, if any.
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
 JREVIEW="${JREVIEW_URL:-http://localhost:43008}"
 P=PROJ-2
 ```
+
+Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`. Other apps
+(jReview) stay `curl`.
 
 ## The contract
 
@@ -44,8 +50,8 @@ build on it. Every line must earn its place.
 
 ```bash
 # the project and the tickets the slice landed (keys are in your hand-off)
-curl -s "$JTICKET/api/projects/$P"
-curl -s "$JTICKET/api/tickets/TICK-7" | jq '{title, resolution, acceptanceCriteria, labels}'
+jt project $P
+jt show TICK-7 | jq '{title, resolution, acceptanceCriteria, labels}'
 # what landed — the squash commits in the range, and the diff
 git -C <repo> log --oneline <from>..<to>
 git -C <repo> diff --stat <from>..<to>
@@ -64,8 +70,10 @@ A review's findings that became tickets are in the slice; what was raised
 and dropped is not — leave it out unless it is a decision the next slice
 needs ("X was considered and rejected because …").
 
-If `previous=` names a report, read it (`GET $JTICKET/api/docs/DOC-m`) so
-you don't repeat it: this report covers only what changed since.
+If `previous=` names a report, read it so you don't repeat it — `/api/docs/DOC-m`
+is only the tracker record; the content is at
+`jt get /api/documents/$(jt get /api/docs/DOC-m | jq -r .documentKey)`.
+This report covers only what changed since.
 
 ## 2. Write it
 
@@ -98,7 +106,7 @@ The last line is a plain paragraph naming the previous report (omit it when
 there is none).
 
 ```bash
-curl -s -X POST "$JTICKET/api/docs" -H 'content-type: application/json' -d @report.json
+jt post /api/docs @report.json
 # → { key: "DOC-n", … }
 ```
 
@@ -110,8 +118,7 @@ least useful bullets.
 The loop waits on this; send it only once the doc exists:
 
 ```bash
-curl -s -X POST "$JTICKET/api/projects/$P/auto/slice-report" \
-  -H 'content-type: application/json' -d '{"doc": "DOC-n"}'
+jt post /api/projects/$P/auto/slice-report '{"doc": "DOC-n"}'
 ```
 
 Reply with one line — the doc key and its word count — and stop. Don't ask

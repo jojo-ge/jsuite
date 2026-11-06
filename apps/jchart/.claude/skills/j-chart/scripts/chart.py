@@ -5,7 +5,8 @@ Usage:
     chart.py <diagram.mmd> [--title "My Diagram"] [--replace] [--key slug] [--no-open]
     chart.py --list
 
-The diagram is stored as a chart in ~/code/anyway/jsuite/.data/jchart/<key>.json. jChart
+The diagram is stored as a chart in <.data root>/jchart/<key>.json — the root is
+$JSUITE_DATA_DIR when set, else ~/code/jsuite/.data. jChart
 lays it out as editable Excalidraw shapes on first open; the user can then
 redraw it freely and pin notes to individual shapes.
 
@@ -25,7 +26,8 @@ import urllib.request
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
 EDGE_BASE = "https://jchart.local"
 DIRECT_BASE = "http://localhost:43003"
-DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
+DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.expanduser("~/code/jsuite/.data")
+DATA_DIR = os.path.join(DATA_ROOT, "jchart")
 
 # Preferred browser (macOS app name). Override with --browser or $JCHART_BROWSER.
 DEFAULT_BROWSER = "Arc"
@@ -60,7 +62,7 @@ def pick_base():
 def not_running():
     print(
         "error: jChart isn't reachable.\n"
-        "  Start the suite with:  jsuite start\n"
+        "  Start the suite with:  cd ~/code/jsuite && ./jsuite status, then ./jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
     )

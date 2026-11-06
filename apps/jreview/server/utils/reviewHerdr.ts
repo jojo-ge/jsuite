@@ -20,10 +20,13 @@ const pExecFile = promisify(execFile)
 // a herdr pane, one workspace per reviewed repo (`jreview · <dir>`), every
 // pane's cwd the review's workdir (the repo, or the branch's worktree):
 //   - REVIEWERS — packed 2×2 into a `review <key>` tab, one pane each. The
-//     prompt runs the global /code-review skill — never the target repo's own
-//     — then `/jreview-report` publishes the report as a jExplain
-//     document at the reviewer's pre-assigned key. That document landing in
-//     the pool IS the completion signal — the watcher plugin sees it.
+//     prompt STARTS with the slash command (`/code-review …`, or
+//     `/jarch-review …` on an architecture pass) — claude only runs a skill
+//     when `/name` is the first token; mid-sentence it is a mere permission
+//     grant — and the rest of the line is the context: the global skill, never
+//     the target repo's own, then `/jreview-report` publishes the report as a
+//     jExplain document at the reviewer's pre-assigned key. That document
+//     landing in the pool IS the completion signal — the watcher plugin sees it.
 //   - the TRIAGER — one job tab, dispatched by the watcher once every reviewer
 //     is settled. `/jreview-triage <key>` dedupes the reports, publishes the
 //     triage document, and POSTs the merged findings to /api/reviews/:key/findings.
@@ -55,12 +58,15 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
   const r = review.reviewers.find((x) => x.n === n)!
   const arch = review.pass === 'architecture'
   // One line: herdr submits the prompt as typed input, and a newline would
-  // submit it early.
+  // submit it early. The slash command must be the first token — anywhere
+  // else claude treats `/skill` as a permission grant and never runs it.
+  const projectKey = review.consensus?.projectKey
   return [
     arch
-      ? 'Run the global /jarch-review skill (~/.claude/skills/jarch-review) — the architectural & technical review; not /code-review, and not any review skill this repo carries in its own .claude/skills.'
-      : 'Run the global /code-review skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
+      ? '/jarch-review the architectural & technical review of this diff. Use the GLOBAL skill (~/.claude/skills/jarch-review) — not /code-review, and not any review skill this repo carries in its own .claude/skills.'
+      : '/code-review the diff below. Use the GLOBAL skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
     `HEAD in this checkout is ${review.branch}${review.pr ? ` (PR #${review.pr.number}, "${review.pr.title.replace(/[\r\n]+/g, ' ')}")` : ''}.`,
+    ...(projectKey ? [`The jTicket project is ${projectKey} (GET http://localhost:43000/api/projects/${projectKey}).`] : []),
     `The fixed point is ${review.base} — review \`git diff ${review.base}...HEAD\`.`,
     ...(review.context?.docs?.length
       ? [`Read first: jTicket doc${review.context.docs.length > 1 ? 's' : ''} ${review.context.docs.join(', ')} (GET http://localhost:43000/api/docs/<key>) — the slice report: what this slice built, where, and the decisions behind it.`]

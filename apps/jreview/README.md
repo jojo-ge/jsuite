@@ -17,8 +17,10 @@ Runs at https://jreview.local (port 43008) behind the jSuite edge.
    commits are reviewed — else origin's default branch; change it to any
    branch, or type a tag/SHA. A branch that isn't checked out is reviewed in a
    detached worktree — where the codebase keeps its worktrees (its jTicket
-   worktree guide), else under `.data/jreview/worktrees/<key>` — removed when
-   the review is deleted, so your checkout is never touched. jReview records the
+   worktree guide), else under `.data/jreview/worktrees/<key>` — removed by
+   the watcher once the review finishes and its panes close (or when the review
+   is deleted), so your checkout is never touched and no `jreview-*` checkouts
+   pile up in the codebase's worktree directory. jReview records the
    review in `.data/jreview/<key>.json` with four reviewers, each owning a
    pre-assigned document key `jreview-<key>-r<n>`.
 2. **Reviewers** — dispatched one after another into herdr (workspace

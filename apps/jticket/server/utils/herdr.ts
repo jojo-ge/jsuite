@@ -23,6 +23,8 @@ export {
   renamePane,
   focusHerdrWindow,
   startClaudeIn,
+  submitPrompt,
+  withHerdrLock,
 } from '@jsuite/herdr'
 export type { HerdrTab, HerdrWorkspace, HerdrState } from '@jsuite/herdr'
 

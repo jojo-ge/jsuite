@@ -1,7 +1,8 @@
 ---
 name: jdiff-review
-description: Run a jDiff review-guidance session — read a code change inside its repo and POST five artifacts (reviewability rating, per-file risk map, guided tour, ask-yourself questions, findings) back to the jDiff API, then report findings to jTicket when a ticket/project context was given. Use when "/jdiff-review <args>" is invoked (jDiff dispatches these into herdr).
+description: Run a jDiff review-guidance session — read a code change inside its repo and POST five artifacts (reviewability rating, per-file risk map, guided tour, ask-yourself questions, findings) back to the jDiff API, then report findings to jTicket when a ticket/project context was given. Use when "/jdiff-review [args]" is invoked (jDiff dispatches these into herdr).
 disable-model-invocation: true
+argument-hint: '[number=N|branch=B base=X range=A...B head=SHA ticket=K|project=K]'
 ---
 
 # jdiff-review — generate review guidance for one code change
@@ -40,7 +41,7 @@ curl -s --max-time 3 -o /dev/null "$JDIFF/" && echo up || echo down
 ```
 
 If down: tell the user jDiff isn't running
-(`cd ~/code/jojo/jsuite && ./jsuite start`) and STOP.
+(`cd ~/code/jsuite && ./jsuite start`) and STOP.
 
 Every POST below identifies the target with the same params: `"number": "123"`
 for a PR, or `"branch": "my-branch", "base": "main"` for a branch.
@@ -295,8 +296,9 @@ tickets in PROJ-3: TICK-31, TICK-32").
   Review guidance is read-only.
 - Never skip the review-complete POST, even after a failure — without it jDiff
   keeps showing the run for an hour.
-- Never invent line numbers or file paths; the server drops entries that
-  don't match the diff.
+- Never invent line numbers or file paths. The server drops risk and
+  findings entries whose path isn't in the diff, but tour stops and the
+  rating's readingOrder are saved as given — check those yourself.
 - Never post anything to jTicket unless the invocation carried `ticket=` or
   `project=`; never create tickets without `project=`; never edit, close, or
   resolve existing jTicket tickets.

@@ -30,16 +30,17 @@ here also shows up in jExplain's article list; that is by design.
    the system; `takeaway` for the decisions summary. Give blocks stable `id`s — the
    user's review notes pin to them.
 3. **Publish** as `status: "draft"` (see [Publish](#publish)).
-4. **Report** the key, title and both links (`$JTICKET/docs/DOC-n`,
+4. **Report** the key, title and both links (`http://localhost:43000/docs/DOC-n`,
    `https://jexplain.local/e/<documentKey>`), and say plainly that it is a local
    draft — nothing has been posted to Confluence.
 
+Every call goes through `jt` (on PATH after `./jsuite setup`, else `~/code/jsuite/bin/jt`),
+which talks to jTicket's fixed port, `http://localhost:43000` (`$JTICKET_URL` overrides).
 Connect first, as always — if jTicket is down, say so and stop rather than writing a file
 as a fallback:
 
 ```bash
-JTICKET="${JTICKET_URL:-https://jticket.local}"
-curl -sk --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
 ## Which field takes what
@@ -49,7 +50,7 @@ curl -sk --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
 | Doc content (`blocks`) | **block document** | the spec itself — this is the one home of rich structure |
 | Ticket `description` | plain **GFM markdown**, plus a **plain-text preview** on the card | front-load the meaning; the card preview collapses it to one line |
 | Ticket `resolution` | plain GFM markdown | the answer, plus links to whatever it produced |
-| Project `description` | plain GFM markdown on the board, preview on project cards | one or two lines |
+| Project `description` | plain GFM markdown on the board, preview on project cards | short for ordinary projects; wayfinder projects keep their whole map here (`/jwayfinder` owns it) |
 | Ticket `acceptanceCriteria[]` | **inline** markdown only | `` `code` ``, `**bold**`, links — nothing block-level |
 | Pictures in a doc | `image` **block** | `{ "type": "image", "file": "/abs/path.png" }` or `"base64"` — never an `/attachments/` link |
 | Pictures in ticket markdown | `![…](/attachments/<name>)` | upload first: `POST /api/attachments` `{ file }` or `{ name, base64 }`, embed its `markdown` |
@@ -79,11 +80,13 @@ Pick the project first — list them and use an existing one where it fits, rath
 inventing a new one:
 
 ```bash
-curl -sk "$JTICKET/api/projects" | jq '.[] | {key, title, mode}'
+jt projects            # key, title, mode per row
 ```
 
+Write the doc to a file, then post it:
+
 ```bash
-curl -sk "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
+cat > spec.json <<'JSON'
 {
   "title": "Checkout revamp — spec",
   "project": "PROJ-1",
@@ -99,19 +102,20 @@ curl -sk "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
   ]
 }
 JSON
+jt post /api/docs @spec.json
 ```
 
-Prefer a heredoc or `-d @spec.json` over hand-escaping JSON into a shell string.
+Prefer `@spec.json` (or `-` for stdin) over hand-escaping JSON into a shell string.
 
 - `project` accepts an id, key, **or exact title** — and 400s on an unknown one, so this is
   the rare jTicket ref that fails loudly rather than silently. `projectId` is a synonym.
 - `status: "draft"` — a spec stays a draft until the user says otherwise. Promote to
   `"ready"` only when they ask.
 - `labels: ["spec"]` makes it findable: `GET /api/docs?label=spec`.
-- **Updating is `PATCH /api/docs/DOC-n` with the new `blocks`, replaced wholesale.** Send
-  the complete blocks array, never a fragment. Notes and unchanged charts survive the
-  rewrite. To revise one section, GET the document first
-  (`/api/documents/<documentKey>`), edit, and PATCH the whole thing back.
+- **Updating is `jt patch /api/docs/DOC-n @blocks.json` with the new `blocks`, replaced
+  wholesale.** Send the complete blocks array, never a fragment. Notes and unchanged charts
+  survive the rewrite. To revise one section, GET the document first
+  (`jt get /api/documents/<documentKey>`), edit, and PATCH the whole thing back.
 
 Next step, if the user wants it: `/to-jticket tickets` to slice the spec into a breakdown,
 pointing it at the `DOC-n` you just created.

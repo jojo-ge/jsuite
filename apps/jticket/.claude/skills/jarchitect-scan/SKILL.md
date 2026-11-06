@@ -1,7 +1,8 @@
 ---
 name: jarchitect-scan
-description: Run an architect scan ticket — explore the codebase for deepening opportunities, publish the assessment as a spec doc on the jTicket project, and create one HITL decision ticket (arch:candidate) per opportunity with strength tags. Use when "/jarchitect-scan <TICK-n>" is invoked (jTicket dispatches these into herdr on architect-mode projects).
+description: Run an architect scan ticket — explore the codebase for deepening opportunities, publish the assessment as a spec doc on the jTicket project, and create one HITL decision ticket (arch:candidate) per opportunity with strength tags. Use when "/jarchitect-scan [TICK-n]" is invoked (jTicket dispatches these into herdr on architect-mode projects).
 disable-model-invocation: true
+argument-hint: "[TICK-n]"
 ---
 
 # jarchitect-scan — surface deepening opportunities as a jTicket board
@@ -17,25 +18,26 @@ the standalone `improve-codebase-architecture` skill's steps 1–2 with jTicket
 as the report — its step 3 belongs to `/jarchitect-grill`, one candidate at a
 time, on the human's click.
 
-Invocation: `/jarchitect-scan <TICK-n>`
+Invocation: `/jarchitect-scan [TICK-n]`
 
 ## 0. Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
-If down: tell the user jTicket isn't running (`./jsuite start` from the jsuite
-repo) and STOP. Never fall back to writing an HTML report or files.
+If down: tell the user jTicket isn't running (from `~/code/jsuite`: `./jsuite status`,
+then `./jsuite start`) and STOP. Never fall back to writing an HTML report or files.
+
+Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
 
 ## 1. Read your ticket, claim it
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-n"          # description carries the repo + any direction
-curl -s "$JTICKET/api/projects/<PROJ-key>"     # the project — its `repo` is the codebase
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d '{"assignee": "claude", "status": "in_progress"}'
+jt show TICK-n            # description carries the repo + any direction
+jt project PROJ-key       # the project — its `repo` is the codebase
+jt set TICK-n assignee=claude status=in_progress
 ```
 
 You are already cd'd into the repo (herdr set the cwd to the project's repo).
@@ -87,16 +89,24 @@ must be rich enough that a later grilling session can pick it up **cold** — no
 re-exploration:
 
 ```bash
-curl -s -X POST "$JTICKET/api/tickets" -H 'content-type: application/json' -d @- <<'JSON'
-{ "title": "Deepen <module>: <one-line solution>",
-  "projectId": "<PROJ-key>", "type": "decision",
-  "labels": ["hitl", "arch", "arch:candidate", "arch:strong"],
-  "description": "**Files**: `path/one`, `path/two`\n\n**Problem**: why the current shape causes friction — name the shallow module, the leaking seam.\n\n**Solution**: plain English, what would change. No interface design — that is the grilling's job.\n\n**Benefits**: in terms of locality and leverage, and how tests improve (what becomes testable through the interface).",
-  "acceptanceCriteria": [
-    "Grilled via /jarchitect-grill — decisions recorded in the resolution",
-    "If pursued: an implementation-ready spec doc is published on the project"
-  ] }
-JSON
+jt new PROJ-key "Deepen <module>: <one-line solution>" type=decision \
+  labels=hitl,arch,arch:candidate,arch:strong \
+  description=@candidate.md \
+  acceptanceCriteria="Grilled via /jarchitect-grill — decisions recorded in the resolution
+If pursued: an implementation-ready spec doc is published on the project"
+# prints the new key; acceptanceCriteria is one criterion per line
+```
+
+`candidate.md` holds the write-up:
+
+```markdown
+**Files**: `path/one`, `path/two`
+
+**Problem**: why the current shape causes friction — name the shallow module, the leaking seam.
+
+**Solution**: plain English, what would change. No interface design — that is the grilling's job.
+
+**Benefits**: in terms of locality and leverage, and how tests improve (what becomes testable through the interface).
 ```
 
 Rules:
@@ -121,7 +131,7 @@ the **`to-jspec`** skill for field formats and the **`j-explain`** skill's
 block vocabulary. Shape:
 
 ```bash
-curl -s -X POST "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
+jt post /api/docs - <<'JSON'
 { "title": "<project title> — architecture assessment",
   "project": "<PROJ-key>", "labels": ["arch", "arch:assessment"], "status": "ready",
   "kicker": "ARCHITECTURE ASSESSMENT", "subtitle": "Deepening opportunities and how they rank",
@@ -150,8 +160,7 @@ JSON
 ## 7. Resolve your ticket
 
 ```bash
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d "$(jq -n --arg r "$(cat resolution.md)" '{status: "done", resolution: $r, assignee: "claude"}')"
+jt set TICK-n status=done resolution=@resolution.md assignee=claude
 ```
 
 The resolution: the candidate list (key — title — strength, top pick marked),
@@ -167,5 +176,5 @@ herdr button when one looks worth pursuing.
   (even `CONTEXT.md`/ADR edits belong to the grilling, where decisions are
   actually made).
 - Never write an HTML report or any file as a fallback — jTicket down means stop.
-- Never end without resolving the ticket (or, if truly blocked, PATCH a
+- Never end without resolving the ticket (or, if truly blocked, `jt set` a
   comment-style resolution explaining why and leave status in_progress).

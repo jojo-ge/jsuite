@@ -1,7 +1,8 @@
 ---
 name: jrunplan
-description: Build a jTicket project's run plan — read the project, its docs, every open ticket and the code, weigh each ticket, decide who runs what on which model and effort, and place merges, reviews and gates sparingly; save it through the run-plan API until it has no problems, then report back. Invoked as "/jrunplan <PROJ-n>" by the Run setup tab's Build button (one Fable 5.1 session at high effort). Not for general use.
+description: Build a jTicket project's run plan — read the project, its docs, every open ticket and the code, weigh each ticket, decide who runs what on which model and effort, and place merges, reviews and gates sparingly; save it through the run-plan API until it has no problems, then report back. Invoked as "/jrunplan [PROJ-n]" by the Run setup tab's Build button (one Fable 5.1 session at high effort). Not for general use.
 disable-model-invocation: true
+argument-hint: "[PROJ-n]"
 ---
 
 # jRunPlan — build the run plan
@@ -11,23 +12,27 @@ ordered steps auto mode walks — which tickets run together, who runs each
 (its own agent, or an orchestrator working a group through subagents), on
 which model at which effort, and where merges, reviews and gates go. The
 human reads the plan on the board and presses Start; you don't run anything.
-Nobody is watching your pane: decide rather than ask.
+Nobody is watching your pane: decide rather than ask. The plan is done only
+when `PUT …/run-plan` answers `problems: []` and you have reported back (§5).
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
 P=PROJ-2   # the project key you were invoked with
 ```
+
+Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
 
 ## 1. Read everything the plan rests on
 
 ```bash
-curl -s "$JTICKET/api/projects/$P" | jq '{key, title, description, repo, integrationBranch, runPlan}'
-curl -s "$JTICKET/api/docs?projectId=$P" | jq '[.[] | {key, title, labels, status}]'     # specs, slice reports, outcome reports
-curl -s "$JTICKET/api/tickets?projectId=$P" | jq '[.[] | select(.status != "done" and .status != "merged") | {key, title, type, labels, status, blockedBy, acceptanceCriteria, description}]'
+jt project $P | jq '{key, title, description, repo, integrationBranch, runPlan}'
+jt get "/api/docs?projectId=$P" | jq '[.[] | {key, title, documentKey, labels, status}]'     # specs, slice reports, outcome reports
+jt ls projectId=$P --json | jq '[.[] | select(.status != "done" and .status != "merged") | {key, title, type, labels, status, blockedBy, acceptanceCriteria, description}]'
 ```
 
-`blockedBy` holds ticket **ids**; map them to keys with the full list
-(`curl -s "$JTICKET/api/tickets" | jq 'map({(.id): .key}) | add'`). A ticket
+A doc's record carries only metadata; read its content with
+`jt get /api/documents/<documentKey>`. `blockedBy` holds ticket **ids**; map
+them to keys with the full list (`jt ls --json | jq 'map({(.id): .key}) | add'`). A ticket
 labelled `hitl` is the human's; `paused` is parked; everything else is AFK —
 yours to place.
 
@@ -112,7 +117,7 @@ A step without `dispatch` runs on the run's default (Opus 5.5 high) — set it
 on every implement step instead, so the board says what you decided.
 
 ```bash
-curl -s -X PUT "$JTICKET/api/projects/$P/run-plan" -H 'content-type: application/json' -d @plan.json | jq '.problems'
+jt put /api/projects/$P/run-plan @plan.json | jq '.problems'
 ```
 
 The answer's `problems` are what would stop the plan running (a blocker in
@@ -122,8 +127,7 @@ it is `[]`. The draft saves each time, so the human sees the board fill.
 ## 5. Report back — last
 
 ```bash
-curl -s -X POST "$JTICKET/api/projects/$P/run-plan/built" -H 'content-type: application/json' \
-  -d '{"summary": "<one line: N steps, how the reviews are placed, anything left out>"}'
+jt post /api/projects/$P/run-plan/built '{"summary": "<one line: N steps, how the reviews are placed, anything left out>"}'
 ```
 
 This unlocks the tab. Then reply with a few lines — the steps in order, each

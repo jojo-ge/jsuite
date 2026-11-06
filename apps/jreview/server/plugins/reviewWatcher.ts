@@ -10,10 +10,14 @@ import { readyForTriage, type Review } from '../../app/utils/reviewTypes'
 // instead — it files agreed findings into jTicket and skips triage.
 //
 // Once a review is triaged (or ticketed, for a consensus review) the watcher
-// closes its herdr panes (closeReviewPanes). The session that POSTed is
-// usually still finishing its last reply, so a busy pane is left for a later
-// sweep; after CLOSE_WINDOW_MS the watcher stops trying and leaves whatever is
-// still busy to the human (a skipped reviewer stuck on a prompt, say).
+// closes its herdr panes (closeReviewPanes) and, once they are closed, removes
+// the worktree jReview cut for the review (removeReviewWorktree) — every
+// session's cwd was that checkout, so it goes only after the panes have. The
+// session that POSTed is usually still finishing its last reply, so a busy
+// pane is left for a later sweep; after CLOSE_WINDOW_MS the watcher stops
+// trying and leaves whatever is still busy to the human (a skipped reviewer
+// stuck on a prompt, say) — and the checkout with it, until the review is
+// deleted.
 //
 // Server-side on purpose: triage fires whether or not a browser is open.
 
@@ -70,21 +74,33 @@ export default defineNitroPlugin((nitroApp) => {
   }
 
   async function closePanes(review: Review) {
-    if (review.panesClosedAt) return
+    const worktreePending = review.worktree && !review.worktreeRemovedAt
+    if (review.panesClosedAt && !worktreePending) return
     // Reviews finished before this sweep existed (or given up on) are left alone.
     const doneAt = Date.parse(review.triage.doneAt ?? '')
     if (!doneAt || Date.now() - doneAt > CLOSE_WINDOW_MS) return
     if (Date.now() - (lastCloseTry.get(review.key) ?? 0) < CLOSE_RETRY_MS) return
     lastCloseTry.set(review.key, Date.now())
-    try {
-      if (!(await closeReviewPanes(review.key))) return
-    } catch {
-      return // herdr down — next sweep
+    if (!review.panesClosedAt) {
+      try {
+        if (!(await closeReviewPanes(review.key))) return
+      } catch {
+        return // herdr down — next sweep
+      }
+      await updateReview(review.key, (r) => {
+        r.panesClosedAt = new Date().toISOString()
+      }).catch(() => {}) // deleted meanwhile
+    }
+    // The panes are gone, so nothing runs in the checkout any more: remove it.
+    // A worktree left behind for every review is how a codebase's worktree
+    // directory fills up with detached jreview-* checkouts.
+    if (worktreePending) {
+      await removeReviewWorktree(review.repoPath, review.workdir)
+      await updateReview(review.key, (r) => {
+        r.worktreeRemovedAt = new Date().toISOString()
+      }).catch(() => {})
     }
     lastCloseTry.delete(review.key)
-    await updateReview(review.key, (r) => {
-      r.panesClosedAt = new Date().toISOString()
-    }).catch(() => {}) // deleted meanwhile
   }
 
   const timer = setInterval(tick, TICK_MS)

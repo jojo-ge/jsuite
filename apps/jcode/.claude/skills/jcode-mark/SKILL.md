@@ -1,6 +1,8 @@
 ---
 name: jcode-mark
-description: Mark a jCode kata attempt — read the kata (reference answer included) off jCode's API, run the sandbox cases against the human's solution, judge it against the contract, and record a verdict that never gives the answer away. Invoked as `/jcode-mark <key> [attempt=n]`, normally by jCode's Mark-it button dispatching into herdr; also usable by hand.
+description: Mark a jCode kata attempt — read the kata (reference answer included) off jCode's API, run the sandbox cases against the human's solution, judge it against the contract, and record a verdict that never gives the answer away. Invoked as "/jcode-mark [KEY attempt=N]", normally by jCode's Mark-it button dispatching into herdr; also usable by hand when the user asks for a kata to be marked.
+argument-hint: "[KEY attempt=N]"
+disable-model-invocation: true
 ---
 
 # jcode-mark — mark the human's solution
@@ -13,15 +15,17 @@ is wrong **without telling them the answer** — the page discloses hints one
 rung at a time, and your verdict must respect that. Nothing here ships; the
 repo already has Claude's version. This is practice, marked honestly.
 
-Invocation: `/jcode-mark <key> [attempt=n]`. The herdr pane is already in
-the sandbox directory; by hand, `cd` to `sandbox.dir` first.
+Invocation: `/jcode-mark [KEY attempt=N]`. The herdr pane is already in
+the sandbox directory; by hand, `cd` to `sandbox.dir` first. If jCode doesn't
+answer: `cd ~/code/jsuite && ./jsuite status`, then `./jsuite start`.
 
 ## 1. Read the kata — the whole record
 
 ```sh
-curl -sk https://jcode.local/api/katas/<key>/full > /tmp/kata.json
+# $TMP = your scratch dir (the scratchpad dir if one exists, else `mktemp -d`); never the sandbox
+curl -sk https://jcode.local/api/katas/<key>/full > "$TMP/kata.json"
 jq '{title, sandbox, target, revealed, hintsUnlocked, status,
-     attempts: [.attempts[] | {id, n, status, submittedAt}]}' /tmp/kata.json
+     attempts: [.attempts[] | {id, n, status, submittedAt}]}' "$TMP/kata.json"
 ```
 
 `/full` is the marker's read: `solution` (Claude's reference implementation

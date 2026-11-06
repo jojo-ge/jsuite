@@ -132,8 +132,8 @@ function buildMarkdown(): string {
   const els = elements.value
   const byId = new Map(els.map((e) => [e.id, e]))
   let out = `## Chart notes: ${title.value}\n\n`
-  out += `Chart file: \`~/code/anyway/jsuite/.data/jchart/${key.value}.json\`\n`
-  out += `Notes file: \`~/code/anyway/jsuite/.data/jchart/${key.value}.notes.json\`\n\n`
+  out += `Chart file: \`~/code/jsuite/.data/jchart/${key.value}.json\`\n`
+  out += `Notes file: \`~/code/jsuite/.data/jchart/${key.value}.notes.json\`\n\n`
 
   const g = general.value.trim()
   if (g) out += `### General notes\n${g}\n\n`

@@ -1,6 +1,8 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file the in-scope ones (and any critical break) straight into the loop's jTicket project as AFK bug tickets, route out-of-scope ones to the project's "follow ups" project, and POST the in-project ticket keys back to jReview. Invoked as `/jreview-consensus <key>` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
+description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file the in-scope ones (and any critical break) straight into the loop's jTicket project as AFK bug tickets, route out-of-scope ones to the project's "follow ups" project, and POST the in-project ticket keys back to jReview. Invoked as `/jreview-consensus [key]` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
+argument-hint: "[KEY]"
+disable-model-invocation: true
 ---
 
 # jreview-consensus
@@ -11,11 +13,14 @@ jExplain report. Your job is to find the findings **every** reviewer raised and
 turn each one into a jTicket ticket — one the loop implements next, or, when
 it's outside the project's goal, one the human decides on. Anything only
 some reviewers raised is dropped — agreement is the filter. You run in the
-reviewed checkout (cwd), so you can read the code.
+reviewed checkout (cwd), so you can read the code. jReview runs this session
+on Sonnet 5: match and file, don't re-review.
 
 Argument: the review key.
 
-APIs: jReview `http://localhost:43008`, jTicket `http://localhost:43000`.
+APIs: jReview `http://localhost:43008` (curl); jTicket through the `jt` CLI
+(`jt project KEY`, `jt projects --json`, `jt post PATH JSON|@file|-`, `jt new`,
+`jt set` — `jt` alone prints the verbs). Never hand-build curl against :43000.
 
 **Write no triage document and POST no findings to jReview.** The tickets are
 the output; jReview only records their keys.
@@ -46,7 +51,8 @@ usually with `**Where:**` and `**Category:**` lines.
   symptoms of one root cause match. The same smell in two unrelated places
   does not.
 - A finding is **agreed** when every reviewer's report has a match for it.
-  Keep only agreed findings. Don't add findings of your own, and don't rescue
+  Keep only agreed findings. (With one reviewer agreement is trivial — every
+  finding is agreed; the code check below is then your only filter.) Don't add findings of your own, and don't rescue
   a finding one reviewer missed because you think it's right.
 - Drop an agreed finding only when reading the code (`git diff
   <base>...HEAD`) shows it is plainly wrong. Say so in your final reply.
@@ -72,9 +78,11 @@ Instead:
   `review:architecture` in place of `review:finding`). The loop implements
   and merges these before the regular reviewers run.
 - Every finding with `**Category:** technical` is **advisory**: file it as
-  a ticket the loop leaves alone — labels `["hitl", "jreview",
-  "review:advisory", "severity:…", "category:technical", "auto-loop:<n>"]`,
-  no `blockedBy`. The human decides later.
+  a ticket the loop leaves alone — same import as §3, `"project":
+  "<consensus.projectKey>"` (the loop's project, never the follow-ups one),
+  labels `["hitl", "jreview", "review:advisory", "severity:…",
+  "category:technical", "auto-loop:<n>"]`, no `blockedBy`. The human decides
+  later.
 - Drop a finding only when the code shows it plainly wrong; say so.
 - `considered` = every finding in the report; `kept` = the mandatory ones.
 - In §4, `ticketKeys` are the **mandatory** keys only — the advisory ones
@@ -83,8 +91,10 @@ Instead:
 ## 3. File the tickets into jTicket
 
 One AFK bug ticket per agreed **in-scope** finding, into `consensus.projectKey`
-**by key**, with no `blockedBy` — they must land on the loop's frontier. Write
-the JSON to a file and post it:
+**by key**, with no `blockedBy` — they must land on the loop's frontier. First
+verify the project exists — `jt project <projectKey>` — an unknown `project`
+ref creates project-less tickets the loop never sees. Then write the JSON to a
+file and post it:
 
 ```json
 {
@@ -102,8 +112,7 @@ the JSON to a file and post it:
 ```
 
 ```sh
-curl -s -X POST http://localhost:43000/api/import \
-  -H 'content-type: application/json' -d @tickets.json
+jt post /api/import @tickets.json
 ```
 
 The response's `tickets[].key` are the new keys. `auto-loop:<n>` uses
@@ -138,13 +147,16 @@ separate project titled **`<projectKey> follow ups`** (e.g. `PROJ-7 follow
 ups`) — find it by title, create it when there isn't one:
 
 ```sh
-curl -s http://localhost:43000/api/projects | jq -r '.[] | select(.title == "PROJ-7 follow ups") | .key'
+jt projects --json | jq -r '.[] | select(.title == "PROJ-7 follow ups") | .key'
 # none → create it on the same repo (no integration branch; the human cuts one when they pick it up)
-curl -s -X POST http://localhost:43000/api/projects -H 'content-type: application/json' \
-  -d '{"title": "PROJ-7 follow ups", "repo": "<repoPath>", "description": "Out-of-scope findings from PROJ-7'"'"'s reviews — agreed by every reviewer, left for later so the run stayed on task."}'
+jt post /api/projects '{"title": "PROJ-7 follow ups", "repo": "<repoPath>", "description": "Out-of-scope findings from PROJ-7 reviews — agreed by every reviewer, left for later so the run stayed on task."}'
 ```
 
-Then the same `/api/import` call as §3 with `"project": "<follow-ups key>"`,
+The title match can return several keys when duplicate follow-ups projects
+exist: pick the one whose `repo` is this review's `repoPath`, and among those
+the newest (highest key). Never create another when one matches.
+
+Then the same `jt post /api/import` call as §3 with `"project": "<follow-ups key>"`,
 labels `["afk", "jreview", "review:follow-up", "severity:…", "category:…"]`
 (no `auto-loop:<n>`), and a first description line saying which review and
 project it came from. These keys are **not** in §4's `ticketKeys`.

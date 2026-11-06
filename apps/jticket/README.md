@@ -313,7 +313,16 @@ it asks the codebase, and keeps the answer as the codebase's **worktree guide**
    at save so a changed lockfile or `CLAUDE.md` turns the guide **stale**.
 2. **Consumers.** Everything that makes a worktree `GET`s the guide first:
    `/jimplement`, `/jreproduce`, jReview (its reviewer checkouts go under the
-   guide's `root`), and the connect prompt.
+   guide's `root`), and the connect prompt. Agents take the cheapest form the
+   guide offers that fits the ticket (a slim/test-only worktree for tests, lint
+   and typecheck; the full one only when the app must run) and tear it down,
+   forced, as soon as the PR is open — the branch carries the commits.
+4. **After the merge.** `POST /api/prs/:id/merge` deletes the head branch
+   unless a worktree still has it checked out, in which case the answer names
+   it as `headWorktree`; the merge sweep's prompt then tears that worktree
+   down the guide's way and deletes the branch, so nothing outlives its merge
+   into the integration branch. jReview's watcher removes its own reviewer
+   checkouts once a finished review's panes close.
 3. **Connect.** Once a guide exists, the integration branch's row on the
    project's GitHub panel shows **Connect worktree**: it fires
    `worktree:connect`, whose agent checks the branch out the guide's way (or

@@ -23,6 +23,21 @@ export interface TicketDispatch {
   ticket: string
 }
 
+/**
+ * Run one whole workspace → pane → claude sequence under the suite-wide herdr
+ * lock (no other dispatch, in this process or another app, interleaves with
+ * it), logging a failure before rethrowing — toasts and auto.paused are not
+ * the only record of why a ticket never started.
+ */
+async function lockedDispatch<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await withHerdrLock(fn)
+  } catch (err: any) {
+    console.error(`[jticket] herdr dispatch failed for ${what}:`, err?.message ?? err)
+    throw err
+  }
+}
+
 /** `--model` / `--effort` for claude, or nothing (the CLI's defaults) when neither is pinned. */
 function modelArgs(model?: string, effort?: string) {
   const args = [...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])]
@@ -66,26 +81,28 @@ export async function dispatchTicketSession(
 
   const cwd = resolveRepoDir(project.repo)
 
-  const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
-  let tabId: string, paneId: string
-  if (opts.ownTab) {
-    const label = `${project.key} · ${ticket.key}`
-    if (freshTab) {
-      await herdrJson(['tab', 'rename', freshTab.tabId, label])
-      ;({ tabId, paneId } = freshTab)
+  return lockedDispatch(ticket.key, async () => {
+    const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
+    let tabId: string, paneId: string
+    if (opts.ownTab) {
+      const label = `${project.key} · ${ticket.key}`
+      if (freshTab) {
+        await herdrJson(['tab', 'rename', freshTab.tabId, label])
+        ;({ tabId, paneId } = freshTab)
+      } else {
+        ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
+      }
     } else {
-      ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
+      ;({ tabId, paneId } = await acquireTicketPane(workspaceId, project.key, cwd, freshTab))
     }
-  } else {
-    ;({ tabId, paneId } = await acquireTicketPane(workspaceId, project.key, cwd, freshTab))
-  }
-  // Name the pane after its ticket: in a packed 2×2 tab the four panes are
-  // otherwise four identical claude spinners with nothing saying which ticket
-  // each is working. Cosmetic and best-effort — never fails the dispatch.
-  await renamePane(paneId, ticket.title ? `${ticket.key} · ${ticket.title}` : ticket.key)
-  const agent = await startClaudeIn(paneId, ticket.key, framedPrompt, modelArgs(opts.model, opts.effort))
+    // Name the pane after its ticket: in a packed 2×2 tab the four panes are
+    // otherwise four identical claude spinners with nothing saying which ticket
+    // each is working. Cosmetic and best-effort — never fails the dispatch.
+    await renamePane(paneId, ticket.title ? `${ticket.key} · ${ticket.title}` : ticket.key)
+    const agent = await startClaudeIn(paneId, ticket.key, framedPrompt, modelArgs(opts.model, opts.effort))
 
-  return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
+    return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
+  })
 }
 
 /**
@@ -109,18 +126,20 @@ export async function dispatchProjectSession(
 ) {
   const cwd = resolveRepoDir(project.repo)
   const label = `${project.key} · ${job}`
-  const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
-  // A fresh workspace's root tab becomes the job's tab; otherwise cut a new one.
-  let tabId: string, paneId: string
-  if (freshTab) {
-    await herdrJson(['tab', 'rename', freshTab.tabId, label])
-    ;({ tabId, paneId } = freshTab)
-  } else {
-    ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
-  }
-  await renamePane(paneId, opts.paneLabel ?? label)
-  const agent = await startClaudeIn(paneId, opts.agent ?? `${job}-${project.key}`, prompt, modelArgs(opts.model, opts.effort))
-  return { workspaceId, tabId, paneId, agent, project: project.key }
+  return lockedDispatch(label, async () => {
+    const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
+    // A fresh workspace's root tab becomes the job's tab; otherwise cut a new one.
+    let tabId: string, paneId: string
+    if (freshTab) {
+      await herdrJson(['tab', 'rename', freshTab.tabId, label])
+      ;({ tabId, paneId } = freshTab)
+    } else {
+      ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
+    }
+    await renamePane(paneId, opts.paneLabel ?? label)
+    const agent = await startClaudeIn(paneId, opts.agent ?? `${job}-${project.key}`, prompt, modelArgs(opts.model, opts.effort))
+    return { workspaceId, tabId, paneId, agent, project: project.key }
+  })
 }
 
 /** How a batch names its tab: the first keys, then a count for the rest. */

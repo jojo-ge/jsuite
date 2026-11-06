@@ -21,16 +21,19 @@ export default defineEventHandler(async (event) => {
   const cwd = resolveRepoDir(repo.path)
   const label = repo.slug || basename(repo.path)
 
-  const { workspaceId, freshTab } = await ensureHerdrWorkspace(label, cwd)
-  let tabId: string, paneId: string
-  if (freshTab) {
-    await herdrJson(['tab', 'rename', freshTab.tabId, 'worktree kickoff'])
-    ;({ tabId, paneId } = freshTab)
-  } else {
-    ;({ tabId, paneId } = await createJobTab(workspaceId, 'worktree kickoff', cwd))
-  }
-  await renamePane(paneId, `worktree kickoff · ${label}`)
-  const agent = await startClaudeIn(paneId, 'worktree-kickoff', prompt)
+  // One whole workspace → pane → claude sequence under the suite-wide herdr lock.
+  return withHerdrLock(async () => {
+    const { workspaceId, freshTab } = await ensureHerdrWorkspace(label, cwd)
+    let tabId: string, paneId: string
+    if (freshTab) {
+      await herdrJson(['tab', 'rename', freshTab.tabId, 'worktree kickoff'])
+      ;({ tabId, paneId } = freshTab)
+    } else {
+      ;({ tabId, paneId } = await createJobTab(workspaceId, 'worktree kickoff', cwd))
+    }
+    await renamePane(paneId, `worktree kickoff · ${label}`)
+    const agent = await startClaudeIn(paneId, 'worktree-kickoff', prompt)
 
-  return { workspaceId, tabId, paneId, agent, workspace: label }
+    return { workspaceId, tabId, paneId, agent, workspace: label }
+  })
 })

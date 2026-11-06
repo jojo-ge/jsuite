@@ -45,7 +45,8 @@ const finishedCount = computed(
 const docByLabel = (t: ProgressTicket) =>
   progress.value?.docs.find((d) => d.labels.some((l) => l.toUpperCase() === t.key.toUpperCase())) ?? null
 const scopingDoc = computed(
-  () => progress.value?.docs.find((d) => d.labels.includes('jmap:scoping')) ?? null,
+  // The scoping doc carries the protocol label `jmap:scope` (older maps wrote `jmap:scoping`).
+  () => progress.value?.docs.find((d) => d.labels.includes('jmap:scope') || d.labels.includes('jmap:scoping')) ?? null,
 )
 
 // ── Creating the synthesis ticket ────────────────────────────────────────────

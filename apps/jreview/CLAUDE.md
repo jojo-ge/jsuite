@@ -2,10 +2,11 @@
 
 Multi-reviewer code review. The New review button records a review and
 dispatches four Opus 5.5 REVIEWER sessions into herdr (workspace
-`jreview · <repo>`, one packed 2×2 tab `review <key>`). Each is told to run
-the target codebase's code-review skill (the global `/code-review` when the
-repo has none) over `<base>...HEAD`, then `/jreview-report` publishes the
-report as a jExplain document at its pre-assigned key
+`jreview · <repo>`, one packed 2×2 tab `review <key>`). Each prompt starts
+with the slash command — `/code-review` (or `/jarch-review` on an
+architecture pass), always the GLOBAL skill, never one the target repo carries
+in its own `.claude/skills` — over `<base>...HEAD`, then `/jreview-report`
+publishes the report as a jExplain document at its pre-assigned key
 `jreview-<key>-r<n>`. The server-side watcher (`server/plugins/reviewWatcher.ts`)
 polls the shared document pool; when every reviewer is settled it
 dispatches one TRIAGE session (`/jreview-triage <key>`), which dedupes the
@@ -39,14 +40,22 @@ Rules that matter here:
   a failed dispatch is recorded on the reviewer/triage (`status: failed`,
   `error`) and the room offers retry/skip. Model: `claude-opus-5-5`
   (`JREVIEW_MODEL` overrides).
-- Herdr prompts are ONE line — a newline would submit early.
+- Herdr prompts are ONE line — a newline would submit early — and the slash
+  command is the FIRST token: claude only runs `/skill` at the start of the
+  input; mid-sentence it is just a permission grant. The reviewer prompt is
+  built in `server/utils/reviewHerdr.ts` (`reviewerPrompt`); a consensus
+  review's `consensus.projectKey` rides along so `/jarch-review` can read the
+  project.
 - **Sessions run in `review.workdir`, never assume `repoPath`.** A branch
   that isn't checked out gets a detached worktree (`addReviewWorktree`) so
   HEAD is the branch; delete removes it. It goes under the codebase's
   worktree root from its jTicket worktree guide (`GET :43000/api/repos/worktree`),
   else `.data/jreview/worktrees/<key>`, and the reviewer prompt points at the
   guide for any setup. `repoPath` stays the codebase identity (jTicket
-  project repo, herdr workspace label).
+  project repo, herdr workspace label). Once a finished review's panes are
+  closed the watcher removes that worktree too (`removeReviewWorktree`,
+  recorded as `worktreeRemovedAt`), so detached `jreview-*` checkouts don't
+  pile up.
 - The target defaults to the branch's open PR's `baseRefName` (stacked PRs
   review against their parent), resolved local-first then `origin/`. Every
   ref that reaches a prompt passes `REF_SHAPE` in `reviewGit.ts`.

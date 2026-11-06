@@ -175,6 +175,10 @@ describe('the built-in prompts', () => {
         'For each one: POST http://localhost:43000/api/prs/<key>/merge. ' +
         "On a 409 conflict: in the repo at ~/code/checkout, rebase that PR's head branch onto proj-1-integration, " +
         "resolve the conflicts preserving both sides' intent, then POST the merge again. " +
+        'Once a PR has landed its head branch is done with: if the merge answer names a headWorktree (the branch was still checked out somewhere), ' +
+        "tear that worktree down the way the codebase's worktree guide says (GET http://localhost:43000/api/repos/worktree?repo=~%2Fcode%2Fcheckout; " +
+        'with no guide, git worktree remove --force from ~/code/checkout) and delete the branch — uncommitted leftovers in a merged worktree are disposable. ' +
+        'Never touch the worktree proj-1-integration itself is checked out in, or any worktree whose branch has not merged. ' +
         'Everything stays local — do not push or touch GitHub.',
     )
   })

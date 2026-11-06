@@ -1,12 +1,15 @@
 ---
 name: jreview-report
-description: Publish a finished code review into jReview as a jExplain document at a pre-assigned key — the document landing is how jReview knows this reviewer is done. Invoked as `/jreview-report review=<key> reviewer=<n> doc=<docKey>` by a jReview reviewer session after its code-review skill has run. Not for general use.
+description: Publish a finished code review into jReview as a jExplain document at a pre-assigned key — the document landing is how jReview knows this reviewer is done. Invoked as `/jreview-report review=[key] reviewer=[n] doc=[docKey]` by a jReview reviewer session after its review skill has run. Not for general use.
+argument-hint: "[review=KEY reviewer=N doc=DOCKEY]"
+disable-model-invocation: true
 ---
 
 # jreview-report
 
 You are one of several jReview reviewer sessions. You have just run a code
-review (the global `/code-review` skill).
+review (the global `/code-review` skill, or `/jarch-review` on an architecture
+pass).
 This skill turns that review into a **jExplain document** at the exact key
 jReview is watching. jReview polls the shared document pool: **the moment a
 document exists at `doc=`, this reviewer counts as finished**, and when every
@@ -21,8 +24,11 @@ Sonnet subagent builds and publishes the document.
 
 ## Rules
 
-- Report only. Don't fix code, don't commit, don't create tickets — the human
-  turns findings into tickets from jReview after triage.
+- Report only. Don't fix code, don't commit, don't create tickets. Tickets
+  come later and are not yours: a consensus review's consensus session files
+  the agreed findings; a plain review is triaged, then the human splits the
+  findings into tickets from jReview (or from the jTicket project's Review
+  tab, when the review belongs to a project).
 - If the review found nothing, still dump it (no FINDING sections) — the
   document must still land, or triage waits on you forever.
 - Never publish a draft or a placeholder yourself — a partial document ends

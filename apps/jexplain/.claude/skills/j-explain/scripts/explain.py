@@ -7,8 +7,9 @@ Usage:
 
 The doc is a j-explain JSON authoring payload (title, blocks, glossary — see the
 skill's SKILL.md for the block vocabulary). It's stored as an explainer at
-~/code/anyway/jsuite/.data/jexplain/<key>.json; chart blocks with inline mermaid
-are materialised into the shared jChart store (.data/jchart/), where the user
+<.data root>/jexplain/<key>.json (the root is $JSUITE_DATA_DIR when set, else
+~/code/jsuite/.data); chart blocks with inline mermaid are materialised into the
+shared jChart store (<.data root>/jchart/), where the user
 can also open them in the full jChart workbench.
 
 Prints the explainer URL plus the data file paths to read the user's notes back
@@ -26,8 +27,9 @@ import urllib.request
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
 EDGE_BASE = "https://jexplain.local"
 DIRECT_BASE = "http://localhost:43004"
-DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jexplain")
-CHART_DATA_DIR = os.path.expanduser("~/code/anyway/jsuite/.data/jchart")
+DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.expanduser("~/code/jsuite/.data")
+DATA_DIR = os.path.join(DATA_ROOT, "jexplain")
+CHART_DATA_DIR = os.path.join(DATA_ROOT, "jchart")
 
 # Preferred browser (macOS app name). Override with --browser or $JEXPLAIN_BROWSER.
 DEFAULT_BROWSER = "Arc"
@@ -62,7 +64,7 @@ def pick_base():
 def not_running():
     print(
         "error: jExplain isn't reachable.\n"
-        "  Start the suite with:  jsuite start\n"
+        "  Start the suite with:  cd ~/code/jsuite && ./jsuite status, then ./jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
     )

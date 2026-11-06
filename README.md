@@ -6,7 +6,7 @@ instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
 
 ```sh
-cd ~/code/anyway/jsuite
+cd ~/code/jsuite
 ./jsuite setup      # once (re-runnable) — see Setup below
 ./jsuite start      # apps + edge
 ```
@@ -169,10 +169,20 @@ manager over its socket CLI: binary resolution (`HERDR_BIN` → PATH →
 `{ available: false }` when herdr isn't running, so UIs degrade to hidden
 buttons), workspace/tab topology (`ensureHerdrWorkspace`, `acquirePackedPane`
 packs panes 2×2 per tab, `createJobTab`), macOS window focusing, and
-`startClaudeIn` (start a claude agent in a pane and submit a prompt, with the
-"not an available shell" and `agent_prompt_stalled` retry dances; extra CLI
-args for the claude binary — e.g. `--model` — pass through `opts.args`). Plain
-ESM, no layer; failures throw `HerdrError` with an HTTP-ish `statusCode`.
+`startClaudeIn` (start a claude agent in a pane, submit the prompt, and
+confirm claude actually started on it; extra CLI args for the claude binary —
+e.g. `--model` — pass through `opts.args`). `startClaudeIn` retries a shell
+that isn't at its prompt yet, accepts claude's folder-trust dialog (any other
+startup screen fails with the screen in the error), and submits with
+`agent prompt --wait` — on a stall it presses Enter on text left in claude's
+input, resubmits only when the prompt is nowhere on screen, and otherwise
+fails loudly (`submitPrompt` does the same for prompts to a live agent, e.g.
+the auto loop's nudges). Every dispatch queues on one suite-wide lock
+(`withHerdrLock`, lock file `.data/herdr/dispatch.lock`, re-entrant) so the
+apps' list-then-create steps never interleave; wrap a whole workspace → pane →
+claude sequence in it to make the sequence atomic. Every CLI call has a
+timeout (30s default). Plain ESM, no layer; failures throw `HerdrError` with
+an HTTP-ish `statusCode` and herdr's error `code`.
 jTicket dispatches all ticket work through it (including jMap-mode mapping
 tickets), jDiff dispatches its review-guidance sessions (the
 `jdiff-review` / `jdiff-ask` skills, pinned to Opus 5), and jCode dispatches

@@ -1,7 +1,8 @@
 ---
 name: jwayfinder
-description: Plan a huge chunk of work — more than one agent session can hold — as a shared map of investigation tickets in the local jTicket app, and resolve them one at a time until the way to the destination is clear.
+description: Plan a huge chunk of work — more than one agent session can hold — as a shared map of investigation tickets in the local jTicket app (a wayfinder-mode project), and resolve them one at a time until the way to the destination is clear. Invoked as "/jwayfinder [destination]" with a loose idea to chart a map, or with a map's project key or name (and optionally a ticket) to resolve exactly one ticket. Planning only — building is /jimplement.
 disable-model-invocation: true
+argument-hint: "[destination]"
 ---
 
 # jWayfinder
@@ -17,15 +18,22 @@ every ticket. It might be a spec to hand off and iterate on, a decision to lock 
 planning starts, or a change made in place like a data-structure migration. The map is
 domain-agnostic — engineering work, course content, whatever fits the shape.
 
+Two rules hold throughout: **plan, don't do** (below), and **never resolve more than one
+ticket per session**.
+
 ## Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
-If it is **down**, tell the user and stop. The start command is `pnpm dev` in the jTicket
-repo (`~/code/jTicket`). Full API reference: the `to-jticket` skill's
+If it is **down**, tell the user and stop. jTicket is `apps/jticket` of `~/code/jsuite`;
+from that root, `./jsuite status`, then `./jsuite start` (starts every app).
+
+Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`: `jt ls`, `jt show`, `jt set`,
+`jt project`, and `jt get|post|patch|put|delete PATH [JSON|@file.json|-]` for the rest.
+Full API reference: the `to-jticket` skill's
 [reference/api.md](../to-jticket/reference/api.md); markdown dialect for map bodies,
 questions, and answers: the `to-jspec` skill, [SKILL.md](../to-jspec/SKILL.md).
 
@@ -60,7 +68,7 @@ stand in for it:
 | HITL / AFK | a **`hitl` / `afk` tag** in `labels` — exactly one per ticket |
 | Blocking | **`blockedBy`** (ticket keys) — rendered natively in the UI |
 | Claim | set **`assignee`** — an assigned ticket leaves the frontier |
-| Frontier | `GET /api/tickets?projectId=<project key>&frontier=true` — key-ordered |
+| Frontier | `jt ls projectId=PROJ-n frontier=true` — key-ordered |
 | Close | `status: "done"` |
 | Resolution comment | the ticket's **`resolution`** field — comments are for discussion, not the answer |
 
@@ -125,7 +133,7 @@ A session **claims** a ticket by setting `assignee` to the dev driving the map, 
 before any work, so concurrent sessions skip it. That assignee *is* the claim: a `todo`,
 unassigned ticket is unclaimed.
 
-A ticket is **unblocked** when every ticket in its `blockedBy` is `done`; the **frontier**
+A ticket is **unblocked** when every ticket in its `blockedBy` is `done` or `merged`; the **frontier**
 is the `todo`, unblocked, unclaimed tickets that are takeable on this machine (on a shared
 project the peer's half is read-only here, so it stays off). jTicket computes all three
 for you — `blocked`, `claimed`, `frontier` come back on every GET.
@@ -224,7 +232,7 @@ The user invokes with a loose idea.
    already clear, the whole journey small enough for one session — you don't need a map.
    Stop and ask the user how they'd like to proceed.
 3. **Create the project (its description is the map) and the tickets you can specify
-   now** — one `POST /api/import`. Import resolves `project` and `blockedBy` by **title
+   now** — one `jt post /api/import @map.json`. Import resolves `project` and `blockedBy` by **title
    or key**, and wires edges in a second pass after every ticket exists, so a single
    call is enough — no create-then-wire dance.
 4. Everything you can't yet specify stays in the fog — the **Not yet specified** section
@@ -234,7 +242,8 @@ The user invokes with a loose idea.
 6. Stop — charting the map is one session's work; do not also resolve tickets.
 
 ```bash
-curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
+jt post /api/import - <<'JSON'
+{
   "projects": [{ "title": "Rive Story Assets", "mode": "wayfinder",
                  "description": "## Destination\n\n…\n\n## Notes\n\n…\n\n## Decisions so far\n\n## Not yet specified\n\n- …\n\n## Out of scope\n\n" }],
   "tickets":  [
@@ -245,17 +254,18 @@ curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
       "type": "decision", "labels": ["hitl"], "blockedBy": ["Choose the Rive runtime"],
       "description": "## Question\n\nWhat does a designer hand over, and where does it live?" }
   ]
-}'
+}
+JSON
 ```
 
 ```bash
 # verify: every ticket, its edges, and what the frontier actually is
-curl -s "$JTICKET/api/tickets?projectId=PROJ-3" \
-  | jq '.[] | {key, title, type, labels, blockedBy, blocked, frontier}'
+jt ls projectId=PROJ-3 --json | jq '.[] | {key, title, type, labels, blockedBy, blocked, frontier}'
 ```
 
-Use `jq -n --arg body "$(cat map.md)"` to build the payload when the map body is long —
-hand-escaping `\n` into a shell string will mangle it.
+Use `jq -n --arg body "$(cat map.md)"` to build the payload (into a file, then
+`jt post /api/import @map.json`) when the map body is long — hand-escaping `\n` into a
+shell string will mangle it.
 
 ### Work through the map
 
@@ -265,26 +275,25 @@ without one, you pick the next decision, not the user.
 1. **Load the map** — the low-res view, not every ticket body:
 
    ```bash
-   curl -s "$JTICKET/api/projects" | jq '.[] | select(.mode == "wayfinder")'
-   curl -s "$JTICKET/api/projects/PROJ-3" | jq -r .description
+   jt projects --json | jq '.[] | select(.mode == "wayfinder")'
+   jt project PROJ-3 | jq -r .description
    ```
 
 2. **Choose the ticket.** If the user named one, use it. Otherwise take the first frontier
    ticket in key order:
 
    ```bash
-   curl -s "$JTICKET/api/tickets?projectId=PROJ-3&frontier=true" | jq '.[0]'
+   jt ls projectId=PROJ-3 frontier=true --json | jq '.[0]'
    ```
 
    **Claim it before any work** — assignee first, then read the question:
 
    ```bash
-   curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' \
-     -d '{ "assignee": "claude", "status": "in_progress" }'
+   jt set TICK-7 assignee=claude status=in_progress
    ```
 
 3. **Resolve it — zoom as needed.** Fetch the full body of any related or resolved ticket
-   on demand (`GET /api/tickets/TICK-n` → `.description`, `.resolution`); invoke the
+   on demand (`jt show TICK-n | jq '{description, resolution}'`); invoke the
    skills the map's `## Notes` names. If in doubt, use `/grilling` and `/domain-modeling`.
    Respect the ticket's kind: `type` + tags say which sub-type above it is (`research`
    with the `prototype` tag → Prototype; `decision` → Grilling), and a `hitl` ticket
@@ -294,12 +303,13 @@ without one, you pick the next decision, not the user.
    a one-line gist to the map's **Decisions so far**:
 
    ```bash
-   curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' \
-     -d "$(jq -n --arg r "$(cat answer.md)" '{status:"done", resolution:$r}')"
+   jt set TICK-7 status=done resolution=@answer.md
    ```
 
-   The map body is a whole-field replace: GET the project's `description`, insert the
-   line under **Decisions so far**, PATCH the complete body back. Never PATCH a fragment.
+   The map body is a whole-field replace: `jt project PROJ-3 | jq -r .description` to a
+   file, insert the line under **Decisions so far**, then PATCH the complete body back
+   (`jt patch /api/projects/PROJ-3 "$(jq -n --rawfile d map.md '{description:$d}')"`).
+   Never PATCH a fragment.
 
 5. **Advance the frontier.** Add newly-surfaced tickets (one import call, edges and all);
    graduate any fog the answer has made specifiable, **clearing each graduated patch from
@@ -315,7 +325,7 @@ appended a decision since you loaded it.
 ## Gotchas
 
 - Outside `POST /api/import`, refs resolve by **id or key only** — a title in `blockedBy`
-  or `projectId` on `POST`/`PATCH /api/tickets` is silently dropped. Use keys.
+  or `projectId` on `jt new`/`jt set` is silently dropped. Use keys.
 - Import **always creates, never upserts**. To add tickets to an existing map, send only
   `tickets` and reference the project by key. Passing the project again duplicates it.
 - The sub-type is `type` (+ the `prototype` tag), never a label — the old
@@ -328,8 +338,8 @@ appended a decision since you loaded it.
 - `completedAt` is stamped by the server when a ticket moves to `done` (and cleared when it
   moves out) — writing it does nothing. `?finished=true` lists resolved tickets
   newest-first, which is how you recap what a map has landed.
-- The answer goes in `resolution`; longer assets become docs. Ticket **comments**
-  (`POST /api/tickets/:id/comments`) are for discussion only — human direction left
+- The answer goes in `resolution`; longer assets become docs (`jt post /api/docs @doc.json`).
+  Ticket **comments** (`jt comment TICK-n "body"`) are for discussion only — human direction left
   before handoff (read them before working a ticket) and your own questions or progress
   notes, never the resolution itself.
 - Deletes are immediate and unrecoverable — the store is one JSON file. Delete a ticket

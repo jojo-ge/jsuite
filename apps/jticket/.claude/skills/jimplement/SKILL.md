@@ -1,7 +1,8 @@
 ---
 name: jimplement
-description: Implement work that is already broken down as tickets in the local jTicket app — claim a ticket, build it, and record the outcome back on the board.
+description: Implement work that is already broken down as tickets in the local jTicket app — claim a ticket, build it in the codebase's worktree, open its local PR, and record the outcome back on the board. Invoked as "/jimplement [TICK-n]" (or with a project key, or nothing) by hand, by jTicket's herdr buttons, its auto loop and run plans, or an orchestrator's subagent. Not for planning (that is /jwayfinder) or for a first breakdown (/to-jticket).
 disable-model-invocation: true
+argument-hint: "[TICK-n]"
 ---
 
 # jImplement
@@ -22,10 +23,12 @@ jt projects >/dev/null && echo up || echo down
 ```
 
 If it is **down**, tell the user and stop — do not fall back to implementing from memory
-or from files, and do not start the server yourself unless they ask. The start command is
-`pnpm dev` in the jTicket repo (`~/code/jTicket`).
+or from files, and do not start the server yourself unless they ask. jTicket is
+`apps/jticket` of `~/code/jsuite`; from that root, `./jsuite status`, then `./jsuite start`
+(starts every app).
 
-Every call below goes through `jt` (on PATH; `jt help`), never hand-built `curl`. It
+Every call below goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`. It
 prints a ticket or project as JSON, lists as tab-separated rows (`--json` for raw), reads a
 field from a file with `field=@file.md`, and reaches any endpoint without a verb as
 `jt get|post|patch|put|delete PATH [JSON]`.
@@ -81,7 +84,9 @@ jt set TICK-7 assignee=claude status=in_progress
   description conflict, the newer comment wins (raise it if that's ambiguous).
 - The `resolution` of every ticket in its `blockedBy` — that's where the decisions this
   ticket rests on were recorded.
-- Any doc the description links (`GET /api/docs/DOC-n` → `.body`).
+- Any doc the description links. `/api/docs/DOC-n` is only the tracker record; the
+  content lives in the shared document pool:
+  `jt get /api/documents/$(jt get /api/docs/DOC-n | jq -r .documentKey)`.
 
 ```bash
 jt show TICK-7 | jq '{title, description, acceptanceCriteria, blockedBy, comments}'
@@ -109,7 +114,11 @@ jt get "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" \
 
 - **`ready`** — follow `body` for where the worktree goes, how it is created,
   set up, run, tested and torn down. Check the ticket's branch out into it (the
-  branch jTicket cut, or your own).
+  branch jTicket cut, or your own). Take the **cheapest form the guide offers
+  that your ticket needs** — most tickets only run tests, lint and typecheck,
+  and a guide's slim/test-only form is for exactly that; reach for the full
+  form only when you must run the app, a browser, or something the guide says
+  the slim form lacks.
 - **`stale`** — follow it, but `changed` names files that moved since it was
   written; adapt where they disagree and say so in your report.
 - **`missing`** — no guide yet: a plain `git worktree add` next to the repo,
@@ -117,7 +126,12 @@ jt get "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" \
   codebase has no guide (Codebase settings → Worktrees → Run kickoff).
 
 Tear down the way the guide says once the PR is open — unless the hand-off
-says otherwise. Never build in the repo's own checkout.
+says otherwise. The PR holds the commits, so anything still uncommitted in the
+worktree is disposable: use the guide's forced form rather than leaving the
+worktree behind (a refused non-interactive teardown is not a reason to skip
+it). Keep the branch — the merge sweep deletes it after merging. If teardown
+fails anyway, name the path in your report. Never build in the repo's own
+checkout.
 
 Standard `/implement` discipline, plus the project's own conventions — read the repo's
 `CLAUDE.md`/`AGENTS.md` and invoke whatever skills it names for the layers you're

@@ -65,7 +65,7 @@ export interface PromptVars {
 
 /** The variables a given kind's editor advertises, in the order they read best. */
 const TICKET_VARS = ['key', 'title', 'branch', 'onBranch', 'projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
-const MERGE_VARS = ['prs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch'] as const
+const MERGE_VARS = ['prs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 const KICKOFF_VARS = ['repo', 'worktreeGuide'] as const
 const CONNECT_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 const BUILD_PLAN_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
@@ -251,6 +251,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       "Merge {projectKey}'s open local jTicket PRs into its integration branch {integrationBranch}, oldest first: {prs}.",
       'For each one: POST http://localhost:43000/api/prs/<key>/merge.',
       "On a 409 conflict: in the repo at {repo}, rebase that PR's head branch onto {integrationBranch}, resolve the conflicts preserving both sides' intent, then POST the merge again.",
+      "Once a PR has landed its head branch is done with: if the merge answer names a headWorktree (the branch was still checked out somewhere), tear that worktree down the way the codebase's worktree guide says (GET {worktreeGuide}; with no guide, git worktree remove --force from {repo}) and delete the branch — uncommitted leftovers in a merged worktree are disposable. Never touch the worktree {integrationBranch} itself is checked out in, or any worktree whose branch has not merged.",
       'Everything stays local — do not push or touch GitHub.',
     ].join(' '),
   },
@@ -268,6 +269,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       'If a guide exists already (GET {worktreeGuide}), start from it and update what changed.',
       'Read CLAUDE.md/AGENTS.md, the README, package manifests and lockfiles, env examples, docker/compose files, and any worktree scripts or conventions the repo already has — prefer those over inventing new ones.',
       'The guide is markdown for agents and must cover, for a new worktree of a branch: where it goes and the exact create command; setup (dependencies, env files and secrets to copy from the main checkout, codegen, databases); how two worktrees running at once avoid colliding (ports, containers, data); how to run and test it; how to keep it current with its base; and teardown.',
+      "Agents mostly only run tests, lint and typecheck, so make the CHEAPEST form that can do that the default (a slim/test-only mode, a shared store, no app or browser stack), say when a full form is needed instead, and how a pooled worktree is reused for ticket after ticket (detached HEAD, switch branches, re-sync deps). Teardown must say the one command that removes a worktree of any kind, that uncommitted leftovers in a worktree whose branch has merged are disposable (--force), and how to find and remove worktrees left behind whose branch has merged into a given branch — jTicket's merge sweep runs that after every merge.",
       "Ask me in this pane for anything the repo can't tell you (secrets, services, port ranges) — don't guess.",
       'Then prove it: create a throwaway worktree the guide\'s way, set it up, run the tests (or the smallest meaningful check), and tear it down.',
       'Record it: PUT {worktreeGuide} with JSON {"body": "<the guide>", "root": "<absolute directory worktrees go under, or empty if no convention>", "sources": ["<repo-relative files the guide rests on — lockfiles, CLAUDE.md, compose files…>"], "verified": <true only if the proof passed>, "author": "claude"}.',

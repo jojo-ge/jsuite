@@ -35,7 +35,7 @@ export function outcomeReportPrompt({ project, existingDoc, merged, sliceDocs = 
     `In at most ${OUTCOME_WORD_LIMIT} words, explain what was built and how it works: what now exists, how the pieces fit together and where they live, and anything deliberately left out or surprising. No ticket-by-ticket changelog, no padding.`,
     `Read the project and its tickets (GET ${API}/api/projects/${key}) and the code in ${project.repo}.`,
     ...(sliceDocs.length
-      ? [`Start from the run's slice reports — ${sliceDocs.join(', ')} (GET ${API}/api/docs/<key>) — each a facts-only record of one slice's decisions and outcomes; synthesise them, and read the code to fill what they don't cover.`]
+      ? [`Start from the run's slice reports — ${sliceDocs.join(', ')} (GET ${API}/api/docs/<key> is the record; its content is at GET ${API}/api/documents/<its documentKey>) — each a facts-only record of one slice's decisions and outcomes; synthesise them, and read the code to fill what they don't cover.`]
       : []),
     commits,
     `Publish it as a jTicket doc in the block-document format (the /to-jspec skill has the block shapes). ${publish}`,

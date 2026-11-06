@@ -92,7 +92,15 @@ async function worktreeIsClean(dir: string): Promise<boolean> {
 }
 
 export type SquashResult =
-  | { ok: true; commit: string; parent: string; headDeleted: boolean; mergedAs: 'squash' | 'merge' }
+  | {
+      ok: true
+      commit: string
+      parent: string
+      headDeleted: boolean
+      /** The worktree that still has the head branch checked out, when that is why it was not deleted. */
+      headWorktree: string | null
+      mergedAs: 'squash' | 'merge'
+    }
   | { ok: false; conflictFiles: string[] }
 
 // Whether `head` carries upstream (origin/HEAD) commits that `base` lacks — a
@@ -173,16 +181,19 @@ export async function squashMergePr(
   if (baseWorktree) await git(baseWorktree, ['reset', '--hard', commit])
 
   // The squash carries everything, so the ticket branch has served its purpose
-  // — but one that's checked out (mid-review, say) is left alone.
+  // — but one that's checked out (mid-review, say) is left alone. The answer
+  // names that worktree so the merge sweep can tear it down the codebase's way
+  // (its worktree guide) and delete the branch afterwards.
   let headDeleted = false
-  if (!(await worktreeOf(path, head))) {
+  const headWorktree = await worktreeOf(path, head)
+  if (!headWorktree) {
     headDeleted = (await tryGit(path, ['branch', '-D', head])) !== null
   }
 
   // `parent` is the squash commit's sole parent (a merge's first) — the base tip it landed on —
   // recorded on the PR so parent..commit can be reviewed after the head branch
   // is gone.
-  return { ok: true, commit, parent: baseOid, headDeleted, mergedAs }
+  return { ok: true, commit, parent: baseOid, headDeleted, headWorktree, mergedAs }
 }
 
 /** Resolve a PR by id or key. */

@@ -1,6 +1,7 @@
 ---
 name: jcode
 description: Build a feature the jCode way — build and ship it test-first as usual, then pose its core piece as a standalone coding problem in jCode (a sandbox with a stub, cases and a runner; brief → hints → answer, disclosed one rung at a time) for the human to hand-code. Use when the user says "with jcode", "/jcode", "jcode this", "pose the core as a problem", or wants coding problems drawn from the features Claude builds.
+argument-hint: "[feature]"
 ---
 
 # jcode — ship the feature, pose the heart of it as a problem
@@ -138,6 +139,11 @@ shipped version, for reference; `signature` is the sandbox stub's),
 
 ## 5. Publish and hand over
 
+The server validates (400 with the reason): `title`, `repoPath`, `brief` and
+`solution` must be non-empty block arrays, every `hints[i]` a non-empty block
+array, and `sandbox.files` must include the entry file (`solution.<ext>`) and
+`cases.<ext>`. Only plain file names are allowed in `sandbox.files`.
+
 ```sh
 curl -sk -X POST https://jcode.local/api/katas \
   -H 'content-type: application/json' -d @- <<'JSON'
@@ -180,9 +186,13 @@ cd <sandbox.dir> && <sandbox.run>            # every case ✗ "not implemented y
 # temporarily paste your answer into solution.ts, run again: every case ✓, then put the stub back
 ```
 
-If the POST fails the app is probably down: `cd ~/code/anyway/jsuite &&
-./jsuite status`, then `./jsuite start`. `key` is optional (a slug of the
-title otherwise) — pass it so the stub's URL matches.
+If the POST fails with no 400 body the app is probably down: `cd ~/code/jsuite
+&& ./jsuite status`, then `./jsuite start`. `key` is optional (a slug of the
+title otherwise) — pass it so the stub's URL matches. **A taken key gets a
+suffix** (`rate-limiter-refill-2`), and then the URL baked into the stub is
+wrong: check `GET https://jcode.local/api/katas/<key>` first (404 = free),
+and after posting compare the response's `key` with the one you sent — if it
+differs, patch the URL in `<sandbox.dir>/solution.<ext>` before handing over.
 
 Then tell the user, in the terminal, only this: what shipped, which piece is
 their problem (function, language, how many cases), and the kata URL.
@@ -199,5 +209,5 @@ own resolution is unaffected — the feature shipped in step 1.
 `GET https://jcode.local/api/katas/<key>/full` returns everything you posted,
 attempts and verdicts included — the answer never leaves the file, so it is
 always retrievable. `GET …/api/katas/<key>` is the redacted view the page
-uses. Katas are on disk at `~/code/anyway/jsuite/.data/jcode/<key>.json`,
-sandboxes at `~/code/anyway/jsuite/.data/jcode/sandbox/<key>/`.
+uses. Katas are on disk at `~/code/jsuite/.data/jcode/<key>.json`,
+sandboxes at `~/code/jsuite/.data/jcode/sandbox/<key>/`.

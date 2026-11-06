@@ -1,6 +1,7 @@
 ---
 name: jarch-review
 description: The architectural & technical review of a diff — structure, boundaries, abstractions, data flow, coupling and technical debt — as jReview's one reviewer on an architecture pass, whose `architecture` findings the auto loop fixes without a vote and whose `technical` findings are filed as advisory. Dispatched by jReview into a herdr pane; publishes through `/jreview-report`. Not for general use.
+argument-hint: "[review context]"
 disable-model-invocation: true
 ---
 
@@ -15,19 +16,21 @@ before the regular reviewers read the result. So classify with care: an
 `architecture` finding costs a fix loop; a `technical` one costs a ticket
 the human may drop.
 
-Your hand-off names the fixed point (`git diff <base>...HEAD`) and may name
-a slice report to read first. You review; you change no code and file no
-ticket.
+Your hand-off names the fixed point (`git diff <base>...HEAD`), the jTicket
+project ("The jTicket project is PROJ-n" — absent for a review outside a
+project) and may name a slice report to read first. You review; you change no
+code and file no ticket.
 
 ## 1. Read the context, then the diff
 
 - The slice report, if the hand-off names one — what the slice set out to
   build and the decisions it recorded. Hold the diff to those decisions.
-- The project's spec and standards: `curl -s http://localhost:43000/api/projects/<key>`
-  (the hand-off's project), its linked docs, and anything in the repo that
-  states its architecture (`CONTEXT.md`, `GLOSSARY.md`, ADRs, `CLAUDE.md`).
-  No spec: say so in the verdict and review against the codebase's own
-  patterns.
+- The project's spec and standards: `jt project <key>` (the project the
+  hand-off names; `curl -s http://localhost:43000/api/projects/<key>` without
+  `jt`), its linked docs, and anything in the repo that states its
+  architecture (`CONTEXT.md`, `GLOSSARY.md`, ADRs, `CLAUDE.md`). No project
+  named, or no spec: say so in the verdict and review against the codebase's
+  own patterns.
 - `git diff <base>...HEAD`, then the surrounding code of every module it
   touches — a boundary problem is only visible from both sides.
 
@@ -45,9 +48,9 @@ ticket.
   wrong place; a derived value stored.
 - Coupling: a change that forces the next change to touch many places;
   hidden dependencies through globals, env, or ordering.
-- Extension: the next ticket in the project (read them — `GET
-  /api/projects/<key>` lists them with `blockedBy`) — does this change block
-  or distort it? Name the ticket.
+- Extension: the next ticket in the project (the hand-off's project — `jt
+  project <key>` lists its tickets with `blockedBy`) — does this change block
+  or distort it? Name the ticket. Skip when no project was named.
 - Debt taken on: workarounds, copies, TODOs that the slice should have
   resolved.
 

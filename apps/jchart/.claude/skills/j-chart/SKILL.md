@@ -1,44 +1,72 @@
-# j-chart
+---
+name: j-chart
+description: Draw a diagram the human can edit and annotate — author Mermaid, push it into jChart as an editable Excalidraw canvas, then read the user's redraw and per-shape notes back from .data/jchart. Use when the user says "jchart this", "draw this in jchart", "diagram this so I can edit it", or wants a diagram they will move shapes on and pin notes to. For a diagram inside an article, use j-explain's chart block instead (same chart pool).
+---
 
-Turn a request into a diagram, open it in the jChart app as an **editable** Excalidraw canvas, and get the user's edits and per-shape notes back.
+# j-chart — an editable, annotatable diagram
 
-Unlike a static image, the user can redraw the diagram — move, add, delete, relabel shapes — and pin notes to individual shapes. Both come back to you.
+jChart (`https://jchart.local`, port 43003) turns Mermaid into an **editable**
+Excalidraw canvas. Unlike a static image the user can redraw it — move, add,
+delete, relabel shapes — and pin notes to individual shapes. Both come back
+to you. The chart pool (`.data/jchart/`) is shared with jExplain, jTicket and
+jGrilling: a chart made here can be embedded in any of their documents by key.
+
+Standing rules:
+- Mermaid is only the *starting layout*. Once imported the canvas is the
+  source of truth; a re-import discards hand edits (notes survive).
+- Read the data files rather than waiting for a paste.
+- Script: `~/.claude/skills/j-chart/scripts/chart.py` (installed by
+  `./jsuite setup`; source at `~/code/jsuite/apps/jchart/.claude/skills/j-chart/scripts/chart.py`).
 
 ## Workflow
 
-1. **Write the diagram.** Author valid Mermaid source (flowchart, sequence, class, state, ER, etc.) for whatever the user asked to visualize. Save it to a `.mmd` file — prefer the scratchpad dir if one exists, otherwise a temp path. One diagram per file.
+1. **Write the diagram.** Valid Mermaid (flowchart, sequence, class, state,
+   ER, …) in a `.mmd` file in the scratchpad dir. One diagram per file.
 
-2. **Push it to jChart.** Run:
+2. **Push it.**
    ```
    python3 ~/.claude/skills/j-chart/scripts/chart.py <file.mmd> --title "Short Title"
    ```
-   This creates the chart, opens it in the browser, and prints the URL plus the two data file paths. Add `--replace` to overwrite an existing chart of the same key and keep its notes.
-
-   If jChart isn't reachable the script says so — the user needs `jsuite start`.
+   Creates the chart, opens it in the browser, prints the URL and the two data
+   file paths. The key is a slug of the title (or `--key slug`). Re-running
+   with the same key and **no** `--replace` creates a new chart with a `-2`
+   suffix; `--replace` overwrites the chart in place and keeps its notes.
+   If jChart isn't reachable the script says so: `cd ~/code/jsuite && ./jsuite
+   status`, then `./jsuite start`.
 
 3. **Tell the user how to use it.** In the browser they can:
-   - **Edit the diagram directly** — full Excalidraw toolbar: drag shapes, draw new ones, change arrows, retype labels, freehand. Everything autosaves.
-   - **Select any shape**, then click it under *Selected on canvas* in the right panel to pin a note to it. Clicking a note's title later re-selects and zooms to that shape.
-   - Type overall feedback in **General notes**.
-   - Open **Mermaid** in the header to see or edit the source and re-import (this rebuilds the layout and discards hand edits; notes survive).
-   - Click **Copy notes for Claude** when done.
+   - edit the diagram directly (full Excalidraw toolbar; autosaves);
+   - select a shape, then click it under *Selected on canvas* in the right
+     panel to pin a note to it (clicking a note's title later re-selects and
+     zooms to that shape);
+   - type overall feedback in **General notes**;
+   - open **Mermaid** in the header to see/edit the source and re-import
+     (rebuilds the layout, discards hand edits, keeps notes);
+   - press the copy button when done — **Copy chart for Claude** when there
+     are no notes yet, **Copy notes for Claude** once there are.
 
-4. **Read the result back.** Two ways, both fine:
-   - The user pastes the copied markdown (general notes, per-shape annotations, Mermaid source).
-   - Or **read the files directly** — the script prints their paths:
-     - `~/code/anyway/jsuite/.data/jchart/<key>.json` — title, Mermaid source, and the live Excalidraw scene
-     - `~/code/anyway/jsuite/.data/jchart/<key>.notes.json` — `{ general, notes: [{ elementId, label, text }] }`
+4. **Read the result back.** Either the pasted markdown, or the files
+   (paths printed by the script; data root is `$JSUITE_DATA_DIR` if set,
+   else `~/code/jsuite/.data`):
+   - `.data/jchart/<key>.json` — title, Mermaid source, live Excalidraw scene
+   - `.data/jchart/<key>.notes.json` — `{ general, notes: [{ id, elementId, label, text }] }`
 
-   Reading the files is usually better: it works without waiting for a paste, and the scene shows structural edits the user made that the notes don't mention. Match a note to its shape via `elementId`; a shape's caption is a separate `text` element whose `containerId` points at it.
+   The files are usually better: no waiting, and the scene shows structural
+   edits the notes don't mention. Match a note to its shape via `elementId`;
+   a shape's caption is a separate `text` element whose `containerId` points
+   at it.
 
-5. **Act on it.** Revise the diagram or the underlying work. To show a revision, write a new `.mmd` and re-run with `--replace --key <key>` to update the same chart in place.
+5. **Act on it.** Revise the diagram or the underlying work. To show a
+   revision, write a new `.mmd` and re-run with `--replace --key <key>`.
 
 ## Notes
 
-- `chart.py --list` shows existing charts with their shape and note counts.
-- The full chart list is also the app's home page: <https://jchart.local>.
-- Mermaid is only the *starting layout*. Once imported, the canvas is the source of truth — a re-import throws away hand edits, so only re-import when the user wants a fresh layout.
-- If Mermaid fails to parse, the app shows the parser error in a toast and the canvas stays empty — fix the source and re-run.
-- Node types Mermaid can't lay out (some newer diagram kinds) fall back to a best-effort conversion; if a diagram comes through badly, the user can just redraw it.
-- Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JCHART_BROWSER`; the default lives in `DEFAULT_BROWSER` at the top of `chart.py`.
-- The app is jChart in the jSuite (`~/code/anyway/jsuite/apps/jchart`, port 43003). Start everything with `jsuite start`.
+- `chart.py --list` shows existing charts with shape and note counts; the
+  home page <https://jchart.local> is the same list.
+- API: `POST /api/charts {title, mermaid?, key?, replace?}`, `GET|PUT
+  /api/charts/:key`, `GET /api/charts`. The script wraps the POST.
+- Mermaid that fails to parse shows the parser error in a toast and leaves the
+  canvas empty — fix the source and re-run. Diagram kinds Mermaid can't lay
+  out fall back to a best-effort conversion; the user can redraw.
+- Opens in Arc by default. Override with `--browser "Google Chrome"` or
+  `$JCHART_BROWSER` (`DEFAULT_BROWSER` at the top of `chart.py`).

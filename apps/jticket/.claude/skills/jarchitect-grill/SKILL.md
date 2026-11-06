@@ -1,7 +1,8 @@
 ---
 name: jarchitect-grill
-description: Grill one architecture candidate — a per-candidate go/no-go stress test run as a terminal interview, hardening the candidate into an implementation-ready spec doc (or an ADR-recorded rejection). Use when "/jarchitect-grill <TICK-n>" is invoked (jTicket dispatches these into herdr when the human sends an arch:candidate ticket to its grilling).
+description: Grill one architecture candidate — a per-candidate go/no-go stress test run as a terminal interview, hardening the candidate into an implementation-ready spec doc (or an ADR-recorded rejection). Use when "/jarchitect-grill [TICK-n]" is invoked (jTicket dispatches these into herdr when the human sends an arch:candidate ticket to its grilling).
 disable-model-invocation: true
+argument-hint: "[TICK-n]"
 ---
 
 # jarchitect-grill — stress-test one deepening candidate
@@ -14,24 +15,27 @@ step 3: walk the decision tree of this one candidate with the human answering
 **in this terminal**, and leave the ticket implementation-ready (or honestly
 rejected).
 
-Invocation: `/jarchitect-grill <TICK-n>`
+Invocation: `/jarchitect-grill [TICK-n]`
 
 ## 0. Connect first — always
 
 ```bash
-JTICKET="${JTICKET_URL:-http://localhost:43000}"
-curl -s --max-time 3 "$JTICKET/api/projects" >/dev/null && echo up || echo down
+jt projects >/dev/null && echo up || echo down
 ```
 
-If jTicket is down: say so (`./jsuite start` from the jsuite repo) and STOP.
+If jTicket is down: say so (from `~/code/jsuite`: `./jsuite status`, then
+`./jsuite start`) and STOP.
+
+Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
+`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
 
 ## 1. Read the candidate cold
 
 ```bash
-curl -s "$JTICKET/api/tickets/TICK-n"                          # the candidate write-up
-curl -s "$JTICKET/api/projects/<PROJ-key>"                     # the project — repo, description
-curl -s "$JTICKET/api/docs?projectId=<PROJ-key>&label=arch:assessment"   # → documentKey
-curl -s "$JTICKET/api/documents/<documentKey>"                 # the assessment — this candidate's section + charts
+jt show TICK-n                                                    # the candidate write-up
+jt project PROJ-key                                               # the project — repo, description
+jt get "/api/docs?projectId=PROJ-key&label=arch:assessment"       # → the record's documentKey
+jt get /api/documents/<documentKey>                               # the assessment — this candidate's section + charts
 ```
 
 The ticket description (Files / Problem / Solution / Benefits) plus the
@@ -85,7 +89,7 @@ content — Problem Statement → Solution → Implementation Decisions → Test
 Decisions → Out of Scope, all reflecting the grilling's answers):
 
 ```bash
-curl -s -X POST "$JTICKET/api/docs" -H 'content-type: application/json' -d @- <<'JSON'
+jt post /api/docs - <<'JSON'
 { "title": "TICK-n — <candidate title> — spec",
   "project": "<PROJ-key>", "labels": ["arch", "arch:spec", "TICK-n"], "status": "draft",
   "kicker": "SPEC", "blocks": [ … ] }
@@ -94,12 +98,11 @@ JSON
 
 **Rejected** — no spec doc; the ADR (if recorded) and the resolution carry it.
 
-Either way, PATCH the resolution (and only the resolution — status stays
+Either way, write the resolution (and only the resolution — status stays
 `done`):
 
 ```bash
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-n" -H 'content-type: application/json' \
-  -d "$(jq -n --arg r "$(cat resolution.md)" '{resolution: $r}')"
+jt set TICK-n resolution=@resolution.md
 ```
 
 The resolution: verdict (pursue / reject), the load-bearing decisions, and

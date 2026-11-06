@@ -27,17 +27,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const label = `${project.key} · worktree`
-  const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
-  let tabId: string, paneId: string
-  if (freshTab) {
-    await herdrJson(['tab', 'rename', freshTab.tabId, label])
-    ;({ tabId, paneId } = freshTab)
-  } else {
-    ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
-  }
-  await renamePane(paneId, label)
-  const agent = await startClaudeIn(paneId, `worktree-${project.key}`, prompt)
-
-  return { workspaceId, tabId, paneId, agent, project: project.key }
+  // 'PROJ-n · worktree' tab, locked and logged like every other project session.
+  return dispatchProjectSession(project, 'worktree', prompt, { agent: `worktree-${project.key}` })
 })

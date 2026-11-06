@@ -13,8 +13,10 @@ Block vocabulary: the "Block vocabulary" section of
 ## The dump
 
 Header lines `BASE:`, `SKILL:`, `SOURCES:`, `VERDICT:`, then zero or more
-`FINDING` sections (`severity`, `claim`, `where`, `category`, `scenario`,
-`fix`, optional `quote`), then `TAKEAWAYS`. Findings are already in order, most
+`FINDING` sections (`severity`, `claim`, `where`, `category`, optional
+`scope` — only when the review prompt asked for it, i.e. a consensus review
+that isn't an architecture pass — `scenario`, `fix`, optional `quote`), then
+`TAKEAWAYS`. Findings are already in order, most
 severe first. Keep that order.
 
 ## The payload

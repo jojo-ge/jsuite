@@ -1,6 +1,7 @@
 ---
 name: to-jticket
-description: Interface with jTicket — the local projects/tickets/docs tracker. Break a plan into tickets (to-tickets), author or update any project, ticket, doc or attachment, and query the board. For writing a spec as a doc, and for which format each field takes, use to-jspec.
+description: Interface with jTicket — the local projects/tickets/docs tracker. Break a plan into tickets (to-tickets), author or update any project, ticket, doc or attachment, and query the board. Invoked as /to-jticket [tickets | TICK-n | PROJ-n | a request]. For writing a spec as a doc, and for which format each field takes, use to-jspec.
+argument-hint: "[tickets | TICK-n | PROJ-n | what to do]"
 disable-model-invocation: true
 ---
 
@@ -12,10 +13,11 @@ Confluence-style pages. It is not connected to Jira or Confluence and has no rel
 to them. It exists so a breakdown or a document can be authored **locally first**, for
 the user to review and edit before they hand-author anything elsewhere.
 
-Every call goes through `jt` (on PATH; `jt help`), a thin CLI over jTicket's HTTP API —
-never hand-built `curl`. `jt get|post|patch|put|delete PATH [JSON]` reaches any endpoint
-without a verb; `field=@file.md` reads a value from a file; lists print tab-separated
-rows (`--json` for raw). The full API is in `reference/api.md`.
+Every call goes through `jt` (on PATH after `./jsuite setup`, else `~/code/jsuite/bin/jt`;
+`jt help`), a thin CLI over jTicket's HTTP API — never hand-built `curl`.
+`jt get|post|patch|put|delete PATH [JSON|@file.json|-]` reaches any endpoint without a
+verb (`-` reads the body from stdin); `field=@file.md` reads a value from a file; lists
+print tab-separated rows (`--json` for raw). The full API is in `reference/api.md`.
 
 ## 0. Connect first — always
 
@@ -24,11 +26,11 @@ jt projects >/dev/null && echo up || echo down
 ```
 
 If it is **down**, tell the user and stop — do not write files as a fallback, and do
-not start the server yourself unless they ask. jTicket is part of the jSuite —
-`./jsuite start jticket` from the jsuite repo (`~/code/jojo/jsuite`).
+not start the server yourself unless they ask. jTicket is part of the jSuite — from the
+jsuite repo root (`~/code/jsuite`): `./jsuite status`, then `./jsuite start`.
 
-Every write below is `-H 'content-type: application/json'`. Read the response of every
-write: jTicket **silently drops** refs it cannot resolve (see [Gotchas](#gotchas)).
+Read the response of every write: jTicket **silently drops** refs it cannot resolve
+(see [Gotchas](#gotchas)).
 
 ## 1. Pick the mode
 
@@ -53,7 +55,7 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
   architecture scan, made by `POST /api/projects/architect`). `repo` (path to a local clone) +
   `integrationBranch` are the optional GitHub link — see **GitHub** below; both `""` when unset.
   `repo` is also what scopes a project to a **codebase**.
-- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], completedAt }`
+- **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], branch, prompt, promptMode, completedAt, origin, owner, transfer, transferAt }`
   - `projectId`: the parent project; `null` = backlog
   - `type`: what kind of work it is — `story` (user-facing slice of value) · `task`
     (technical work) · `bug` (something broken) · `review` (review code/PR/doc) ·
@@ -64,10 +66,18 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
   - `labels`: free-form, plus the **tags** — exactly one of `afk` (an agent can take it
     cold) or `hitl` (needs a human; gets its own herdr tab); the server adds `afk` if
     neither. Optional `prototype` = throwaway work that must never ship, on any type.
-  - `status`: `todo` · `in_progress` · `done`
+  - `status`: `todo` · `in_progress` · `done` · `merged` (`merged` = its local PR landed;
+    set by `POST /api/prs/:id/merge`, not by hand)
   - `assignee`: free-form name; `""` = unassigned. **The assignee is the claim.**
-  - `blockedBy`: ticket **ids** that must be `done` first
-  - `comments`: `{ id, author, body, createdAt }[]` — a discussion thread on the ticket.
+  - `blockedBy`: ticket **ids** that must be finished (`done` **or** `merged`) first
+  - `branch`: the ticket's local work branch (`jt branch KEY` cuts it); `""` until cut
+  - `prompt` / `promptMode`: the ticket's own hand-off text and how it layers on the
+    resolved prompt (`append` · `replace` · `""`); machine-local
+  - `origin` / `owner` / `transfer` / `transferAt`: shared-project ownership — which side
+    minted the ticket, whose half it lives in, and a pending ownership transfer. Server-set;
+    `""` on local-only projects. A peer-owned or mid-transfer ticket is read-only here
+  - `comments`: `{ id, author, body, createdAt, origin, owner }[]` — a discussion thread on
+    the ticket (`origin`/`owner` are the shared-project side, `""` locally).
     The human uses it to leave direction *before* handing the ticket to an LLM, so
     **always read the comments before working a ticket**. LLMs comment too (questions,
     progress notes) under their own name. Append-only via its own endpoint — PATCH

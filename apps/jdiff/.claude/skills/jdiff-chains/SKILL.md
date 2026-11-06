@@ -1,7 +1,8 @@
 ---
 name: jdiff-chains
-description: The system-chains walkthrough for jDiff — stage=scope decomposes a change into its distinct system chains and POSTs the manifest (jDiff then auto-dispatches one walker session per chain); chain=<slug> walks one chain end-to-end, including unchanged code, and POSTs its tour. Use when "/jdiff-chains <args>" is invoked (jDiff dispatches these into herdr).
+description: The system-chains walkthrough for jDiff — stage=scope decomposes a change into its distinct system chains and POSTs the manifest (jDiff then auto-dispatches one walker session per chain); chain=[slug] walks one chain end-to-end, including unchanged code, and POSTs its tour. Use when "/jdiff-chains [args]" is invoked (jDiff dispatches these into herdr).
 disable-model-invocation: true
+argument-hint: '[stage=scope|chain=SLUG number=N|branch=B range=A...B head=SHA]'
 ---
 
 # jdiff-chains — walk a change's system chains
@@ -21,7 +22,7 @@ Invocation (single line, key=value):
 ```
 
 - `stage=scope` — find the chains, POST the manifest, stop.
-- `chain=<slug>` — walk exactly that one chain from the saved manifest.
+- `chain=[slug]` — walk exactly that one chain from the saved manifest.
 - `number=` (a PR) or `branch=` + `base=` identify the target; every POST
   below carries the same params. `range=` is the exact `git diff` range;
   `head=` holds the new files. jDiff fetched these before dispatching — do
@@ -36,7 +37,7 @@ curl -s --max-time 3 -o /dev/null "$JDIFF/" && echo up || echo down
 ```
 
 If down: tell the user jDiff isn't running
-(`cd ~/code/jojo/jsuite && ./jsuite start`) and STOP.
+(`cd ~/code/jsuite && ./jsuite start`) and STOP.
 
 ## stage=scope — decompose the change into chains
 
@@ -71,7 +72,7 @@ JSON
    `job: "chains-scope"` (step "Sign off" below) and tell the user in one
    line how many chain walkers jDiff is starting.
 
-## chain=<slug> — walk one chain end-to-end
+## chain=[slug] — walk one chain end-to-end
 
 1. Fetch your chain from the saved manifest (the prompt carries only the
    slug):

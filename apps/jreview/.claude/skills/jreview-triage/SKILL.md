@@ -1,6 +1,8 @@
 ---
 name: jreview-triage
-description: Triage a jReview run — read every reviewer's jExplain report, merge duplicate findings, publish a triage document, and POST the deduplicated findings back to jReview. Invoked as `/jreview-triage <key>` by the session jReview dispatches once all its reviewers have reported. Not for general use.
+description: Triage a jReview run — read every reviewer's jExplain report, merge duplicate findings, publish a triage document, and POST the deduplicated findings back to jReview. Invoked as `/jreview-triage [key]` by the session jReview dispatches once all its reviewers have reported. Not for general use.
+argument-hint: "[KEY]"
+disable-model-invocation: true
 ---
 
 # jreview-triage
@@ -95,8 +97,17 @@ curl -s -X POST http://localhost:43008/api/reviews/<key>/findings \
 `severity` is `critical` · `high` · `medium` · `low`; `file`/`line` optional;
 each `detail` becomes a ticket description, so make it stand on its own.
 
+The server coerces rather than rejects: a finding without a `title` is
+dropped; an unknown `severity` becomes `medium`; `category` is lower-cased to
+a kebab slug (≤40 chars, `general` when empty); `title` is cut at 200 chars,
+`summary` at 1000, `detail` at 20000; `reviewers` outside 1..N are dropped; ids
+are reassigned `f1`… in the order sent. Two `409`s: the review is a consensus
+review (that's `/jreview-consensus`'s job — stop) or it was already split into
+tickets (your findings would be discarded — stop).
+
 Then reply with one line — "N reported → M distinct" plus the jReview URL
 (`https://jreview.local/r/<key>`) — and stop. **Don't create tickets.** The
 human decides that in jReview. Don't open the page or close this pane either:
-the POST opens the review in the browser, and jReview closes this pane (and the
-reviewers') once you've gone idle.
+the first POST opens the review in the browser — its jTicket project's Review
+tab when `review.project` is set, else its jReview page (a re-POST doesn't) —
+and jReview closes this pane (and the reviewers') once you've gone idle.

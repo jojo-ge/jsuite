@@ -12,7 +12,9 @@ Work from whatever is already in the conversation. If the user passes a referenc
 spec path, a `DOC-n` key, an issue number or URL — fetch it and read the full body.
 
 ```bash
-curl -s "$JTICKET/api/docs/DOC-3" | jq -r .body     # a spec already in jTicket
+# a spec already in jTicket: the DOC-n record is metadata only — its content is the
+# shared block document it points at
+jt get "/api/documents/$(jt get /api/docs/DOC-3 | jq -r .documentKey)"
 ```
 
 ## 2. Explore the codebase
@@ -83,7 +85,7 @@ Ask the user:
 Resolve the destination before publishing:
 
 ```bash
-curl -s "$JTICKET/api/projects" | jq '.[] | {key, title, mode}'
+jt projects            # key, title, mode per row (--json for raw)
 ```
 
 ## 5. Publish
@@ -92,8 +94,11 @@ One `POST /api/import` for the whole breakdown. Import resolves `project` and
 `blockedBy` by **title or key**, so no ids are needed and edges can reference tickets
 declared later in the same call.
 
-```bash
-curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
+Write the payload to a file, then import it:
+
+```jsonc
+// tickets.json
+{
   "projects": [{ "title": "Checkout", "description": "Everything payments-related" }],
   "tickets": [
     { "title": "Add cart schema", "description": "Persist a cart across sessions.",
@@ -103,7 +108,11 @@ curl -s "$JTICKET/api/import" -H 'content-type: application/json' -d '{
       "type": "story", "labels": ["afk"], "project": "Checkout", "blockedBy": ["Add cart schema"],
       "acceptanceCriteria": ["Quantity edits persist"] }
   ]
-}'
+}
+```
+
+```bash
+jt post /api/import @tickets.json
 ```
 
 **Reuse, don't duplicate.** Import always creates — it never upserts. If the project
@@ -143,12 +152,11 @@ Do **not** modify or close any parent ticket or doc.
 Import drops unresolvable refs silently, so check the edges actually landed:
 
 ```bash
-curl -s "$JTICKET/api/tickets?projectId=PROJ-2" \
-  | jq '.[] | {key, title, type, blockedBy, blocked, frontier}'
+jt ls projectId=PROJ-2 --json | jq '.[] | {key, title, type, blockedBy, blocked, frontier}'
 ```
 
 Report the created keys and titles, flag anything whose `blockedBy` came back empty when
-it shouldn't have, and point the user at `$JTICKET/projects/PROJ-n`.
+it shouldn't have, and point the user at `http://localhost:43000/projects/PROJ-n`.
 
 Then work the **frontier** — any ticket with `frontier: true` — one at a time with
-`/implement`, clearing context between tickets.
+`/jimplement` (the board-driven implementer), clearing context between tickets.

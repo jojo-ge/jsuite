@@ -12,10 +12,13 @@
   jt queue PROJECT [orchestrator=N]      auto-loop queue (N = which of several orchestrators you are)
   jt claim PROJECT KEY [orchestrator=N]  orchestrator claim (JSON; exit 75 when the budget is full)
   jt prs [field=value ...]         list local PRs (projectId= ticket= status= repo=)
-  jt get|post|patch|put|delete PATH [JSON]   raw call, e.g. jt get /api/docs/DOC-3
+  jt get|post|patch|put|delete PATH [JSON|@file.json|-]   raw call, e.g. jt get /api/docs/DOC-3
+                                   body inline, from a file (@plan.json) or stdin (-)
 
 Add --json to ls/projects/prs for raw JSON. Values starting with @ are read from a file
 (description=@spec.md). Base URL: $JTICKET_URL, default http://localhost:43000.
+A doc record (/api/docs/DOC-n) has no body: its content is at /api/documents/<documentKey>.
+Installed on PATH as ~/.local/bin/jt by `./jsuite setup`.
 """
 import json
 import os
@@ -35,7 +38,13 @@ def call(method, path, body=None):
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             raw = r.read()
-            return json.loads(raw) if raw else None
+            if not raw:
+                return None
+            try:
+                return json.loads(raw)
+            except ValueError:
+                # An unknown /api path falls through to the Nuxt app and answers HTML with a 200.
+                sys.exit(f'jt: {method} {path} answered non-JSON — no such API route?')
     except urllib.error.HTTPError as e:
         try:
             err = json.loads(e.read())
@@ -56,6 +65,23 @@ def value(field, v):
     if field in LIST_FIELDS:
         return [s for s in (x.strip() for x in v.split('\n' if field == 'acceptanceCriteria' else ',')) if s]
     return v
+
+
+def raw_body(arg):
+    """The JSON body of a raw call: inline, @file, or - for stdin — big bodies (doc blocks, run plans) come from files."""
+    if arg == '-':
+        text = sys.stdin.read()
+    elif arg.startswith('@'):
+        try:
+            text = open(arg[1:]).read()
+        except OSError as e:
+            sys.exit(f'jt: cannot read body file {arg[1:]}: {e.strerror}')
+    else:
+        text = arg
+    try:
+        return json.loads(text)
+    except ValueError as e:
+        sys.exit(f'jt: body is not valid JSON ({e})')
 
 
 def fields(args):
@@ -91,7 +117,7 @@ def main(argv):
     cmd, a = argv[0], argv[1:]
 
     if cmd in ('get', 'post', 'patch', 'put', 'delete'):
-        body = json.loads(a[1]) if len(a) > 1 else ({} if cmd != 'get' and cmd != 'delete' else None)
+        body = raw_body(a[1]) if len(a) > 1 else ({} if cmd != 'get' and cmd != 'delete' else None)
         res = call(cmd.upper(), a[0], body)
         if res is not None:
             dump(res)

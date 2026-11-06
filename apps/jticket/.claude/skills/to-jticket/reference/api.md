@@ -1,8 +1,8 @@
 # jTicket HTTP API
 
-Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is JSON:
-`-H 'content-type: application/json'`. The running app also serves a live reference at
-`$JTICKET/api-guide`.
+Base URL `${JTICKET_URL:-http://localhost:43000}` — `jt` reads the same variable, so
+every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@file.json|-]`;
+`-` = stdin). The running app also serves a live reference at `/api-guide`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -18,15 +18,42 @@ Base URL `$JTICKET` = `${JTICKET_URL:-http://localhost:43000}`. Every write is J
 | GET / PATCH / DELETE | `/api/tickets/:id` | One ticket (id or key) |
 | POST | `/api/tickets/:id/comments` | Add a comment to a ticket |
 | DELETE | `/api/tickets/:id/comments/:commentId` | Delete one comment |
+| POST | `/api/tickets/:id/herdr` | Dispatch the ticket's hand-off `{prompt, ownTab?}` into a herdr pane (409 for an AFK ticket while its project runs auto) |
 | POST | `/api/import` | Bulk-author a whole breakdown |
 | POST | `/api/tickets/:id/branch` | Cut the ticket's local work branch off the integration branch |
 | GET / POST | `/api/prs` | List / open **local PRs** (ticket branch → integration branch, merged by jTicket) |
 | GET / PATCH / DELETE | `/api/prs/:id` | One local PR (id or `PR-n`); PATCH status only to `closed` / `open` |
 | POST | `/api/prs/:id/merge` | Squash-merge locally (a real merge when the PR brings upstream history); deletes the branch, ticket → `merged`; 409 on conflict |
+| POST | `/api/projects/:id/integration-branch` | Cut (or adopt) the project's empty integration branch off the default branch and push it |
+| GET | `/api/projects/:id/branches?q=&fetch=1` | Branches in the project's repo, local + origin, for adopting an integration branch |
+| GET | `/api/projects/:id/github` | The project's GitHub side: repo, integration-branch state, its open PRs with jDiff + github.com links |
+| GET | `/api/projects/:id/branch-status?fetch=1` | Where the integration branch stands vs origin and vs the default branch |
 | POST | `/api/projects/:id/sync` | Push the integration branch to origin (the only remote write) |
+| POST | `/api/projects/:id/branch-pull` | Fast-forward the integration branch to origin's (never merges; diverged → 409) |
 | POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` |
+| POST | `/api/projects/:id/auto` | The jButton: `{enabled, once?, tickets?, plan?, continue?, stopRequested?, retry?}` — auto mode / run plan on or off |
+| GET | `/api/projects/:id/auto/queue?orchestrator=n` | An orchestrated loop's phase as the orchestrator sees it (409 unless orchestrated) |
+| POST | `/api/projects/:id/auto/claim` | Orchestrator claims `{ticket, orchestrator?}` for a subagent; refused past the budget |
+| POST | `/api/projects/:id/auto/slice-report` | `/jslice-report` reports its slice doc back to the engine |
+| POST | `/api/projects/:id/auto/merge-report` | The merge sweep reports what landed / couldn't |
+| POST | `/api/projects/:id/auto/outcome-report` | The outcome-report session reports its doc back; auto then turns off |
+| PUT | `/api/projects/:id/run-plan` | Save the Run setup tab's plan `{steps}` (409 while it runs) |
+| POST / DELETE | `/api/projects/:id/run-plan/build` | Dispatch / cancel the Fable `/jrunplan` session that writes the plan |
+| POST | `/api/projects/:id/run-plan/built` | `/jrunplan` reports the plan written `{summary?}` → `{plan, problems}` |
+| GET / POST | `/api/projects/:id/reviews` | The project's jReview reviews / start one `{branch?, base?, reviewers?}` |
+| GET | `/api/projects/:id/reviews/:key` | One review, whole (polled while reviewers work) |
+| POST | `/api/projects/:id/reviews/:key/action` | `{action: 'retry-reviewer' \| 'skip-reviewer', n}` or `{action: 'retry-triage'}` |
+| POST | `/api/projects/:id/reviews/:key/tickets` | File triaged findings `{findingIds}` into this project as tickets |
+| GET / PATCH | `/api/prompts` | Suite-wide hand-off prompt overrides `{prompts: {kind: text}}` (`''` drops one back to the built-in) |
+| GET | `/api/graphs`, `/api/graphs/:id` | Project graphs (projects linked by cross-project blockers); `:id` is `G-KEY` or any member project key |
+| GET | `/api/today/github?repo=` | My open PRs with CI rolled up + PRs waiting on my review, via `gh` |
 | GET / POST | `/api/docs` | List / create docs |
-| GET / PATCH / DELETE | `/api/docs/:id` | One doc (id or key) |
+| GET / PATCH / DELETE | `/api/docs/:id` | One doc record (id or key) — metadata only; content is at `/api/documents/<documentKey>` |
+| GET / POST | `/api/documents` | The shared document pool (`@jsuite/documents`, also served by jExplain) |
+| GET / DELETE | `/api/documents/:key` | One block document (title page, blocks, glossary) |
+| GET / PUT | `/api/documents/:key/notes` | The reader's per-block review notes |
+| POST | `/api/documents/:key/media` | Upload a picture for a note (returns its URL) |
+| GET | `/api/media/:key/:file` | Serve a doc's image-block media (and `/api/media/:key/notes/:file` for note pictures) |
 | GET / POST | `/api/attachments` | List / upload attachments (images for ticket markdown) |
 | GET | `/attachments/:name` | Serve an uploaded file |
 
@@ -150,8 +177,8 @@ What lands on the ticket when it finishes:
 
 ```bash
 # what the sweep found, at a glance
-curl -s "$JTICKET/api/tickets?projectId=PROJ-9" | jq '.[] | {key, title, status, labels}'
-curl -s "$JTICKET/api/tickets?label=predeploy:reproduced" | jq '.[].key'
+jt ls projectId=PROJ-9 --json | jq '.[] | {key, title, status, labels}'
+jt ls label=predeploy:reproduced --json | jq '.[].key'
 ```
 
 ### Ticket
@@ -163,7 +190,7 @@ POST /api/tickets
   "acceptanceCriteria": ["Survives refresh"],
   "type": "story",                      // story | task | bug | review | verification | research | decision | docs
                                         // omitted → implied by labels / project mode, else "task"
-  "status": "todo",                     // todo | in_progress | done
+  "status": "todo",                     // todo | in_progress | done | merged (merged is set by the PR merge, not by hand)
   "projectId": "PROJ-2",                // id or KEY only — 400 if unknown
   "assignee": "",                       // free-form name; "" = unassigned
   "labels": ["afk"],                    // tags: exactly one of "afk" | "hitl" (+ optional "prototype"); rest free-form
@@ -210,7 +237,8 @@ is still accepted and folded into this shape; don't send it.
 ### Ticket comments
 
 A discussion thread on the ticket, returned inline on every ticket GET as
-`comments: [{ id, author, body, createdAt }]`. The human leaves direction here before
+`comments: [{ id, author, body, createdAt, origin, owner }]` (`origin`/`owner` name the
+shared-project side that wrote it; `""` on local-only projects). The human leaves direction here before
 handing a ticket to an LLM — **read them before working a ticket**. LLMs post their own
 comments (questions, progress notes) under their own name; the final answer still
 belongs in `resolution`.
@@ -233,19 +261,22 @@ renders those). Exactly one ticket per PR, one open PR per ticket. The flow:
 
 ```bash
 # 1. Cut the ticket's branch (off the integration branch, local only, recorded on the ticket)
-curl -s -X POST "$JTICKET/api/tickets/TICK-7/branch" -H 'content-type: application/json' -d '{}'
+jt branch TICK-7          # = jt post /api/tickets/TICK-7/branch '{}'
 # → { "branch": "tick/TICK-7-persist-cart", "base": "proj/PROJ-2-checkout", "created": true }
 
-# 2. ...commit work on that branch, mark the ticket done, then open the PR
-curl -s "$JTICKET/api/prs" -H 'content-type: application/json' \
-  -d '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage." }'
+# 2. ...commit work on that branch, then open the PR
+jt post /api/prs '{ "ticket": "TICK-7", "description": "Persists the cart via localStorage." }'
 # → 201 { "key": "PR-4", "title": "TICK-7 Persist the cart", "status": "open",
 #         "headBranch": "tick/TICK-7-persist-cart", "baseBranch": "proj/PROJ-2-checkout",
 #         "commits": [...] }
 # title defaults to "<TICK-n> <ticket title>"; description becomes the squash commit body.
 
-# 3. The human merges from the UI — or:
-curl -s -X POST "$JTICKET/api/prs/PR-4/merge"
+# 3. Only once the PR exists (and the work is complete) mark the ticket done.
+#    The order is fixed: commit → open the PR → done. Never done before the PR.
+jt set TICK-7 status=done
+
+# 4. The human merges from the UI — or:
+jt post /api/prs/PR-4/merge
 # Success: squash commit on the integration branch, ticket branch deleted, ticket → merged.
 #   A PR that brings upstream (origin/HEAD) commits the base lacks lands as a real
 #   two-parent merge instead, so upstream stays an ancestor; mergedAs says which.
@@ -266,7 +297,7 @@ answer: the **worktree guide**. Anything that makes a worktree reads it first.
 `?repo=` takes a path, `~/…` or an `owner/name` slug.
 
 ```bash
-curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=~/code/checkout"
+jt get "/api/repos/worktree?repo=$(jq -rn --arg r ~/code/checkout '$r|@uri')"
 # → { "repo": "/Users/you/code/checkout", "state": "ready" | "stale" | "missing",
 #     "changed": [],            # stale: source files that changed since it was written
 #     "guide": { "body": "<markdown>", "root": "/abs/dir/worktrees/go/under or ''",
@@ -274,10 +305,10 @@ curl -s -G "$JTICKET/api/repos/worktree" --data-urlencode "repo=~/code/checkout"
 #                "verified": true, "author": "claude", "updatedAt": "…" } | null }
 
 # The kickoff agent writes it (replaces the whole guide; sources are hashed now):
-curl -s -X PUT "$JTICKET/api/repos/worktree" --url-query "repo=$REPO" \
-  -H 'content-type: application/json' \
-  -d '{ "body": "## Create\n…", "root": "../checkout-worktrees",
-        "sources": ["pnpm-lock.yaml", "CLAUDE.md", ".env.example"], "verified": true, "author": "claude" }'
+jt put "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" \
+  '{ "body": "## Create\n…", "root": "../checkout-worktrees",
+     "sources": ["pnpm-lock.yaml", "CLAUDE.md", ".env.example"], "verified": true, "author": "claude" }'
+# (a long guide: write the JSON to a file and pass @guide.json)
 ```
 
 A project's integration branch can be **connected** to a worktree made from the guide
@@ -285,7 +316,7 @@ A project's integration branch can be **connected** to a worktree made from the 
 one per branch, stored on the codebase, and always re-checked against `git worktree list`:
 
 ```bash
-curl -s "$JTICKET/api/projects/PROJ-2/worktree"
+jt get /api/projects/PROJ-2/worktree
 # → { "state": "linked" | "broken" | "unlinked-checked-out" | "unlinked" | "no-branch" | "no-repo",
 #     "branch": "proj/PROJ-2-checkout", "checkedOutAt": "/abs/path" | null,
 #     "link": { "path": "…", "notes": "<markdown: how to run it>", … } | null,
@@ -293,8 +324,8 @@ curl -s "$JTICKET/api/projects/PROJ-2/worktree"
 
 # Record it — 409 unless path is a worktree of the repo (not its main checkout)
 # with the integration branch checked out:
-curl -s "$JTICKET/api/projects/PROJ-2/worktree" -H 'content-type: application/json' \
-  -d '{ "path": "/Users/you/code/checkout-worktrees/proj-2", "notes": "pnpm dev --port 3102", "author": "claude" }'
+jt post /api/projects/PROJ-2/worktree \
+  '{ "path": "/Users/you/code/checkout-worktrees/proj-2", "notes": "pnpm dev --port 3102", "author": "claude" }'
 ```
 
 jTicket squash-merges local PRs into the integration branch and resets a checked-out
@@ -325,7 +356,7 @@ POST /api/docs
 `projectId` is accepted as a synonym for `project` and resolves the same three ways.
 DELETE removes the record but leaves the shared document in the pool.
 
-Docs render at `$JTICKET/docs/DOC-n` and are listed at the top of the board. The
+Docs render at `http://localhost:43000/docs/DOC-n` and are listed at the top of the board. The
 shared pool itself is at `GET /api/documents` (also served by jExplain — one
 document system, two apps).
 
@@ -356,14 +387,13 @@ POST /api/attachments
 
 ```bash
 # a screenshot already on disk → into a ticket description
-MD=$(curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
-  -d '{"file":"/tmp/flow.png","name":"tick-7-flow.png"}' | jq -r .markdown)
-curl -s -X PATCH "$JTICKET/api/tickets/TICK-7" -H 'content-type: application/json' \
-  -d "$(jq -n --arg md "$MD" '{description: ("What to build…\n\n" + $md)}')"
+MD=$(jt post /api/attachments '{"file":"/tmp/flow.png","name":"tick-7-flow.png"}' | jq -r .markdown)
+printf 'What to build…\n\n%s\n' "$MD" > desc.md
+jt set TICK-7 description=@desc.md
 
 # from bytes you hold (e.g. a remote client)
-curl -s "$JTICKET/api/attachments" -H 'content-type: application/json' \
-  -d "$(jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" '{name:$n, base64:$b}')"
+jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" '{name:$n, base64:$b}' \
+  | jt post /api/attachments -
 ```
 
 ### Images in docs (`image` blocks)
@@ -420,8 +450,10 @@ that resolves references by **title**, which is what makes it usable before any 
   ticket is still created, just unparented or unblocked. Always verify:
 
 ```bash
-curl -s "$JTICKET/api/tickets?projectId=PROJ-2" | jq '.[] | {key, title, blockedBy, blocked}'
+jt ls projectId=PROJ-2 --json | jq '.[] | {key, title, blockedBy, blocked}'
 ```
+
+The payload itself is best kept in a file: `jt post /api/import @tickets.json`.
 
 ## Storage
 

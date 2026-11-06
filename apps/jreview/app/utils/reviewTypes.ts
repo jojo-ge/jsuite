@@ -179,6 +179,8 @@ export interface Review {
    * consensus) landed. Unset while a session in them is still busy.
    */
   panesClosedAt?: string
+  /** When the watcher removed the worktree it made (`worktree`), after the panes closed. */
+  worktreeRemovedAt?: string
   reviewers: Reviewer[]
   triage: Triage
   findings: Finding[]
