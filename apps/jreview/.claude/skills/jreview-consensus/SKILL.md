@@ -1,6 +1,6 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file each into the loop's jTicket project as a bug ticket (AFK when it serves the project's goal, HITL when it's out of scope), and POST the ticket keys back to jReview. Invoked as `/jreview-consensus <key>` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
+description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file the in-scope ones (and any critical break) straight into the loop's jTicket project as AFK bug tickets, route out-of-scope ones to the project's "follow ups" project, and POST the in-project ticket keys back to jReview. Invoked as `/jreview-consensus <key>` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
 ---
 
 # jreview-consensus
@@ -26,9 +26,11 @@ the output; jReview only records their keys.
 curl -s http://localhost:43008/api/reviews/<key>
 ```
 
-Gives `repoPath`, `base`, `branch`, `reviewers[]` (`n`, `docKey`, `status`)
-and `consensus` (`projectKey`, `loop`). Every reviewer is `done` — read each
-report:
+Gives `repoPath`, `base`, `branch`, `reviewers[]` (`n`, `docKey`, `status`),
+`consensus` (`projectKey`, `loop`) and `pass` — `consensus` (or unset) for
+the regular run, or `architecture`: ONE reviewer ran the `/jarch-review`
+skill and the rules in §2a apply instead of §2. Every reviewer is `done` —
+read each report:
 
 ```sh
 curl -s http://localhost:43008/api/documents/<docKey>
@@ -50,41 +52,39 @@ usually with `**Where:**` and `**Category:**` lines.
   <base>...HEAD`) shows it is plainly wrong. Say so in your final reply.
 - For each agreed finding: the clearest title, the most concrete failure
   scenario, and the **highest severity the code justifies**.
+- **Scope.** Each report marks its findings `**Scope:** in` or `out`. An
+  agreed finding is **in scope** when any reviewer marked it in, or its
+  severity is `critical` (a break is always fixed), or it concerns code this
+  diff added or changed. It is **out of scope** when every reviewer marked it
+  out and it is pre-existing debt, an unrelated refactor or a nice-to-have.
+  Reports without scope lines (older reviewers): in scope when the finding
+  sits in the diff, out otherwise.
 - Count the distinct findings you weighed (agreed or not) — that's
   `considered`.
 
-## 3. Scope — AFK or HITL
+## 2a. An architecture pass — no vote
 
-Agreement says a finding is right, not that it belongs in this project. An AFK
-ticket lands on the loop's frontier, gets implemented on this branch, and the
-next review reads that new code — so out-of-scope work snowballs. Read the
-project's goal first:
+With `pass: architecture` there is one report and agreement means nothing.
+Instead:
 
-```sh
-curl -s http://localhost:43000/api/projects/<consensus.projectKey>
-```
+- Every finding with `**Category:** architecture` is **mandatory**: file it
+  as an AFK ticket exactly as §3 says (type `task`, label
+  `review:architecture` in place of `review:finding`). The loop implements
+  and merges these before the regular reviewers run.
+- Every finding with `**Category:** technical` is **advisory**: file it as
+  a ticket the loop leaves alone — labels `["hitl", "jreview",
+  "review:advisory", "severity:…", "category:technical", "auto-loop:<n>"]`,
+  no `blockedBy`. The human decides later.
+- Drop a finding only when the code shows it plainly wrong; say so.
+- `considered` = every finding in the report; `kept` = the mandatory ones.
+- In §4, `ticketKeys` are the **mandatory** keys only — the advisory ones
+  exist in jTicket but are not the loop's to fix.
 
-An agreed finding is **HITL** (the loop waits on the human) when fixing it
-would:
+## 3. File the tickets into jTicket
 
-- **promote or extract code into a shared layer** — a design system, a
-  component kit, a shared package — or land mostly outside the layer the
-  project's goal lives in. "This should be a DS primitive" is a separate
-  piece of work, not a fix;
-- **build on code a previous review ticket added** whose own work was
-  already out of the project's goal — review-of-review chains stop with the
-  human.
-
-Everything else — a defect in code that serves the project's goal — is AFK.
-When unsure, HITL. Count the HITL ones — that's `deferred`.
-
-## 4. File the tickets into jTicket
-
-One bug ticket per agreed finding, into `consensus.projectKey` **by key**,
-with no `blockedBy`. AFK findings carry the `afk` label and land on the loop's
-frontier; HITL findings carry `hitl` instead, plus `review:out-of-scope`, and
-their description adds a `**Why HITL:**` line naming which rule above applies.
-Write the JSON to a file and post it:
+One AFK bug ticket per agreed **in-scope** finding, into `consensus.projectKey`
+**by key**, with no `blockedBy` — they must land on the loop's frontier. Write
+the JSON to a file and post it:
 
 ```json
 {
@@ -130,7 +130,26 @@ Agreed by every reviewer in jReview [<title>](https://jreview.local/r/<key>) —
 
 No agreed findings → skip this step entirely.
 
-## 5. Hand the keys back — last
+### 3a. Out-of-scope findings → the follow-ups project
+
+The loop fixes only what the slice set out to do; out-of-scope findings
+would pull it off task. File each agreed out-of-scope finding into a
+separate project titled **`<projectKey> follow ups`** (e.g. `PROJ-7 follow
+ups`) — find it by title, create it when there isn't one:
+
+```sh
+curl -s http://localhost:43000/api/projects | jq -r '.[] | select(.title == "PROJ-7 follow ups") | .key'
+# none → create it on the same repo (no integration branch; the human cuts one when they pick it up)
+curl -s -X POST http://localhost:43000/api/projects -H 'content-type: application/json' \
+  -d '{"title": "PROJ-7 follow ups", "repo": "<repoPath>", "description": "Out-of-scope findings from PROJ-7'"'"'s reviews — agreed by every reviewer, left for later so the run stayed on task."}'
+```
+
+Then the same `/api/import` call as §3 with `"project": "<follow-ups key>"`,
+labels `["afk", "jreview", "review:follow-up", "severity:…", "category:…"]`
+(no `auto-loop:<n>`), and a first description line saying which review and
+project it came from. These keys are **not** in §4's `ticketKeys`.
+
+## 4. Hand the keys back — last
 
 This POST flips the review to *ticketed*, which is what the auto loop waits
 on, so send it only after the tickets exist:
@@ -144,9 +163,7 @@ curl -s -X POST http://localhost:43008/api/reviews/<key>/consensus \
 Zero agreed findings is a normal outcome — POST `{"ticketKeys": [],
 "considered": <n>, "kept": 0}` so the loop moves on.
 
-`ticketKeys` and `kept` include the HITL tickets — they exist in the project.
-
-Then reply with one line — "N considered → M agreed (D deferred to HITL) → tickets …" plus the
-jReview URL (`https://jreview.local/r/<key>`) — and stop. Don't implement
+Then reply with one line — "N considered → M agreed → tickets … (K to <follow-ups key>)"
+plus the jReview URL (`https://jreview.local/r/<key>`) — and stop. Don't implement
 anything; the auto loop dispatches the tickets. jReview closes this pane (and
 the reviewers') once you've gone idle.

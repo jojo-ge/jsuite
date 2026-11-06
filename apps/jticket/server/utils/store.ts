@@ -11,7 +11,7 @@ import { isLegacyTicket, normalizeTicketKind, defaultTicketType } from './ticket
 import type { TicketType } from './ticketTypes'
 import type { WorktreeGuide, WorktreeLink } from './worktrees'
 import { coerceAutoLoop, type AutoLoop } from '../../app/utils/autoLoop'
-import { coerceRunPlan, type RunPlan } from '../../app/utils/runPlan'
+import { coerceRunPlan, coerceRunPlanBuild, type RunPlan, type RunPlanBuild } from '../../app/utils/runPlan'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
@@ -101,6 +101,10 @@ export interface Project {
   // for auto mode to walk. Absent/null = none drafted. A running plan is a
   // copy on auto.plan; saving while it runs updates both. Machine-local.
   runPlan?: RunPlan | null
+  // A /jrunplan session building that plan (the Run setup tab's Build
+  // button): set on dispatch, cleared when it reports back or is cancelled.
+  // While set, the tab is read-only. Machine-local.
+  runPlanBuild?: RunPlanBuild | null
   createdAt: string
   updatedAt: string
 }
@@ -329,6 +333,7 @@ export function loadStore(): Store {
         prompts: cleanPromptOverrides(p.prompts),
         auto: coerceAutoLoop(p.auto),
         runPlan: coerceRunPlan(p.runPlan),
+        runPlanBuild: coerceRunPlanBuild(p.runPlanBuild),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —

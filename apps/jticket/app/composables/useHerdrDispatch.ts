@@ -4,6 +4,7 @@
 // prompt-target preference, one dispatch queue, one set of loading states,
 // whichever page they are driven from.
 import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
+import type { BatchHandoff } from '~/utils/prompts'
 
 // Where the PR lands is a rhythm, not a constant: work that ships on its own
 // goes straight to master, while a run of tickets being stacked for one review
@@ -26,7 +27,7 @@ export function useHerdrDispatch() {
   const toast = useToast()
   const { available: herdrUp, refresh: refreshHerdr, workspaceByLabel, focus } = useHerdr()
   const { projects } = useTracker()
-  const { ticketPrompt, templateFor } = usePrompts()
+  const { ticketPrompt, templateFor, batchPrompt } = usePrompts()
   const { current: currentCodebase } = useCodebase()
 
   const promptTarget = useState<PromptTarget>('jticket-prompt-target', () => 'local')
@@ -200,6 +201,51 @@ export function useHerdrDispatch() {
     })
   }
 
+  // ── One session — several tickets, one agent, in order ──
+  // The board's "One session" button: not the orchestrator (no claims, no
+  // subagents), just a single claude session in its own tab that drains the
+  // ticked tickets one after another — for a handful of small tasks or
+  // decision tickets that don't each deserve a model spun up. Each ticket's
+  // hand-off is resolved exactly as a solo dispatch would (its mode, the
+  // picker's PR target, every override layer, its branch cut first) and inlined
+  // into the batch prompt, so what each ticket asks for doesn't change — only
+  // who runs it.
+  const batching = useState<string | null>('jticket-batching', () => null)
+  async function runBatch(project: Project, rows: Array<{ ticket: Ticket; mode: ProjectMode }>) {
+    if (!rows.length) return
+    batching.value = project.id
+    try {
+      const handoffs: BatchHandoff[] = []
+      for (const { ticket, mode } of rows) {
+        const branch = await resolveBranch(ticket, mode)
+        handoffs.push({ key: ticket.key, text: commandFor(ticket, mode, branch) })
+      }
+      const res = await $fetch<{ agent: string; tabId: string; tickets: string[] }>(`/api/projects/${project.id}/herdr-batch`, {
+        method: 'POST',
+        body: { prompt: batchPrompt(project, handoffs), tickets: rows.map((r) => r.ticket.key) },
+      })
+      // Same rule as dispatchOne: sending a candidate to its grilling IS the
+      // triage decision. Best-effort — the dispatch already succeeded.
+      for (const { ticket, mode } of rows) {
+        if (mode === 'architect' && isArchCandidate(ticket) && !isFinished(ticket.status)) {
+          await $fetch(`/api/tickets/${ticket.id}`, { method: 'PATCH', body: { status: 'done' } }).catch(() => {})
+        }
+      }
+      toast.add({
+        title: `${rows.length} ${project.key} tickets in one herdr session`,
+        description: `Agent ${res.agent} works ${handoffs.map((h) => h.key).join(', ')} in that order — use the tab chip to go watch it.`,
+        icon: 'i-lucide-list-ordered',
+        color: 'success',
+      })
+      refreshHerdr()
+    } catch (err: any) {
+      toast.add({ title: `Could not start the ${project.key} session`, description: herdrErrorText(err), icon: 'i-lucide-triangle-alert', color: 'error' })
+      throw err
+    } finally {
+      batching.value = null
+    }
+  }
+
   // ── Cleanup — close the herdr tabs a project's dispatches left behind ──
   // Only jTicket-named tabs ('PROJ-n', 'PROJ-n · …') are closed; the server
   // answers 409 when an agent is still working/blocked in one, and we re-send
@@ -293,6 +339,8 @@ export function useHerdrDispatch() {
     runningAll,
     runAllProgress,
     runAll,
+    batching,
+    runBatch,
     cleaningUp,
     cleanupHerdr,
     grilling,

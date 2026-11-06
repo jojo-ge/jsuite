@@ -8,8 +8,11 @@ import {
   promptKindsInGroup,
   promptTemplateFor,
   renderPrompt,
+  resolveBatchPrompt,
+  batchHandoffsText,
   resolveConnectPrompt,
   resolveKickoffPrompt,
+  resolveBuildPlanPrompt,
   resolveMergePrompt,
   resolveTicketPrompt,
   TICKET_PROMPT_KINDS,
@@ -179,6 +182,17 @@ describe('the built-in prompts', () => {
   it('leaves the sweep\'s literal <key> alone — it is not a placeholder', () => {
     expect(resolveMergePrompt(project(), ['PR-3'], {})).toContain('/api/prs/<key>/merge')
   })
+
+  it('is the run plan build — a project-level hand-off that names the plan API', () => {
+    const text = resolveBuildPlanPrompt(project(), {})
+    expect(text.startsWith("/jrunplan PROJ-1 — build PROJ-1 (Checkout)'s run plan.")).toBe(true)
+    expect(text).toContain('PUT http://localhost:43000/api/projects/PROJ-1/run-plan ')
+    expect(text).toContain('POST http://localhost:43000/api/projects/PROJ-1/run-plan/built')
+    expect(text).toContain('~/code/checkout')
+    expect(text).not.toContain('{')
+    // A project override wins, like every other kind.
+    expect(resolveBuildPlanPrompt({ ...project(), prompts: { 'runplan:build': 'plan {projectKey} with two orchestrators at most' } }, {})).toBe('plan PROJ-1 with two orchestrators at most')
+  })
 })
 
 describe('the layers', () => {
@@ -296,6 +310,7 @@ describe('worktree prompts', () => {
     expect(TICKET_PROMPT_KINDS).not.toContain('worktree:kickoff')
     expect(TICKET_PROMPT_KINDS).not.toContain('worktree:connect')
     expect(TICKET_PROMPT_KINDS).not.toContain('merge')
+    expect(TICKET_PROMPT_KINDS).not.toContain('batch')
     expect(PROMPT_KIND_META['worktree:kickoff'].level).toBe('codebase')
   })
 
@@ -329,5 +344,42 @@ describe('worktree prompts', () => {
   it('expose the guide URL to ticket templates as {worktreeGuide}', () => {
     expect(ticketPromptVars(ticket(), project()).worktreeGuide).toBe(worktreeGuideUrl('~/code/checkout'))
     expect(ticketPromptVars(ticket(), null).worktreeGuide).toBe('')
+  })
+})
+
+describe('the batch prompt (the board\'s One session button)', () => {
+  const handoffs = [
+    { key: 'TICK-1', text: '/jimplement TICK-1 in a worktree on the existing branch tick/TICK-1. Open a LOCAL PR.' },
+    { key: 'TICK-2', text: 'Grill me about this todo — TICK-2: "Pick a cache".' },
+  ]
+
+  it('is a project-level Implementation kind, one line, every var advertised', () => {
+    expect(PROMPT_KIND_META.batch.level).toBe('project')
+    expect(PROMPT_KIND_META.batch.group).toBe('Implementation')
+    expect(PROMPT_KIND_META.batch.template).not.toContain('\n')
+    expect(PROMPT_KIND_META.batch.vars).toEqual(expect.arrayContaining(['keys', 'handoffs', 'projectKey']))
+  })
+
+  it('numbers the hand-offs in run order and keeps them on one line', () => {
+    expect(batchHandoffsText([{ key: 'A-1', text: 'one\n  two' }, { key: 'A-2', text: ' three ' }])).toBe('[1/2] A-1: one two [2/2] A-2: three')
+  })
+
+  it('inlines each ticket\'s own resolved prompt, untouched, in order', () => {
+    const text = resolveBatchPrompt(project(), handoffs, {})
+    expect(text).toContain('PROJ-1 tickets in this one session')
+    expect(text).toContain('in this order: TICK-1, TICK-2.')
+    expect(text).toContain(`[1/2] TICK-1: ${handoffs[0]!.text}`)
+    expect(text).toContain(`[2/2] TICK-2: ${handoffs[1]!.text}`)
+    expect(text.indexOf('TICK-1:')).toBeLessThan(text.indexOf('TICK-2:'))
+    expect(text).not.toMatch(/\{\w+\}/)
+    expect(text).not.toContain('\n')
+  })
+
+  it('resolves the wrapper through the project, codebase and global layers', () => {
+    expect(resolveBatchPrompt(project({ prompts: { batch: 'do {keys} as {handoffs}' } }), handoffs, { batch: 'global' })).toBe(
+      `do TICK-1, TICK-2 as ${batchHandoffsText(handoffs)}`,
+    )
+    expect(resolveBatchPrompt(project(), handoffs, { batch: 'global {projectKey}' }, { prompts: { batch: 'codebase {projectKey}' } })).toBe('codebase PROJ-1')
+    expect(resolveBatchPrompt(project(), handoffs, { batch: 'global {projectKey}' })).toBe('global PROJ-1')
   })
 })

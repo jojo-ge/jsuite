@@ -1,30 +1,57 @@
 <script setup lang="ts">
 // Run setup — the project page's tab for building a run plan by hand
-// (~/utils/runPlan.ts): pick tickets into implement steps, and put merge,
-// review and gate steps exactly where they should happen. Started, the plan is
-// walked by auto mode's engine (the jButton turns on and <AutoLoopPanel> shows
-// the step in progress). Every edit saves straight away (PUT …/run-plan); a
-// half-built draft is fine, and the problems that would stop it running are
-// listed under it. While it runs, the steps it has started are locked and the
-// rest stay editable — the loop picks them up as it gets there.
+// (~/utils/runPlan.ts). The tab is a BOARD of the plan's steps, read top to
+// bottom; every edit is behind a modal. Adding an implement step is a
+// three-step wizard — pick the tickets, say who runs each (its own agent, or
+// an orchestrator with others — model and effort per agent), confirm — and
+// confirm puts it on the board. Merge / review / gate steps have a small
+// modal each; clicking a step card reopens its modal to edit, move or remove
+// it. Started, the plan is walked by auto mode's engine (the jButton turns
+// on and <AutoLoopPanel> shows the step in progress); the steps it has
+// started are locked and show what they did — the slice report their
+// sessions read, their reviews, the fixes they filed.
+// Every edit saves straight away (PUT …/run-plan); a half-built draft is
+// fine, and the problems that would stop it running show on the cards.
+// Started, the plan is locked whole — Unlock & stop ends the run. The Build
+// button hands the whole job to one Fable 5.1 session (`/jrunplan`): while
+// it works (project.runPlanBuild) the tab is read-only too.
 import type { Project, Ticket } from '~/composables/useTracker'
-import { DEFAULT_ORCHESTRATION, ORCHESTRATION_BUDGET_MAX, type AutoMode, type PlanStepRecord } from '~/utils/autoLoop'
+import type { PlanStepRecord } from '~/utils/autoLoop'
+import type { GraphTicketInfo } from '~/utils/runPlanGraph'
 import {
+  ARCH_DEFAULT,
+  DEFAULT_DISPATCH,
+  EFFORTS,
+  PLAN_MODELS,
+  PLAN_MODEL_KEYS,
+  PLAN_ORCHESTRATORS_MAX,
   PLAN_REVIEWERS_MAX,
-  PLAN_STEP_LABELS,
+  PLAN_REVIEWERS_MIN,
+  REVIEW_DEFAULT,
   coerceRunPlan,
+  implementSummary,
   newPlanStep,
   planProblems,
   reviewBaseOptions,
+  reviewSummary,
+  runnerLabel,
+  runnerOf,
+  soloTickets,
+  stepGroupEntries,
+  stepGroups,
+  type Effort,
+  type PlanModel,
   type PlanStep,
   type PlanStepKind,
   type PlanTicket,
   type RunPlan,
+  type Runner,
 } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[]; allTickets: Ticket[] }>()
-const { busy, startPlan } = useAutoLoop()
+const { busy, startPlan, turnOff } = useAutoLoop()
 const { refresh } = useTracker()
+const { openEditTicket } = useTrackerModals()
 const toast = useToast()
 
 const STEP_ICONS: Record<PlanStepKind, string> = {
@@ -35,26 +62,20 @@ const STEP_ICONS: Record<PlanStepKind, string> = {
 }
 
 // ── The draft ──────────────────────────────────────────────────────────────
-// A local copy the page edits; saved on every change. The server's copy
+// A local copy the modals edit; saved on every confirm. The server's copy
 // (project.runPlan, over /api/stream) replaces it whenever no save is pending.
 const empty = (): RunPlan => ({ steps: [] })
-const draft = ref<RunPlan>(structuredClone(toRaw(props.project.runPlan) ?? empty()))
+const draft = ref<RunPlan>(coerceRunPlan(structuredClone(toRaw(props.project.runPlan))) ?? empty())
 let saving = 0
 watch(
   () => props.project.runPlan,
   (plan) => {
-    if (!saving) draft.value = structuredClone(toRaw(plan) ?? empty())
+    if (!saving) draft.value = coerceRunPlan(structuredClone(toRaw(plan))) ?? empty()
   },
   { deep: true },
 )
-
-let timer: ReturnType<typeof setTimeout> | undefined
-function commit() {
-  clearTimeout(timer)
-  saving++
-  timer = setTimeout(save, 350)
-}
 async function save() {
+  saving++
   try {
     await $fetch(`/api/projects/${props.project.id}/run-plan`, { method: 'PUT', body: draft.value })
   } catch (err: any) {
@@ -64,8 +85,7 @@ async function save() {
       icon: 'i-lucide-triangle-alert',
       color: 'error',
     })
-    // Refused (a running plan's locked steps, or an unrunnable edit) — back to the server's.
-    draft.value = structuredClone(toRaw(props.project.runPlan) ?? empty())
+    draft.value = coerceRunPlan(structuredClone(toRaw(props.project.runPlan))) ?? empty()
   } finally {
     saving = 0
     await refresh()
@@ -76,36 +96,81 @@ async function save() {
 const auto = computed(() => props.project.auto ?? null)
 const planRunning = computed(() => !!auto.value?.enabled && !!auto.value.plan)
 const loopRunning = computed(() => !!auto.value?.enabled && !auto.value.plan)
+// A /jrunplan session is writing the plan — it owns the draft until it reports back.
+const building = computed(() => !!props.project.runPlanBuild)
+// The plan can be edited: not running (locked whole), not being built.
+const editable = computed(() => !planRunning.value && !building.value)
 // Steps the running plan has started (finished, skipped, or in progress) are locked.
 const frozen = computed(() => {
   const a = auto.value
   if (!planRunning.value || !a) return 0
   return a.cursor + (a.phase === 'idle' ? 0 : 1)
 })
-function stepState(i: number): { label: string; color: 'success' | 'info' | 'neutral' | 'warning'; record?: PlanStepRecord } | null {
+const locked = (i: number) => !editable.value || i < frozen.value
+const recordOf = (i: number): PlanStepRecord | undefined => (planRunning.value ? auto.value?.planLog[i] : undefined)
+function stepState(i: number): { label: string; color: 'success' | 'info' | 'neutral' | 'warning' } | null {
   const a = auto.value
   if (!planRunning.value || !a) return null
   const record = a.planLog[i]
-  if (i < a.cursor) return record?.skipped ? { label: `skipped — ${record.skipped}`, color: 'neutral', record } : { label: 'done', color: 'success', record }
-  if (i === a.cursor && a.phase !== 'idle') return { label: a.paused ? 'paused' : 'running', color: a.paused ? 'warning' : 'info' }
+  if (i < a.cursor) return record?.skipped ? { label: `skipped — ${record.skipped}`, color: 'neutral' } : { label: 'done', color: 'success' }
+  if (i === a.cursor && a.phase !== 'idle') return { label: a.paused ? 'paused' : a.phase === 'slice-reporting' ? 'writing the slice report' : 'running', color: a.paused ? 'warning' : 'info' }
   if (i === a.cursor) return { label: 'next', color: 'info' }
   return null
+}
+// The slice report an implement step's sessions read: recorded once it ran; while it runs, the loop's latest.
+const sliceDocOf = (i: number) => recordOf(i)?.sliceDoc || (planRunning.value && auto.value?.cursor === i ? auto.value.lastSliceDoc : '')
+const readsSlice = (i: number) => draft.value.steps[i]?.kind === 'implement' && draft.value.steps.slice(0, i).some((s) => s.kind === 'implement')
+
+// ── Board or graph ─────────────────────────────────────────────────────────
+// The same plan two ways: the board (cards, top to bottom) or the graph
+// (RunPlanGraph: ticket cards, orchestrator boxes, review brackets, blocker
+// arrows). Remembered per browser.
+const view = ref<'board' | 'graph'>('board')
+const VIEW_KEY = 'jticket:run-setup:view'
+onMounted(() => {
+  try {
+    if (localStorage.getItem(VIEW_KEY) === 'graph') view.value = 'graph'
+  } catch {}
+})
+watch(view, (v) => {
+  try {
+    localStorage.setItem(VIEW_KEY, v)
+  } catch {}
+})
+const graphInfo = computed<Record<string, GraphTicketInfo>>(() => {
+  const mine = new Set(props.tickets.map((t) => t.id))
+  const outside = [...new Set(props.tickets.flatMap((t) => t.blockedBy))].filter((id) => !mine.has(id))
+  const rows = [...props.tickets, ...outside.map((id) => byId.value.get(id)).filter((t): t is Ticket => !!t)]
+  return Object.fromEntries(
+    rows.map((t) => [
+      t.key,
+      { key: t.key, title: t.title, hitl: isHitl(t), paused: isPaused(t), finished: isFinished(t.status), blockedBy: t.blockedBy.map((id) => byId.value.get(id)?.key).filter((k): k is string => !!k) },
+    ]),
+  )
+})
+const graphStates = computed(() => draft.value.steps.map((_, i) => stepState(i)))
+const graphRecords = computed(() => draft.value.steps.map((_, i) => recordOf(i)))
+const graphSliceDocs = computed(() => draft.value.steps.map((_, i) => sliceDocOf(i)))
+function editAt(i: number) {
+  const step = draft.value.steps[i]
+  if (step) startEdit(step, i)
+}
+function openKey(key: string) {
+  const t = byKey.value.get(key)
+  if (t) openEditTicket(t)
 }
 
 // ── Tickets ────────────────────────────────────────────────────────────────
 const byKey = computed(() => new Map(props.allTickets.map((t) => [t.key, t])))
 const byId = computed(() => new Map(props.allTickets.map((t) => [t.id, t])))
-const placed = computed(() => new Set(draft.value.steps.flatMap((s) => s.tickets)))
+const placed = computed(() => new Map(draft.value.steps.flatMap((s, i) => s.tickets.map((k) => [k, i] as const))))
 const openTickets = computed(() =>
   props.tickets
     .filter((t) => !isFinished(t.status))
     .sort((a, b) => Number(a.key.split('-').pop()) - Number(b.key.split('-').pop())),
 )
 const unplaced = computed(() => openTickets.value.filter((t) => !placed.value.has(t.key)))
-const openBlockers = (t: Ticket) =>
-  t.blockedBy.map((id) => byId.value.get(id)).filter((b): b is Ticket => !!b && !isFinished(b.status))
-
-// Every ticket a blocker can name: the project's, plus what outside it they wait on.
+const openBlockers = (t: Ticket) => openBlockersOf(t, props.allTickets)
 const planTickets = computed<PlanTicket[]>(() => {
   const mine = new Set(props.tickets.map((t) => t.id))
   const outside = [...new Set(props.tickets.flatMap((t) => t.blockedBy))].filter((id) => !mine.has(id))
@@ -117,316 +182,639 @@ const planTickets = computed<PlanTicket[]>(() => {
 })
 const problems = computed(() => planProblems(draft.value, planTickets.value, { frozen: frozen.value }))
 const problemsOf = (id: string) => problems.value.filter((p) => p.stepId === id)
+const problemsForTicket = (key: string) => problems.value.filter((p) => p.message.startsWith(`${key} `))
 const planWide = computed(() => problems.value.filter((p) => !p.stepId))
 
-// ── Picking ────────────────────────────────────────────────────────────────
-const picked = ref<Set<string>>(new Set())
-watch(unplaced, (list) => {
-  const live = new Set(list.map((t) => t.key))
-  const kept = [...picked.value].filter((k) => live.has(k))
-  if (kept.length !== picked.value.size) picked.value = new Set(kept)
+// What a step's agents run as. A step always carries its own dispatch once
+// the wizard has touched it; an older one falls back to the run's setting.
+const runDefault = computed(() => auto.value?.orchestration ?? DEFAULT_DISPATCH)
+const stepSummary = (s: PlanStep) => {
+  if (s.kind === 'implement') return implementSummary(s, runDefault.value)
+  if (s.kind === 'review') return reviewSummary(s)
+  if (s.kind === 'gate') return `waits for Continue${s.note ? ` — ${s.note}` : ''}`
+  return 'lands every open PR the plan has so far on the integration branch'
+}
+const soloRunner = (s: PlanStep, k: string) => runnerOf(s, k, runDefault.value)
+const groupEntries = (s: PlanStep) => stepGroupEntries(s, runDefault.value)
+
+// ── The modal ──────────────────────────────────────────────────────────────
+const open = ref(false)
+const editing = ref<PlanStep | null>(null) // null = adding
+const kind = ref<PlanStepKind>('implement')
+const wizard = ref(0) // implement: 0 tickets, 1 who runs each, 2 confirm
+const picked = ref<string[]>([])
+const search = ref('')
+const model = ref<PlanModel>(DEFAULT_DISPATCH.model)
+const effort = ref<Effort>(DEFAULT_DISPATCH.effort)
+const budget = ref(DEFAULT_DISPATCH.budget)
+const groups = ref<string[][]>([])
+// One per group, aligned with `groups`: the orchestrator's own model/effort for its subagents (null = the step's).
+const groupRunners = ref<Array<Runner | null>>([])
+const runners = ref<Record<string, Runner>>({})
+const reviewers = ref(PLAN_REVIEWERS_MIN)
+const base = ref('')
+const review = ref({ ...REVIEW_DEFAULT, arch: null as Runner | null })
+const note = ref('')
+const position = ref(0)
+
+function reset() {
+  wizard.value = 0
+  picked.value = []
+  search.value = ''
+  model.value = DEFAULT_DISPATCH.model
+  effort.value = DEFAULT_DISPATCH.effort
+  budget.value = DEFAULT_DISPATCH.budget
+  groups.value = []
+  groupRunners.value = []
+  runners.value = {}
+  reviewers.value = PLAN_REVIEWERS_MIN
+  base.value = ''
+  review.value = { ...REVIEW_DEFAULT, arch: null }
+  note.value = ''
+}
+function startAdd(k: PlanStepKind) {
+  reset()
+  editing.value = null
+  kind.value = k
+  position.value = draft.value.steps.length
+  if (k === 'merge') {
+    draft.value.steps.push(newPlanStep(draft.value, 'merge'))
+    void save()
+    return
+  }
+  open.value = true
+}
+function startEdit(step: PlanStep, i: number) {
+  if (locked(i)) return
+  reset()
+  editing.value = step
+  kind.value = step.kind
+  position.value = i
+  picked.value = [...step.tickets]
+  const d = step.dispatch ?? runDefault.value
+  model.value = d.model
+  effort.value = d.effort
+  budget.value = d.budget
+  const entries = groupEntries(step)
+  groups.value = entries.map((e) => [...e.tickets])
+  groupRunners.value = entries.map((e) => (e.runner.model === d.model && e.runner.effort === d.effort ? null : { ...e.runner }))
+  runners.value = { ...step.runners }
+  reviewers.value = step.reviewers
+  base.value = step.base
+  review.value = { ...step.review, arch: step.review.arch ? { ...step.review.arch } : null }
+  note.value = step.note
+  wizard.value = step.kind === 'implement' ? 2 : 0
+  open.value = true
+}
+
+// Wizard 1 · tickets: the open tickets not placed in another step.
+const choices = computed(() => {
+  const s = search.value.trim().toLowerCase()
+  return openTickets.value
+    .filter((t) => {
+      const at = placed.value.get(t.key)
+      return at === undefined || (editing.value && draft.value.steps[at]?.id === editing.value.id)
+    })
+    .filter((t) => !s || t.key.toLowerCase().includes(s) || t.title.toLowerCase().includes(s))
 })
-function togglePick(key: string, on: boolean) {
-  const next = new Set(picked.value)
-  if (on) next.add(key)
-  else next.delete(key)
-  picked.value = next
+const togglePick = (k: string, on: boolean) => {
+  picked.value = on ? [...new Set([...picked.value, k])] : picked.value.filter((x) => x !== k)
+}
+// Where a blocker sits, from the new step's point of view.
+function blockerWhere(b: Ticket): { label: string; color: 'success' | 'info' | 'error' | 'warning' } {
+  if (isFinished(b.status)) return { label: 'done', color: 'success' }
+  const i = placed.value.get(b.key)
+  if (i !== undefined && !(editing.value && draft.value.steps[i]?.id === editing.value.id)) return { label: `step ${i + 1}`, color: i < position.value ? 'info' : 'error' }
+  if (picked.value.includes(b.key)) return { label: 'this step', color: 'error' }
+  if (!props.tickets.some((t) => t.id === b.id)) return { label: 'other project', color: 'warning' }
+  return { label: 'not in plan', color: 'error' }
 }
 
-// ── Editing ────────────────────────────────────────────────────────────────
-const locked = (i: number) => i < frozen.value
+// Wizard 2 · who runs each: `groups` = the orchestrators' tickets; a picked
+// ticket in no group runs as its own agent, on `runners[k]` or the step's model/effort.
+// Groups and their runners move together: dropping an emptied group drops its runner.
+function setGroups(next: Array<{ tickets: string[]; runner: Runner | null }>) {
+  const kept = next.filter((e) => e.tickets.length)
+  groups.value = kept.map((e) => e.tickets)
+  groupRunners.value = kept.map((e) => e.runner)
+}
+const groupPairs = () => groups.value.map((g, i) => ({ tickets: [...g], runner: groupRunners.value[i] ?? null }))
+watch(picked, (keys) => {
+  setGroups(groupPairs().map((e) => ({ ...e, tickets: e.tickets.filter((k) => keys.includes(k)) })))
+  for (const k of Object.keys(runners.value)) if (!keys.includes(k)) delete runners.value[k]
+})
+const solos = computed(() => picked.value.filter((k) => !groups.value.some((g) => g.includes(k))))
+const runnerIdOf = (k: string): string => {
+  const gi = groups.value.findIndex((g) => g.includes(k))
+  return gi < 0 ? 'solo' : String(gi)
+}
+function setRunnerId(k: string, v: string) {
+  const next = groupPairs().map((e) => ({ ...e, tickets: e.tickets.filter((x) => x !== k) }))
+  if (v !== 'solo') {
+    const gi = Number(v)
+    while (next.length <= gi) next.push({ tickets: [], runner: null })
+    next[gi]!.tickets.push(k)
+    delete runners.value[k]
+  }
+  setGroups(next)
+}
+// An orchestrator group's own runner — shown as the step's until changed; set back to the step's = cleared.
+const groupRunnerFor = (gi: number): Runner => groupRunners.value[gi] ?? { model: model.value, effort: effort.value }
+function setGroupRunner(gi: number, patch: Partial<Runner>) {
+  const next = { ...groupRunnerFor(gi), ...patch }
+  const list = groups.value.map((_, i) => groupRunners.value[i] ?? null)
+  list[gi] = next.model === model.value && next.effort === effort.value ? null : next
+  groupRunners.value = list
+}
+const runnerItems = computed(() => [
+  { label: 'Its own agent', value: 'solo' },
+  ...groups.value.map((g, i) => ({ label: `Orchestrator ${i + 1} (${g.length})`, value: String(i) })),
+  ...(groups.value.length < PLAN_ORCHESTRATORS_MAX ? [{ label: `+ New orchestrator ${groups.value.length + 1}`, value: String(groups.value.length) }] : []),
+])
+const soloOf = (k: string): Runner => runners.value[k] ?? { model: model.value, effort: effort.value }
+function setSolo(k: string, patch: Partial<Runner>) {
+  const next = { ...soloOf(k), ...patch }
+  if (next.model === model.value && next.effort === effort.value) delete runners.value[k]
+  else runners.value[k] = next
+}
+const modelItems = PLAN_MODEL_KEYS.map((m) => ({ label: PLAN_MODELS[m].label, value: m }))
+const effortItems = EFFORTS.map((e) => ({ label: e, value: e }))
+const budgetItems = [1, 2, 3, 4].map((n) => ({ label: String(n), value: n }))
+const reviewerItems = Array.from({ length: PLAN_REVIEWERS_MAX - PLAN_REVIEWERS_MIN + 1 }, (_, i) => ({ label: `${PLAN_REVIEWERS_MIN + i} reviewers`, value: PLAN_REVIEWERS_MIN + i }))
 
-function addStep(kind: PlanStepKind, tickets: string[] = []) {
-  draft.value.steps.push(newPlanStep(draft.value, kind, { tickets }))
-  commit()
+// What the step would be, as built so far — and the plan with it in, validated.
+const built = computed<PlanStep>(() => {
+  const stepBase = editing.value ?? newPlanStep(draft.value, kind.value)
+  const orch = groups.value.filter((g) => g.length)
+  const implement = kind.value === 'implement'
+  return {
+    ...stepBase,
+    kind: kind.value,
+    tickets: implement ? [...picked.value] : [],
+    dispatch: implement ? { mode: orch.length ? 'orchestrated' : 'sessions', model: model.value, effort: effort.value, budget: budget.value, orchestrators: Math.max(1, orch.length) } : null,
+    groups: implement ? orch.map((g) => [...g]) : [],
+    groupRunners: implement ? orch.map((_, i) => groupRunners.value[i] ?? null) : [],
+    runners: implement ? Object.fromEntries(Object.entries(runners.value).filter(([k]) => solos.value.includes(k))) : {},
+    reviewers: kind.value === 'review' ? reviewers.value : stepBase.reviewers,
+    base: kind.value === 'review' ? base.value : '',
+    review: kind.value === 'review' ? { ...review.value, arch: review.value.arch ? { ...review.value.arch } : null } : stepBase.review,
+    note: kind.value === 'gate' ? note.value.trim() : '',
+  }
+})
+const previewPlan = computed<RunPlan>(() => {
+  const steps = draft.value.steps.filter((s) => s.id !== editing.value?.id)
+  steps.splice(Math.min(position.value, steps.length), 0, built.value)
+  return { steps }
+})
+const previewProblems = computed(() => planProblems(previewPlan.value, planTickets.value, { frozen: frozen.value }).filter((p) => p.stepId === built.value.id))
+const summary = computed(() => (kind.value === 'implement' ? implementSummary(built.value, runDefault.value) : reviewSummary(built.value)))
+const positionItems = computed(() => {
+  const n = draft.value.steps.filter((s) => s.id !== editing.value?.id).length
+  return Array.from({ length: n - frozen.value + 1 }, (_, i) => frozen.value + i).map((i) => ({ label: i === 0 ? 'first' : i === n ? 'last' : `after step ${i}`, value: i }))
+})
+const readsSliceAt = (pos: number) => previewPlan.value.steps.slice(0, pos).some((s) => s.kind === 'implement')
+
+async function confirm() {
+  draft.value = previewPlan.value
+  open.value = false
+  await save()
 }
-function addPickedAsStep() {
-  addStep('implement', [...picked.value])
-  picked.value = new Set()
-}
-function addPickedTo(step: PlanStep) {
-  step.tickets = [...step.tickets, ...[...picked.value].filter((k) => !step.tickets.includes(k))]
-  picked.value = new Set()
-  commit()
-}
-function removeTicket(step: PlanStep, key: string) {
-  step.tickets = step.tickets.filter((k) => k !== key)
-  commit()
-}
-function move(i: number, by: -1 | 1) {
-  const j = i + by
-  if (j < frozen.value || j >= draft.value.steps.length) return
-  const steps = draft.value.steps
-  ;[steps[i], steps[j]] = [steps[j]!, steps[i]!]
-  commit()
-}
-function removeStep(i: number) {
-  const gone = draft.value.steps[i]!
-  draft.value.steps.splice(i, 1)
-  // A review based on it falls back to "since the previous review".
+async function removeEditing() {
+  if (!editing.value) return
+  const gone = editing.value
+  draft.value.steps = draft.value.steps.filter((s) => s.id !== gone.id)
   for (const s of draft.value.steps) if (s.base === gone.id) s.base = ''
-  commit()
+  open.value = false
+  await save()
 }
-function clearPlan() {
+async function clearPlan() {
   if (!window.confirm('Clear the whole plan?')) return
   draft.value = empty()
-  commit()
+  await save()
 }
 
-// Drag a ticket chip onto an implement step — from the list, or from another step.
-const dragging = ref<{ key: string; from: string } | null>(null)
-const dropTarget = ref('')
-function onDrop(step: PlanStep) {
-  const d = dragging.value
-  dragging.value = null
-  dropTarget.value = ''
-  if (!d || d.from === step.id) return
-  const src = draft.value.steps.find((s) => s.id === d.from)
-  if (src) src.tickets = src.tickets.filter((k) => k !== d.key)
-  if (!step.tickets.includes(d.key)) step.tickets = [...step.tickets, d.key]
-  commit()
-}
-
-// ── Drafting from the blocker graph ────────────────────────────────────────
-// One implement → merge → review per layer — the loop's own rhythm, as a
-// starting point to reshape.
-const forecast = computed(() => autoForecastFor(props.project, props.tickets, props.allTickets))
-function draftFromLayers() {
-  const layers = forecast.value.loops.map((ids) => ids.map((id) => byId.value.get(id)?.key).filter((k): k is string => !!k))
-  if (!layers.length) return
-  if (draft.value.steps.length && !window.confirm('Replace the current plan with one drafted from the blocker graph?')) return
-  const plan = empty()
-  for (const keys of layers) {
-    plan.steps.push(newPlanStep(plan, 'implement', { tickets: keys }))
-    plan.steps.push(newPlanStep(plan, 'merge'))
-    plan.steps.push(newPlanStep(plan, 'review'))
+// ── Building with an agent ─────────────────────────────────────────────────
+// One Fable 5.1 session reads the project and writes the plan (POST
+// …/run-plan/build → /jrunplan in herdr). It replaces whatever is drafted.
+const buildBusy = ref<'' | 'build' | 'cancel'>('')
+const buildBlocker = computed(() => {
+  if (!props.project.repo) return 'This project has no repo — set one first; the builder reads its code.'
+  if (loopRunning.value) return 'The jButton loop is running — turn it off first.'
+  return ''
+})
+async function buildWithAgent() {
+  if (buildBlocker.value || !editable.value) return
+  const n = draft.value.steps.length
+  if (n && !window.confirm(`Replace the current plan (${n} step${n === 1 ? '' : 's'}) with one Fable 5.1 builds? It reads the project, its docs, every open ticket and the code, then writes the plan here.`)) return
+  buildBusy.value = 'build'
+  try {
+    await $fetch(`/api/projects/${props.project.id}/run-plan/build`, { method: 'POST', body: {} })
+    toast.add({ title: 'Run setup', description: 'Fable 5.1 is building the plan in herdr — this tab is read-only until it reports back.', icon: 'i-lucide-wand-sparkles' })
+  } catch (err: any) {
+    toast.add({ title: 'Run setup', description: String(err?.data?.statusMessage ?? err?.data?.message ?? err?.message ?? err), icon: 'i-lucide-triangle-alert', color: 'error' })
+  } finally {
+    buildBusy.value = ''
+    await refresh()
   }
-  draft.value = coerceRunPlan(plan) ?? empty()
-  commit()
 }
+async function cancelBuild() {
+  if (!window.confirm('Cancel the build? Its herdr pane is closed; whatever it saved so far stays as the draft.')) return
+  buildBusy.value = 'cancel'
+  try {
+    await $fetch(`/api/projects/${props.project.id}/run-plan/build`, { method: 'DELETE' })
+  } catch (err: any) {
+    toast.add({ title: 'Run setup', description: String(err?.data?.statusMessage ?? err?.data?.message ?? err?.message ?? err), icon: 'i-lucide-triangle-alert', color: 'error' })
+  } finally {
+    buildBusy.value = ''
+    await refresh()
+  }
+}
+
+// ── Unlocking ──────────────────────────────────────────────────────────────
+// A running plan is locked whole. Unlocking it IS stopping the run (auto
+// turns off now; sessions already in herdr carry on) — the strip's "Stop
+// after this step" is the gentler way out.
+async function unlockAndStop() {
+  if (!window.confirm(`Unlock ${props.project.key}'s plan? That stops the run now — step ${(auto.value?.cursor ?? 0) + 1} is abandoned (sessions already running in herdr carry on). To finish the step first, use "Stop after this step" on the strip above.`)) return
+  await turnOff(props.project).catch(() => {})
+}
+const canNext = computed(() => (wizard.value === 0 ? picked.value.length > 0 : true))
+const title = computed(() => {
+  const what = editing.value ? `Edit step ${position.value + 1}` : 'Add a step'
+  if (kind.value !== 'implement') return `${what} · ${kind.value}`
+  return `${what} · implement · ${['1 of 3 — pick the tickets', '2 of 3 — who runs each', '3 of 3 — confirm'][wizard.value]}`
+})
 
 // ── Starting ───────────────────────────────────────────────────────────────
-const mode = ref<AutoMode>(props.project.auto?.orchestration.mode ?? DEFAULT_ORCHESTRATION.mode)
-const budget = ref(props.project.auto?.orchestration.budget ?? DEFAULT_ORCHESTRATION.budget)
-const modeItems = [
-  { label: 'One session per ticket', value: 'sessions' },
-  { label: 'Orchestrated (Fable 5.1 + Opus 5.5 subagents)', value: 'orchestrated' },
-]
-const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX }, (_, i) => ({ label: `${i + 1} at a time`, value: i + 1 }))
-const reviewerItems = Array.from({ length: PLAN_REVIEWERS_MAX }, (_, i) => ({ label: `${i + 1} reviewer${i ? 's' : ''}`, value: i + 1 }))
-
 const startBlocker = computed(() => {
   const p = props.project
   if (!p.repo) return 'This project has no repo — set one first.'
   if (!p.integrationBranch) return 'Cut an integration branch first (the Branch button) — merges land on it.'
   if (loopRunning.value) return 'The jButton loop is running — turn it off to run a plan instead.'
   if (!draft.value.steps.some((s) => s.kind === 'implement')) return 'Add an implement step — nothing would run.'
-  if (problems.value.length) return 'Fix the problems below first.'
+  if (problems.value.length) return 'Fix the problems on the cards first.'
   return ''
 })
 async function start() {
   if (startBlocker.value) return
-  clearTimeout(timer)
-  if (saving) await save()
   const n = draft.value.steps.length
   if (!window.confirm(`Run ${props.project.key}'s plan — ${n} step${n === 1 ? '' : 's'}, top to bottom? Hand dispatch of AFK tickets is off while it runs.`)) return
-  await startPlan(props.project, { mode: mode.value, budget: budget.value }).catch(() => {})
-}
-
-const stepSummary = (s: PlanStep) => {
-  if (s.kind === 'merge') return 'Lands every open PR the plan’s tickets have so far on the integration branch (Sonnet 5 sweep). Skipped when there is none.'
-  if (s.kind === 'review') {
-    const who = s.reviewers === 1 ? 'Every finding it raises' : `Findings all ${s.reviewers} reviewers raise`
-    return `Opus 5.5 reviewers in jReview read base…tip. ${who} become tickets here, implemented and merged inside this step.`
-  }
-  if (s.kind === 'gate') return 'Waits until you press Continue on the auto strip.'
-  return ''
+  await startPlan(props.project).catch(() => {})
 }
 </script>
 
 <template>
-  <section class="flex flex-col gap-4">
-    <!-- Header: what this is, how it dispatches, Start -->
-    <div class="flex flex-wrap items-start gap-3 rounded-lg border border-default bg-elevated/30 px-4 py-3">
-      <div class="min-w-0 flex-1">
-        <h2 class="flex items-center gap-2 text-sm font-semibold">
-          <UIcon name="i-lucide-list-ordered" class="size-4 text-primary" />
-          Run setup
-          <UBadge v-if="planRunning" color="success" variant="subtle" size="sm" icon="i-lucide-play">
-            running · step {{ (auto?.cursor ?? 0) + 1 }} of {{ draft.steps.length }}
-          </UBadge>
-        </h2>
-        <p class="mt-1 text-sm text-muted">
-          Build the run yourself: which tickets go together, and exactly where merges, reviews and gates happen. It runs top to bottom on
-          the jButton's engine — the same watchdog, orchestration and merge reports.
-          <template v-if="planRunning">Locked steps have started; the rest can still change.</template>
-        </p>
+  <section class="flex flex-col gap-3">
+    <!-- Header: the view's controls only -->
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-default bg-elevated/30 px-4 py-2.5 text-sm">
+      <UIcon name="i-lucide-list-ordered" class="size-4 text-primary" />
+      <span class="font-semibold">Run setup</span>
+      <UBadge color="neutral" variant="subtle" size="sm">{{ draft.steps.length }} step{{ draft.steps.length === 1 ? '' : 's' }}</UBadge>
+      <UBadge v-if="unplaced.length" color="warning" variant="subtle" size="sm">{{ unplaced.length }} open ticket{{ unplaced.length === 1 ? '' : 's' }} not in the plan</UBadge>
+      <div class="flex overflow-hidden rounded-md border border-default text-xs" role="tablist" aria-label="Board or graph">
+        <button type="button" role="tab" class="flex items-center gap-1 px-2 py-1" :class="view === 'board' ? 'bg-primary text-inverted' : 'text-muted hover:bg-elevated'" :aria-selected="view === 'board'" @click="view = 'board'"><UIcon name="i-lucide-layout-list" class="size-3.5" /> Board</button>
+        <button type="button" role="tab" class="flex items-center gap-1 px-2 py-1" :class="view === 'graph' ? 'bg-primary text-inverted' : 'text-muted hover:bg-elevated'" :aria-selected="view === 'graph'" @click="view = 'graph'"><UIcon name="i-lucide-git-fork" class="size-3.5" /> Graph</button>
       </div>
-      <div v-if="!planRunning" class="flex flex-wrap items-center justify-end gap-2">
-        <span v-if="startBlocker" class="basis-full text-right text-xs text-warning">{{ startBlocker }}</span>
-        <USelect v-model="mode" :items="modeItems" size="sm" class="w-72" />
-        <USelect v-if="mode === 'orchestrated'" v-model="budget" :items="budgetItems" size="sm" class="w-32" />
-        <UTooltip :text="startBlocker || 'Start the plan — the jButton turns on and walks it'">
-          <UButton icon="i-lucide-play" color="success" size="sm" :loading="busy === 'plan'" :disabled="!!startBlocker" @click="start">
-            Start plan
-          </UButton>
-        </UTooltip>
+      <UBadge v-if="planRunning" color="success" variant="subtle" size="sm" icon="i-lucide-lock">running · step {{ (auto?.cursor ?? 0) + 1 }} of {{ draft.steps.length }} · locked</UBadge>
+      <UBadge v-else-if="building" color="primary" variant="subtle" size="sm" icon="i-lucide-loader-circle" :ui="{ leadingIcon: 'animate-spin' }">Fable 5.1 is building the plan · read-only</UBadge>
+      <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <!-- running: the one way to edit is to stop -->
+        <template v-if="planRunning">
+          <UTooltip text="Stops the run now and unlocks the plan. To finish the step in progress first, use Stop after this step on the strip above.">
+            <UButton icon="i-lucide-lock-open" color="warning" variant="soft" size="sm" :loading="busy === 'off'" @click="unlockAndStop">Unlock &amp; stop</UButton>
+          </UTooltip>
+        </template>
+        <!-- building: the agent owns the draft -->
+        <template v-else-if="building">
+          <span class="text-xs text-muted">since {{ new Date(project.runPlanBuild!.startedAt).toLocaleTimeString() }} · pane {{ project.runPlanBuild!.agent }}</span>
+          <UButton icon="i-lucide-x" color="neutral" variant="soft" size="sm" :loading="buildBusy === 'cancel'" @click="cancelBuild">Cancel build</UButton>
+        </template>
+        <template v-else>
+          <span v-if="startBlocker" class="text-xs text-warning">{{ startBlocker }}</span>
+          <UButton v-if="draft.steps.length" size="xs" variant="ghost" color="neutral" icon="i-lucide-eraser" @click="clearPlan">Clear</UButton>
+          <UTooltip :text="buildBlocker || 'One Fable 5.1 session (high effort) reads the project, its docs, every open ticket and the code, and writes the plan — who runs what, on which model and effort, with merges, reviews and gates where they belong'">
+            <UButton icon="i-lucide-wand-sparkles" color="primary" variant="soft" size="sm" :loading="buildBusy === 'build'" :disabled="!!buildBlocker || !!busy" @click="buildWithAgent">Build with Fable</UButton>
+          </UTooltip>
+          <UTooltip :text="startBlocker || 'Start the plan — the jButton turns on and walks it; the plan locks until the run ends'">
+            <UButton icon="i-lucide-play" color="success" size="sm" :loading="busy === 'plan'" :disabled="!!startBlocker || !!busy || !!buildBusy" @click="start">Start plan</UButton>
+          </UTooltip>
+        </template>
       </div>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <!-- The steps -->
-      <div class="flex flex-col gap-2">
-        <p v-if="!draft.steps.length" class="rounded-md border border-dashed border-default px-4 py-8 text-center text-sm text-muted">
-          No steps yet. Tick tickets on the right and make them an implement step, add merge / review / gate steps below — or
-          <button class="text-primary hover:underline" :disabled="!forecast.loops.length" @click="draftFromLayers">draft one from the blocker graph</button>.
-        </p>
+    <!-- The graph: every step, ticket, orchestrator box, review range and blocker arrow at once -->
+    <div v-if="view === 'graph' && draft.steps.length" class="w-full">
+      <RunPlanGraph
+        :plan="draft"
+        :info="graphInfo"
+        :run-default="runDefault"
+        :states="graphStates"
+        :records="graphRecords"
+        :slice-docs="graphSliceDocs"
+        :editable="editable"
+        @edit="editAt"
+        @open="openKey"
+      />
+      <ul v-if="problems.length && editable" class="mt-2 text-xs text-error">
+        <li v-for="(p, n) in problems" :key="n">⚠ {{ p.message }}</li>
+      </ul>
+    </div>
 
-        <div
-          v-for="(step, i) in draft.steps"
-          :key="step.id"
-          class="rounded-lg border px-3 py-2.5 transition-colors"
-          :class="[
-            locked(i) ? 'border-default bg-elevated/40 opacity-80' : 'border-default',
-            problemsOf(step.id).length && !locked(i) && 'border-error/50',
-            dropTarget === step.id && 'border-primary bg-primary/5',
-          ]"
-          @dragover.prevent="step.kind === 'implement' && !locked(i) && (dropTarget = step.id)"
-          @dragleave="dropTarget === step.id && (dropTarget = '')"
-          @drop.prevent="step.kind === 'implement' && !locked(i) && onDrop(step)"
-        >
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="flex size-5 items-center justify-center rounded-full bg-elevated text-xs font-medium tabular-nums">{{ i + 1 }}</span>
-            <UIcon :name="STEP_ICONS[step.kind]" class="size-4 text-muted" />
-            <span class="text-sm font-medium">{{ PLAN_STEP_LABELS[step.kind] }}</span>
-            <UBadge v-if="stepState(i)" :color="stepState(i)!.color" variant="subtle" size="sm">{{ stepState(i)!.label }}</UBadge>
-            <UIcon v-if="locked(i)" name="i-lucide-lock" class="size-3.5 text-dimmed" />
-            <a
-              v-if="stepState(i)?.record?.reviewKey"
-              :href="`https://jreview.local/r/${stepState(i)!.record!.reviewKey}`"
-              target="_blank"
-              class="text-xs text-primary hover:underline"
-            >
-              review ↗
-            </a>
-            <div v-if="!locked(i)" class="ml-auto flex items-center">
-              <UButton icon="i-lucide-arrow-up" size="xs" color="neutral" variant="ghost" :disabled="i <= frozen" aria-label="Move up" @click="move(i, -1)" />
-              <UButton icon="i-lucide-arrow-down" size="xs" color="neutral" variant="ghost" :disabled="i === draft.steps.length - 1" aria-label="Move down" @click="move(i, 1)" />
-              <UButton icon="i-lucide-trash-2" size="xs" color="neutral" variant="ghost" aria-label="Remove step" @click="removeStep(i)" />
-            </div>
-          </div>
-
-          <!-- implement: its tickets -->
-          <div v-if="step.kind === 'implement'" class="mt-2 flex flex-wrap items-center gap-1.5">
-            <span
-              v-for="k in step.tickets"
-              :key="k"
-              :draggable="!locked(i)"
-              class="inline-flex items-center gap-1 rounded-md border border-default px-2 py-0.5 text-xs"
-              :class="!locked(i) && 'cursor-grab'"
-              @dragstart="dragging = { key: k, from: step.id }"
-              @dragend="dragging = null"
-            >
-              <UIcon
-                v-if="byKey.get(k)"
-                :name="isFinished(byKey.get(k)!.status) ? 'i-lucide-circle-check' : 'i-lucide-circle-dashed'"
-                :class="isFinished(byKey.get(k)!.status) ? 'text-success' : 'text-muted'"
-                class="size-3.5"
-              />
-              <NuxtLink :to="`/tickets/${k}`" class="font-mono hover:underline">{{ k }}</NuxtLink>
-              <span class="max-w-48 truncate text-muted">{{ byKey.get(k)?.title ?? '(unknown)' }}</span>
-              <UBadge v-if="byKey.get(k) && isHitl(byKey.get(k)!)" color="warning" variant="subtle" size="xs">HITL · waits on you</UBadge>
-              <button v-if="!locked(i)" class="text-dimmed hover:text-default" aria-label="Take out" @click="removeTicket(step, k)">
-                <UIcon name="i-lucide-x" class="size-3" />
-              </button>
-            </span>
-            <UButton v-if="!locked(i) && picked.size" size="xs" variant="soft" icon="i-lucide-plus" @click="addPickedTo(step)">
-              Add {{ picked.size }} ticked
-            </UButton>
-            <span v-if="!step.tickets.length && !picked.size && !locked(i)" class="text-xs text-dimmed">Tick tickets on the right, or drag them here.</span>
-          </div>
-
-          <!-- review: reviewers + base -->
-          <div v-else-if="step.kind === 'review'" class="mt-2 flex flex-wrap items-center gap-2">
-            <USelect v-model="step.reviewers" :items="reviewerItems" size="xs" class="w-36" :disabled="locked(i)" @update:model-value="commit" />
-            <USelect
-              :items="reviewBaseOptions(draft, step.id).map((o) => ({ ...o, value: o.value || 'prev' }))"
-              :model-value="step.base || 'prev'"
-              size="xs"
-              class="w-80"
-              :disabled="locked(i)"
-              @update:model-value="(v: string) => { step.base = v === 'prev' ? '' : v; commit() }"
-            />
-          </div>
-
-          <!-- gate: what to check -->
-          <div v-else-if="step.kind === 'gate'" class="mt-2">
-            <UInput v-model="step.note" size="xs" placeholder="What to check before continuing (optional)" class="w-full max-w-md" :disabled="locked(i)" @change="commit" />
-          </div>
-
-          <p v-if="stepSummary(step)" class="mt-1.5 text-xs text-muted">{{ stepSummary(step) }}</p>
-          <p v-if="stepState(i)?.record?.fixTickets.length" class="mt-1 text-xs text-muted">
-            Fixed: {{ stepState(i)!.record!.fixTickets.join(', ') }}
-          </p>
-          <ul v-if="!locked(i) && problemsOf(step.id).length" class="mt-1.5 flex flex-col gap-0.5 text-xs text-error">
-            <li v-for="(p, n) in problemsOf(step.id)" :key="n" class="flex gap-1">
-              <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-3 shrink-0" />{{ p.message }}
-            </li>
-          </ul>
+    <!-- The board -->
+    <div class="mx-auto flex w-full max-w-3xl flex-col gap-2">
+      <div
+        v-for="(step, i) in draft.steps"
+        v-show="view === 'board'"
+        :key="step.id"
+        class="rounded-lg border bg-default px-4 py-3 transition"
+        :class="[
+          stepState(i)?.color === 'info' ? 'border-info ring-2 ring-info/30' : stepState(i)?.color === 'success' ? 'border-success/50 bg-success/5' : stepState(i)?.color === 'warning' ? 'border-warning' : 'border-default',
+          problemsOf(step.id).length && !locked(i) && 'border-error/60',
+          !locked(i) && 'cursor-pointer hover:ring-2 hover:ring-primary/40',
+        ]"
+        :role="locked(i) ? undefined : 'button'"
+        @click="startEdit(step, i)"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="flex size-6 items-center justify-center rounded-full bg-elevated text-xs font-medium tabular-nums">{{ i + 1 }}</span>
+          <UIcon :name="STEP_ICONS[step.kind]" class="size-4 text-muted" />
+          <span class="font-medium capitalize">{{ step.kind }}</span>
+          <span class="text-xs text-muted">· {{ stepSummary(step) }}</span>
+          <UBadge v-if="stepState(i)" :color="stepState(i)!.color" variant="subtle" size="xs" class="ml-auto">{{ stepState(i)!.label }}</UBadge>
+          <UIcon v-else-if="locked(i)" name="i-lucide-lock" class="ml-auto size-3.5 text-dimmed" />
+          <UIcon v-else name="i-lucide-pencil" class="ml-auto size-3.5 text-dimmed" />
         </div>
 
-        <!-- Add a step -->
-        <div class="flex flex-wrap items-center gap-1.5 pt-1">
-          <span class="text-xs text-muted">Add step:</span>
-          <UButton size="xs" variant="soft" :icon="STEP_ICONS.implement" :disabled="!picked.size" @click="addPickedAsStep">
-            Implement {{ picked.size ? `${picked.size} ticked` : '' }}
-          </UButton>
-          <UButton size="xs" variant="soft" color="neutral" :icon="STEP_ICONS.merge" @click="addStep('merge')">Merge</UButton>
-          <UButton size="xs" variant="soft" color="neutral" :icon="STEP_ICONS.review" @click="addStep('review')">Review</UButton>
-          <UButton size="xs" variant="soft" color="neutral" :icon="STEP_ICONS.gate" @click="addStep('gate')">Gate</UButton>
-          <div class="ml-auto flex items-center gap-1">
-            <UTooltip text="One implement → merge → review per layer of the blocker graph — the loop's rhythm, to reshape">
-              <UButton size="xs" variant="ghost" color="neutral" icon="i-lucide-wand-sparkles" :disabled="planRunning || !forecast.loops.length" @click="draftFromLayers">
-                Draft from blockers
-              </UButton>
-            </UTooltip>
-            <UButton v-if="draft.steps.length && !planRunning" size="xs" variant="ghost" color="neutral" icon="i-lucide-eraser" @click="clearPlan">Clear</UButton>
+        <!-- implement: the slice report it reads, then its agents -->
+        <template v-if="step.kind === 'implement'">
+          <div v-if="readsSlice(i)" class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <UIcon name="i-lucide-file-text" class="size-3.5 text-primary" />
+            <span class="text-muted">Starts by reading the slice report written after step {{ i }} (Opus 5.5 medium, facts only)</span>
+            <NuxtLink v-if="sliceDocOf(i)" :to="`/docs/${sliceDocOf(i)}`" class="font-mono text-primary hover:underline" @click.stop>{{ sliceDocOf(i) }} ↗</NuxtLink>
           </div>
-        </div>
-
-        <UAlert v-if="planWide.length" color="warning" variant="subtle" icon="i-lucide-triangle-alert" :description="planWide.map((p) => p.message).join(' ')" />
-      </div>
-
-      <!-- Tickets not in the plan yet -->
-      <aside class="flex flex-col gap-2 self-start rounded-lg border border-default px-3 py-2.5">
-        <div class="flex items-center gap-2">
-          <h3 class="text-sm font-medium">Not in the plan</h3>
-          <UBadge color="neutral" variant="subtle" size="sm">{{ unplaced.length }}</UBadge>
-          <UButton v-if="picked.size" class="ml-auto" size="xs" color="neutral" variant="ghost" @click="picked = new Set()">Untick</UButton>
-        </div>
-        <p v-if="!unplaced.length" class="text-xs text-muted">Every open ticket has a step.</p>
-        <ul class="flex max-h-[32rem] flex-col gap-1 overflow-y-auto">
-          <li
-            v-for="t in unplaced"
-            :key="t.id"
-            draggable="true"
-            class="flex cursor-grab items-start gap-2 rounded-md px-1.5 py-1 text-xs hover:bg-elevated"
-            @dragstart="dragging = { key: t.key, from: '' }"
-            @dragend="dragging = null"
-          >
-            <UCheckbox :model-value="picked.has(t.key)" class="mt-0.5" @update:model-value="(v) => togglePick(t.key, v === true)" />
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5">
-                <span class="font-mono">{{ t.key }}</span>
-                <UBadge v-if="isHitl(t)" color="warning" variant="subtle" size="xs">HITL</UBadge>
-                <UBadge v-if="t.status === 'in_progress'" color="info" variant="subtle" size="xs">in progress</UBadge>
+          <div class="mt-2 grid gap-2" :class="stepGroups(step).length ? 'sm:grid-cols-2' : ''">
+            <div v-if="soloTickets(step).length" class="rounded-md bg-elevated/40 px-2.5 py-2">
+              <div class="mb-1 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-user-round" class="size-3.5 text-primary" /> Own agent each</div>
+              <div v-for="k in soloTickets(step)" :key="k" class="flex items-center gap-1.5 py-0.5 text-sm">
+                <NuxtLink :to="`/tickets/${k}`" class="font-mono text-xs text-muted hover:underline" @click.stop>{{ k }}</NuxtLink>
+                <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title ?? '(unknown)' }}</span>
+                <UBadge v-if="byKey.get(k) && isHitl(byKey.get(k)!)" color="warning" variant="subtle" size="xs">HITL · waits on you</UBadge>
+                <UIcon v-if="byKey.get(k) && isFinished(byKey.get(k)!.status)" name="i-lucide-circle-check" class="size-3.5 shrink-0 text-success" />
+                <UTooltip v-if="problemsForTicket(k).length" :text="problemsForTicket(k).map((p) => p.message).join(' ')"><UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-error" /></UTooltip>
+                <span class="shrink-0 text-xs text-muted">{{ runnerLabel(soloRunner(step, k)) }}</span>
               </div>
-              <p class="truncate text-muted">{{ t.title }}</p>
-              <p v-if="openBlockers(t).length" class="text-dimmed">after {{ openBlockers(t).map((b) => b.key).join(', ') }}</p>
             </div>
-          </li>
+            <div v-for="(e, gi) in groupEntries(step)" :key="gi" class="rounded-md bg-elevated/40 px-2.5 py-2">
+              <div class="mb-1 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-bot" class="size-3.5 text-primary" /> Orchestrator {{ gi + 1 }} · {{ runnerLabel(e.runner) }} subagents</div>
+              <div v-for="k in e.tickets" :key="k" class="flex items-center gap-1.5 py-0.5 text-sm">
+                <NuxtLink :to="`/tickets/${k}`" class="font-mono text-xs text-muted hover:underline" @click.stop>{{ k }}</NuxtLink>
+                <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title ?? '(unknown)' }}</span>
+                <UIcon v-if="byKey.get(k) && isFinished(byKey.get(k)!.status)" name="i-lucide-circle-check" class="size-3.5 shrink-0 text-success" />
+                <UTooltip v-if="problemsForTicket(k).length" :text="problemsForTicket(k).map((p) => p.message).join(' ')"><UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-error" /></UTooltip>
+              </div>
+            </div>
+            <span v-if="!step.tickets.length" class="text-xs text-dimmed">no tickets</span>
+          </div>
+        </template>
+
+        <!-- what a started step did -->
+        <div v-if="recordOf(i) && !recordOf(i)!.skipped" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+          <a v-if="recordOf(i)!.archReviewKey" :href="`https://jreview.local/r/${recordOf(i)!.archReviewKey}`" target="_blank" class="text-primary hover:underline" @click.stop>architectural review ↗</a>
+          <a v-if="recordOf(i)!.reviewKey" :href="`https://jreview.local/r/${recordOf(i)!.reviewKey}`" target="_blank" class="text-primary hover:underline" @click.stop>review ↗</a>
+          <span v-if="recordOf(i)!.fixTickets.length">fixed: {{ recordOf(i)!.fixTickets.join(', ') }}</span>
+          <span v-if="recordOf(i)!.forced?.length">closed by the watchdog: {{ recordOf(i)!.forced!.join(', ') }}</span>
+        </div>
+        <ul v-if="problemsOf(step.id).length && !locked(i)" class="mt-1.5 text-xs text-error">
+          <li v-for="(p, n) in problemsOf(step.id)" :key="n">⚠ {{ p.message }}</li>
         </ul>
-      </aside>
+      </div>
+
+      <p v-if="!draft.steps.length && !building" class="rounded-lg border border-dashed border-default px-4 py-8 text-center text-sm text-muted">No steps yet. Add the first one below — or let Fable 5.1 build the plan.</p>
+      <p v-if="building" class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-primary/40 px-4 py-4 text-center text-sm text-muted">
+        <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin text-primary" /> Fable 5.1 is reading the project and writing the plan in herdr; the steps appear here as it saves them.
+      </p>
+      <UAlert v-if="planWide.length && editable && view === 'board'" color="warning" variant="subtle" icon="i-lucide-triangle-alert" :description="planWide.map((p) => p.message).join(' ')" />
+
+      <!-- Add — the only affordance on the board -->
+      <div v-if="editable" class="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+        <UButton size="sm" :icon="STEP_ICONS.implement" @click="startAdd('implement')">Add implement step</UButton>
+        <UButton size="sm" variant="soft" color="neutral" :icon="STEP_ICONS.merge" @click="startAdd('merge')">Merge</UButton>
+        <UButton size="sm" variant="soft" color="neutral" :icon="STEP_ICONS.review" @click="startAdd('review')">Review</UButton>
+        <UButton size="sm" variant="soft" color="neutral" :icon="STEP_ICONS.gate" @click="startAdd('gate')">Gate</UButton>
+      </div>
     </div>
+
+    <!-- The modal -->
+    <UModal v-model:open="open" :title="title" :ui="{ content: 'sm:max-w-3xl' }">
+      <template #body>
+        <!-- implement wizard -->
+        <template v-if="kind === 'implement'">
+          <div class="mb-3 flex items-center gap-2 text-xs">
+            <template v-for="(label, n) in ['Tickets', 'Who runs each', 'Confirm']" :key="n">
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-full px-2.5 py-1"
+                :class="wizard === n ? 'bg-primary text-inverted' : n < wizard ? 'bg-primary/15 text-primary' : 'bg-elevated text-muted'"
+                :disabled="n > wizard && !canNext"
+                @click="n <= wizard || canNext ? (wizard = n) : null"
+              >
+                <span class="flex size-4 items-center justify-center rounded-full bg-white/20 text-[10px]">{{ n + 1 }}</span>{{ label }}
+              </button>
+              <div v-if="n < 2" class="h-px w-6 bg-default" />
+            </template>
+          </div>
+
+          <!-- 1 · tickets -->
+          <div v-if="wizard === 0" class="flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <UInput v-model="search" icon="i-lucide-search" size="sm" placeholder="Search open tickets" class="flex-1" />
+              <UBadge color="primary" variant="subtle" size="sm">{{ picked.length }} picked</UBadge>
+              <UButton v-if="picked.length" size="xs" variant="ghost" color="neutral" @click="picked = []">Clear</UButton>
+            </div>
+            <ul class="flex max-h-[26rem] flex-col divide-y divide-default overflow-y-auto rounded-md border border-default">
+              <li
+                v-for="t in choices"
+                :key="t.id"
+                class="flex cursor-pointer items-start gap-3 px-3 py-2 text-sm hover:bg-elevated/50"
+                :class="picked.includes(t.key) && 'bg-primary/5'"
+                @click="togglePick(t.key, !picked.includes(t.key))"
+              >
+                <UCheckbox :model-value="picked.includes(t.key)" class="mt-0.5" @click.stop @update:model-value="(v) => togglePick(t.key, v === true)" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <TicketTypeIcon :type="t.type" size="xs" />
+                    <button type="button" class="font-mono text-xs text-muted hover:underline" @click.stop="openEditTicket(t)">{{ t.key }}</button>
+                    <TicketTags :ticket="t" size="xs" hide-afk />
+                    <UBadge v-if="t.status === 'in_progress'" color="info" variant="subtle" size="xs">in progress</UBadge>
+                    <UBadge v-if="t.acceptanceCriteria.length" color="neutral" variant="outline" size="xs">{{ t.acceptanceCriteria.length }} AC</UBadge>
+                  </div>
+                  <p class="font-medium">{{ t.title }}</p>
+                  <div v-if="openBlockers(t).length" class="mt-0.5 flex flex-wrap items-center gap-1 text-xs">
+                    <span class="text-muted">blocked by</span>
+                    <UBadge v-for="b in openBlockers(t)" :key="b.id" :color="blockerWhere(b).color" variant="subtle" size="xs">
+                      <span class="font-mono">{{ b.key }}</span>&nbsp;· {{ blockerWhere(b).label }}
+                    </UBadge>
+                  </div>
+                </div>
+              </li>
+              <li v-if="!choices.length" class="px-3 py-6 text-center text-xs text-muted">No open ticket left to add.</li>
+            </ul>
+          </div>
+
+          <!-- 2 · who runs each -->
+          <div v-else-if="wizard === 1" class="flex flex-col gap-4">
+            <div>
+              <div class="mb-1.5 flex flex-wrap items-center gap-2">
+                <p class="text-xs font-medium uppercase tracking-wide text-muted">Who runs each ticket</p>
+                <span class="text-xs text-muted">— its own agent (the default), or an orchestrator that works several through subagents</span>
+                <div class="ml-auto flex gap-1">
+                  <UButton size="xs" variant="ghost" color="neutral" icon="i-lucide-user-round" @click="setGroups([])">All own agents</UButton>
+                  <UButton size="xs" variant="ghost" color="neutral" icon="i-lucide-bot" @click="setGroups([{ tickets: [...picked], runner: null }])">All in one orchestrator</UButton>
+                </div>
+              </div>
+              <ul class="flex max-h-72 flex-col divide-y divide-default overflow-y-auto rounded-md border border-default">
+                <li v-for="k in picked" :key="k" class="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
+                  <UIcon :name="runnerIdOf(k) === 'solo' ? 'i-lucide-user-round' : 'i-lucide-bot'" class="size-4 shrink-0" :class="runnerIdOf(k) === 'solo' ? 'text-muted' : 'text-primary'" />
+                  <span class="font-mono text-xs text-muted">{{ k }}</span>
+                  <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title }}</span>
+                  <template v-if="runnerIdOf(k) === 'solo'">
+                    <USelect :model-value="soloOf(k).model" :items="modelItems" size="xs" class="w-28" :aria-label="`${k} model`" @update:model-value="(v: PlanModel) => setSolo(k, { model: v })" />
+                    <USelect :model-value="soloOf(k).effort" :items="effortItems" size="xs" class="w-24" :aria-label="`${k} effort`" @update:model-value="(v: Effort) => setSolo(k, { effort: v })" />
+                  </template>
+                  <USelect :model-value="runnerIdOf(k)" :items="runnerItems" size="xs" class="w-44" :aria-label="`${k} runs as`" @update:model-value="(v: string) => setRunnerId(k, v)" />
+                </li>
+              </ul>
+            </div>
+            <div v-if="groups.length" class="rounded-md border border-default px-3 py-2">
+              <p class="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">Each orchestrator's subagents</p>
+              <div v-for="(g, gi) in groups" :key="gi" class="flex flex-wrap items-center gap-2 py-1 text-sm">
+                <UIcon name="i-lucide-bot" class="size-4 text-primary" />
+                <span class="min-w-0 flex-1">Orchestrator {{ gi + 1 }} <span class="text-xs text-muted">· {{ g.length }} ticket{{ g.length === 1 ? '' : 's' }}</span></span>
+                <USelect :model-value="groupRunnerFor(gi).model" :items="modelItems" size="xs" class="w-28" :aria-label="`Orchestrator ${gi + 1} subagent model`" @update:model-value="(v: PlanModel) => setGroupRunner(gi, { model: v })" />
+                <USelect :model-value="groupRunnerFor(gi).effort" :items="effortItems" size="xs" class="w-24" :aria-label="`Orchestrator ${gi + 1} subagent effort`" @update:model-value="(v: Effort) => setGroupRunner(gi, { effort: v })" />
+              </div>
+              <p class="mt-1 text-xs text-muted">A box of small tickets can run cheap beside a box of heavy ones — each orchestrator (always Fable 5.1) runs its group through subagents on the model and effort set here.</p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-3">
+              <UFormField label="Default model" :help="groups.length ? 'For any orchestrator or own agent not set above' : 'For any own agent not set above'">
+                <USelect v-model="model" :items="modelItems" size="sm" class="w-full" />
+              </UFormField>
+              <UFormField label="Default effort">
+                <USelect v-model="effort" :items="effortItems" size="sm" class="w-full" />
+              </UFormField>
+              <UFormField v-if="groups.length" label="In flight, per orchestrator">
+                <USelect v-model="budget" :items="budgetItems" size="sm" class="w-full" />
+              </UFormField>
+            </div>
+            <p class="text-xs text-muted">{{ summary }}</p>
+          </div>
+
+          <!-- 3 · confirm -->
+          <div v-else class="flex flex-col gap-3">
+            <div class="rounded-md border border-default px-3 py-2 text-sm">
+              <p class="font-medium">{{ summary }}</p>
+              <div class="mt-2 grid gap-2" :class="groups.length ? 'sm:grid-cols-2' : ''">
+                <div v-if="solos.length" class="rounded bg-elevated/40 px-2 py-1.5">
+                  <div class="mb-0.5 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-user-round" class="size-3.5" /> Own agent each</div>
+                  <div v-for="k in solos" :key="k" class="flex gap-1 text-xs">
+                    <span class="font-mono text-muted">{{ k }}</span>
+                    <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title }}</span>
+                    <span class="shrink-0 text-muted">{{ runnerLabel(soloOf(k)) }}</span>
+                  </div>
+                </div>
+                <div v-for="(g, gi) in groups" :key="gi" class="rounded bg-elevated/40 px-2 py-1.5">
+                  <div class="mb-0.5 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-bot" class="size-3.5 text-primary" /> Orchestrator {{ gi + 1 }} · {{ runnerLabel(groupRunnerFor(gi)) }} subagents</div>
+                  <div v-for="k in g" :key="k" class="text-xs"><span class="font-mono text-muted">{{ k }}</span> {{ byKey.get(k)?.title }}</div>
+                </div>
+              </div>
+            </div>
+            <UFormField label="Position in the plan">
+              <USelect v-model="position" :items="positionItems" size="sm" class="w-48" />
+            </UFormField>
+            <p v-if="readsSliceAt(position)" class="flex items-center gap-1.5 text-xs text-muted">
+              <UIcon name="i-lucide-file-text" class="size-3.5 text-primary" />
+              Every agent in this step starts by reading the slice report written just before it (Opus 5.5 medium) — the previous slice's decisions and outcomes, facts only.
+            </p>
+            <UAlert v-if="previewProblems.length" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="previewProblems.map((p) => p.message).join(' ')" />
+            <UAlert v-else color="success" variant="subtle" icon="i-lucide-check" description="This step fits the plan as it stands." />
+          </div>
+        </template>
+
+        <!-- review -->
+        <div v-else-if="kind === 'review'" class="flex flex-col gap-4">
+          <div class="rounded-md border px-3 py-2.5" :class="review.arch ? 'border-primary/50 bg-primary/5' : 'border-default'">
+            <div class="flex items-center gap-2">
+              <USwitch :model-value="!!review.arch" @update:model-value="(v: boolean) => (review.arch = v ? { ...ARCH_DEFAULT } : null)" />
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium">Architectural &amp; technical reviewer first</p>
+                <p class="text-xs text-muted">
+                  One reviewer (the <span class="font-mono">jarch-review</span> skill) reads the diff for structure — boundaries, abstractions, data flow, debt. Its <strong>architectural</strong> findings are not up for a vote:
+                  they become tickets, are fixed and merged, and only then do the regular reviewers read the result, with its report in hand. Its technical findings are filed as advisory HITL tickets.
+                </p>
+              </div>
+            </div>
+            <div v-if="review.arch" class="mt-2 grid gap-3 pl-11 sm:grid-cols-2">
+              <UFormField label="Model"><USelect v-model="review.arch.model" :items="modelItems" size="sm" class="w-full" /></UFormField>
+              <UFormField label="Effort" help="Structure is worth the deeper read — high by default"><USelect v-model="review.arch.effort" :items="effortItems" size="sm" class="w-full" /></UFormField>
+            </div>
+          </div>
+          <div class="rounded-md border border-default px-3 py-2.5">
+            <p class="text-sm font-medium">{{ review.arch ? 'Then the' : 'The' }} regular reviewers</p>
+            <p class="text-xs text-muted">Read the changes since the checkpoint{{ review.arch ? ', architectural fixes included' : '' }}. Only findings <em>every</em> reviewer raises become tickets, fixed and merged inside this step.</p>
+            <div class="mt-2 grid gap-3 sm:grid-cols-3">
+              <UFormField label="Reviewers" help="2 to 4"><USelect v-model="reviewers" :items="reviewerItems" size="sm" class="w-full" /></UFormField>
+              <UFormField label="Model"><USelect v-model="review.model" :items="modelItems" size="sm" class="w-full" /></UFormField>
+              <UFormField label="Effort"><USelect v-model="review.effort" :items="effortItems" size="sm" class="w-full" /></UFormField>
+            </div>
+          </div>
+          <UFormField label="Reviews the changes since">
+            <USelect
+              :items="reviewBaseOptions(previewPlan, built.id).map((o) => ({ ...o, value: o.value || 'prev' }))"
+              :model-value="base || 'prev'"
+              size="sm"
+              class="w-full max-w-md"
+              @update:model-value="(v: string) => (base = v === 'prev' ? '' : v)"
+            />
+          </UFormField>
+          <ol class="flex list-decimal flex-col gap-0.5 pl-5 text-xs text-muted">
+            <template v-if="review.arch">
+              <li>Architectural &amp; technical review on {{ runnerLabel(review.arch) }}.</li>
+              <li>Its architectural findings → tickets → implemented → merged. (Nothing found: straight on.)</li>
+            </template>
+            <li>{{ reviewers }} reviewers on {{ runnerLabel({ model: review.model, effort: review.effort }) }} read the diff{{ review.arch ? ' with the fixes in' : '' }}; findings they all raise → tickets → implemented → merged.</li>
+            <li>The step ends; the next one starts from the merged result.</li>
+          </ol>
+          <UFormField label="Position in the plan"><USelect v-model="position" :items="positionItems" size="sm" class="w-48" /></UFormField>
+          <UAlert v-if="previewProblems.length" color="error" variant="subtle" icon="i-lucide-triangle-alert" :description="previewProblems.map((p) => p.message).join(' ')" />
+        </div>
+
+        <!-- gate -->
+        <div v-else-if="kind === 'gate'" class="flex flex-col gap-3">
+          <UFormField label="What to check before continuing"><UInput v-model="note" size="sm" placeholder="optional" class="w-full" /></UFormField>
+          <UFormField label="Position in the plan"><USelect v-model="position" :items="positionItems" size="sm" class="w-48" /></UFormField>
+        </div>
+
+        <!-- merge (edit only — adding one needs no modal) -->
+        <div v-else class="flex flex-col gap-3">
+          <p class="text-sm text-muted">Lands every open PR the plan's tickets have so far on the integration branch (Sonnet 5 sweep). Skipped when there is none.</p>
+          <UFormField label="Position in the plan"><USelect v-model="position" :items="positionItems" size="sm" class="w-48" /></UFormField>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full items-center gap-2">
+          <UButton v-if="editing" color="error" variant="ghost" icon="i-lucide-trash-2" @click="removeEditing">Remove step</UButton>
+          <div class="ml-auto flex gap-2">
+            <UButton color="neutral" variant="ghost" @click="open = false">Cancel</UButton>
+            <template v-if="kind === 'implement'">
+              <UButton v-if="wizard > 0" color="neutral" variant="soft" icon="i-lucide-arrow-left" @click="wizard--">Back</UButton>
+              <UButton v-if="wizard < 2" icon="i-lucide-arrow-right" trailing :disabled="!canNext" @click="wizard++">Next</UButton>
+              <UButton v-else color="success" icon="i-lucide-check" :disabled="!picked.length" @click="confirm">{{ editing ? 'Save step' : 'Add to the plan' }}</UButton>
+            </template>
+            <UButton v-else color="success" icon="i-lucide-check" @click="confirm">{{ editing ? 'Save step' : 'Add to the plan' }}</UButton>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </section>
 </template>

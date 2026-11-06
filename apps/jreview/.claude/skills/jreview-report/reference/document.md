@@ -41,7 +41,7 @@ Blocks, in order:
    cites these ids):
    - `tone`: `warning` for critical/high, `insight` for medium, `aside` for low
    - `title`: `[<severity>] <claim>`
-   - `md`: `**Where:** \`<where>\`` · `**Category:** <category>`, then a blank
+   - `md`: `**Where:** \`<where>\`` · `**Category:** <category>` (· `**Scope:** in|out` when the dump has a `scope:` line), then a blank
      line, then the scenario, then a blank line, then `**Fix:** <fix>`.
 
    When the finding has a `quote:`, follow its callout with a block showing

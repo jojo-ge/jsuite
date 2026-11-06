@@ -4,9 +4,9 @@
 //                   tickets?, reviewers?, base?, note? }] }
 //
 // A draft may be half-built: it's saved as sent and the problems that would
-// stop it running come back alongside. While the plan is running, the steps
-// it has started are frozen (409 if they change) and the rest must be
-// runnable (409 with the problems) — the loop picks them up as it gets there.
+// stop it running come back alongside. While the plan is running it is locked
+// whole (409) — Unlock & stop in Run setup ends the run first. A /jrunplan
+// build saves through here too (its PUTs are how the agent iterates).
 //
 // Returns { plan, problems: [{ stepId, message }] }.
 import { coerceRunPlan } from '../../../../app/utils/runPlan'

@@ -25,6 +25,8 @@ JSKILLS=(
   jarchitect-scan
   jarchitect-grill
   jreproduce
+  jslice-report
+  jrunplan
 )
 
 POCOCK_SOURCE="mattpocock/skills"

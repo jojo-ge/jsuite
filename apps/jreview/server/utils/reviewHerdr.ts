@@ -47,16 +47,38 @@ export const REVIEW_MODEL = process.env.JREVIEW_MODEL?.trim() || 'claude-opus-5-
  */
 export const CONSENSUS_MODEL = process.env.JREVIEW_CONSENSUS_MODEL?.trim() || 'claude-sonnet-5'
 
-export function reviewerPrompt(review: Review, n: number): string {
+/**
+ * The reviewer's hand-off. `priorDocs` are the reports of the earlier review
+ * named in `context.review` (the architectural pass), resolved by the caller.
+ */
+export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = []): string {
   const r = review.reviewers.find((x) => x.n === n)!
+  const arch = review.pass === 'architecture'
   // One line: herdr submits the prompt as typed input, and a newline would
   // submit it early.
   return [
-    'Run the global /code-review skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
+    arch
+      ? 'Run the global /jarch-review skill (~/.claude/skills/jarch-review) — the architectural & technical review; not /code-review, and not any review skill this repo carries in its own .claude/skills.'
+      : 'Run the global /code-review skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
     `HEAD in this checkout is ${review.branch}${review.pr ? ` (PR #${review.pr.number}, "${review.pr.title.replace(/[\r\n]+/g, ' ')}")` : ''}.`,
     `The fixed point is ${review.base} — review \`git diff ${review.base}...HEAD\`.`,
+    ...(review.context?.docs?.length
+      ? [`Read first: jTicket doc${review.context.docs.length > 1 ? 's' : ''} ${review.context.docs.join(', ')} (GET http://localhost:43000/api/docs/<key>) — the slice report: what this slice built, where, and the decisions behind it.`]
+      : []),
+    ...(priorDocs.length
+      ? [
+          `An architectural review of this same diff ran before you — its report${priorDocs.length > 1 ? 's' : ''}: ${priorDocs.join(', ')} (GET http://localhost:43008/api/documents/<key>). ` +
+            'Its architectural findings have already been fixed in what you are reading: do not raise them again, but do check the fixes.',
+        ]
+      : []),
     ...(review.worktree && review.worktreeGuide
       ? [`This checkout is a fresh worktree: if you need to install or run anything, set it up the codebase's way — its worktree guide is at ${review.worktreeGuide}.`]
+      : []),
+    ...(review.consensus && !arch
+      ? [
+          'Stay in scope: judge the diff against what it set out to do (its tickets, the slice report, the commit messages) — defects in that work, and anything that breaks the build, the tests or existing behaviour, are in scope; ' +
+            'pre-existing debt, unrelated refactors, style you would have chosen differently and nice-to-haves are not. Mark every finding `scope: in` or `scope: out`; out-of-scope findings are filed as follow-ups in a separate project, never fixed in this run.',
+        ]
       : []),
     'Work unattended: do not stop to ask questions — if no spec turns up, carry on without one and say so.',
     `When the review is complete, publish it into jReview with /jreview-report review=${review.key} reviewer=${n} doc=${r.docKey}.`,
@@ -81,10 +103,13 @@ export async function dispatchReviewer(key: string, n: number): Promise<void> {
   try {
     const { workspaceId, freshTab } = await workspaceFor(review)
     const { tabId, paneId } = await acquirePackedPane(workspaceId, `review ${review.key}`, review.workdir, freshTab)
-    await renamePane(paneId, `reviewer ${n} · ${review.title}`)
+    await renamePane(paneId, `${review.pass === 'architecture' ? 'arch reviewer' : `reviewer ${n}`} · ${review.title}`)
+    // The earlier pass's reports, when this review follows one.
+    const prior = review.context?.review ? await readReview(review.context.review).catch(() => null) : null
+    const priorDocs = prior ? prior.reviewers.filter((x) => x.status === 'done').map((x) => x.docKey) : []
     // Slot first, so the 28-char agent-name cap trims the key, not the slot.
-    const agent = await startClaudeIn(paneId, `jr${n}-${review.key}`, reviewerPrompt(review, n), {
-      args: ['--model', REVIEW_MODEL],
+    const agent = await startClaudeIn(paneId, `jr${n}-${review.key}`, reviewerPrompt(review, n, priorDocs), {
+      args: ['--model', review.model || REVIEW_MODEL, ...(review.effort ? ['--effort', review.effort] : [])],
     })
     await updateReview(key, (fresh) => {
       fresh.workspaceId = workspaceId

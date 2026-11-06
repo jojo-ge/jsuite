@@ -25,6 +25,8 @@
 /**
  * Every prompt jTicket fires, keyed by what picks it:
  * - `standard:*` — the three PR targets of the hand-off picker (an implementation ticket)
+ * - `batch` — the board's One session button: several ticked tickets worked in
+ *   order by one session, each on its own hand-off (project-level; not a ticket)
  * - `wayfinder` — a wayfinder frontier ticket
  * - `jmap:*` — a mapping job, picked by the ticket's `jmap:` label
  * - `todo` — a todo-list ticket's grilling
@@ -34,11 +36,14 @@
  * - `worktree:kickoff` — asks a codebase how it does worktrees (codebase-level; no project)
  * - `worktree:connect` — connects a project's integration branch to the
  *   codebase's worktree setup (project-level; not a ticket)
+ * - `runplan:build` — the Run setup tab's Build button: one Fable 5.1 session
+ *   writes the project's run plan (project-level; not a ticket)
  */
 export const PROMPT_KINDS = [
   'standard:local',
   'standard:master',
   'standard:integration',
+  'batch',
   'wayfinder',
   'jmap:scope',
   'jmap:domain',
@@ -50,6 +55,7 @@ export const PROMPT_KINDS = [
   'merge',
   'worktree:kickoff',
   'worktree:connect',
+  'runplan:build',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 

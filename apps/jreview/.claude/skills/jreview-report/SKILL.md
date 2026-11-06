@@ -45,6 +45,7 @@ severity: critical | high | medium | low
 claim: <short claim>
 where: <path:line>
 category: <kebab-slug: correctness, standards, spec, security, performance, test-coverage, …>
+scope: in | out   <only when the review prompt asked for scope — in = a defect in what the diff set out to do or a break; out = pre-existing debt, unrelated refactors, nice-to-haves>
 scenario: <concrete input/state → wrong outcome>
 fix: <the suggested fix>
 quote: <optional — path:start-end, or "diff <path>", when showing the lines makes it clearer>

@@ -1,6 +1,6 @@
 ---
 name: jorchestrate
-description: Run one phase of an orchestrated jTicket auto loop — plan which tickets run side by side and which in sequence, implement each through an Opus subagent in a pooled worktree, spec-check every ticket against its acceptance criteria, and mark it done. Invoked as "/jorchestrate <PROJ-n> …" by jTicket's auto loop; not for general use.
+description: Run one phase of an orchestrated jTicket auto loop — plan which tickets run side by side and which in sequence, implement each through a subagent (on the model the hand-off names — Opus by default) in a pooled worktree, spec-check every ticket against its acceptance criteria, and mark it done. Invoked as "/jorchestrate <PROJ-n> …" by jTicket's auto loop; not for general use.
 disable-model-invocation: true
 ---
 
@@ -24,23 +24,44 @@ Two rules hold for the whole run:
 
 ```bash
 P=PROJ-2   # the project key you were invoked with
+N=1        # which orchestrator you are, when the hand-off says "orchestrator N of M"; 1 when it doesn't
 ```
 
 Every jTicket call goes through `jt` (on PATH; `jt help`), never hand-built `curl` —
 in your own calls and in every prompt you hand a subagent. `jt claim` exits **75**
 when the budget is full.
 
+Several orchestrators may run this phase side by side, each with its own
+share of the tickets. Your hand-off says which you are (`orchestrator N of
+M`) — pass `orchestrator=$N` to `jt queue` and every `jt claim`, and work only
+the tickets the queue lists as yours.
+
 ## 1. Read the queue and every ticket
 
 ```bash
-jt queue $P
-# → { phase, budget, repo, integrationBranch, inFlight, tickets: [{key, title, status, branch, state}] }
+jt queue $P orchestrator=$N
+# → { phase, budget, subagentModel, subagentEffort, sliceDoc, orchestrator, orchestrators, repo,
+#     integrationBranch, inFlight, tickets: [{key, title, status, branch, orchestrator, state}] }
 ```
+
+`budget` and `inFlight` are yours alone — each orchestrator has its own
+budget. `sliceDoc`, when set, is the slice report (DOC-n) for this step —
+read it first (`jt get /api/docs/DOC-n`): what the previous slice
+built and decided. Every claim's prompt tells the implementer to read it
+too.
+
+`subagentModel` and `subagentEffort` are the model and effort every subagent
+you launch runs on — the `model` and `effort` of each `Agent` call below
+(`opus`, `sonnet`, `haiku` or `fable`; `low` … `max`; the human picked them
+for this phase). Your hand-off names them too; use `opus` and `high` if
+neither does. The orchestrator — you — stays whatever it was started as.
 
 `state` is `waiting` (yours to claim), `in-flight` (claimed — after a restart,
 a previous orchestrator's; its branch may carry partial work), `human` (a HITL
 ticket in a run plan's step — never claim it; the human works it and the loop
-waits for them), or `finished`.
+waits for them), `solo` (the loop runs it as its own agent beside you — not
+yours; never claim it or wait on it), `other` (another orchestrator's — not
+yours either), or `finished`.
 
 For each ticket not finished, read what you need to plan:
 
@@ -73,7 +94,7 @@ Get the codebase's worktree guide and follow it for creating, setting up and
 tearing down (the `/jimplement` skill, §4, covers `ready` / `stale` / `missing`):
 
 ```bash
-REPO="$(jt queue $P | jq -r .repo)"
+REPO="$(jt queue $P orchestrator=$N | jq -r .repo)"
 jt get "/api/repos/worktree?repo=$(jq -rn --arg r "$REPO" '$r|@uri')" | jq '{state, changed, body: .guide.body}'
 ```
 
@@ -87,8 +108,8 @@ For each ticket in the wave:
 1. **Claim it.**
 
    ```bash
-   jt claim $P TICK-7
-   # → { ticket, branch, integrationBranch, prompt, again, inFlight, budget }
+   jt claim $P TICK-7 orchestrator=$N
+   # → { ticket, branch, integrationBranch, prompt, again, inFlight, budget, orchestrator, orchestrators }
    ```
 
    Exit 75 (a 409 with `data.wait: true`) means the budget is full — or, in a run plan,
@@ -99,7 +120,7 @@ For each ticket in the wave:
 2. **Point a free slot at its branch**: `git -C <slot> status --porcelain`
    prints nothing, then `git -C <slot> switch <branch>`.
 
-3. **Launch its implementer**: an `Agent` call, `model: "opus"`, prompt:
+3. **Launch its implementer**: an `Agent` call, `model: "<subagentModel>"`, `effort: "<subagentEffort>"`, prompt:
 
    > You are implementing TICK-7. Your worktree is `<slot path>`, with branch
    > `<branch>` checked out — work only there, using absolute paths. Invoke the
@@ -111,7 +132,7 @@ with its PR key, what it built, and anything left undone.
 ## 5. Spec-check every ticket
 
 A ticket leaves the wave only through the **spec check**. For each
-implementer that reported, launch a spec reviewer — `Agent`, `model: "opus"` —
+implementer that reported, launch a spec reviewer — `Agent`, `model: "<subagentModel>"`, `effort: "<subagentEffort>"` —
 all of the wave's reviewers in one message:
 
 > Spec-review TICK-7. Diff: `git -C <repo> diff <integrationBranch>...<branch>`
@@ -146,10 +167,11 @@ A released slot takes the next ticket. Done when every ticket of the wave is
 ## 6. Next wave, then finish
 
 Repeat 4–5 until the queue shows every ticket you can claim `finished`
-(`human` ones are the human's, not yours to wait on):
+(`human` ones are the human's, `solo` ones the loop's own agents', `other`
+ones another orchestrator's — not yours to wait on):
 
 ```bash
-jt queue $P | jq '[.tickets[] | select(.state != "finished" and .state != "human")] | length'   # 0
+jt queue $P orchestrator=$N | jq '[.tickets[] | select(.state != "finished" and .state != "human" and .state != "other" and .state != "solo")] | length'   # 0
 ```
 
 Then tear every slot down the way the guide says (`git worktree remove`

@@ -182,6 +182,8 @@ const {
   runningAll,
   runAllProgress,
   runAll,
+  batching,
+  runBatch,
   copied,
   copyCommand,
 } = useHerdrDispatch()
@@ -231,6 +233,26 @@ async function runAllFrontier() {
   )
   // A pick is a one-shot batch choice — clear it once the batch has gone, so
   // the next Run all means the whole frontier again and not a stale subset.
+  picked.value = new Set()
+}
+
+// ── One session — the ticked tickets, one agent, in key order ──
+// Not the orchestrator and not run-all: a single claude session in its own tab
+// works the picks one after another. The fit is a handful of small tasks or
+// decision tickets that don't each need a model spun up — so it only appears
+// once two or more cards are ticked (one ticked card is just Run selected).
+const batchRows = computed(() => pickedFrontier.value)
+const batchHint = computed(() => {
+  const n = batchRows.value.length
+  const hitl = batchRows.value.filter(isHitl).length
+  return `One claude session, in its own tab, works the ${n} ticked tickets one after another in key order (${batchRows.value.map((t) => t.key).join(', ')}) — each on its own hand-off. For small tasks and decision tickets; not the orchestrator${hitl ? `. ${hitl} HITL — it will stop and ask you in that pane` : ''}`
+})
+async function runInOneSession() {
+  if (!props.project || batchRows.value.length < 2) return
+  await runBatch(
+    props.project,
+    batchRows.value.map((ticket) => ({ ticket, mode: mode.value })),
+  ).catch(() => {})
   picked.value = new Set()
 }
 
@@ -341,12 +363,24 @@ function dispatchFor(t: Ticket) {
               variant="soft"
               size="xs"
               :loading="runningAll === project.id"
-              :disabled="!!runningAll && runningAll !== project.id"
+              :disabled="(!!runningAll && runningAll !== project.id) || !!batching"
               @click="runAllFrontier"
             >
               <template v-if="runningAll === project.id">Running {{ runAllProgress }}…</template>
               <template v-else-if="pickedFrontier.length">Run selected ({{ pickedFrontier.length }})</template>
               <template v-else>Run all ({{ counts.frontier }})</template>
+            </UButton>
+          </UTooltip>
+          <UTooltip v-if="!autoOn && herdrUp && pickedFrontier.length >= 2" :text="batchHint">
+            <UButton
+              icon="i-lucide-list-ordered"
+              variant="soft"
+              size="xs"
+              :loading="batching === project.id"
+              :disabled="!!runningAll || (!!batching && batching !== project.id)"
+              @click="runInOneSession"
+            >
+              One session ({{ pickedFrontier.length }})
             </UButton>
           </UTooltip>
           <UTooltip v-if="!autoOn && herdrUp && mode === 'standard'" :text="loopHint">

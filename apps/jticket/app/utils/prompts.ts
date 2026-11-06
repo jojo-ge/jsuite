@@ -24,6 +24,7 @@ export const PROMPT_KINDS = [
   'standard:local',
   'standard:master',
   'standard:integration',
+  'batch',
   'wayfinder',
   'jmap:scope',
   'jmap:domain',
@@ -35,6 +36,7 @@ export const PROMPT_KINDS = [
   'merge',
   'worktree:kickoff',
   'worktree:connect',
+  'runplan:build',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 export type PromptOverrides = Partial<Record<PromptKind, string>>
@@ -55,6 +57,10 @@ export interface PromptVars {
   prs: string
   /** The codebase's worktree guide on jTicket's API — GET it to read, PUT it to write. */
   worktreeGuide: string
+  /** A batch's tickets in run order, e.g. 'TICK-3, TICK-4'. */
+  keys: string
+  /** A batch's per-ticket hand-offs, numbered, each the text that ticket would fire on its own. */
+  handoffs: string
 }
 
 /** The variables a given kind's editor advertises, in the order they read best. */
@@ -62,6 +68,8 @@ const TICKET_VARS = ['key', 'title', 'branch', 'onBranch', 'projectKey', 'projec
 const MERGE_VARS = ['prs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch'] as const
 const KICKOFF_VARS = ['repo', 'worktreeGuide'] as const
 const CONNECT_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
+const BUILD_PLAN_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
+const BATCH_VARS = ['keys', 'handoffs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 
 export const PROMPT_VAR_HINTS: Record<keyof PromptVars, string> = {
   key: "the ticket's key, e.g. TICK-42",
@@ -74,6 +82,8 @@ export const PROMPT_VAR_HINTS: Record<keyof PromptVars, string> = {
   integrationBranch: "the project's integration branch",
   prs: "the merge queue, e.g. 'PR-3, PR-4'",
   worktreeGuide: "the codebase's worktree guide URL on jTicket's API — GET to read, PUT to write",
+  keys: "the batch's tickets in run order, e.g. 'TICK-3, TICK-4'",
+  handoffs: "the batch's hand-offs, numbered — each ticket's own prompt, as it would fire alone",
 }
 
 /** Where a codebase's worktree guide lives on jTicket's API (repo = path, ~/… or slug). */
@@ -131,6 +141,27 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     vars: TICKET_VARS,
     template:
       '/jimplement {key} in a worktree and open a PR to the integration branch. When done tear down the worktree.',
+  },
+  // The board's "One session" button: the ticked tickets, worked one after
+  // another by a single claude session in its own tab. Not the orchestrator —
+  // no subagents, no claims, no budget — just one agent draining a short list
+  // of small tasks or decisions that don't each deserve a model of their own.
+  // {handoffs} carries each ticket's OWN resolved prompt (its mode, the
+  // hand-off picker's PR target, its project/codebase/ticket overrides), so
+  // the batch changes who runs the work, never what each ticket asks for.
+  batch: {
+    label: 'One session (several tickets)',
+    hint: "The board's One session button — the ticked tickets worked in order by a single session, each on its own hand-off.",
+    group: 'Implementation',
+    level: 'project',
+    command: 'One session',
+    vars: BATCH_VARS,
+    template: [
+      'Work these {projectKey} tickets in this one session, one after another, in this order: {keys}.',
+      'No subagents and nothing in parallel: finish each ticket completely — its outcome recorded on it, its status updated, any PR its hand-off asks for opened — before starting the next, then move straight on without stopping to ask.',
+      'A HITL ticket is the one exception: put its questions to me here in this pane and wait for my answers.',
+      "Each ticket's hand-off, which you follow as written when its turn comes: {handoffs}",
+    ].join(' '),
   },
   wayfinder: {
     label: 'Wayfinder ticket',
@@ -261,10 +292,25 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       'Do not push or touch GitHub.',
     ].join(' '),
   },
+  'runplan:build': {
+    label: 'Build the run plan',
+    hint: "The Run setup tab's Build button — one Fable 5.1 session reads the project and writes its run plan. A codebase or project override is where to say \"never Haiku here\" or \"two orchestrators at most\".",
+    group: 'Run setup',
+    level: 'project',
+    command: 'Build run plan',
+    vars: BUILD_PLAN_VARS,
+    template: [
+      "/jrunplan {projectKey} — build {projectKey} ({projectTitle})'s run plan.",
+      'Read the project, its docs and every open ticket (GET http://localhost:43000/api/projects/{projectKey}, /api/docs?projectId={projectKey}, /api/tickets?projectId={projectKey}), then the code in {repo} (integration branch {integrationBranch}; worktree guide {worktreeGuide}) to judge what each ticket touches and how heavy it is.',
+      'Group related small tickets under orchestrators and give heavy ones their own agent; pick the model and effort per agent to match the work; put merges where later tickets build on earlier ones; place reviews sparingly — a few implement steps and a good number of landed tickets between them, scaled to the project, always one at the end — and a gate only where a human must look.',
+      'Save with PUT http://localhost:43000/api/projects/{projectKey}/run-plan until it reports no problems, then POST http://localhost:43000/api/projects/{projectKey}/run-plan/built.',
+      "Don't ask questions — nobody is watching this pane.",
+    ].join(' '),
+  },
 }
 
 /** The editor's sections, in the order they render. */
-export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees'] as const
+export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees', 'Run setup'] as const
 export function promptKindsInGroup(group: string): PromptKind[] {
   return PROMPT_KINDS.filter((k) => PROMPT_KIND_META[k].group === group)
 }
@@ -321,6 +367,8 @@ export function ticketPromptVars(
     integrationBranch: project?.integrationBranch ?? '',
     prs: '',
     worktreeGuide: worktreeGuideUrl(projectRepo(project)),
+    keys: '',
+    handoffs: '',
   }
 }
 
@@ -422,6 +470,8 @@ function projectLevelVars(project: ProjectForPrompt | null, repo: string, prs = 
     integrationBranch: project?.integrationBranch ?? '',
     prs,
     worktreeGuide: worktreeGuideUrl(project ? projectRepo(project) : repo),
+    keys: '',
+    handoffs: '',
   }
 }
 
@@ -434,6 +484,49 @@ export function resolveMergePrompt(
 ): string {
   const { template } = promptTemplateFor('merge', project, defaults, codebase)
   return renderPrompt(template, projectLevelVars(project, project.repo, prKeys.join(', ')))
+}
+
+/** The Run setup tab's Build button — layers 2–5, like the sweep (a project-level hand-off with no ticket). */
+export function resolveBuildPlanPrompt(
+  project: ProjectForPrompt,
+  defaults: PromptOverrides,
+  codebase?: CodebasePrompts,
+): string {
+  const { template } = promptTemplateFor('runplan:build', project, defaults, codebase)
+  return renderPrompt(template, projectLevelVars(project, project.repo))
+}
+
+/** One ticket's share of a batch: its key and the prompt it would fire on its own. */
+export interface BatchHandoff {
+  key: string
+  text: string
+}
+
+/**
+ * The hand-offs as the batch template reads them: numbered, keyed, on one line
+ * (herdr submits a newline early). Each text is already resolved through every
+ * layer by the caller — the batch never re-renders a ticket's prompt.
+ */
+export function batchHandoffsText(handoffs: BatchHandoff[]): string {
+  const n = handoffs.length
+  return handoffs
+    .map((h, i) => `[${i + 1}/${n}] ${h.key}: ${h.text.replace(/\s*\n\s*/g, ' ').trim()}`)
+    .join(' ')
+}
+
+/**
+ * The board's One session hand-off — layers 2–5 for the wrapper (a project-
+ * level kind), with each ticket's own fully-resolved prompt inlined.
+ */
+export function resolveBatchPrompt(
+  project: ProjectForPrompt,
+  handoffs: BatchHandoff[],
+  defaults: PromptOverrides,
+  codebase?: CodebasePrompts,
+): string {
+  const { template } = promptTemplateFor('batch', project, defaults, codebase)
+  const vars = projectLevelVars(project, project.repo)
+  return renderPrompt(template, { ...vars, keys: handoffs.map((h) => h.key).join(', '), handoffs: batchHandoffsText(handoffs) })
 }
 
 /** The integration branch's connect prompt — layers 2–5, like the sweep. */

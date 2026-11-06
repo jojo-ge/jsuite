@@ -1,10 +1,28 @@
 import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, resolve } from 'node:path'
-import { DEFAULT_REVIEWERS, MAX_REVIEWERS, PROJECT_KEY_SHAPE, type Review, type ReviewConsensus } from '../../../app/utils/reviewTypes'
+import {
+  DEFAULT_REVIEWERS,
+  MAX_REVIEWERS,
+  PROJECT_KEY_SHAPE,
+  REVIEW_EFFORTS,
+  type Review,
+  type ReviewConsensus,
+  type ReviewContext,
+  type ReviewEffort,
+  type ReviewPass,
+} from '../../../app/utils/reviewTypes'
 
 /**
- * Start a review. Body: { repoPath, branch?, base?, title?, reviewers?, consensus?, project? }
+ * Start a review. Body: { repoPath, branch?, base?, title?, reviewers?, consensus?, project?,
+ *                         pass?, model?, effort?, context? }
+ *
+ * - `pass` — a consensus review's kind: 'consensus' (default) or 'architecture'
+ *   (one architectural & technical reviewer; its architectural findings are
+ *   mandatory fixes). `model` (a claude model id) and `effort` pin the
+ *   reviewers' sessions. `context` = { docs?: [DOC-n…], review?: <key> } —
+ *   what the reviewers read first: jTicket docs, and an earlier review of the
+ *   same diff whose findings are already fixed.
  *
  * - `branch` — what to review (default: whatever is checked out). A branch
  *   that isn't checked out is reviewed in a detached worktree, so the human's
@@ -72,6 +90,26 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let pass: ReviewPass | undefined
+  if (body.pass !== undefined && body.pass !== null && body.pass !== '') {
+    if (body.pass !== 'consensus' && body.pass !== 'architecture') throw createError({ statusCode: 400, message: 'pass must be consensus or architecture' })
+    if (!consensus) throw createError({ statusCode: 400, message: 'pass belongs to a consensus review — send consensus too' })
+    pass = body.pass
+    if (pass === 'architecture' && count !== 1) throw createError({ statusCode: 400, message: 'an architecture pass is one reviewer' })
+  }
+  const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim().slice(0, 80) : undefined
+  let effort: ReviewEffort | undefined
+  if (body.effort !== undefined && body.effort !== null && body.effort !== '') {
+    if (!(REVIEW_EFFORTS as readonly string[]).includes(body.effort)) throw createError({ statusCode: 400, message: `effort must be one of ${REVIEW_EFFORTS.join(', ')}` })
+    effort = body.effort
+  }
+  let context: ReviewContext | undefined
+  if (body.context && typeof body.context === 'object') {
+    const docs = Array.isArray(body.context.docs) ? body.context.docs.filter((d: unknown): d is string => typeof d === 'string' && /^[A-Za-z]+-\d+$/.test(d)) : []
+    const prior = typeof body.context.review === 'string' ? body.context.review.trim() : ''
+    if (docs.length || prior) context = { ...(docs.length ? { docs } : {}), ...(prior ? { review: prior } : {}) }
+  }
+
   const repoName = basename(repoPath)
   const title = String(body.title ?? '').trim() || `${repoName} · ${pr ? `#${pr.number} ` : ''}${branch}`
   const key = await uniqueReviewKey(title)
@@ -103,6 +141,10 @@ export default defineEventHandler(async (event) => {
     findings: [],
     tickets: null,
     ...(consensus ? { consensus } : {}),
+    ...(pass ? { pass } : {}),
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
+    ...(context ? { context } : {}),
     ...(project ? { project } : {}),
     createdAt: now,
     updatedAt: now,

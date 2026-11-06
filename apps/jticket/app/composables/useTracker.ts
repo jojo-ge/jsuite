@@ -1,6 +1,6 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
 import type { AutoLoop } from '~/utils/autoLoop'
-import type { RunPlan } from '~/utils/runPlan'
+import type { RunPlan, RunPlanBuild } from '~/utils/runPlan'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
@@ -49,6 +49,8 @@ export interface Project {
   auto?: AutoLoop | null
   // The Run setup tab's plan — see ~/utils/runPlan.ts. Absent/null = none drafted.
   runPlan?: RunPlan | null
+  // A /jrunplan session building it (the tab's Build button) — the tab is read-only while set.
+  runPlanBuild?: RunPlanBuild | null
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,
@@ -354,6 +356,11 @@ export function ticketDiffUrl(
 export const DOC_STATUS_META: Record<DocStatus, { label: string; color: 'neutral' | 'success' }> = {
   draft: { label: 'Draft', color: 'neutral' },
   ready: { label: 'Ready', color: 'success' },
+}
+
+/** The ticket's blockers that are still open, resolved from `all`. */
+export function openBlockersOf(ticket: Ticket, all: Ticket[]): Ticket[] {
+  return ticket.blockedBy.map((id) => all.find((t) => t.id === id)).filter((b): b is Ticket => !!b && !isFinished(b.status))
 }
 
 export function isBlocked(ticket: Ticket, all: Ticket[]): boolean {

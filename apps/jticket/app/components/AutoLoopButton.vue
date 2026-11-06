@@ -5,6 +5,7 @@
 // "Stop at the end of next loop" button lives in <AutoLoopPanel>.
 import type { Project, Ticket } from '~/composables/useTracker'
 import { DEFAULT_ORCHESTRATION, ORCHESTRATION_BUDGET_MAX, type AutoMode } from '~/utils/autoLoop'
+import { EFFORTS, PLAN_MODELS, PLAN_MODEL_KEYS, PLAN_ORCHESTRATORS_MAX, type Effort, type PlanModel } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[]; allTickets: Ticket[] }>()
 const { busy, start, turnOff } = useAutoLoop()
@@ -15,13 +16,20 @@ const error = ref('')
 
 // How implementing / fixing dispatch — seeded from the last run's setting.
 const mode = ref<AutoMode>(DEFAULT_ORCHESTRATION.mode)
+const model = ref<PlanModel>(DEFAULT_ORCHESTRATION.model)
+const effort = ref<Effort>(DEFAULT_ORCHESTRATION.effort)
 const budget = ref(DEFAULT_ORCHESTRATION.budget)
+const orchestrators = ref(DEFAULT_ORCHESTRATION.orchestrators)
 const orchestrated = computed(() => mode.value === 'orchestrated')
+const modelLabel = computed(() => PLAN_MODELS[model.value].label)
 const modeItems = [
-  { label: 'One session per ticket', value: 'sessions', description: 'Every ticket at once, each in its own Opus 5.5 session and worktree. Fastest, heaviest.' },
-  { label: 'Orchestrated', value: 'orchestrated', description: 'One Fable 5.1 session runs the tickets through Opus 5.5 subagents in pooled worktrees, deciding what runs side by side. Lighter, slower.' },
+  { label: 'One session per ticket', value: 'sessions', description: 'Every ticket at once, each in its own session and worktree on the model below. Fastest, heaviest.' },
+  { label: 'Orchestrated', value: 'orchestrated', description: 'One Fable 5.1 session runs the tickets through subagents on the model below, in pooled worktrees, deciding what runs side by side. Lighter, slower.' },
 ]
-const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX }, (_, i) => ({ label: `${i + 1} at a time`, value: i + 1 }))
+const modelItems = PLAN_MODEL_KEYS.map((m) => ({ label: PLAN_MODELS[m].label, value: m }))
+const effortItems = EFFORTS.map((e) => ({ label: `${e} effort`, value: e }))
+const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX }, (_, i) => ({ label: `${i + 1} at a time${orchestrators.value > 1 ? ' each' : ''}`, value: i + 1 }))
+const orchestratorItems = Array.from({ length: PLAN_ORCHESTRATORS_MAX }, (_, i) => ({ label: `${i + 1} orchestrator${i ? 's' : ''}`, value: i + 1 }))
 
 const afkFrontier = computed(() =>
   props.tickets.filter((t) => isFrontier(t, props.allTickets, props.project) && !isHitl(t) && !isPaused(t)),
@@ -79,14 +87,17 @@ async function onClick() {
   error.value = ''
   const o = props.project.auto?.orchestration ?? DEFAULT_ORCHESTRATION
   mode.value = o.mode
+  model.value = o.model
+  effort.value = o.effort
   budget.value = o.budget
+  orchestrators.value = o.orchestrators
   confirmOpen.value = true
 }
 
 async function confirmStart() {
   error.value = ''
   try {
-    await start(props.project, { mode: mode.value, budget: budget.value })
+    await start(props.project, { mode: mode.value, model: model.value, effort: effort.value, budget: budget.value, orchestrators: orchestrators.value })
     confirmOpen.value = false
   } catch (err: any) {
     error.value = String(err?.data?.statusMessage ?? err?.data?.message ?? err?.message ?? err)
@@ -128,21 +139,28 @@ async function confirmStart() {
         </p>
         <ol class="flex list-decimal flex-col gap-1.5 pl-5">
           <li v-if="orchestrated">
-            <span class="font-medium">Implement</span> — a <span class="font-mono text-xs">Fable 5.1</span> orchestrator works the AFK frontier through
-            <span class="font-mono text-xs">Opus 5.5</span> subagents, at most {{ budget }} at a time, and spec-checks each ticket against its acceptance criteria before marking it done.
+            <span class="font-medium">Implement</span> —
+            <template v-if="orchestrators > 1">{{ orchestrators }} <span class="font-mono text-xs">Fable 5.1</span> orchestrators share the AFK frontier out between them, each working its share through</template>
+            <template v-else>a <span class="font-mono text-xs">Fable 5.1</span> orchestrator works the AFK frontier through</template>
+            <span class="font-mono text-xs">{{ modelLabel }}</span> subagents, at most {{ budget }} at a time{{ orchestrators > 1 ? ' each' : '' }}, and spec-checks each ticket against its acceptance criteria before marking it done.
           </li>
-          <li v-else><span class="font-medium">Implement</span> — every AFK ticket on the frontier goes to herdr on <span class="font-mono text-xs">Opus 5.5</span>.</li>
+          <li v-else><span class="font-medium">Implement</span> — every AFK ticket on the frontier goes to herdr on <span class="font-mono text-xs">{{ modelLabel }}</span>.</li>
           <li><span class="font-medium">Merge</span> — once they're all done, a merge sweep on <span class="font-mono text-xs">Sonnet 5</span> lands their PRs on <span class="font-mono text-xs">{{ project.integrationBranch || 'the integration branch' }}</span>.</li>
           <li><span class="font-medium">Review</span> — two <span class="font-mono text-xs">Opus 5.5</span> reviewers in jReview read this loop's changes; a <span class="font-mono text-xs">Sonnet 5</span> session files only the findings <em>both</em> raised as tickets here.</li>
           <li>
             <span class="font-medium">Fix</span> — those tickets
             <template v-if="orchestrated">go to a fresh orchestrator the same way</template>
-            <template v-else>go to herdr on <span class="font-mono text-xs">Opus 5.5</span></template>, then a second merge sweep lands them.
+            <template v-else>go to herdr on <span class="font-mono text-xs">{{ modelLabel }}</span></template>, then a second merge sweep lands them.
           </li>
         </ol>
         <div class="flex flex-col gap-2">
           <URadioGroup v-model="mode" :items="modeItems" legend="How tickets are dispatched" />
-          <USelect v-if="orchestrated" v-model="budget" :items="budgetItems" size="sm" class="w-40" />
+          <div class="flex flex-wrap items-center gap-2">
+            <USelect v-model="model" :items="modelItems" size="sm" class="w-36" :aria-label="orchestrated ? 'Subagent model' : 'Session model'" />
+            <USelect v-model="effort" :items="effortItems" size="sm" class="w-36" aria-label="Effort" />
+            <USelect v-if="orchestrated" v-model="orchestrators" :items="orchestratorItems" size="sm" class="w-40" aria-label="Orchestrators side by side" />
+            <USelect v-if="orchestrated" v-model="budget" :items="budgetItems" size="sm" class="w-40" aria-label="Tickets in flight at once, per orchestrator" />
+          </div>
         </div>
         <div class="rounded-md border border-default bg-elevated/40 px-3 py-2">
           <p>

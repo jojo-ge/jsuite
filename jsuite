@@ -65,14 +65,14 @@ DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgri
 # list in sync with its row here.
 SKILLS_MANIFEST=(
   ".|jsuite"
-  "apps/jticket|jimplement jorchestrate jwayfinder to-jticket to-jspec to-jdoc jarchitect-scan jarchitect-grill jreproduce"
+  "apps/jticket|jimplement jorchestrate jwayfinder to-jticket to-jspec to-jdoc jarchitect-scan jarchitect-grill jreproduce jslice-report jrunplan"
   "apps/jdiff|jdiff-review jdiff-ask jdiff-tour jdiff-chains"
   "apps/jchart|j-chart"
   "apps/jexplain|j-explain"
   "apps/jgrilling|j-grilling"
   "apps/jcode|jcode jcode-mark"
   "apps/jmap|jmap-scope jmap-domain jmap-synthesize j-map"
-  "apps/jreview|jreview-report jreview-triage jreview-consensus"
+  "apps/jreview|jreview-report jreview-triage jreview-consensus jarch-review"
 )
 POCOCK_SOURCE="mattpocock/skills"
 

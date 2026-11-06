@@ -30,15 +30,11 @@ const history = computed(() => [...(props.project.auto?.history ?? [])].reverse(
       </span>
       <span v-if="h.forced?.length" class="text-warning">closed by the loop: {{ h.forced.join(', ') }}</span>
       <template v-if="h.plan">
-        <a
-          v-for="r in h.plan.filter((x) => x.reviewKey)"
-          :key="r.stepId"
-          :href="`https://jreview.local/r/${r.reviewKey}`"
-          target="_blank"
-          class="text-primary hover:underline"
-        >
-          review ↗
-        </a>
+        <template v-for="r in h.plan" :key="r.stepId">
+          <a v-if="r.archReviewKey" :href="`https://jreview.local/r/${r.archReviewKey}`" target="_blank" class="text-primary hover:underline">architectural review ↗</a>
+          <a v-if="r.reviewKey" :href="`https://jreview.local/r/${r.reviewKey}`" target="_blank" class="text-primary hover:underline">review ↗</a>
+          <NuxtLink v-if="r.sliceDoc" :to="`/docs/${r.sliceDoc}`" class="font-mono text-primary hover:underline">{{ r.sliceDoc }}</NuxtLink>
+        </template>
       </template>
       <a v-else-if="h.reviewKey" :href="`https://jreview.local/r/${h.reviewKey}`" target="_blank" class="text-primary hover:underline">
         review ↗

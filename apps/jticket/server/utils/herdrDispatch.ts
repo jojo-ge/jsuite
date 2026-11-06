@@ -1,5 +1,6 @@
-// The herdr hand-offs jTicket makes, as functions: a ticket's session, the
-// project's merge sweep, and the ticket branch a local-PR hand-off names.
+// The herdr hand-offs jTicket makes, as functions: a ticket's session, a batch
+// of tickets in one session, the project's merge sweep, and the ticket branch a
+// local-PR hand-off names.
 //
 // The endpoints (tickets/[id]/herdr, projects/[id]/herdr-merge,
 // tickets/[id]/branch) are thin wrappers over these, and the auto loop
@@ -8,6 +9,7 @@
 // errors; callers that must not throw catch them.
 import type { Store, Ticket, Project } from './store'
 import {
+  resolveBuildPlanPrompt,
   resolveMergePrompt,
   resolveTicketPrompt,
   type PromptOverrides,
@@ -21,9 +23,10 @@ export interface TicketDispatch {
   ticket: string
 }
 
-/** `--model` for claude, or nothing (the CLI's default) when no model is pinned. */
-function modelArgs(model?: string) {
-  return model ? { args: ['--model', model] } : undefined
+/** `--model` / `--effort` for claude, or nothing (the CLI's defaults) when neither is pinned. */
+function modelArgs(model?: string, effort?: string) {
+  const args = [...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])]
+  return args.length ? { args } : undefined
 }
 
 /**
@@ -36,7 +39,7 @@ export async function dispatchTicketSession(
   store: Store,
   ticket: Ticket,
   prompt: string,
-  opts: { ownTab?: boolean; model?: string } = {},
+  opts: { ownTab?: boolean; model?: string; effort?: string } = {},
 ): Promise<TicketDispatch> {
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
@@ -80,7 +83,7 @@ export async function dispatchTicketSession(
   // otherwise four identical claude spinners with nothing saying which ticket
   // each is working. Cosmetic and best-effort — never fails the dispatch.
   await renamePane(paneId, ticket.title ? `${ticket.key} · ${ticket.title}` : ticket.key)
-  const agent = await startClaudeIn(paneId, ticket.key, framedPrompt, modelArgs(opts.model))
+  const agent = await startClaudeIn(paneId, ticket.key, framedPrompt, modelArgs(opts.model, opts.effort))
 
   return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
 }
@@ -90,7 +93,7 @@ export async function dispatchTicketSession(
  * ('PROJ-n · merge') — land every open local PR on the integration branch,
  * rebasing through conflicts.
  */
-export async function dispatchMergeSession(project: Project, prompt: string, opts: { model?: string } = {}) {
+export async function dispatchMergeSession(project: Project, prompt: string, opts: { model?: string; effort?: string } = {}) {
   return dispatchProjectSession(project, 'merge', prompt, opts)
 }
 
@@ -98,7 +101,12 @@ export async function dispatchMergeSession(project: Project, prompt: string, opt
  * Start a project-level session (not tied to one ticket) in a NEW single-pane
  * tab of the project's workspace, named 'PROJ-n · <job>'.
  */
-export async function dispatchProjectSession(project: Project, job: string, prompt: string, opts: { model?: string } = {}) {
+export async function dispatchProjectSession(
+  project: Project,
+  job: string,
+  prompt: string,
+  opts: { model?: string; effort?: string; agent?: string; paneLabel?: string } = {},
+) {
   const cwd = resolveRepoDir(project.repo)
   const label = `${project.key} · ${job}`
   const { workspaceId, freshTab } = await ensureHerdrWorkspace(project.title, cwd)
@@ -110,9 +118,65 @@ export async function dispatchProjectSession(project: Project, job: string, prom
   } else {
     ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
   }
-  await renamePane(paneId, label)
-  const agent = await startClaudeIn(paneId, `${job}-${project.key}`, prompt, modelArgs(opts.model))
+  await renamePane(paneId, opts.paneLabel ?? label)
+  const agent = await startClaudeIn(paneId, opts.agent ?? `${job}-${project.key}`, prompt, modelArgs(opts.model, opts.effort))
   return { workspaceId, tabId, paneId, agent, project: project.key }
+}
+
+/** How a batch names its tab: the first keys, then a count for the rest. */
+export function batchJobLabel(keys: string[], shown = 3): string {
+  const head = keys.slice(0, shown).join(', ')
+  const rest = keys.length - shown
+  return `batch · ${head}${rest > 0 ? ` +${rest}` : ''}`
+}
+
+/**
+ * Start ONE claude session over several tickets — the board's One session
+ * button. A single-pane tab of the project's workspace ('PROJ-n · batch · …'),
+ * running the batch prompt the client built (each ticket's own resolved
+ * hand-off inlined, see resolveBatchPrompt). Not the orchestrator: no claims,
+ * no budget, no subagents — one agent working a short list in order, for the
+ * small tasks and decision tickets that don't each deserve a model of their own.
+ *
+ * Every ticket must be the project's; the same per-ticket guards as a single
+ * dispatch apply (mid-transfer 409, peer-owned 403), and the collaborator
+ * framing covers the peer docs every ticket in the batch links.
+ */
+export async function dispatchBatchSession(
+  store: Store,
+  project: Project,
+  tickets: Ticket[],
+  prompt: string,
+  opts: { model?: string; effort?: string } = {},
+) {
+  if (!tickets.length) throw createError({ statusCode: 400, statusMessage: 'a batch needs at least one ticket' })
+  for (const ticket of tickets) {
+    if (ticket.projectId !== project.id) {
+      throw createError({ statusCode: 400, statusMessage: `${ticket.key} is not a ${project.key} ticket — a batch runs in one project's workspace` })
+    }
+    const frozen = transferFreezeError(ticket, project.share)
+    if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
+    const refused = peerDispatchError(ticket, project.share)
+    if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+  }
+
+  // One appendix for the whole batch: the peer docs linked from any of its
+  // tickets' descriptions, framed once (spec DOC-30), same as a single dispatch.
+  const framing = await collaboratorFramingFor(
+    { description: tickets.map((t) => t.description).join('\n'), projectId: project.id },
+    project,
+    store.docs,
+    readDoc,
+  )
+  const framedPrompt = framedDispatchPrompt(prompt, framing)
+
+  const keys = tickets.map((t) => t.key)
+  const res = await dispatchProjectSession(project, batchJobLabel(keys), framedPrompt, {
+    ...opts,
+    agent: `batch-${project.key}`,
+    paneLabel: `${project.key} · batch · ${keys.join(', ')}`,
+  })
+  return { ...res, tickets: keys }
 }
 
 /**
@@ -174,6 +238,11 @@ export function localPrPrompt(store: Store, project: Project, ticket: Ticket): s
     defaults: store.promptDefaults,
     codebase: codebasePromptsFor(store, project),
   }).text
+}
+
+/** The Run setup tab's Build hand-off (`runplan:build`), layers 2–5 applied. */
+export function buildPlanPrompt(store: Store, project: Project): string {
+  return resolveBuildPlanPrompt({ ...project, repoPath: projectRepoPath(project) }, store.promptDefaults, codebasePromptsFor(store, project))
 }
 
 /** The project's merge sweep over `prKeys`, layers 2–5 applied. */

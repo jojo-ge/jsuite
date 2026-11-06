@@ -7,7 +7,7 @@
 // caller never has to remember to pass them.
 import type { Project, ProjectMode, Ticket } from '~/composables/useTracker'
 import type { Codebase } from '~/composables/useCodebase'
-import type { CodebasePrompts, PromptKind, PromptOverrides } from '~/utils/prompts'
+import type { BatchHandoff, CodebasePrompts, PromptKind, PromptOverrides } from '~/utils/prompts'
 
 export function usePrompts() {
   // Shared across every component on the page — one fetch, one source.
@@ -85,6 +85,11 @@ export function usePrompts() {
     return resolveMergePrompt(project, prKeys, defaults.value, codebaseOf(project))
   }
 
+  /** The board's One session hand-off — layers 2–5 for the wrapper; each ticket's prompt comes in already resolved. */
+  function batchPrompt(project: Project, handoffs: BatchHandoff[]) {
+    return resolveBatchPrompt(project, handoffs, defaults.value, codebaseOf(project))
+  }
+
   /** The integration branch's connect prompt — layers 2–5, like the sweep. */
   function connectPrompt(project: Project) {
     return resolveConnectPrompt(project, defaults.value, codebaseOf(project))
@@ -95,5 +100,5 @@ export function usePrompts() {
     return resolveKickoffPrompt(codebase, defaults.value)
   }
 
-  return { defaults, loaded, refresh, saveDefaults, templateFor, ticketPrompt, mergePrompt, connectPrompt, kickoffPrompt }
+  return { defaults, loaded, refresh, saveDefaults, templateFor, ticketPrompt, mergePrompt, batchPrompt, connectPrompt, kickoffPrompt }
 }

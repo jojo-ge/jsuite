@@ -22,6 +22,27 @@ export const MAX_REVIEWERS = 4
 /** The reviewer count when the caller doesn't ask for one. */
 export const DEFAULT_REVIEWERS = 4
 
+/** claude's `--effort` levels, as a caller may pin a review's sessions to. */
+export const REVIEW_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+export type ReviewEffort = (typeof REVIEW_EFFORTS)[number]
+
+/**
+ * Which pass a consensus review is. 'consensus' (the default): only findings
+ * every reviewer raised become tickets. 'architecture': ONE architectural &
+ * technical reviewer (the global /jarch-review skill) whose `architecture`
+ * findings are all filed as fix tickets — mandatory — and whose `technical`
+ * ones are filed as advisory (HITL) tickets the loop leaves alone.
+ */
+export type ReviewPass = 'consensus' | 'architecture'
+
+/** What the reviewers read before the diff. */
+export interface ReviewContext {
+  /** jTicket docs (DOC-n) — e.g. the run plan's slice report. */
+  docs?: string[]
+  /** An earlier review of the same diff (the architectural pass): its reports are handed over, its findings already fixed. */
+  review?: string
+}
+
 export type ReviewStatus =
   /** Reviewers dispatched or running; waiting on their documents. */
   | 'reviewing'
@@ -163,6 +184,12 @@ export interface Review {
   findings: Finding[]
   tickets: ReviewTickets | null
   consensus?: ReviewConsensus
+  /** Which pass this is — see ReviewPass. Unset = consensus. */
+  pass?: ReviewPass
+  /** The claude model id the reviewers run on (default REVIEW_MODEL) and their effort (default the CLI's). */
+  model?: string
+  effort?: ReviewEffort
+  context?: ReviewContext
   /**
    * The jTicket project this review belongs to, when jTicket's Review tab
    * started it: findings are added to it as tickets rather than a new project,

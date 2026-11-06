@@ -9,8 +9,8 @@
   jt branch KEY [branch]           cut / adopt the ticket's work branch
   jt projects [repo=...]           list projects
   jt project KEY                   one project as JSON
-  jt queue PROJECT                 auto-loop queue
-  jt claim PROJECT KEY             orchestrator claim (JSON; exit 75 when the budget is full)
+  jt queue PROJECT [orchestrator=N]      auto-loop queue (N = which of several orchestrators you are)
+  jt claim PROJECT KEY [orchestrator=N]  orchestrator claim (JSON; exit 75 when the budget is full)
   jt prs [field=value ...]         list local PRs (projectId= ticket= status= repo=)
   jt get|post|patch|put|delete PATH [JSON]   raw call, e.g. jt get /api/docs/DOC-3
 
@@ -118,9 +118,9 @@ def main(argv):
     elif cmd == 'project':
         dump(call('GET', f'/api/projects/{a[0]}'))
     elif cmd == 'queue':
-        dump(call('GET', f'/api/projects/{a[0]}/auto/queue'))
+        dump(call('GET', f'/api/projects/{a[0]}/auto/queue' + query(a[1:])))
     elif cmd == 'claim':
-        dump(call('POST', f'/api/projects/{a[0]}/auto/claim', {'ticket': a[1]}))
+        dump(call('POST', f'/api/projects/{a[0]}/auto/claim', {'ticket': a[1], **fields(a[2:])}))
     elif cmd == 'prs':
         rows = call('GET', '/api/prs' + query(a))
         dump(rows) if as_json else table(rows, ['key', 'status', 'ticketKey', 'title'])

@@ -5,7 +5,8 @@
 //         once?: boolean, tickets?: string[] }
 //   enabled: true   — start looping (409 with the reason when the project
 //                     can't: not standard mode, no repo, no integration
-//                     branch, or shared with us by someone else)
+//                     branch, shared with us by someone else, already on,
+//                     or a /jrunplan build in progress)
 //     once          — with enabled: true, run one loop and then turn off (the
 //                     board's "Run as loop")
 //     tickets       — with enabled: true, limit the first loop to these keys;
@@ -45,10 +46,16 @@ export default defineEventHandler(async (event) => {
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
+  // Already on: a second Start (a double click, two tabs) must not restart or
+  // re-shape the run — it's refused rather than silently absorbed.
+  if (body.enabled === true && project.auto?.enabled) {
+    throw createError({ statusCode: 409, statusMessage: `auto mode is already on for ${project.key}${project.auto.plan ? ' — its run plan is running' : ''}` })
+  }
   const enabling = body.enabled === true && !project.auto?.enabled
   if (enabling) {
     const blocked = autoModeBlocker(store, project)
     if (blocked) throw createError({ statusCode: 409, statusMessage: blocked })
+    if (project.runPlanBuild) throw createError({ statusCode: 409, statusMessage: `Fable 5.1 is still building ${project.key}'s run plan — wait for it, or cancel the build in Run setup` })
   }
 
   // A run plan: the Run setup tab's, runnable as built.

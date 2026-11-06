@@ -6,9 +6,9 @@
 // run ended (if there was one). Everything reads project.auto, which the
 // server's loop keeps current; nothing here advances the loop.
 import type { LocalPr, Project, Ticket } from '~/composables/useTracker'
-import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, inFlight, type AutoLoop } from '~/utils/autoLoop'
+import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, effectiveOrchestration, inFlight, orchestratedKeys, type AutoLoop } from '~/utils/autoLoop'
 import { outcomeDocOf } from '~/utils/projectGraphs'
-import { PLAN_STEP_LABELS } from '~/utils/runPlan'
+import { PLAN_MODELS, PLAN_STEP_LABELS, runnerLabel } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[] }>()
 const { prs, docs } = useTracker()
@@ -45,6 +45,10 @@ const phaseIndex = computed(() =>
   plan.value ? auto.value!.cursor : phases.value.findIndex((p) => p.phase === auto.value?.phase),
 )
 const planStepNo = computed(() => (plan.value ? `Step ${auto.value!.cursor + 1}` : ''))
+const reviewStep = computed(() => {
+  const s = plan.value?.steps[auto.value!.cursor]
+  return s?.kind === 'review' ? s : null
+})
 const reviewers = computed(() => {
   const s = plan.value?.steps[auto.value!.cursor]
   return s?.kind === 'review' ? s.reviewers : 2
@@ -68,18 +72,29 @@ const pending = computed(() => {
 const phaseText = computed(() => {
   const a = auto.value
   if (!a) return ''
-  if ((a.phase === 'implementing' || a.phase === 'fixing') && a.prChecks > 0) {
+  if ((a.phase === 'implementing' || a.phase === 'fixing' || a.phase === 'arch-fixing') && a.prChecks > 0) {
     return `Every ticket is finished but no PR has shown up — looking again (${a.prChecks} of ${NO_PR_RETRIES + 1} looks) before skipping the merge.`
   }
-  if ((a.phase === 'merging' || a.phase === 'merging-fixes') && a.mergeDispatchedAt && !a.mergeReportedAt) {
+  if ((a.phase === 'merging' || a.phase === 'merging-fixes' || a.phase === 'arch-merging') && a.mergeDispatchedAt && !a.mergeReportedAt) {
     const n = a.prs.length
-    return `Merge sweep on Sonnet 5 — landing ${n} ${a.phase === 'merging-fixes' ? 'fix ' : ''}PR${n === 1 ? '' : 's'}; moves on when the sweep reports back.`
+    return `Merge sweep on Sonnet 5 — landing ${n} ${a.phase === 'arch-merging' ? 'architectural fix ' : a.phase === 'merging-fixes' ? 'fix ' : ''}PR${n === 1 ? '' : 's'}; moves on when the sweep reports back.`
   }
-  if ((a.phase === 'implementing' || a.phase === 'fixing') && a.orchestration.mode === 'orchestrated') {
-    const n = (a.phase === 'implementing' ? a.tickets : a.fixTickets).length
-    const what = a.phase === 'implementing' ? `${n} frontier ticket${n === 1 ? '' : 's'}` : `${n} agreed finding${n === 1 ? '' : 's'}`
-    if (!a.orchestrator.dispatchedAt) return `Starting a Fable 5.1 orchestrator for ${what}.`
-    return `A Fable 5.1 orchestrator is working ${what} through Opus 5.5 subagents — ${flying.value.length} of ${a.orchestration.budget} in flight, each spec-checked before it's done.`
+  const o = effectiveOrchestration(a)
+  const model = PLAN_MODELS[o.model].label
+  if ((a.phase === 'implementing' || a.phase === 'fixing') && o.mode === 'orchestrated') {
+    const keys = a.phase === 'implementing' ? a.tickets : a.fixTickets
+    const orch = orchestratedKeys(a, keys)
+    const solo = keys.length - orch.length
+    const n = orch.length
+    const what = a.phase === 'implementing' ? `${n} ${plan.value ? '' : 'frontier '}ticket${n === 1 ? '' : 's'}` : `${n} agreed finding${n === 1 ? '' : 's'}`
+    const at = plan.value ? `${planStepNo.value}: ` : ''
+    const beside = solo ? ` ${solo} other${solo === 1 ? '' : 's'} run as their own agents beside it.` : ''
+    const count = Math.max(1, a.orchestrators.length)
+    const started = a.orchestrators.filter((x) => x.dispatchedAt).length
+    if (!started) return `${at}Starting ${o.orchestrators > 1 ? `${o.orchestrators} Fable 5.1 orchestrators` : 'a Fable 5.1 orchestrator'} for ${what}.${beside}`
+    const who = count > 1 ? `${count} Fable 5.1 orchestrators are` : 'A Fable 5.1 orchestrator is'
+    const cap = count > 1 ? `${flying.value.length} of ${o.budget * count} in flight (${o.budget} each)` : `${flying.value.length} of ${o.budget} in flight`
+    return `${at}${who} working ${what} through ${model} subagents at ${o.effort} effort — ${cap}, each spec-checked before it's done.${beside}`
   }
   if (plan.value) {
     const n = a.tickets.length
@@ -87,10 +102,20 @@ const phaseText = computed(() => {
       case 'idle':
         return 'Between steps — starting the next one.'
       case 'implementing':
-        return `${planStepNo.value}: implementing ${n} ticket${n === 1 ? '' : 's'} on Opus 5.5.`
+        return `${planStepNo.value}: implementing ${n} ticket${n === 1 ? '' : 's'}, each as its own agent${a.lastSliceDoc ? ` — every session read ${a.lastSliceDoc} first` : ''}.`
+      case 'slice-reporting':
+        return `${planStepNo.value}: an Opus 5.5 session is writing the slice report — facts only, what the last slice built and decided — for this step's agents to read first.`
+      case 'arch-reviewing':
+        return a.reviewKey
+          ? `${planStepNo.value}: the architectural & technical reviewer (${reviewStep.value?.review.arch ? runnerLabel(reviewStep.value.review.arch) : 'Opus 5.5 high'}) is reading the changes since this step's checkpoint; its architectural findings come back as tickets, then get fixed and merged before the regular reviewers run.`
+          : `${planStepNo.value}: asking jReview for the architectural review of the changes since this step's checkpoint.`
+      case 'arch-fixing':
+        return `${planStepNo.value}: fixing ${a.fixTickets.length} architectural finding${a.fixTickets.length === 1 ? '' : 's'} — mandatory — before the regular reviewers run.`
+      case 'arch-merging':
+        return `${planStepNo.value}: merge sweep landing the architectural fixes; then the regular reviewers read the result.`
       case 'reviewing':
         return a.reviewKey
-          ? `${planStepNo.value}: ${reviewers.value === 1 ? 'an Opus 5.5 reviewer is' : `${reviewers.value} Opus 5.5 reviewers are`} reading the changes since this step's checkpoint; ${reviewers.value === 1 ? 'its findings come' : 'findings they all raise come'} back as tickets, then get fixed and merged.`
+          ? `${planStepNo.value}: ${reviewers.value} reviewers (${reviewStep.value ? runnerLabel({ model: reviewStep.value.review.model, effort: reviewStep.value.review.effort }) : 'Opus 5.5 medium'}) are reading the changes since this step's checkpoint${a.archReviewKey ? ', architectural fixes included' : ''}; findings they all raise come back as tickets, then get fixed and merged.`
           : `${planStepNo.value}: asking jReview for a review of the changes since this step's checkpoint.`
       case 'gate': {
         const note = plan.value.steps[a.cursor]?.note
@@ -102,7 +127,7 @@ const phaseText = computed(() => {
     case 'idle':
       return 'Between loops — picking up the next frontier.'
     case 'implementing':
-      return `Implementing ${a.tickets.length} frontier ticket${a.tickets.length === 1 ? '' : 's'} on Opus 5.5.`
+      return `Implementing ${a.tickets.length} frontier ticket${a.tickets.length === 1 ? '' : 's'} on ${model}.`
     case 'merging':
       return `Merge sweep on Sonnet 5 — landing ${a.prs.length} PR${a.prs.length === 1 ? '' : 's'}.`
     case 'reviewing':
@@ -130,15 +155,17 @@ const flying = computed(() => {
   return inFlight(a, { tickets: props.tickets.map((t) => ({ key: t.key, status: t.status, frontier: false, hitl: false, claimed: !!t.assignee })) })
 })
 
-// The watchdog's view of the orchestrator — as stallOf, for the one session.
+// The watchdog's view of the orchestrators — as stallOf, per session; the first stalled one is reported.
 const orchestratorStall = computed(() => {
   const a = auto.value
-  if (!a || a.orchestration.mode !== 'orchestrated' || (a.phase !== 'implementing' && a.phase !== 'fixing')) return null
-  const w = a.orchestrator.watch
-  if (!w.stoppedSince) return null
+  if (!a || effectiveOrchestration(a).mode !== 'orchestrated' || (a.phase !== 'implementing' && a.phase !== 'fixing')) return null
+  const i = a.orchestrators.findIndex((o) => o.watch.stoppedSince)
+  const w = a.orchestrators[i]?.watch
+  if (!w) return null
+  const who = a.orchestrators.length > 1 ? `Orchestrator ${i + 1}` : 'The orchestrator'
   return w.nudgedAt
-    ? `The orchestrator stopped with tickets open and was prompted to carry on ${since(w.nudgedAt)} ago — the loop replaces it if it stays stopped ${STALL_FORCE_MS / 60_000}m.`
-    : `The orchestrator stopped ${since(w.stoppedSince)} ago with tickets still open — the loop prompts it to carry on soon.`
+    ? `${who} stopped with tickets open and was prompted to carry on ${since(w.nudgedAt)} ago — the loop replaces it if it stays stopped ${STALL_FORCE_MS / 60_000}m.`
+    : `${who} stopped ${since(w.stoppedSince)} ago with tickets still open — the loop prompts it to carry on soon.`
 })
 
 // The watchdog's view of a pending ticket: its session stopped with the
