@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   FIX_SESSIONS_MAX,
   claimVerdict,
@@ -7,6 +7,8 @@ import {
   effectiveOrchestration,
   finishLoop,
   finishedReviews,
+  isMergePhase,
+  MERGE_PHASES,
   newAutoLoop,
   panesToClean,
   NO_PR_RECHECK_MS,
@@ -292,6 +294,36 @@ describe('phaseStall — the watchdog for phases that wait on one session', () =
     expect(retryStep({ ...slice, paused: { reason: 'phase-stalled', detail: 'x', at: AT } }, { tickets: [] })).toMatchObject({ sliceDispatchedAt: '', slicedAt: '' })
     expect(planStep(loop({ phase: 'reporting', reportDispatchedAt: AT }), world({ now: at(46) }))).toMatchObject({ kind: 'pause', reason: 'phase-stalled' })
     expect(planStep(loop({ phase: 'reporting' }), world({ now: at(500) }))).toEqual({ kind: 'dispatchReport' })
+  })
+})
+
+describe('recordMergeReport — a merge sweep reports back in every merge phase', () => {
+  // The server engine leans on Nuxt's auto-imports for h3's createError and the
+  // store's now(); stand them in so the function runs in-process.
+  let recordMergeReport: typeof import('../server/utils/autoLoop').recordMergeReport
+  beforeAll(async () => {
+    vi.stubGlobal('createError', (e: { statusCode: number; statusMessage: string }) => Object.assign(new Error(e.statusMessage), e))
+    vi.stubGlobal('now', () => AT)
+    ;({ recordMergeReport } = await import('../server/utils/autoLoop'))
+  })
+  const project = (auto: AutoLoop) => ({ id: 'p1', key: 'PROJ-1', auto }) as any
+
+  it.each(MERGE_PHASES)('records the report while the phase is %s', (phase) => {
+    expect(isMergePhase(phase)).toBe(true)
+    const auto = loop({ phase, prs: ['PR-3'], mergeDispatchedAt: AT })
+    const recorded = recordMergeReport(project(auto), { unmerged: [{ pr: 'PR-3', reason: 'conflicts' }] })
+    expect(recorded.mergeReportedAt).toBe(AT)
+    expect(recorded.mergeReport).toEqual({ unmerged: [{ pr: 'PR-3', reason: 'conflicts' }] })
+    // A repeat report is a no-op, not a 409.
+    expect(recordMergeReport(project(recorded), { unmerged: [] }).mergeReport).toEqual({ unmerged: [{ pr: 'PR-3', reason: 'conflicts' }] })
+  })
+
+  it('409s when no sweep is out: a non-merge phase, nothing dispatched, or auto off', () => {
+    const owed = /no auto-loop merge sweep is waiting/
+    expect(() => recordMergeReport(project(loop({ phase: 'arch-fixing', mergeDispatchedAt: AT })), { unmerged: [] })).toThrow(owed)
+    expect(() => recordMergeReport(project(loop({ phase: 'arch-merging' })), { unmerged: [] })).toThrow(owed)
+    expect(() => recordMergeReport(project(loop({ phase: 'arch-merging', mergeDispatchedAt: AT, enabled: false })), { unmerged: [] })).toThrow(owed)
+    expect(isMergePhase('arch-fixing')).toBe(false)
   })
 })
 

@@ -562,6 +562,19 @@ function coerceOrchestrator(raw: any): AutoOrchestrator {
 }
 
 const PHASES: AutoPhase[] = ['idle', 'implementing', 'merging', 'reviewing', 'fixing', 'merging-fixes', 'gate', 'reporting', 'arch-reviewing', 'arch-fixing', 'arch-merging', 'slice-reporting']
+
+/**
+ * The phases whose one waited-on session is a merge sweep: the loop's own
+ * merge, the merge after a review's fixes, and the merge after an arch
+ * review's fixes. The sweep is dispatched the same way in all three, so its
+ * report (POST …/auto/merge-report) must be accepted in all three, and Retry
+ * step resets the same clocks — anything that reads the phase to decide
+ * "is a sweep out?" goes through here so the three never drift apart.
+ */
+export const MERGE_PHASES: readonly AutoPhase[] = ['merging', 'merging-fixes', 'arch-merging']
+export function isMergePhase(phase: AutoPhase): boolean {
+  return MERGE_PHASES.includes(phase)
+}
 const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
@@ -1410,7 +1423,7 @@ export function retryStep(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>, at
     delete next.watch[k]
   }
   if (keys.length) next.orchestrators = state.orchestrators.map((o) => ({ ...o, runs: 0 }))
-  if (state.phase === 'merging' || state.phase === 'merging-fixes' || state.phase === 'arch-merging') {
+  if (isMergePhase(state.phase)) {
     next.mergeDispatchedAt = ''
     next.mergeReportedAt = ''
     next.mergeReport = null
@@ -1457,7 +1470,7 @@ export function finishLoop(state: AutoLoop, at: string): AutoLoop {
 export function autoPending(state: AutoLoop): { tickets: string[]; prs: string[] } {
   if (state.phase === 'implementing') return { tickets: state.tickets, prs: [] }
   if (state.phase === 'fixing' || state.phase === 'arch-fixing') return { tickets: state.fixTickets, prs: [] }
-  if (state.phase === 'merging' || state.phase === 'merging-fixes' || state.phase === 'arch-merging') return { tickets: [], prs: state.prs }
+  if (isMergePhase(state.phase)) return { tickets: [], prs: state.prs }
   return { tickets: [], prs: [] }
 }
 

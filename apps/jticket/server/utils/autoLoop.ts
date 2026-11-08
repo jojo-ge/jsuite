@@ -32,6 +32,7 @@ import {
   withPlanHistory,
   finishLoop,
   finishedReviews,
+  isMergePhase,
   newAutoLoop,
   newOrchestrator,
   orchestratorJob,
@@ -683,7 +684,7 @@ export function mergeReportInstruction(projectKey: string): string {
  */
 export function recordMergeReport(project: Project, raw: unknown): AutoLoop {
   const auto = project.auto
-  const sweeping = auto?.enabled && (auto.phase === 'merging' || auto.phase === 'merging-fixes') && !!auto.mergeDispatchedAt
+  const sweeping = auto?.enabled && isMergePhase(auto.phase) && !!auto.mergeDispatchedAt
   if (!auto || !sweeping) {
     throw createError({ statusCode: 409, statusMessage: `no auto-loop merge sweep is waiting on a report for ${project.key}` })
   }
