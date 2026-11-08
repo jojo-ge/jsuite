@@ -39,7 +39,7 @@ function bars(p: Panel) {
 }
 const label = (week: string) => {
   const d = new Date(week)
-  return Number.isFinite(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : week
+  return Number.isFinite(d.getTime()) ? d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }) : week
 }
 const hover = ref<number | null>(null)
 </script>
