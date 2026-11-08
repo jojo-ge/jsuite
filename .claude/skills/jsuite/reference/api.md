@@ -165,7 +165,7 @@ doc and reports back via `POST …/auto/outcome-report {doc}`; then auto turns o
 Orchestrator endpoints: `GET …/auto/queue?orchestrator=n` (409 unless an
 orchestrated loop is running; `n` is 1-based; other orchestrators' tickets read
 `other`, solo tickets `solo`); `POST …/auto/claim {ticket, orchestrator?}` —
-the server enforces the budget (1–4 in flight): 409 with `data.wait = true`
+the server enforces the budget (2–4 in flight, never 1): 409 with `data.wait = true`
 while it is full (`jt claim` exits 75), other 409/404 mean not claimable; a
 solo ticket's claim is refused. The orchestrator spec-checks each ticket against
 its acceptance criteria before marking it done.

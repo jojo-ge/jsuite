@@ -89,7 +89,7 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   frontier on Opus 5.5 (`/jimplement`, local PRs) — or, **orchestrated**, one
   Fable 5.1 `/jorchestrate` session per phase working tickets through Opus 5.5
   subagents in pooled worktrees, claiming each via `POST …/auto/claim` (budget
-  1–4 in flight, enforced server-side) and spec-checking it before marking it
+  2–4 in flight, never 1, enforced server-side) and spec-checking it before marking it
   done; a stalled orchestrator is replaced — waits for every ticket, runs the
   merge sweep on Sonnet 5 (reports back via `…/auto/merge-report`; an unlandable
   PR pauses the loop), asks jReview for a 2-reviewer **consensus review**
