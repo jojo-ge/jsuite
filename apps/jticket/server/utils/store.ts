@@ -4,6 +4,8 @@ import { appDataFile } from '@jsuite/data'
 import { isPeerOwned } from './ownership'
 import { cleanPromptOverrides, cleanPromptText, coercePromptMode } from './prompts'
 import { cleanWorktreeGuide, cleanWorktreeLinks } from './worktrees'
+import { cleanVerificationRules } from './verificationRules'
+import type { VerificationRule } from './verification'
 import type { ProjectShare, ShareSide } from './ownership'
 import type { PromptOverrides, TicketPromptMode } from './prompts'
 import type { Share } from './shares'
@@ -156,6 +158,11 @@ export interface Ticket {
   // separate from updatedAt, which any edit bumps — this is what
   // ?finished=true orders by. Never set directly by callers; see stampCompletion.
   completedAt: string | null
+  // When the ticket was first handed to an agent (a dispatch, or an
+  // orchestrator's claim) — stamped once by herdrDispatch.stampPickedUp, never
+  // cleared. Machine-local telemetry for the Analytics tab; absent/null on
+  // tickets that were never dispatched here (or predate the field).
+  pickedUpAt: string | null
   // Ownership on a shared project ('' / '' on local-only ones). `origin` is
   // the side that minted the ticket — immutable, it fixes the key's parity;
   // `owner` is whose half it lives in now (mutable only by ownership
@@ -241,6 +248,10 @@ export interface KnownRepo {
   // Which worktree each connected branch lives in (integration branches,
   // today) — one per branch. See worktrees.ts.
   worktreeLinks: WorktreeLink[]
+  // The codebase's own verification commands (test/lint/typecheck/guards/
+  // build runners analytics should recognise), matched before the defaults.
+  // See verification.ts. [] = defaults only.
+  verificationRules: VerificationRule[]
 }
 
 export interface Store {
@@ -356,6 +367,7 @@ export function loadStore(): Store {
         prompt: cleanPromptText(t.prompt),
         promptMode: coercePromptMode(t.promptMode),
         completedAt: t.completedAt ?? (isFinishedStatus(t.status) ? t.updatedAt : null),
+        pickedUpAt: t.pickedUpAt ?? null,
         origin: t.origin ?? '',
         owner: t.owner ?? '',
         // Tickets predating ownership transfer aren't in one.
@@ -390,6 +402,7 @@ export function loadStore(): Store {
         prompts: cleanPromptOverrides(r.prompts),
         worktreeGuide: cleanWorktreeGuide(r.worktreeGuide),
         worktreeLinks: cleanWorktreeLinks(r.worktreeLinks),
+        verificationRules: cleanVerificationRules(r.verificationRules),
       })).filter((r) => r.path),
       // Shares postdate everything else; absent = nothing shared yet. Records
       // from before two-way sync have no reverse room — that direction
@@ -500,6 +513,7 @@ export function rememberRepo(
       prompts: {},
       worktreeGuide: null,
       worktreeLinks: [],
+      verificationRules: [],
     })
     return true
   }

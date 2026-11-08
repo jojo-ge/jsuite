@@ -208,7 +208,7 @@ defineExpose({ save, reset, saving, canSave })
         <span>{{ probe.slug ?? 'local git repo' }}</span>
         <span class="text-muted">· default branch {{ probe.defaultBranch }}</span>
       </p>
-      <p v-else-if="showRepoField && probe && form.repo" class="-mt-2 flex items-center gap-1.5 text-xs text-error">
+      <p v-else-if="showRepoField && probe && !probe.ok && form.repo" class="-mt-2 flex items-center gap-1.5 text-xs text-error">
         <UIcon name="i-lucide-triangle-alert" class="size-3.5" />
         {{ probe.error }}: {{ probe.path }}
       </p>

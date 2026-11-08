@@ -51,6 +51,7 @@ export default defineEventHandler(async (event) => {
     // Created straight into a finished status (an already-finished ticket being
     // recorded) counts as finishing now.
     completedAt: isFinishedStatus(status) ? ts : null,
+    pickedUpAt: null,
     ...entityOwnership(share),
     transfer: '',
     transferAt: '',

@@ -91,7 +91,7 @@ function onHandleKey(e: KeyboardEvent) {
           size="xs"
           color="neutral"
           variant="ghost"
-          @click.prevent="emit(project.hidden ? 'unhide' : 'hide', project)"
+          @click.prevent="project.hidden ? emit('unhide', project) : emit('hide', project)"
         >
           {{ project.hidden ? 'Unhide' : 'Hide' }}
         </UButton>
@@ -168,7 +168,7 @@ function onHandleKey(e: KeyboardEvent) {
         color="neutral"
         variant="ghost"
         class="shrink-0"
-        @click.prevent="emit(project.hidden ? 'unhide' : 'hide', project)"
+        @click.prevent="project.hidden ? emit('unhide', project) : emit('hide', project)"
       >
         {{ project.hidden ? 'Unhide' : 'Hide' }}
       </UButton>

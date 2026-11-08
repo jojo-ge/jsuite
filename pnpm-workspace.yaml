@@ -7,3 +7,10 @@ patchedDependencies:
 
 onlyBuiltDependencies:
   - esbuild
+
+# TypeScript 7 (the Go compiler) drops the JS API that vue-tsc and
+# `nuxi typecheck` run on, and @nuxt/ui's peer range stops at ^6. Nothing here
+# declared typescript, so pnpm auto-installed the newest for nuxt's optional
+# peer. Hold the whole workspace on 5.x until vue-tsc supports 7.
+overrides:
+  typescript: ^5.9.3

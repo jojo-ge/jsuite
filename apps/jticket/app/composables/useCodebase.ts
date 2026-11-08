@@ -31,6 +31,15 @@ export interface WorktreeLink {
 }
 export type GuideState = 'missing' | 'ready' | 'stale'
 
+export type VerificationCategory = 'test' | 'e2e' | 'lint' | 'typecheck' | 'guards' | 'build'
+export const VERIFICATION_CATEGORIES: VerificationCategory[] = ['test', 'e2e', 'lint', 'typecheck', 'guards', 'build']
+export interface VerificationRule {
+  id: string
+  category: VerificationCategory
+  // A JS regular expression matched against the whole Bash command.
+  pattern: string
+}
+
 // A row of GET /api/repos: a KnownRepo (with its settings) plus the derived
 // exists/projects and the worktree guide's current standing.
 export interface Codebase {
@@ -41,6 +50,9 @@ export interface Codebase {
   exists: boolean
   projects: string[]
   prompts: PromptOverrides
+  // Extra command patterns the analytics classify as verification runs in this
+  // codebase (on top of the built-in vitest/pytest/eslint/… rules).
+  verificationRules: VerificationRule[]
   worktreeGuide: WorktreeGuide | null
   worktreeLinks: WorktreeLink[]
   worktree: { state: GuideState; changed: string[] }
@@ -76,6 +88,17 @@ export function useCodebase() {
     })
     const row = codebases.value.find((c) => c.path === res.path)
     if (row) row.prompts = res.prompts
+  }
+
+  /** Replace a codebase's verification rules (the whole list — it is small). */
+  async function saveCodebaseVerificationRules(path: string, rules: VerificationRule[]) {
+    const res = await $fetch<{ path: string; verificationRules: VerificationRule[] }>('/api/repos', {
+      method: 'PATCH',
+      query: { path },
+      body: { verificationRules: rules },
+    })
+    const row = codebases.value.find((c) => c.path === res.path)
+    if (row) row.verificationRules = res.verificationRules
   }
 
   // 'owner/name' when known, else the folder name — same rule as the project
@@ -126,6 +149,7 @@ export function useCodebase() {
     current,
     codebaseOf,
     saveCodebasePrompts,
+    saveCodebaseVerificationRules,
     label,
     select,
     scopedProjects,

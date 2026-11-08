@@ -32,8 +32,14 @@ export default defineEventHandler(async (event) => {
       ;({ tabId, paneId } = await createJobTab(workspaceId, 'worktree kickoff', cwd))
     }
     await renamePane(paneId, `worktree kickoff · ${label}`)
-    const agent = await startClaudeIn(paneId, 'worktree-kickoff', prompt)
+    const sessionId = newSessionId()
+    const agent = await startClaudeIn(paneId, 'worktree-kickoff', prompt, { args: ['--session-id', sessionId] })
+    try {
+      recordSession(sessionRow({ id: sessionId, role: 'worktree', projectId: '', projectKey: '', repo: cwd, cwd, agent }))
+    } catch {
+      /* analytics never fails a dispatch */
+    }
 
-    return { workspaceId, tabId, paneId, agent, workspace: label }
+    return { workspaceId, tabId, paneId, agent, workspace: label, sessionId }
   })
 })

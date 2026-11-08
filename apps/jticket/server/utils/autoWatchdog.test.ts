@@ -32,7 +32,7 @@ describe('forceCloseTicket', () => {
     ({
       id, key, title: `Title ${key}`, description: 'Build it.', acceptanceCriteria: ['works'], type: 'feature',
       status: 'in_progress', projectId: 'p1', assignee: 'claude', labels: ['afk'], resolution: '', blockedBy: [],
-      comments: [], branch: `tick/${key}`, prompt: '', promptMode: '', completedAt: null, origin: '', owner: '',
+      comments: [], branch: `tick/${key}`, prompt: '', promptMode: '', completedAt: null, pickedUpAt: null, origin: '', owner: '',
       transfer: '', transferAt: '', createdAt: AT, updatedAt: AT, ...patch,
     }) as Ticket
   const world = (): Store =>

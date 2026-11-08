@@ -47,8 +47,8 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'run' | 'overview' | 'docs' | 'branches' | 'prs' | 'review' | 'agents' | 'loops'
-const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'overview', 'docs', 'branches', 'prs', 'review', 'agents', 'loops']
+type ProjectTab = 'board' | 'run' | 'overview' | 'docs' | 'branches' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'overview', 'docs', 'branches', 'prs', 'review', 'agents', 'loops', 'analytics']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
@@ -81,6 +81,8 @@ const tabItems = computed(() => [
   { label: 'Review', value: 'review', icon: 'i-lucide-scan-search' },
   { label: 'Agents', value: 'agents', icon: 'i-lucide-message-square-code' },
   ...(loopCount.value ? [{ label: 'Loops', value: 'loops', icon: 'i-lucide-repeat', badge: loopCount.value }] : []),
+  // How long each ticket took, phase by phase, and what its sessions cost — read off claude's transcripts.
+  { label: 'Analytics', value: 'analytics', icon: 'i-lucide-chart-no-axes-column' },
 ])
 
 // The Agents tab's PR-target picker — the same per-browser preference the
@@ -411,6 +413,8 @@ async function removeProject() {
 
         <!-- Loops — the jButton's finished loops -->
         <AutoLoopHistory v-else-if="tab === 'loops'" :project="project" />
+
+        <ProjectAnalytics v-else-if="tab === 'analytics'" :project="project" />
 
         <!-- Run setup — the human's own run plan for auto mode -->
         <RunSetup v-else-if="tab === 'run' && project.mode === 'standard'" :project="project" :tickets="projectTickets" :all-tickets="tickets" />

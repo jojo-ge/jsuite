@@ -7,7 +7,7 @@ const JDIFF_API = process.env.JDIFF_API_URL || 'http://localhost:43002'
 
 export async function jdiffFetch<T = any>(path: string, opts: any = {}): Promise<T> {
   try {
-    return await $fetch<T>(`${JDIFF_API}${path}`, { timeout: 5_000, ...opts })
+    return (await $fetch(`${JDIFF_API}${path}`, { timeout: 5_000, ...opts })) as T
   } catch (err: any) {
     const status = err?.statusCode ?? err?.response?.status
     if (status) {

@@ -69,6 +69,27 @@ returns `error`, not a 500. The TODO inbox is the codebase's todo-mode project
 **Graphs**: `GET /api/graphs`, `GET /api/graphs/G-KEY` (a member project key
 works too). Logic `app/utils/projectGraphs.ts`.
 
+**Analytics** (passive — nothing is reported by agents): `GET /api/analytics`
+(`?repo=` path or slug, `?from=`/`?to=` ISO dates on dispatch time, `?rows=1`
+for per-ticket rows) returns the rollup — `summary` (medians: picked up →
+closed, → PR, research before first edit, cost; verification share; whole-suite
+runs per ticket), `spend` (by role/model), `verification` (by category, top
+commands, failed/timed-out/repeated/hidden), `concurrency` (heavy runs in flight
+over time + overlap inflation), `weekly`, `league` (per project),
+`byModel`/`byMode`/`byType`, `orchestration` (overhead ratio, concurrency,
+spec-check lag, idle share). `GET /api/projects/:id/analytics` is the same for
+one project with `tickets`, `orchestrations`, `jobs`, `heavyRuns`.
+`GET /api/tickets/:id/sessions` is one ticket's row. `POST /api/analytics/backfill
+{project?}` / `POST /api/projects/:id/analytics/backfill` match older
+transcripts to tickets by first prompt (idempotent). Source of truth: the
+session ledger `.data/jticket/sessions.json` (every dispatch passes
+`--session-id`, `server/utils/sessions.ts`), `ticket.pickedUpAt`, and the
+transcripts under `~/.claude/projects/<cwd-slug>/` (`server/utils/transcripts.ts`
+→ `sessionMetrics.ts` → `analytics.ts` / `analyticsRollup.ts`; verification
+classification in `verification.ts`, extended per codebase with
+`PATCH /api/repos?path= {verificationRules: [{id, category, pattern}]}`; prices
+in `pricing.ts`, overridable at `.data/jticket/pricing.json`).
+
 **Worktrees**: `GET/PUT/DELETE /api/repos/worktree?repo=` — the codebase's
 worktree guide; `POST /api/repos/worktree/herdr` dispatches the
 `worktree:kickoff` prompt. `POST /api/projects/:id/herdr-worktree` dispatches

@@ -65,6 +65,7 @@ function makeTicket(over: Partial<Ticket> = {}): Ticket {
     prompt: '',
     promptMode: '',
     completedAt: null,
+    pickedUpAt: null,
     origin: 'creator',
     owner: 'creator',
     transfer: '',

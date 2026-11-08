@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shared charting module — Excalidraw canvas + Mermaid-to-scene conversion, packaged as a Nuxt layer any jSuite app can extend.",
+  "description": "Shared charting module \u2014 Excalidraw canvas + Mermaid-to-scene conversion, packaged as a Nuxt layer any jSuite app can extend.",
   "main": "./nuxt.config.ts",
   "exports": {
     ".": "./nuxt.config.ts",
@@ -16,6 +16,11 @@
     "@excalidraw/mermaid-to-excalidraw": "^2.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@jsuite/data": "workspace:*"
+    "@jsuite/data": "workspace:*",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1"
   }
 }

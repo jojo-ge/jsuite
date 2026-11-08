@@ -31,7 +31,7 @@ export async function materialiseBlocks(docKey: string, rawBlocks: unknown[]): P
     // `base64`/`dataUrl`; either way the bytes are copied into the doc's media
     // dir and only the served URL is stored, so the document survives the
     // source file being moved or deleted (and the JSON never holds bytes).
-    if (raw.type === 'image') {
+    if ((raw as { type?: unknown }).type === 'image') {
       const file = typeof raw.file === 'string' ? raw.file.trim() : ''
       const inline =
         typeof raw.base64 === 'string' && raw.base64.trim()

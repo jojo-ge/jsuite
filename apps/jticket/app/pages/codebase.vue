@@ -7,6 +7,8 @@
 //               to worktrees made from it.
 //   Prompts   — the codebase's hand-off overrides, the layer between a
 //               project's own and the global defaults.
+//   Verification rules — extra command patterns the analytics classify as
+//               verification runs here (see server/utils/verification.ts).
 //
 // Scoped to the selected codebase, like every other page.
 useHead({ title: 'Codebase settings' })
@@ -193,6 +195,24 @@ function when(iso: string) {
             </div>
           </template>
           <PromptEditor scope="codebase" :codebase="current" />
+        </UCard>
+
+        <!-- ── Verification rules ── -->
+        <UCard>
+          <template #header>
+            <div class="flex items-center gap-3">
+              <UIcon name="i-lucide-flask-conical" class="size-4 text-muted" />
+              <div class="min-w-0 flex-1">
+                <h2 class="text-sm font-semibold">Verification rules</h2>
+                <p class="text-xs text-muted">
+                  Commands the <NuxtLink to="/analytics" class="text-primary hover:underline">analytics</NuxtLink> count as test, lint, typecheck, guards or build runs in this codebase,
+                  on top of the built-in runners. Matched against the whole Bash command.
+                </p>
+              </div>
+              <UBadge v-if="current.verificationRules?.length" color="primary" variant="subtle" size="sm">{{ current.verificationRules.length }}</UBadge>
+            </div>
+          </template>
+          <VerificationRulesEditor :codebase="current" />
         </UCard>
       </template>
     </UContainer>

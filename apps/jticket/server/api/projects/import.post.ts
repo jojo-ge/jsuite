@@ -131,6 +131,8 @@ export default defineEventHandler(async (event) => {
       // The bundle carries the original completion stamp; bundles exported
       // before completedAt existed fall back to updatedAt, as loadStore does.
       completedAt: isFinishedStatus(t.status) ? (t.completedAt ?? t.updatedAt ?? ts) : null,
+      // Imported from elsewhere: no local session ever picked it up.
+      pickedUpAt: null,
       origin: '',
       owner: '',
       transfer: '',

@@ -55,6 +55,7 @@ import {
 } from '../../app/utils/autoLoop'
 import type { Project, Store, Ticket } from './store'
 import type { JreviewReview } from './jreview'
+import type { SessionMeta } from './herdrDispatch'
 import { outcomeReportPrompt } from './outcomeReport'
 import { sliceReportPrompt } from './sliceReport'
 import { outcomeDocOf } from '../../app/utils/projectGraphs'
@@ -461,6 +462,11 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
   }
 }
 
+/** What the session ledger records about a loop-dispatched session: its loop and run-plan step kind. */
+function loopSessionMeta(auto: AutoLoop): SessionMeta {
+  return { loop: auto.loop, stepKind: currentPlanStep(auto)?.kind ?? '' }
+}
+
 /**
  * Hand each ticket to herdr, one after another (pane packing reads the tab's
  * layout, so parallel splits would race). Each is claimed in `dispatched`
@@ -487,7 +493,7 @@ async function dispatchTickets(projectId: string, keys: string[]) {
       const ticket = store.tickets.find((t) => t.key === key)
       if (!ticket) throw new Error(`${key} no longer exists`)
       const runner = runnerFor(state, key)
-      const { agent } = await dispatchTicketSession(store, ticket, prompt, { model: modelIdFor(runner.model), effort: runner.effort })
+      const { agent } = await dispatchTicketSession(store, ticket, prompt, { model: modelIdFor(runner.model), effort: runner.effort, session: loopSessionMeta(state) })
       updateAuto(projectId, (auto) => {
         auto.agents = { ...auto.agents, [key]: agent }
       })
@@ -532,7 +538,7 @@ async function dispatchMerge(projectId: string, prs: string[]) {
   })
   if (!state?.enabled || !project) return
   try {
-    await dispatchMergeSession(project, prompt, { model: MERGE_MODEL })
+    await dispatchMergeSession(project, prompt, { model: MERGE_MODEL, session: loopSessionMeta(state) })
   } catch (err) {
     updateAuto(projectId, (auto) => {
       auto.mergeDispatchedAt = ''
@@ -628,6 +634,7 @@ export function forceCloseTicket(store: Store, project: Project, key: string, re
     prompt: ticket.prompt,
     promptMode: ticket.promptMode,
     completedAt: null,
+    pickedUpAt: null,
     ...entityOwnership(project.share),
     transfer: '',
     transferAt: '',
@@ -701,7 +708,7 @@ async function dispatchReport(projectId: string) {
   })
   if (!state?.enabled || !project) return
   try {
-    await dispatchProjectSession(project, 'outcome report', prompt, { model: REPORT_MODEL })
+    await dispatchProjectSession(project, 'outcome report', prompt, { model: REPORT_MODEL, session: loopSessionMeta(state) })
   } catch (err) {
     updateAuto(projectId, (auto) => {
       auto.reportDispatchedAt = ''
@@ -747,7 +754,7 @@ async function dispatchSlice(projectId: string) {
   })
   if (!state?.enabled || !project) return
   try {
-    await dispatchProjectSession(project, 'slice report', prompt, { model: SLICE_MODEL, effort: SLICE_EFFORT })
+    await dispatchProjectSession(project, 'slice report', prompt, { model: SLICE_MODEL, effort: SLICE_EFFORT, session: loopSessionMeta(state) })
   } catch (err) {
     updateAuto(projectId, (auto) => {
       auto.sliceDispatchedAt = ''
@@ -988,7 +995,11 @@ async function dispatchOrchestrator(projectId: string, index: number) {
   })
   if (!state?.enabled || !project) return
   try {
-    const { agent, paneId } = await dispatchProjectSession(project, orchestratorJob(index), prompt, { model: ORCHESTRATE_MODEL })
+    const { agent, paneId } = await dispatchProjectSession(project, orchestratorJob(index), prompt, {
+      model: ORCHESTRATE_MODEL,
+      session: { ...loopSessionMeta(state), role: 'orchestrate', orchestrator: index + 1 },
+      tickets: state.orchestrators[index]?.tickets ?? [],
+    })
     updateAuto(projectId, (auto) => {
       const o = auto.orchestrators[index]
       if (!o) return false
@@ -1074,6 +1085,14 @@ export interface OrchestratorClaim {
   again: boolean
   inFlight: string[]
   budget: number
+  /** The model/effort this ticket's subagent runs at — the slot's runner (its group's, else the step's). */
+  subagentModel: string
+  subagentEffort: string
+  /** The slice report to read first, when the plan's tip moved since the last implement step. */
+  sliceDoc: string | null
+  /** Which orchestrator (1-based) holds this ticket, out of how many run side by side. */
+  orchestrator: number
+  orchestrators: number
 }
 
 /**
@@ -1092,6 +1111,7 @@ export async function claimForOrchestrator(projectId: string, key: string, orche
   if (!v.ok) throw createError({ statusCode: v.status, statusMessage: v.message, data: { wait: v.wait } })
 
   await ensureTicketBranch(key)
+  if (!v.again) stampPickedUp(key)
   const store = loadStore()
   const project = findProject(store, projectId)!
   const ticket = store.tickets.find((t) => t.key === key && t.projectId === project.id)

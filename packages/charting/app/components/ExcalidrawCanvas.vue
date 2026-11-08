@@ -26,7 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const host = ref<HTMLElement | null>(null)
-let root: { render: (n: unknown) => void; unmount: () => void } | null = null
+let root: import('react-dom/client').Root | null = null
 let api: any = null
 // Saving is gated on the scene version so panning and selecting don't write.
 // Element mirroring is gated separately and starts at -1, so the first onChange
@@ -83,14 +83,14 @@ onMounted(async () => {
       import('react-dom/client'),
       import('@excalidraw/excalidraw'),
     ])
-    // @ts-expect-error — CSS side-effect import, no types
     await import('@excalidraw/excalidraw/index.css')
 
     getSceneVersionFn = excalidraw.getSceneVersion as any
 
     if (!host.value) return
-    root = ReactDOMClient.createRoot(host.value)
-    root.render(
+    const mounted = ReactDOMClient.createRoot(host.value)
+    root = mounted
+    mounted.render(
       React.createElement(excalidraw.Excalidraw as any, {
         initialData: {
           elements: props.initialScene?.elements ?? [],

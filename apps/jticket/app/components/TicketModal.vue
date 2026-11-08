@@ -245,6 +245,8 @@ const statusOptions = [
           </div>
         </div>
 
+        <TicketPhaseStrip :ticket-id="live.id" :enabled="!!live.pickedUpAt || isFinished(live.status)" />
+
         <section v-if="renderedDescription">
           <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Description</h3>
           <div class="jx-prose jx-prose-sm" v-html="renderedDescription" />

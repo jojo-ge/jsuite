@@ -43,11 +43,14 @@ function toggleTheme() {
 
 // The board is the logo: it's the home page, and a link named after the app
 // already means "the board".
-const links = computed(() => [
+type NavLink = { label: string; icon: string; to: string; badge?: string | number; badgeColor?: 'info' | 'warning' | 'error' | 'success' | 'primary' | 'neutral' }
+const links = computed<NavLink[]>(() => [
   { label: 'Today', icon: 'i-lucide-sun', to: '/today' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
   // Linked projects (tickets blocking tickets across projects) and their outcome reports.
   { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },
+  // How projects perform: close times, spend, verification and concurrency across every project.
+  { label: 'Analytics', icon: 'i-lucide-chart-no-axes-column', to: '/analytics' },
 ])
 </script>
 

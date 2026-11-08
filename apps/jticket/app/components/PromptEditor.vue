@@ -95,6 +95,8 @@ const sampleVars = computed<PromptVars>(() => ({
   repo: props.project?.repo || props.codebase?.path || '~/code/checkout',
   integrationBranch: props.project?.integrationBranch || 'proj-1-integration',
   prs: 'PR-3, PR-4',
+  keys: 'TICK-42, TICK-43',
+  handoffs: '1. TICK-42 — Persist the cart across sessions …\n2. TICK-43 — Restore it on sign-in …',
   worktreeGuide: worktreeGuideUrl(props.project?.repoPath || props.project?.repo || props.codebase?.path || '~/code/checkout'),
 }))
 

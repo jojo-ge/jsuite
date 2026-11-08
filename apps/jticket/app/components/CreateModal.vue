@@ -21,9 +21,11 @@ const tab = ref('ticket')
 
 // Every panel stays mounted (v-show, not v-if) so switching tabs doesn't throw
 // away what you already typed in another one.
-const ticketForm = useTemplateRef('ticketForm')
-const projectForm = useTemplateRef('projectForm')
-const active = computed(() => (tab.value === 'project' ? projectForm.value : ticketForm.value))
+// What both forms expose (TicketForm / ProjectForm defineExpose the same four).
+type FormApi = { save: () => Promise<void> | void; reset: () => void; saving: boolean; canSave: boolean }
+const ticketForm = useTemplateRef<FormApi>('ticketForm')
+const projectForm = useTemplateRef<FormApi>('projectForm')
+const active = computed<FormApi | null>(() => (tab.value === 'project' ? projectForm.value : ticketForm.value))
 
 // A new ticket only offers the wayfinder fields when it lands in a wayfinder
 // project — same rule the ticket modal uses.
