@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -7,8 +8,11 @@ import { tmpdir } from 'node:os'
 // per worker instead: VITEST_POOL_ID is unique among concurrently-running
 // workers, and files inside one worker run sequentially. This runs as a
 // setupFile, before the test module (and the stores it imports) load.
-process.env.JSUITE_DATA_DIR = join(
-  tmpdir(),
-  'jticket-vitest-data',
-  `w${process.env.VITEST_POOL_ID ?? '0'}`,
-)
+//
+// The root is also wiped here, so every test file starts from an empty data
+// dir: it runs once per file, files in a worker run one after another, and
+// without it a file inherits whatever the previous file — or the previous
+// run, the path is stable — left in the ledger and the stores.
+const root = join(tmpdir(), 'jticket-vitest-data', `w${process.env.VITEST_POOL_ID ?? '0'}`)
+rmSync(root, { recursive: true, force: true })
+process.env.JSUITE_DATA_DIR = root

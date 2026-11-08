@@ -10,7 +10,7 @@ import { findTranscriptPath, parseTranscript, readTranscript, cwdSlug } from '..
 import { classifyVerification, commandVerb, compileRules, parseRunnerOutput, DEFAULT_VERIFICATION_RULES } from '../server/utils/verification'
 import { classifySubagent, concurrencyOf, metricsOf, sessionReport } from '../server/utils/sessionMetrics'
 import { DEFAULT_PRICES, priceFor, priceUsage } from '../server/utils/pricing'
-import { loadSessions, recordSession, sessionRow, sessionsForTicket } from '../server/utils/sessions'
+import { loadSessions, recordSession, saveSessions, sessionRow, sessionsForTicket } from '../server/utils/sessions'
 
 const VITEST_OK = '\n Test Files  3 passed (3)\n      Tests  12 passed (12)\n   Start at  10:00:01\n   Duration  2.40s\n'
 const VITEST_ONE = '\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Duration  0.80s\n'
@@ -252,6 +252,8 @@ describe('pricing', () => {
 
 describe('session ledger', () => {
   it('records, coerces and finds a ticket’s sessions including batches', () => {
+    // The ledger is one file under the test data root; start this test from an empty one.
+    saveSessions([])
     recordSession(sessionRow({ id: 'a', role: 'implement', ticketKey: 'TICK-1', projectId: 'p', projectKey: 'PROJ-1', repo: '/r', cwd: '/r', dispatchedAt: T(0) }))
     recordSession(sessionRow({ id: 'b', role: 'batch', tickets: ['TICK-1', 'TICK-2'], projectId: 'p', projectKey: 'PROJ-1', repo: '/r', cwd: '/r', dispatchedAt: T(10) }))
     recordSession(sessionRow({ id: 'a', role: 'implement', ticketKey: 'TICK-1', projectId: 'p', projectKey: 'PROJ-1', repo: '/r', cwd: '/r', dispatchedAt: T(0), agent: 'ag' }))
