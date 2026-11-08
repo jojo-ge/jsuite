@@ -110,6 +110,7 @@ export default defineEventHandler(async (event) => {
       promptMode: '',
       // A breakdown imported with work already done finishes as of the import.
       completedAt: isFinishedStatus(status) ? ts : null,
+      pickedUpAt: null,
       ...entityOwnership(project?.share),
       createdAt: ts,
       updatedAt: ts,

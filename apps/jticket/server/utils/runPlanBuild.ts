@@ -33,7 +33,7 @@ export async function startRunPlanBuild(projectId: string): Promise<{ agent: str
     if (live) throw createError({ statusCode: 409, statusMessage: `Fable 5.1 is already building ${project.key}'s run plan (since ${project.runPlanBuild.startedAt}) — cancel it first to start over` })
   }
   const prompt = buildPlanPrompt(store, project)
-  const { agent, paneId } = await dispatchProjectSession(project, 'run plan', prompt, { model: RUNPLAN_MODEL, effort: RUNPLAN_EFFORT })
+  const { agent, paneId } = await dispatchProjectSession(project, 'run plan', prompt, { model: RUNPLAN_MODEL, effort: RUNPLAN_EFFORT, session: { role: 'runplan-build' } })
   // Re-read: the dispatch took seconds and the store may have moved on.
   store = loadStore()
   project = store.projects.find((p) => p.id === projectId)

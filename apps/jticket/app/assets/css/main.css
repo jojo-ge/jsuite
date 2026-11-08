@@ -26,6 +26,29 @@
 
 :root {
   --ui-radius: 0.5rem;
+  /* Analytics colours (see app/utils/analyticsFormat.ts and the Analytics
+     views). Phases are categorical: a fixed slot each, never cycled. Wait is
+     not work, so it is the de-emphasis gray. Light steps here, dark below. */
+  --jt-phase-wait: #b9b8b2;
+  --jt-phase-research: #2a78d6;
+  --jt-phase-build: #eb6834;
+  --jt-phase-close: #1baf7a;
+  --jt-phase-tail: #eda100;
+  /* The one hue for magnitude (bars, sparklines) and its whole-suite accent. */
+  --jt-viz-1: #2a78d6;
+  --jt-viz-1-soft: #9ec5f4;
+  --jt-viz-2: #eb6834;
+  --jt-viz-grid: color-mix(in oklab, var(--ui-text-dimmed) 25%, transparent);
+}
+.dark {
+  --jt-phase-wait: #5f5e59;
+  --jt-phase-research: #3987e5;
+  --jt-phase-build: #d95926;
+  --jt-phase-close: #199e70;
+  --jt-phase-tail: #c98500;
+  --jt-viz-1: #3987e5;
+  --jt-viz-1-soft: #1c5cab;
+  --jt-viz-2: #d95926;
 }
 
 html,

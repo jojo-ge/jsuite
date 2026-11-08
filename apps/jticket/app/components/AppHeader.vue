@@ -48,6 +48,8 @@ const links = computed(() => [
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
   // Linked projects (tickets blocking tickets across projects) and their outcome reports.
   { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },
+  // How projects perform: close times, spend, verification and concurrency across every project.
+  { label: 'Analytics', icon: 'i-lucide-chart-no-axes-column', to: '/analytics' },
 ])
 </script>
 

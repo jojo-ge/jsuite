@@ -25,6 +25,7 @@ const ticket = (over: Partial<Ticket> = {}): Ticket => ({
   prompt: '',
   promptMode: '',
   completedAt: null,
+  pickedUpAt: null,
   origin: '',
   owner: '',
   transfer: '',

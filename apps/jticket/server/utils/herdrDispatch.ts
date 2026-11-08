@@ -14,6 +14,7 @@ import {
   resolveTicketPrompt,
   type PromptOverrides,
 } from '../../app/utils/prompts'
+import { newSessionId, recordSession, sessionRow, type SessionRecord, type SessionRole } from './sessions'
 
 export interface TicketDispatch {
   workspaceId: string
@@ -21,6 +22,36 @@ export interface TicketDispatch {
   paneId: string
   agent: string
   ticket: string
+  /** The claude session id the dispatch chose — the analytics ledger's key (sessions.ts). */
+  sessionId: string
+}
+
+/**
+ * What the ledger should know about a session beyond what the dispatch can
+ * see for itself: the auto loop passes its loop number, the run-plan step
+ * kind and the orchestrator slot; a hand dispatch passes nothing.
+ */
+export type SessionMeta = Partial<Pick<SessionRecord, 'role' | 'loop' | 'stepKind' | 'orchestrator'>>
+
+/** A project job's default ledger role, from the tab name the caller gave it. */
+function roleForJob(job: string): SessionRole {
+  if (job === 'merge') return 'merge'
+  if (job === 'outcome report') return 'outcome-report'
+  if (job === 'slice report') return 'slice-report'
+  if (job === 'run plan') return 'runplan-build'
+  if (job === 'worktree') return 'worktree'
+  if (job.startsWith('batch')) return 'batch'
+  if (job.startsWith('orchestrate')) return 'orchestrate'
+  return 'other'
+}
+
+/** Record a started session in the ledger. Best-effort: analytics never fails a dispatch. */
+function ledger(row: SessionRecord): void {
+  try {
+    recordSession(row)
+  } catch (err: any) {
+    console.error(`[jticket] could not record session ${row.id}:`, err?.message ?? err)
+  }
 }
 
 /**
@@ -38,10 +69,12 @@ async function lockedDispatch<T>(what: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
-/** `--model` / `--effort` for claude, or nothing (the CLI's defaults) when neither is pinned. */
-function modelArgs(model?: string, effort?: string) {
-  const args = [...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])]
-  return args.length ? { args } : undefined
+/**
+ * claude's args: `--session-id` always (so the transcript is ours to find), then
+ * `--model` / `--effort` when pinned (else the CLI's defaults).
+ */
+function claudeArgs(sessionId: string, model?: string, effort?: string) {
+  return { args: ['--session-id', sessionId, ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : [])] }
 }
 
 /**
@@ -54,7 +87,7 @@ export async function dispatchTicketSession(
   store: Store,
   ticket: Ticket,
   prompt: string,
-  opts: { ownTab?: boolean; model?: string; effort?: string } = {},
+  opts: { ownTab?: boolean; model?: string; effort?: string; session?: SessionMeta } = {},
 ): Promise<TicketDispatch> {
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
@@ -99,10 +132,42 @@ export async function dispatchTicketSession(
     // otherwise four identical claude spinners with nothing saying which ticket
     // each is working. Cosmetic and best-effort — never fails the dispatch.
     await renamePane(paneId, ticket.title ? `${ticket.key} · ${ticket.title}` : ticket.key)
-    const agent = await startClaudeIn(paneId, ticket.key, framedPrompt, modelArgs(opts.model, opts.effort))
+    const sessionId = newSessionId()
+    const agent = await startClaudeIn(paneId, ticket.key, framedPrompt, claudeArgs(sessionId, opts.model, opts.effort))
+    ledger(sessionRow({
+      id: sessionId,
+      role: 'implement',
+      ticketKey: ticket.key,
+      projectId: project.id,
+      projectKey: project.key,
+      repo: cwd,
+      cwd,
+      model: opts.model ?? '',
+      effort: opts.effort ?? '',
+      agent,
+      ...opts.session,
+    }))
+    stampPickedUp(ticket.key)
 
-    return { workspaceId, tabId, paneId, agent, ticket: ticket.key }
+    return { workspaceId, tabId, paneId, agent, ticket: ticket.key, sessionId }
   })
+}
+
+/**
+ * The moment a ticket was first handed to an agent — a hand dispatch, the
+ * loop's solo session, or an orchestrator's claim. Stamped once; a re-dispatch
+ * keeps the first. Analytics reads it as "picked up" (completedAt is "closed").
+ */
+export function stampPickedUp(ticketKey: string): void {
+  try {
+    const store = loadStore()
+    const t = store.tickets.find((x) => x.key === ticketKey)
+    if (!t || t.pickedUpAt) return
+    t.pickedUpAt = now()
+    saveStore(store)
+  } catch (err: any) {
+    console.error(`[jticket] could not stamp pickedUpAt on ${ticketKey}:`, err?.message ?? err)
+  }
 }
 
 /**
@@ -110,7 +175,7 @@ export async function dispatchTicketSession(
  * ('PROJ-n · merge') — land every open local PR on the integration branch,
  * rebasing through conflicts.
  */
-export async function dispatchMergeSession(project: Project, prompt: string, opts: { model?: string; effort?: string } = {}) {
+export async function dispatchMergeSession(project: Project, prompt: string, opts: { model?: string; effort?: string; session?: SessionMeta } = {}) {
   return dispatchProjectSession(project, 'merge', prompt, opts)
 }
 
@@ -122,7 +187,7 @@ export async function dispatchProjectSession(
   project: Project,
   job: string,
   prompt: string,
-  opts: { model?: string; effort?: string; agent?: string; paneLabel?: string } = {},
+  opts: { model?: string; effort?: string; agent?: string; paneLabel?: string; session?: SessionMeta; tickets?: string[] } = {},
 ) {
   const cwd = resolveRepoDir(project.repo)
   const label = `${project.key} · ${job}`
@@ -137,8 +202,22 @@ export async function dispatchProjectSession(
       ;({ tabId, paneId } = await createJobTab(workspaceId, label, cwd))
     }
     await renamePane(paneId, opts.paneLabel ?? label)
-    const agent = await startClaudeIn(paneId, opts.agent ?? `${job}-${project.key}`, prompt, modelArgs(opts.model, opts.effort))
-    return { workspaceId, tabId, paneId, agent, project: project.key }
+    const sessionId = newSessionId()
+    const agent = await startClaudeIn(paneId, opts.agent ?? `${job}-${project.key}`, prompt, claudeArgs(sessionId, opts.model, opts.effort))
+    ledger(sessionRow({
+      id: sessionId,
+      role: roleForJob(job),
+      tickets: opts.tickets ?? [],
+      projectId: project.id,
+      projectKey: project.key,
+      repo: cwd,
+      cwd,
+      model: opts.model ?? '',
+      effort: opts.effort ?? '',
+      agent,
+      ...opts.session,
+    }))
+    return { workspaceId, tabId, paneId, agent, project: project.key, sessionId }
   })
 }
 
@@ -166,7 +245,7 @@ export async function dispatchBatchSession(
   project: Project,
   tickets: Ticket[],
   prompt: string,
-  opts: { model?: string; effort?: string } = {},
+  opts: { model?: string; effort?: string; session?: SessionMeta } = {},
 ) {
   if (!tickets.length) throw createError({ statusCode: 400, statusMessage: 'a batch needs at least one ticket' })
   for (const ticket of tickets) {
@@ -194,7 +273,10 @@ export async function dispatchBatchSession(
     ...opts,
     agent: `batch-${project.key}`,
     paneLabel: `${project.key} · batch · ${keys.join(', ')}`,
+    tickets: keys,
+    session: { role: 'batch', ...opts.session },
   })
+  for (const k of keys) stampPickedUp(k)
   return { ...res, tickets: keys }
 }
 

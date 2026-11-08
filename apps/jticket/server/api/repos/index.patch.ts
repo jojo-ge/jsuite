@@ -3,18 +3,23 @@
 // merged per kind exactly like PATCH /api/prompts:
 //   { prompts: { 'standard:local': '…' } }  sets one kind
 //   { prompts: { 'standard:local': '' } }   drops it back to the global default
+// and its verification rules (the Analytics tab's runner recognition):
+//   { verificationRules: [{ id, category, pattern }] }  replaces the list
 // The worktree guide has its own endpoint (/api/repos/worktree): an agent
 // writes it, not this form.
 export default defineEventHandler(async (event) => {
   const path = resolveRepoParam(loadStore(), getQuery(event).path)
   if (!path) throw createError({ statusCode: 400, statusMessage: 'missing ?path=' })
-  const body = await readBody<{ prompts?: unknown }>(event)
-  if (body?.prompts === undefined) throw createError({ statusCode: 400, statusMessage: 'prompts is required' })
+  const body = await readBody<{ prompts?: unknown; verificationRules?: unknown }>(event)
+  if (body?.prompts === undefined && body?.verificationRules === undefined) {
+    throw createError({ statusCode: 400, statusMessage: 'prompts or verificationRules is required' })
+  }
 
   const store = loadStore()
   const repo = findKnownRepo(store, path)
   if (!repo) throw createError({ statusCode: 404, statusMessage: `not a known codebase: ${path}` })
-  repo.prompts = mergePromptOverrides(repo.prompts, body.prompts)
+  if (body.prompts !== undefined) repo.prompts = mergePromptOverrides(repo.prompts, body.prompts)
+  if (body.verificationRules !== undefined) repo.verificationRules = cleanVerificationRules(body.verificationRules)
   saveStore(store)
-  return { path: repo.path, prompts: repo.prompts }
+  return { path: repo.path, prompts: repo.prompts, verificationRules: repo.verificationRules }
 })

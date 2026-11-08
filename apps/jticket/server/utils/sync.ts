@@ -595,6 +595,8 @@ export function applySyncSnapshot(input: SyncApplyInput): SyncApplyResult {
       prompt: '',
       promptMode: '',
       completedAt: finished ? (t.completedAt ?? t.updatedAt ?? fallbackAt) : null,
+      // The peer's sessions are machine-local to the peer, like its branch.
+      pickedUpAt: null,
       origin: validSide(t.origin) ? t.origin : peer,
       owner: incomingOwner,
       // Only 'pending' crosses the wire as a ticket field — declines travel

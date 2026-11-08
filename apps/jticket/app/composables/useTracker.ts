@@ -93,6 +93,9 @@ export interface Ticket {
   // When the ticket last became done; null while unfinished. Stamped by the
   // server on the status change, not by callers.
   completedAt: string | null
+  // When an agent first picked the ticket up (dispatch or orchestrator claim);
+  // null until then. Stamped once by the server — the analytics clock starts here.
+  pickedUpAt: string | null
   // Which half of a shared project it belongs to ('' on local-only projects).
   // Peer-owned tickets are read-only and undispatchable — see peerNameOf.
   origin: ShareSide | ''

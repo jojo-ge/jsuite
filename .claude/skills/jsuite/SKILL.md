@@ -51,6 +51,7 @@ Always include the scheme: `https://<app>.local`. Bare host ports
 | run exactly one loop, or one loop over ticked tickets | board **Loop frontier / Loop selected** (`{enabled: true, once: true, tickets?: [keys]}`) |
 | a hand-built sequence — which tickets go together, who runs each, where merges/reviews/gates sit | the project's **Run setup** tab (run plan, board or graph view) — **Build with Fable** drafts it, **Start plan** runs it; see below |
 | see how projects lead into each other and what each delivered | jTicket **Graphs** page (`/graphs`; ids `G-<KEY>`; `GET /api/graphs`, `GET /api/graphs/G-KEY` — a member project key works too) |
+| how long tickets take / what they cost, per ticket, project or across projects; verification time, whole-suite vs filtered runs, orchestrator overhead | project **Analytics** tab (`GET /api/projects/:id/analytics`) and the **Analytics** page (`/analytics`; `GET /api/analytics?repo=&from=&to=&rows=1`) — passive, read off claude transcripts via the session ledger; `POST /api/analytics/backfill {project?}` adds older sessions |
 | find + triage deepening opportunities in a codebase | jTicket Improve-architecture button (`POST /api/projects/architect`; tickets run `jarchitect-scan` / `jarchitect-grill`) |
 | worktrees — how a codebase makes/sets up/tears down worktrees; connect an integration branch to one | Codebase settings (`/codebase`) → Worktrees: kickoff dispatches `worktree:kickoff`, the agent PUTs the guide to `/api/repos/worktree?repo=`; Connect worktree dispatches `worktree:connect` → `POST /api/projects/:id/worktree` (re-checked against `git worktree list`). Every worktree consumer GETs the guide first |
 | check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, never a fix) |
@@ -122,6 +123,13 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
 - **Graphs** (`/graphs`) — cross-project blocked-by edges link projects into
   graphs named "first → last" with each project's status and outcome report.
   Display only; id `G-<KEY>`.
+- **Analytics** (`/analytics`, and a project's Analytics tab) — session
+  timing and cost per ticket, measured passively: dispatches run claude with
+  `--session-id` and log it to `.data/jticket/sessions.json`; the transcript
+  under `~/.claude/projects/` is parsed for duration, research → first edit,
+  verification runs (category + whole/filtered scope), PR time and token
+  cost. Orchestrations are measured whole and per inner ticket. Agents report
+  nothing; `POST /api/analytics/backfill` matches older transcripts to tickets.
 - **Architect-mode projects** (`/jarchitect-scan` fills graded HITL `decision`
   candidates + an assessment spec; `/jarchitect-grill` answers go/no-go in a
   herdr pane) and **predeploy-mode projects** (`/jreproduce`: failing test +

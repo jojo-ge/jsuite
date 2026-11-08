@@ -66,6 +66,7 @@ export default defineEventHandler(async (event) => {
     prompt: '',
     promptMode: '',
     completedAt: null,
+    pickedUpAt: null,
     origin: '',
     owner: '',
     transfer: '',
