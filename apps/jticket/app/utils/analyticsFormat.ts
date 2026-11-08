@@ -17,7 +17,7 @@ export function fmtDuration(ms: number | null | undefined): string {
 export function fmtUsd(usd: number | null | undefined): string {
   if (usd == null || !Number.isFinite(usd)) return '–'
   if (usd < 100) return `$${usd.toFixed(2)}`
-  return `$${Math.round(usd).toLocaleString()}`
+  return `$${Math.round(usd).toLocaleString(LOCALE)}`
 }
 
 export function fmtPct(x: number | null | undefined): string {
@@ -25,15 +25,20 @@ export function fmtPct(x: number | null | undefined): string {
   return `${Math.round(x * 100)}%`
 }
 
+// One fixed locale on both sides: these strings are server-rendered and then
+// hydrated, and the server's default locale (12-hour clock) differed from the
+// browser's, which Vue reported as a hydration text mismatch.
+const LOCALE = 'en-GB'
+
 export function fmtNum(x: number | null | undefined, digits = 0): string {
   if (x == null || !Number.isFinite(x)) return '–'
-  return x.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits })
+  return x.toLocaleString(LOCALE, { maximumFractionDigits: digits, minimumFractionDigits: digits })
 }
 
 export function fmtWhen(iso: string | null | undefined): string {
   if (!iso) return '–'
   const d = new Date(iso)
-  return Number.isFinite(d.getTime()) ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '–'
+  return Number.isFinite(d.getTime()) ? d.toLocaleString(LOCALE, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '–'
 }
 
 /** Short model names for tables: claude-opus-5-5 → Opus 5.5. */
