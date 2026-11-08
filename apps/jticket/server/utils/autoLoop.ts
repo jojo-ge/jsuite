@@ -1084,6 +1084,14 @@ export interface OrchestratorClaim {
   again: boolean
   inFlight: string[]
   budget: number
+  /** The model/effort this ticket's subagent runs at — the slot's runner (its group's, else the step's). */
+  subagentModel: string
+  subagentEffort: string
+  /** The slice report to read first, when the plan's tip moved since the last implement step. */
+  sliceDoc: string | null
+  /** Which orchestrator (1-based) holds this ticket, out of how many run side by side. */
+  orchestrator: number
+  orchestrators: number
 }
 
 /**

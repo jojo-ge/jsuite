@@ -212,9 +212,14 @@ export function buildSyncExport(input: SyncExportInput): SyncExport {
       resolution: t.resolution,
       blockedBy: [...t.blockedBy],
       comments: t.comments.filter((c) => ownedHere(c, share)).map((c) => exportComment(c, side)),
-      // The work branch lives in this machine's clone — machine-local.
+      // The work branch lives in this machine's clone — machine-local, and so
+      // is a hand-off prompt (it describes this machine); the peer sets both
+      // to '' on import anyway. pickedUpAt likewise.
       branch: '',
+      prompt: '',
+      promptMode: '',
       completedAt: t.completedAt,
+      pickedUpAt: null,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
       // A pending ticket travels exactly as it stands — owner already names

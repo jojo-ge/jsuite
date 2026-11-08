@@ -9,7 +9,7 @@ export const JREVIEW_PUBLIC = process.env.JREVIEW_URL || 'https://jreview.local'
 
 export async function jreviewFetch<T = any>(path: string, opts: any = {}): Promise<T> {
   try {
-    return await $fetch<T>(`${JREVIEW_API}${path}`, { timeout: 10_000, ...opts })
+    return (await $fetch(`${JREVIEW_API}${path}`, { timeout: 10_000, ...opts })) as T
   } catch (err: any) {
     const status = err?.statusCode ?? err?.response?.status
     if (status) {

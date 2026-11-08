@@ -163,7 +163,7 @@ const effortItems = EFFORTS.map((e) => ({ label: e, value: e }))
 const built = computed<PlanStep>(() => {
   const base = editing.value ?? newPlanStep(d.draft.value, kind.value)
   const orch = groups.value.filter((g) => g.length)
-  const dispatch: PlanDispatch | null = kind.value === 'implement' ? { mode: orch.length ? 'orchestrated' : 'sessions', model: model.value, budget: budget.value, orchestrators: Math.max(1, orch.length) } : null
+  const dispatch: PlanDispatch | null = kind.value === 'implement' ? { mode: orch.length ? 'orchestrated' : 'sessions', model: model.value, effort: effort.value, budget: budget.value, orchestrators: Math.max(1, orch.length) } : null
   return {
     ...base,
     kind: kind.value,

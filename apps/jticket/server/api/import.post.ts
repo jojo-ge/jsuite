@@ -22,6 +22,7 @@ interface ImportProject {
   mode?: ProjectMode // 'wayfinder' turns the whole project into a wayfinder effort
   repo?: string // path to a local clone — wires the project to GitHub
   integrationBranch?: string // branch this project's PRs target
+  starred?: boolean
 }
 interface ImportTicket {
   title: string
@@ -112,6 +113,9 @@ export default defineEventHandler(async (event) => {
       completedAt: isFinishedStatus(status) ? ts : null,
       pickedUpAt: null,
       ...entityOwnership(project?.share),
+      // Freshly minted here: no ownership transfer in flight.
+      transfer: '',
+      transferAt: '',
       createdAt: ts,
       updatedAt: ts,
     }

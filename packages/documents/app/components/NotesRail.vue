@@ -137,7 +137,7 @@ defineExpose({ focusTextarea })
               @update:model-value="setText(n.id, String($event))"
             />
             <NoteAttachments
-              :ref="(el) => (noteAtt[n.id] = el as AttachmentsApi)"
+              :ref="(el: unknown) => (noteAtt[n.id] = el as AttachmentsApi)"
               :doc-key="docKey"
               :attachments="n.attachments ?? []"
               @update="setAttachments(n.id, $event)"
