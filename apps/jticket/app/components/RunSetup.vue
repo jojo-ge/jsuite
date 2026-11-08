@@ -27,6 +27,8 @@ import {
   EFFORTS,
   PLAN_MODELS,
   PLAN_MODEL_KEYS,
+  BUDGET_MIN,
+  GROUP_MIN,
   STEP_BUDGET_MAX,
   STEP_ORCHESTRATORS_MAX,
   STEP_SESSIONS_MAX,
@@ -381,7 +383,8 @@ function setSolo(k: string, patch: Partial<Runner>) {
 }
 const modelItems = PLAN_MODEL_KEYS.map((m) => ({ label: PLAN_MODELS[m].label, value: m }))
 const effortItems = EFFORTS.map((e) => ({ label: e, value: e }))
-const budgetItems = Array.from({ length: STEP_BUDGET_MAX }, (_, i) => ({ label: String(i + 1), value: i + 1 }))
+// Never 1: an orchestrator running one subagent at a time costs more than the work (BUDGET_MIN).
+const budgetItems = Array.from({ length: STEP_BUDGET_MAX - BUDGET_MIN + 1 }, (_, i) => ({ label: String(BUDGET_MIN + i), value: BUDGET_MIN + i }))
 const reviewerItems = Array.from({ length: PLAN_REVIEWERS_MAX - PLAN_REVIEWERS_MIN + 1 }, (_, i) => ({ label: `${PLAN_REVIEWERS_MIN + i} reviewers`, value: PLAN_REVIEWERS_MIN + i }))
 
 // What the step would be, as built so far — and the plan with it in, validated.
@@ -790,7 +793,7 @@ async function resumeRun() {
             <div class="rounded-md border px-3 py-2 text-xs" :class="builtShape.orchestrators >= STEP_ORCHESTRATORS_MAX && builtShape.solo.length ? 'border-error/60 bg-error/5' : 'border-default bg-elevated/30'">
               <p class="font-medium">{{ builtShapeLabel }} · {{ builtShape.sessions }} session{{ builtShape.sessions === 1 ? '' : 's' }} at once</p>
               <p class="mt-0.5 text-muted">
-                At most {{ STEP_SESSIONS_MAX }} sessions run at once in a step: up to 4 own agents, or 1 orchestrator beside up to 3, or 2 orchestrators alone (each orchestrator works at most {{ STEP_BUDGET_MAX }} tickets at once).
+                At most {{ STEP_SESSIONS_MAX }} sessions run at once in a step: up to 4 own agents, or 1 orchestrator beside up to 3, or 2 orchestrators alone (each orchestrator works {{ STEP_BUDGET_MAX }} tickets at once, and needs {{ GROUP_MIN }} or more in its group to pay for itself).
                 The arrows set the order — own agents past the free sessions start, in that order, as earlier ones finish.
                 <span v-if="builtShape.orchestrators >= STEP_ORCHESTRATORS_MAX && builtShape.solo.length" class="text-error">With two orchestrators nothing runs as its own agent: put {{ builtShape.solo.join(', ') }} in a group, or in a step of {{ builtShape.solo.length === 1 ? 'its' : 'their' }} own.</span>
               </p>

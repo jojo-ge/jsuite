@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  FIX_SESSIONS_MAX,
   claimVerdict,
   coerceAutoLoop,
   coerceOrchestration,
+  effectiveOrchestration,
   finishLoop,
   finishedReviews,
   newAutoLoop,
@@ -250,6 +252,63 @@ describe('planStep — reviewing', () => {
   })
 })
 
+describe('phaseStall — the watchdog for phases that wait on one session', () => {
+  const T0 = Date.parse(AT)
+  const min = 60_000
+  const at = (m: number) => T0 + m * min
+  const open = [{ key: 'PR-3', ticketKey: 'T-1', status: 'open' as const }]
+
+  it('pauses a merge sweep silent past JOB_STALL_MS; Retry step re-dispatches it with a fresh clock', () => {
+    const merging = loop({ phase: 'merging', prs: ['PR-3'], mergeDispatchedAt: AT })
+    expect(planStep(merging, world({ prs: open, now: at(44) }))).toMatchObject({ kind: 'wait' })
+    const stalled = planStep(merging, world({ prs: open, now: at(46) }))
+    expect(stalled).toMatchObject({ kind: 'pause', reason: 'phase-stalled' })
+    expect((stalled as any).detail).toContain('merge sweep')
+    const retryAt = new Date(at(46)).toISOString()
+    const retried = retryStep({ ...merging, paused: { reason: 'phase-stalled', detail: 'x', at: retryAt } }, { tickets: [] }, retryAt)
+    expect(retried.phaseStartedAt).toBe(retryAt)
+    expect(planStep(retried, world({ prs: open, now: at(47) }))).toEqual({ kind: 'dispatchMerge', prs: ['PR-3'] })
+    // A sweep that reported back is never stalled, however old the phase.
+    const reported = { ...merging, mergeReportedAt: AT, mergeReport: { unmerged: [] } }
+    expect(planStep(reported, world({ prs: [{ key: 'PR-3', ticketKey: 'T-1', status: 'merged' }], now: at(500) }))).toEqual({ kind: 'enterReview' })
+  })
+
+  it('pauses a review with no verdict past REVIEW_STALL_MS — the arch pass too — and Retry step asks again', () => {
+    const asked = loop({ phase: 'reviewing', baseSha: 'sha-base', reviewRequestedAt: AT, reviewKey: 'r1' })
+    const pending = (m: number) => world({ tip: 'sha-new', review: { status: 'triaging', ticketKeys: [] }, now: at(m) })
+    expect(planStep(asked, pending(89))).toEqual({ kind: 'wait', pending: ['r1'] })
+    expect(planStep(asked, pending(91))).toMatchObject({ kind: 'pause', reason: 'phase-stalled' })
+    const arch = { ...asked, phase: 'arch-reviewing' as const, archReviewKey: 'r1' }
+    expect(planStep(arch, pending(91))).toMatchObject({ kind: 'pause', reason: 'phase-stalled' })
+    expect(retryStep({ ...arch, paused: { reason: 'phase-stalled', detail: 'x', at: AT } }, { tickets: [] })).toMatchObject({ paused: null, reviewRequestedAt: '', reviewKey: null, archReviewKey: null })
+    // arch-merging retries like the other merges.
+    expect(retryStep(loop({ phase: 'arch-merging', mergeDispatchedAt: AT, mergeReportedAt: AT }), { tickets: [] })).toMatchObject({ mergeDispatchedAt: '', mergeReportedAt: '' })
+  })
+
+  it('pauses a slice or outcome report session silent past JOB_STALL_MS; nothing dispatched means no clock', () => {
+    const slice = loop({ phase: 'slice-reporting', sliceDispatchedAt: AT, sliceFrom: 'sha-0' })
+    expect(planStep(slice, world({ now: at(10) })).kind).toBe('wait')
+    expect(planStep(slice, world({ now: at(46) }))).toMatchObject({ kind: 'pause', reason: 'phase-stalled' })
+    expect(retryStep({ ...slice, paused: { reason: 'phase-stalled', detail: 'x', at: AT } }, { tickets: [] })).toMatchObject({ sliceDispatchedAt: '', slicedAt: '' })
+    expect(planStep(loop({ phase: 'reporting', reportDispatchedAt: AT }), world({ now: at(46) }))).toMatchObject({ kind: 'pause', reason: 'phase-stalled' })
+    expect(planStep(loop({ phase: 'reporting' }), world({ now: at(500) }))).toEqual({ kind: 'dispatchReport' })
+  })
+})
+
+describe('a fixing phase goes out in waves of FIX_SESSIONS_MAX', () => {
+  it('dispatches three fix tickets, queues the rest, and sends the next as one finishes', () => {
+    const fixes = ['T-11', 'T-12', 'T-13', 'T-14', 'T-15']
+    const fixing = loop({ phase: 'fixing', fixTickets: fixes })
+    expect(FIX_SESSIONS_MAX).toBe(3)
+    expect(planStep(fixing, world({ tickets: fixes.map((k) => t(k)) }))).toEqual({ kind: 'dispatchTickets', keys: ['T-11', 'T-12', 'T-13'] })
+    const three = { ...fixing, dispatched: { 'T-11': AT, 'T-12': AT, 'T-13': AT } }
+    const busy = world({ tickets: fixes.map((k) => t(k, k <= 'T-13' ? { status: 'in_progress', claimed: true } : {})), agents: { 'T-11': 'working', 'T-12': 'working', 'T-13': 'working' } })
+    expect(planStep(three, busy)).toMatchObject({ kind: 'wait', note: 'T-14, T-15 queued — start as a session frees' })
+    const oneDone = world({ tickets: fixes.map((k) => t(k, k === 'T-12' ? { status: 'done' } : k <= 'T-13' ? { status: 'in_progress', claimed: true } : {})), agents: { 'T-11': 'working', 'T-13': 'working' } })
+    expect(planStep(three, oneDone)).toEqual({ kind: 'dispatchTickets', keys: ['T-14'] })
+  })
+})
+
 describe('pauses, retry, finish', () => {
   it('a failed-dispatch pause holds every step until Retry step', () => {
     const paused = loop({ phase: 'implementing', tickets: ['T-1'], paused: { reason: 'dispatch-failed', detail: 'boom', at: AT } })
@@ -389,26 +448,39 @@ describe('orchestrated mode', () => {
     loop({
       orchestration: orch,
       phase: 'implementing',
-      tickets: ['T-1', 'T-2', 'T-3'],
-      orchestrators: [{ ...newOrchestrator(1, ['T-1', 'T-2', 'T-3']), dispatchedAt: AT, agent: 'orchestrate-p-1' }],
+      tickets: ['T-1', 'T-2', 'T-3', 'T-4'],
+      orchestrators: [{ ...newOrchestrator(1, ['T-1', 'T-2', 'T-3', 'T-4']), dispatchedAt: AT, agent: 'orchestrate-p-1' }],
       ...patch,
     })
-  const open = [t('T-1', { status: 'in_progress', claimed: true }), t('T-2'), t('T-3')]
+  const open = [t('T-1', { status: 'in_progress', claimed: true }), t('T-2'), t('T-3'), t('T-4')]
 
   it('starts one orchestrator for the phase instead of a session per ticket', () => {
-    const fresh = loop({ orchestration: orch, phase: 'implementing', tickets: ['T-1', 'T-2'] })
-    expect(planStep(fresh, world({ tickets: [t('T-1'), t('T-2')] }))).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-2']] })
-    const fixing = loop({ orchestration: orch, phase: 'fixing', fixTickets: ['T-5'] })
-    expect(planStep(fixing, world({ tickets: [t('T-5')] }))).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-5']] })
+    const fresh = loop({ orchestration: orch, phase: 'implementing', tickets: ['T-1', 'T-2', 'T-3', 'T-4'] })
+    expect(planStep(fresh, world({ tickets: [t('T-1'), t('T-2'), t('T-3'), t('T-4')] }))).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-2', 'T-3', 'T-4']] })
+    const fixing = loop({ orchestration: orch, phase: 'fixing', fixTickets: ['T-5', 'T-6', 'T-7', 'T-8'] })
+    expect(planStep(fixing, world({ tickets: [t('T-5'), t('T-6'), t('T-7'), t('T-8')] }))).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-5', 'T-6', 'T-7', 'T-8']] })
+  })
+
+  it('runs a phase of fewer than GROUP_MIN tickets as plain sessions — an orchestrator with nothing to run side by side is overhead', () => {
+    const three = loop({ orchestration: orch, phase: 'implementing', tickets: ['T-1', 'T-2', 'T-3'] })
+    expect(effectiveOrchestration(three)).toEqual({ ...orch, mode: 'sessions', orchestrators: 1 })
+    expect(planStep(three, world({ tickets: [t('T-1'), t('T-2'), t('T-3')] }))).toEqual({ kind: 'dispatchTickets', keys: ['T-1', 'T-2', 'T-3'] })
+    const oneFix = loop({ orchestration: orch, phase: 'fixing', fixTickets: ['T-5'] })
+    expect(planStep(oneFix, world({ tickets: [t('T-5')] }))).toEqual({ kind: 'dispatchTickets', keys: ['T-5'] })
+    // Between phases the setting stands as picked.
+    expect(effectiveOrchestration(loop({ orchestration: orch }))).toEqual(orch)
+    // Never more orchestrators than GROUP_MIN-ticket shares.
+    const six = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6']
+    expect(effectiveOrchestration(loop({ orchestration: { ...orch, orchestrators: 3 }, phase: 'implementing', tickets: six })).orchestrators).toBe(1)
   })
 
   it('waits on a working orchestrator — and on one herdr has nothing to say about', () => {
-    expect(planStep(running(), world({ tickets: open, orchestrators: { 0: 'working' } }))).toMatchObject({ kind: 'wait', pending: ['T-1', 'T-2', 'T-3'] })
+    expect(planStep(running(), world({ tickets: open, orchestrators: { 0: 'working' } }))).toMatchObject({ kind: 'wait', pending: ['T-1', 'T-2', 'T-3', 'T-4'] })
     expect(planStep(running(), world({ tickets: open }))).toMatchObject({ kind: 'wait' })
   })
 
   it('moves on to the merge like sessions mode once every ticket is finished', () => {
-    const done = [t('T-1', { status: 'done' }), t('T-2', { status: 'done' }), t('T-3', { status: 'done' })]
+    const done = [t('T-1', { status: 'done' }), t('T-2', { status: 'done' }), t('T-3', { status: 'done' }), t('T-4', { status: 'done' })]
     const prs = [{ key: 'PR-1', ticketKey: 'T-1', status: 'open' as const }]
     expect(planStep(running(), world({ tickets: done, prs, orchestrators: { 0: 'working' } }))).toEqual({ kind: 'enterMerge', prs: ['PR-1'] })
   })
@@ -434,7 +506,7 @@ describe('orchestrated mode', () => {
   })
 
   it(`pauses once ${ORCHESTRATOR_MAX_RUNS} orchestrators stopped short; Retry step starts a fresh one and frees their tickets`, () => {
-    const spent = running({ orchestrators: [newOrchestrator(ORCHESTRATOR_MAX_RUNS, ['T-1', 'T-2', 'T-3'])], dispatched: { 'T-1': AT } })
+    const spent = running({ orchestrators: [newOrchestrator(ORCHESTRATOR_MAX_RUNS, ['T-1', 'T-2', 'T-3', 'T-4'])], dispatched: { 'T-1': AT } })
     expect(planStep(spent, world({ tickets: open }))).toMatchObject({ kind: 'pause', reason: 'orchestrator-failed' })
     const next = retryStep({ ...spent, paused: { reason: 'orchestrator-failed', detail: 'x', at: AT } }, { tickets: open })
     expect(next.orchestrators[0]!.runs).toBe(0)
@@ -444,9 +516,10 @@ describe('orchestrated mode', () => {
 
   describe('several orchestrators side by side', () => {
     const two = { ...orch, orchestrators: 2, budget: 1 }
-    const keys = ['T-1', 'T-2', 'T-3', 'T-4']
-    const four = keys.map((k) => t(k))
-    const shares = [['T-1', 'T-3'], ['T-2', 'T-4']]
+    // Two orchestrators need two GROUP_MIN-ticket shares.
+    const keys = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6', 'T-7', 'T-8']
+    const all = keys.map((k) => t(k))
+    const shares = [['T-1', 'T-3', 'T-5', 'T-7'], ['T-2', 'T-4', 'T-6', 'T-8']]
     const both = (patch: Partial<AutoLoop> = {}) =>
       loop({
         orchestration: two,
@@ -461,41 +534,41 @@ describe('orchestrated mode', () => {
       expect(splitShares(['T-1'], 3)).toEqual([['T-1']])
       expect(splitShares([], 2)).toEqual([[]])
       const fresh = loop({ orchestration: two, phase: 'implementing', tickets: keys })
-      expect(planStep(fresh, world({ tickets: four }))).toEqual({ kind: 'dispatchOrchestrators', shares })
+      expect(planStep(fresh, world({ tickets: all }))).toEqual({ kind: 'dispatchOrchestrators', shares })
       // A HITL ticket in the phase is nobody's share.
-      const withHuman = loop({ orchestration: two, phase: 'implementing', tickets: [...keys, 'T-5'] })
-      expect(planStep(withHuman, world({ tickets: [...four, t('T-5', { hitl: true })] }))).toEqual({ kind: 'dispatchOrchestrators', shares })
+      const withHuman = loop({ orchestration: two, phase: 'implementing', tickets: [...keys, 'T-9'] })
+      expect(planStep(withHuman, world({ tickets: [...all, t('T-9', { hitl: true })] }))).toEqual({ kind: 'dispatchOrchestrators', shares })
     })
 
     it('each orchestrator has its own budget, and only its own tickets', () => {
       const st = both({ dispatched: { 'T-1': AT } })
       // Orchestrator 1 is full (budget 1); orchestrator 2 is free.
-      expect(claimVerdict(st, { tickets: four }, 'T-3')).toMatchObject({ ok: false, wait: true })
-      expect(claimVerdict(st, { tickets: four }, 'T-2')).toEqual({ ok: true, again: false })
+      expect(claimVerdict(st, { tickets: all }, 'T-3')).toMatchObject({ ok: false, wait: true })
+      expect(claimVerdict(st, { tickets: all }, 'T-2')).toEqual({ ok: true, again: false })
       // Claiming as the wrong orchestrator is refused outright.
-      expect(claimVerdict(st, { tickets: four }, 'T-2', 0)).toMatchObject({ ok: false, status: 409, wait: false })
-      expect(claimVerdict(st, { tickets: four }, 'T-2', 1)).toEqual({ ok: true, again: false })
-      expect(inFlightOf(st, { tickets: four }, 0)).toEqual(['T-1'])
-      expect(inFlightOf(st, { tickets: four }, 1)).toEqual([])
-      expect(slotTickets(st, 1, keys)).toEqual(['T-2', 'T-4'])
+      expect(claimVerdict(st, { tickets: all }, 'T-2', 0)).toMatchObject({ ok: false, status: 409, wait: false })
+      expect(claimVerdict(st, { tickets: all }, 'T-2', 1)).toEqual({ ok: true, again: false })
+      expect(inFlightOf(st, { tickets: all }, 0)).toEqual(['T-1'])
+      expect(inFlightOf(st, { tickets: all }, 1)).toEqual([])
+      expect(slotTickets(st, 1, keys)).toEqual(['T-2', 'T-4', 'T-6', 'T-8'])
     })
 
     it('watches each one on its own: the second stalling is the step, the first working is left alone', () => {
       const w = (state: AutoLoop, seen: Record<number, 'working' | 'stopped' | 'gone'>, m = 0) =>
-        planStep(state, world({ tickets: four, orchestrators: seen, now: T0 + m * min }))
+        planStep(state, world({ tickets: all, orchestrators: seen, now: T0 + m * min }))
       expect(w(both(), { 0: 'working', 1: 'working' })).toMatchObject({ kind: 'wait' })
       expect(w(both(), { 0: 'working', 1: 'stopped' })).toEqual({ kind: 'watchOrchestrator', index: 1, stoppedSince: AT })
       const stalled = both({ orchestrators: both().orchestrators.with(1, { ...both().orchestrators[1]!, watch: { stoppedSince: AT, nudgedAt: '' } }) })
       expect(w(stalled, { 0: 'working', 1: 'stopped' }, 5)).toEqual({ kind: 'nudgeOrchestrator', index: 1 })
       expect(w(stalled, { 0: 'working', 1: 'gone' }, 1)).toMatchObject({ kind: 'restartOrchestrator', index: 1 })
       // A slot whose share is all finished needs nothing, whatever herdr says.
-      const halfDone = [t('T-1', { status: 'done' }), t('T-2'), t('T-3', { status: 'done' }), t('T-4')]
-      expect(planStep(both(), world({ tickets: halfDone, orchestrators: { 0: 'gone', 1: 'working' }, now: T0 + 60 * min }))).toMatchObject({ kind: 'wait', pending: ['T-2', 'T-4'] })
+      const halfDone = keys.map((k) => t(k, Number(k.slice(2)) % 2 ? { status: 'done' } : {}))
+      expect(planStep(both(), world({ tickets: halfDone, orchestrators: { 0: 'gone', 1: 'working' }, now: T0 + 60 * min }))).toMatchObject({ kind: 'wait', pending: ['T-2', 'T-4', 'T-6', 'T-8'] })
     })
 
     it('a replaced slot is re-dispatched alone, with its share; Retry step frees only slots without a session', () => {
       const replaced = both({ orchestrators: both().orchestrators.with(1, newOrchestrator(1, shares[1]!)), dispatched: { 'T-1': AT, 'T-2': AT } })
-      expect(planStep(replaced, world({ tickets: four, orchestrators: { 0: 'working' } }))).toEqual({ kind: 'dispatchOrchestrator', index: 1 })
+      expect(planStep(replaced, world({ tickets: all, orchestrators: { 0: 'working' } }))).toEqual({ kind: 'dispatchOrchestrator', index: 1 })
       // T-1 is being worked under orchestrator 1 (kept); T-2 was orchestrator 2's, which has no session (freed).
       const working = [t('T-1', { status: 'in_progress', claimed: true }), t('T-2', { status: 'in_progress', claimed: true }), t('T-3'), t('T-4')]
       const next = retryStep({ ...replaced, paused: { reason: 'orchestrator-failed', detail: 'x', at: AT } }, { tickets: working })
@@ -527,7 +600,9 @@ describe('orchestrated mode', () => {
     expect(coerceAutoLoop({ enabled: true, orchestration: orch })!.orchestration).toEqual(orch)
     expect(coerceAutoLoop({ enabled: true })!.orchestration).toEqual({ mode: 'sessions', model: 'opus', effort: 'high', budget: 2, orchestrators: 1 })
     expect(coerceOrchestration({ mode: 'orchestrated', model: 'sonnet', effort: 'low', budget: 99, orchestrators: 9 })).toEqual({ mode: 'orchestrated', model: 'sonnet', effort: 'low', budget: 4, orchestrators: 4 })
-    expect(coerceOrchestration({ mode: 'weird', model: 'gpt', effort: 'extreme', budget: 0 })).toEqual({ mode: 'sessions', model: 'opus', effort: 'high', budget: 1, orchestrators: 1 })
+    // A budget under BUDGET_MIN is lifted: one subagent at a time is pure overhead.
+    expect(coerceOrchestration({ mode: 'weird', model: 'gpt', effort: 'extreme', budget: 0 })).toEqual({ mode: 'sessions', model: 'opus', effort: 'high', budget: 2, orchestrators: 1 })
+    expect(coerceOrchestration({ mode: 'orchestrated', model: 'opus', effort: 'high', budget: 1, orchestrators: 1 })!.budget).toBe(2)
     // A run from before orchestrators ran side by side keeps its one orchestrator, with the whole phase.
     const legacy = coerceAutoLoop({ enabled: true, phase: 'implementing', tickets: ['T-1', 'T-2'], orchestrator: { dispatchedAt: AT, agent: 'o', paneId: 'p', runs: 1 } })!
     expect(legacy.orchestrators).toEqual([{ ...newOrchestrator(1, ['T-1', 'T-2']), dispatchedAt: AT, agent: 'o', paneId: 'p' }])

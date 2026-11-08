@@ -258,17 +258,23 @@ async function apply(projectId: string, step: AutoStep): Promise<void> {
     case 'pause':
       return pause(projectId, step.reason, step.detail)
 
-    case 'complete':
+    case 'complete': {
+      let panes: string[] = []
       updateAuto(projectId, (auto) => {
+        panes = orchestratorPanes(auto)
         Object.assign(auto, newAutoLoop(at, auto), { enabled: false, ended: { reason: 'complete', at } })
       })
-      return
+      return closeOrchestratorPanes(panes)
+    }
 
-    case 'turnOff':
+    case 'turnOff': {
+      let panes: string[] = []
       updateAuto(projectId, (auto) => {
+        panes = orchestratorPanes(auto)
         Object.assign(auto, newAutoLoop(at, withPlanHistory(auto, at)), { enabled: false, ended: { reason: 'stopped', at } })
       })
-      return
+      return closeOrchestratorPanes(panes)
+    }
 
     case 'enterPlanStep':
       updateAuto(projectId, (auto) => {
@@ -874,6 +880,30 @@ async function startReview(projectId: string) {
   }
 }
 
+/** The herdr panes of the loop's orchestrators in this phase — the sessions the loop itself started. */
+function orchestratorPanes(auto: AutoLoop): string[] {
+  return auto.orchestrators.map((o) => o.paneId).filter(Boolean)
+}
+
+/**
+ * Close the loop's own orchestrator sessions when the run ends or is turned
+ * off, whatever they're doing: a /jorchestrate session with no loop behind
+ * it has nothing to claim and no one to report to, yet keeps its Fable
+ * session (and any subagent it started) running — PROJ-4's ran on for 46
+ * minutes after its loop had ended. Best-effort, like cleanUpHerdr.
+ */
+async function closeOrchestratorPanes(paneIds: string[]): Promise<void> {
+  if (!paneIds.length) return
+  let closed = 0
+  for (const id of paneIds) {
+    try {
+      await herdrJson(['pane', 'close', id])
+      closed++
+    } catch { /* already gone, or herdr down */ }
+  }
+  if (closed) invalidateHerdrState()
+}
+
 /**
  * Close the herdr panes the loop is finished with (see panesToClean) so they
  * don't stack up loop after loop. Best-effort: herdr down, or a pane that
@@ -1307,7 +1337,10 @@ export function setAutoMode(
     // How this run dispatches — fixed while it runs, remembered for the next.
     if (patch.orchestration) auto.orchestration = coerceOrchestration(patch.orchestration) ?? auto.orchestration
   } else if (patch.enabled === false && auto.enabled) {
-    // Off now. Sessions already running in herdr are left alone.
+    // Off now. Ticket sessions already running in herdr are left alone (their
+    // PRs are still worth having); the loop's orchestrators are closed — with
+    // no loop to answer to they'd keep a Fable session going for nothing.
+    void closeOrchestratorPanes(orchestratorPanes(auto))
     auto = { ...newAutoLoop(at, withPlanHistory(auto, at)), enabled: false, ended: { reason: 'turned-off', at } }
   }
   if (patch.continueGate && auto.enabled && auto.phase === 'gate') auto = { ...auto, gatePassed: true }

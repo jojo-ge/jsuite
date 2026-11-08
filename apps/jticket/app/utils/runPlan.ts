@@ -114,9 +114,32 @@ export const DEFAULT_DISPATCH: PlanDispatch = { mode: 'sessions', model: PLAN_MO
 // builder's order, and the engine starts the next own-agent ticket as a
 // session frees (stepSoloSlots). Groups and budget are clamped on the way in;
 // the mixed shape with two orchestrators is a planProblems problem.
+//
+// An orchestrator only pays for itself when it has parallel work: PROJ-4's
+// analytics showed every orchestrator that ran one subagent at a time (budget
+// 1, or a group of two or three) costing more than the work it supervised and
+// sitting idle most of its wall clock. So the budget is never 1 (BUDGET_MIN —
+// coerceDispatch lifts it), and a group needs GROUP_MIN tickets: fewer is a
+// planProblems problem, and the engine runs a group that has shrunk below it
+// by step time (tickets already finished) as own agents (liveGroups).
 export const STEP_ORCHESTRATORS_MAX = 2
 export const STEP_BUDGET_MAX = 2
 export const STEP_SESSIONS_MAX = 4
+export const BUDGET_MIN = 2
+export const GROUP_MIN = 4
+
+/**
+ * The step's orchestrator groups as they stand once `open` is what's left to
+ * run: each cut down to the open tickets, and a group with fewer than
+ * GROUP_MIN of them emptied — its tickets run as their own agents instead.
+ * Positions are kept (a group's runner is found by index).
+ */
+export function liveGroups(groups: string[][], open: readonly string[]): string[][] {
+  return groups.map((g) => {
+    const left = g.filter((k) => open.includes(k))
+    return left.length >= GROUP_MIN ? left : []
+  })
+}
 
 /** How many own-agent sessions a step with `orchestrators` groups may run at once. */
 export function stepSoloSlots(orchestrators: number): number {
@@ -150,7 +173,8 @@ export function coerceDispatch(raw: any): PlanDispatch | null {
   if (!raw || typeof raw !== 'object') return null
   const mode: DispatchMode = raw.mode === 'orchestrated' ? 'orchestrated' : raw.mode === 'sessions' ? 'sessions' : DEFAULT_DISPATCH.mode
   const n = Number(raw.budget)
-  const budget = Number.isInteger(n) ? Math.min(PLAN_BUDGET_MAX, Math.max(1, n)) : DEFAULT_DISPATCH.budget
+  // Never 1: an orchestrator running one subagent at a time is pure overhead (BUDGET_MIN).
+  const budget = Number.isInteger(n) ? Math.min(PLAN_BUDGET_MAX, Math.max(BUDGET_MIN, n)) : DEFAULT_DISPATCH.budget
   const c = Number(raw.orchestrators)
   const orchestrators = Number.isInteger(c) ? Math.min(PLAN_ORCHESTRATORS_MAX, Math.max(1, c)) : DEFAULT_DISPATCH.orchestrators
   return { mode, model: coercePlanModel(raw.model) ?? DEFAULT_DISPATCH.model, effort: coerceEffort(raw.effort) ?? DEFAULT_DISPATCH.effort, budget, orchestrators }
@@ -475,6 +499,12 @@ export function planProblems(plan: RunPlan, tickets: PlanTicket[], opts: { froze
       if (shape.orchestrators >= STEP_ORCHESTRATORS_MAX && shape.solo.length) {
         problems.push({ stepId: s.id, message: `${at} runs ${shape.orchestrators} orchestrators, so ${shape.solo.join(', ')} can't run as ${shape.solo.length === 1 ? 'its' : 'their'} own agent beside them — put ${shape.solo.length === 1 ? 'it' : 'them'} in a group, or in a step of ${shape.solo.length === 1 ? 'its' : 'their'} own.` })
       }
+      // An orchestrator needs parallel work: a group of fewer than GROUP_MIN
+      // tickets costs more in orchestration than the tickets do in work.
+      stepGroups(s).forEach((g, gi) => {
+        if (g.length >= GROUP_MIN) return
+        problems.push({ stepId: s.id, message: `${at}'s orchestrator ${gi + 1} has only ${g.length === 1 ? 'one ticket' : `${g.length} tickets`} (${g.join(', ')}) — an orchestrator needs ${GROUP_MIN} or more to pay for itself; run ${g.length === 1 ? 'it' : 'them'} as ${g.length === 1 ? 'its' : 'their'} own agent${g.length === 1 ? '' : 's'} instead.` })
+      })
       for (const k of s.tickets) {
         const t = byKey.get(k)
         if (!t) {

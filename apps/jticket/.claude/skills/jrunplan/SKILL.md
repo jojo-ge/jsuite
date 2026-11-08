@@ -57,9 +57,12 @@ changes a contract others build on, whether tests exist around it.
 | medium | a feature inside one module, a bug with a clear repro | grouped under an orchestrator on Opus 5.5 `medium`/`high`, or its own agent |
 | heavy | a new module, a migration, a cross-cutting contract change, anything with design in it | its own agent — Opus 5.5 `high` (Fable 5.1 `high` only when it needs real judgment) |
 
-Orchestrators pay off on **several related small or medium tickets**: one
-Fable 5.1 session shares worktree slots, runs them through subagents (at most
-2 at once) and spec-checks each. A heavy ticket alone gains nothing from one.
+Orchestrators pay off on **four or more related small or medium tickets**: one
+Fable 5.1 session shares worktree slots, runs them through subagents (2 at
+once) and spec-checks each. A heavy ticket alone gains nothing from one, and
+neither does a box of two or three: measured over a real run, every
+orchestrator that had one subagent going at a time cost more than the work it
+supervised and sat idle most of its wall clock. Fewer than four → own agents.
 Two groups may run side by side in one step — a box of light tickets on a
 cheap runner beside a box of medium ones — each group carrying its own model
 and effort (`groupRunners`). Keep one orchestrator's share to roughly eight
@@ -71,8 +74,9 @@ tickets at most; a longer list is split over consecutive steps.
   no open blocker among them.
 - **Concurrency rule — at most 4 sessions at once in a step.** Too many
   sessions at once slow every one of them down. An orchestrator counts as one
-  session whatever its budget, and each orchestrator works at most 2 tickets
-  at once (`budget` 1 or 2). An implement step takes one of three shapes:
+  session whatever its budget, and each orchestrator works 2 tickets at once
+  (`budget` is always 2 — a 1 is lifted to 2 on save; one subagent at a time
+  is pure overhead). An implement step takes one of three shapes:
 
   | Shape | Own-agent tickets running | Orchestrators |
   | --- | --- | --- |
@@ -84,6 +88,12 @@ tickets at most; a longer list is split over consecutive steps.
   is in one of them (the validator refuses a solo ticket beside two
   orchestrators; a third group is folded into the second on save; a budget
   over 2 is clamped).
+- **A group needs four or more tickets.** Fewer is a `problems` entry: run
+  them as own agents instead (a step of 3 own agents is cheaper and faster
+  than an orchestrator over the same 3). If some of a group's tickets are
+  already finished when the step starts, the engine counts what is left and
+  runs a group that has shrunk under four as own agents — so size groups by
+  the work that will actually be open when the step runs.
 - **A step is a queue.** It may hold more tickets than it can run at once:
   `tickets` is the dispatch order, and the engine starts the next own-agent
   ticket as a session frees (the 5th of five solo tickets starts when one of
@@ -124,17 +134,17 @@ and `kind`; the rest by kind:
 
 ```jsonc
 { "id": "s1", "kind": "implement",                           // MIXED: 1 orchestrator + own agents, 3 of them at once
-  "tickets": ["TICK-12", "TICK-13", "TICK-14", "TICK-15", "TICK-7", "TICK-8", "TICK-9"],   // the QUEUE — own agents start in this order
+  "tickets": ["TICK-12", "TICK-13", "TICK-14", "TICK-15", "TICK-7", "TICK-8", "TICK-9", "TICK-10"],   // the QUEUE — own agents start in this order
   "dispatch": { "mode": "orchestrated", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
-  "groups": [["TICK-7", "TICK-8", "TICK-9"]],              // the orchestrator's group; budget ≤ 2
+  "groups": [["TICK-7", "TICK-8", "TICK-9", "TICK-10"]],   // the orchestrator's group: 4+ tickets, budget 2
   "groupRunners": [{ "model": "sonnet", "effort": "low" }], // per group; null = the step's dispatch
   "runners": { "TICK-12": { "model": "fable", "effort": "high" } }   // a solo ticket's own model/effort
   // TICK-12, -13, -14 start with the orchestrator; TICK-15 starts when one of them finishes
 }
 { "id": "s2", "kind": "implement",                           // ORCHESTRATORS ONLY: two groups, nothing solo beside them
-  "tickets": ["TICK-20", "TICK-21", "TICK-22", "TICK-23", "TICK-24"],
+  "tickets": ["TICK-20", "TICK-21", "TICK-22", "TICK-23", "TICK-24", "TICK-25", "TICK-26", "TICK-27"],
   "dispatch": { "mode": "orchestrated", "model": "opus", "effort": "medium", "budget": 2, "orchestrators": 2 },
-  "groups": [["TICK-20", "TICK-21", "TICK-22"], ["TICK-23", "TICK-24"]],
+  "groups": [["TICK-20", "TICK-21", "TICK-22", "TICK-23"], ["TICK-24", "TICK-25", "TICK-26", "TICK-27"]],   // 4+ each
   "groupRunners": [{ "model": "haiku", "effort": "low" }, null]
 }
 { "id": "s6", "kind": "implement",                           // OWN AGENTS ONLY: 4 at once, the 5th queued
@@ -159,8 +169,8 @@ jt put /api/projects/$P/run-plan @plan.json | jq '.problems'
 
 The answer's `problems` are what would stop the plan running (a blocker in
 the wrong step, a missing merge, a ticket from another project, a solo ticket
-beside two orchestrators). The rest of the concurrency rule is applied on
-save (groups folded to 2, budget clamped to 2) and the queue is enforced by
+beside two orchestrators, a group of fewer than four tickets). The rest of the
+concurrency rule is applied on save (groups folded to 2, budget set to 2) and the queue is enforced by
 the engine — so a step with more tickets than sessions is fine, and the order
 you PUT is the order they start. Fix and PUT again until it is `[]`. The draft
 saves each time, so the human sees

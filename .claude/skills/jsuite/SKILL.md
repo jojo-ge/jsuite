@@ -128,9 +128,13 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   implement step keeps to the **concurrency rule**: at most 4 sessions at
   once (an orchestrator counts as one) — own agents only (4 at once), mixed
   (1 orchestrator + 3 own agents at once), or 2 orchestrators alone with no
-  solo ticket; each orchestrator ≤ 2 in flight. A step may hold more tickets
+  solo ticket; each orchestrator 2 in flight (never 1) and 4+ tickets in its
+  group — fewer is a `problems` entry, and a group that has shrunk under 4 by
+  step time runs as own agents. A step may hold more tickets
   than that: its ticket list is a **queue** in the builder's order, and the
-  engine starts the next own-agent ticket as a session frees.
+  engine starts the next own-agent ticket as a session frees. A review's fix
+  tickets go out 3 at a time; a merge sweep, review or report that goes
+  silent (45 min; reviews 90) pauses the run — Retry step re-runs it.
 - **Graphs** (`/graphs`) — cross-project blocked-by edges link projects into
   graphs named "first → last" with each project's status and outcome report.
   Display only; id `G-<KEY>`.

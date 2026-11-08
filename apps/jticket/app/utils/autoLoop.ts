@@ -39,7 +39,11 @@
 // nudge, or its session gone for AGENT_GONE_MS → the loop closes the ticket
 // itself (done, with a comment) and files the rest as a carryover ticket, so
 // nothing is lost and the loop moves on. Hand-dispatched tickets are never
-// watched — only the loop's own.
+// watched — only the loop's own. The phases that wait on one session instead
+// (a merge sweep, a review, a slice or outcome report) have phaseStall:
+// silent past JOB_STALL_MS / REVIEW_STALL_MS → the loop pauses
+// ('phase-stalled') and Retry step runs it again — a lost session costs
+// minutes, not a night.
 //
 // Orchestration: how implementing / fixing hand their tickets to herdr.
 // 'sessions' (the default) is the above — one session per ticket, all at
@@ -70,7 +74,7 @@
 // dispatched; one not on the frontier yet waits) under the step's concurrency
 // rule — the step's ticket list is a queue, and own-agent tickets go out in
 // that order only while fewer than `stepSoloSlots` of them are running
-// (`soloQueue`); the plain loop has no such cap — merge is 'merging' over the
+// (`soloQueue`); the plain loop caps only its fixing phase, at FIX_SESSIONS_MAX — merge is 'merging' over the
 // plan's open PRs, review is 'reviewing' from the step's checkpoint and always
 // runs on through 'fixing' and 'merging-fixes', and gate is 'gate' until the
 // human presses Continue. Where the loop would move to its next phase, a plan
@@ -90,12 +94,14 @@
 
 import {
   DEFAULT_DISPATCH,
+  GROUP_MIN,
   PLAN_BUDGET_MAX,
   PLAN_ORCHESTRATORS_MAX,
   coerceDispatch,
   coerceRunPlan,
   groupRunnerOf,
   groupShares,
+  liveGroups,
   reviewBaseSha,
   runnerOf,
   stepGroups,
@@ -160,6 +166,8 @@ export type AutoPauseReason =
   | 'no-branch'
   /** ORCHESTRATOR_MAX_RUNS orchestrators in a row stopped with tickets open — Retry step starts a fresh one. */
   | 'orchestrator-failed'
+  /** A merge sweep, review, slice or outcome report went silent past its stall limit (phaseStall) — Retry step runs it again. */
+  | 'phase-stalled'
 
 export interface AutoPause {
   reason: AutoPauseReason
@@ -181,10 +189,21 @@ export type AutoOrchestration = PlanDispatch
 export const ORCHESTRATION_BUDGET_MAX = PLAN_BUDGET_MAX
 export const DEFAULT_ORCHESTRATION: AutoOrchestration = { ...DEFAULT_DISPATCH }
 
-/** The run plan's implement step being implemented, if that's where the loop is. */
-function implementStep(state: Pick<AutoLoop, 'plan' | 'cursor' | 'phase'>): PlanStep | null {
+/** What the orchestration readers below take: the run's setting and where the loop is — and, when known, the phase's tickets. */
+type OrchestrationView = Pick<AutoLoop, 'orchestration' | 'plan' | 'cursor' | 'phase'> & Partial<Pick<AutoLoop, 'tickets' | 'fixTickets'>>
+
+/**
+ * The run plan's implement step being implemented, if that's where the loop
+ * is — with its groups as they stand for this run of the step: once the
+ * phase's tickets are known (`tickets`, fixed when the step was entered), a
+ * group is cut down to the ones still to run, and a group left with fewer
+ * than GROUP_MIN of them is dissolved into own-agent tickets (liveGroups) —
+ * an orchestrator with nothing to run side by side costs more than the work.
+ */
+function implementStep(state: Pick<AutoLoop, 'plan' | 'cursor' | 'phase'> & Partial<Pick<AutoLoop, 'tickets'>>): PlanStep | null {
   const step = state.plan?.steps[state.cursor]
-  return state.phase === 'implementing' && step?.kind === 'implement' ? step : null
+  if (state.phase !== 'implementing' || step?.kind !== 'implement') return null
+  return state.tickets?.length ? { ...step, groups: liveGroups(step.groups, state.tickets) } : step
 }
 
 /**
@@ -196,12 +215,27 @@ function implementStep(state: Pick<AutoLoop, 'plan' | 'cursor' | 'phase'>): Plan
  * made — the engine, the server and the strip all read this, never
  * `orchestration` itself.
  */
-export function effectiveOrchestration(state: Pick<AutoLoop, 'orchestration' | 'plan' | 'cursor' | 'phase'>): AutoOrchestration {
+export function effectiveOrchestration(state: OrchestrationView): AutoOrchestration {
   const step = implementStep(state)
-  if (!step) return state.orchestration
+  if (!step) return plainOrchestration(state)
   const base = step.dispatch ?? state.orchestration
   const grouped = Math.min(PLAN_ORCHESTRATORS_MAX, stepGroups(step).length)
   return { ...base, mode: grouped ? 'orchestrated' : 'sessions', orchestrators: Math.max(1, grouped) }
+}
+
+/**
+ * The plain loop's setting, held to the same rule as a plan step's groups:
+ * an orchestrated phase with fewer than GROUP_MIN tickets runs them as their
+ * own agents, and never more orchestrators than GROUP_MIN-ticket shares.
+ * Only a phase with tickets is judged — between phases the setting stands.
+ */
+function plainOrchestration(state: OrchestrationView): AutoOrchestration {
+  const o = state.orchestration
+  if (o.mode !== 'orchestrated') return o
+  const n = state.phase === 'implementing' ? (state.tickets?.length ?? 0) : state.phase === 'fixing' || state.phase === 'arch-fixing' ? (state.fixTickets?.length ?? 0) : 0
+  if (!n) return o
+  if (n < GROUP_MIN) return { ...o, mode: 'sessions', orchestrators: 1 }
+  return { ...o, orchestrators: Math.max(1, Math.min(o.orchestrators, Math.floor(n / GROUP_MIN))) }
 }
 
 /**
@@ -209,14 +243,14 @@ export function effectiveOrchestration(state: Pick<AutoLoop, 'orchestration' | '
  * tickets; otherwise every key when the run is orchestrated, none when not.
  * The rest run as their own agent.
  */
-export function orchestratedKeys(state: Pick<AutoLoop, 'orchestration' | 'plan' | 'cursor' | 'phase'>, keys: string[]): string[] {
+export function orchestratedKeys(state: OrchestrationView, keys: string[]): string[] {
   const step = implementStep(state)
   if (step) return keys.filter((k) => step.groups.some((g) => g.includes(k)))
   return effectiveOrchestration(state).mode === 'orchestrated' ? keys : []
 }
 
 /** What a solo ticket's session runs as — its own runner on the plan step, else the phase's model and effort. */
-export function runnerFor(state: Pick<AutoLoop, 'orchestration' | 'plan' | 'cursor' | 'phase'>, key: string): Runner {
+export function runnerFor(state: OrchestrationView, key: string): Runner {
   const step = implementStep(state)
   const eff = effectiveOrchestration(state)
   return step ? runnerOf(step, key, eff) : { model: eff.model, effort: eff.effort }
@@ -227,7 +261,7 @@ export function runnerFor(state: Pick<AutoLoop, 'orchestration' | 'plan' | 'curs
  * group's own runner (a slot's share is one group, so any of its tickets
  * names the group), else the phase's model and effort.
  */
-export function slotRunner(state: Pick<AutoLoop, 'orchestration' | 'plan' | 'cursor' | 'phase' | 'orchestrators'>, index: number): Runner {
+export function slotRunner(state: OrchestrationView & Pick<AutoLoop, 'orchestrators'>, index: number): Runner {
   const step = implementStep(state)
   const eff = effectiveOrchestration(state)
   const key = state.orchestrators[index]?.tickets[0]
@@ -422,6 +456,13 @@ export const STALL_NUDGE_MS = 5 * 60_000
 export const STALL_FORCE_MS = 10 * 60_000
 /** Its session gone (pane closed, claude exited) this long → the loop closes the ticket. */
 export const AGENT_GONE_MS = 60_000
+
+/** A fixing phase's own-agent sessions at once — a review's fixes go out in waves of this many. */
+export const FIX_SESSIONS_MAX = 3
+/** A merge sweep, slice report or outcome report silent this long after its dispatch → the loop pauses (phaseStall). */
+export const JOB_STALL_MS = 45 * 60_000
+/** A review with no verdict this long after it was asked for → the loop pauses (phaseStall). */
+export const REVIEW_STALL_MS = 90 * 60_000
 
 /** Marks the ticket the watchdog files for work a closed ticket left behind. */
 export const CARRYOVER_LABEL = 'auto-loop:carryover'
@@ -717,6 +758,10 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
   // A pause the human has to clear (Retry step) holds everything; waiting on
   // the human's own tickets re-checks itself below.
   if (state.paused && state.paused.reason !== 'waiting-human') return { kind: 'wait', pending: [], note: state.paused.detail }
+  // A phase that is waiting on one session (sweep, review, report) and has
+  // heard nothing for too long pauses, so a lost session costs minutes, not a night.
+  const stalled = phaseStall(state, world.now)
+  if (stalled) return stalled
 
   const ticket = (k: string) => world.tickets.find((t) => t.key === k)
   // Where the loop would move on to its next phase, a run plan moves on to its next step.
@@ -867,6 +912,45 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       if (!state.reportedAt) return { kind: 'wait', pending: [], note: 'waiting for the outcome report session to report back' }
       return { kind: 'complete' }
     }
+  }
+}
+
+/**
+ * The watchdog for the phases that wait on a single session rather than on
+ * tickets: a merge sweep, slice report or outcome report that was dispatched
+ * and hasn't reported back in JOB_STALL_MS, or a review asked for
+ * REVIEW_STALL_MS ago with no verdict, pauses the loop with the phase named.
+ * Retry step clears the dispatch and the clock (retryStep) and runs it again.
+ * The ticket phases have the ticket watchdog; idle and gate don't wait on anything.
+ */
+export function phaseStall(state: AutoLoop, now: number): AutoStep | null {
+  const started = Date.parse(state.phaseStartedAt)
+  if (!Number.isFinite(started)) return null
+  const age = now - started
+  const mins = `${Math.round(age / 60_000)} min`
+  const pause = (detail: string): AutoStep => ({ kind: 'pause', reason: 'phase-stalled', detail })
+  switch (state.phase) {
+    case 'merging':
+    case 'merging-fixes':
+    case 'arch-merging':
+      return state.mergeDispatchedAt && !state.mergeReportedAt && age > JOB_STALL_MS
+        ? pause(`the merge sweep was dispatched ${mins} ago and has not reported back — Retry step sweeps again`)
+        : null
+    case 'reviewing':
+    case 'arch-reviewing':
+      return state.reviewRequestedAt && age > REVIEW_STALL_MS
+        ? pause(`${state.reviewKey ? `review ${state.reviewKey}` : 'the review'} was asked for ${mins} ago and has no verdict yet — Retry step asks jReview again`)
+        : null
+    case 'slice-reporting':
+      return state.sliceDispatchedAt && !state.slicedAt && age > JOB_STALL_MS
+        ? pause(`the slice report session was dispatched ${mins} ago and has not reported back — Retry step dispatches it again`)
+        : null
+    case 'reporting':
+      return state.reportDispatchedAt && !state.reportedAt && age > JOB_STALL_MS
+        ? pause(`the outcome report session was dispatched ${mins} ago and has not reported back — Retry step dispatches it again`)
+        : null
+    default:
+      return null
   }
 }
 
@@ -1233,17 +1317,22 @@ function slotStep(o: AutoOrchestrator, index: number, world: AutoWorld, mine: st
  * (`solo`, in the step's order), `ready` are the ones to hand out this tick —
  * on the frontier, and no more than the step has sessions free for
  * (stepSoloSlots less the own-agent tickets still running) — and `queued`
- * the ones on the frontier that wait for a session. Outside a run plan
- * every undispatched ticket is ready: the plain loop has no cap.
+ * the ones on the frontier that wait for a session. A fixing phase (a
+ * review's fix tickets, plan or plain loop) runs FIX_SESSIONS_MAX at once:
+ * a review that files a dozen fixes must not start a dozen worktrees and
+ * test suites at the same moment. Only the plain loop's implementing phase
+ * has no cap: there every undispatched ticket is ready.
  */
 export function soloQueue(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>, solo: string[]): { ready: string[]; queued: string[] } {
   const ticket = (k: string) => world.tickets.find((t) => t.key === k)
   const step = implementStep(state)
+  const fixing = state.phase === 'fixing' || state.phase === 'arch-fixing'
   const waiting = solo.filter((k) => !state.dispatched[k])
-  if (!step) return { ready: waiting, queued: [] }
-  const eligible = waiting.filter((k) => ticket(k)?.frontier)
+  if (!step && !fixing) return { ready: waiting, queued: [] }
+  const eligible = step ? waiting.filter((k) => ticket(k)?.frontier) : waiting
   const running = solo.filter((k) => state.dispatched[k] && !finished(ticket(k))).length
-  const free = Math.max(0, stepSoloSlots(stepGroups(step).length) - running)
+  const slots = step ? stepSoloSlots(stepGroups(step).length) : FIX_SESSIONS_MAX
+  const free = Math.max(0, slots - running)
   return { ready: eligible.slice(0, free), queued: eligible.slice(free) }
 }
 
@@ -1303,8 +1392,9 @@ export function claimVerdict(state: AutoLoop | null | undefined, world: Pick<Aut
  * loop dispatched that nobody ever claimed (still todo, unassigned) are handed
  * to herdr again; a sweep or review that never got going is re-asked.
  */
-export function retryStep(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>): AutoLoop {
-  const next: AutoLoop = { ...state, paused: null, dispatched: { ...state.dispatched }, agents: { ...state.agents }, watch: { ...state.watch } }
+export function retryStep(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>, at = new Date().toISOString()): AutoLoop {
+  // The phase's clock restarts with it, or the stall watchdog would pause it again at once.
+  const next: AutoLoop = { ...state, paused: null, phaseStartedAt: at, dispatched: { ...state.dispatched }, agents: { ...state.agents }, watch: { ...state.watch } }
   const keys = phaseTickets(state)
   // Orchestrated: a slot with no session left gets a fresh one, and the
   // tickets its last session had in flight go back to be claimed again.
@@ -1320,14 +1410,20 @@ export function retryStep(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>): A
     delete next.watch[k]
   }
   if (keys.length) next.orchestrators = state.orchestrators.map((o) => ({ ...o, runs: 0 }))
-  if (state.phase === 'merging' || state.phase === 'merging-fixes') {
+  if (state.phase === 'merging' || state.phase === 'merging-fixes' || state.phase === 'arch-merging') {
     next.mergeDispatchedAt = ''
     next.mergeReportedAt = ''
     next.mergeReport = null
   }
-  if (state.phase === 'reviewing') {
+  if (state.phase === 'reviewing' || state.phase === 'arch-reviewing') {
     next.reviewRequestedAt = ''
     next.reviewKey = null
+    if (state.phase === 'arch-reviewing') next.archReviewKey = null
+  }
+  if (state.phase === 'slice-reporting') {
+    next.sliceDispatchedAt = ''
+    next.slicedAt = ''
+    next.sliceDoc = ''
   }
   if (state.phase === 'reporting') {
     next.reportDispatchedAt = ''

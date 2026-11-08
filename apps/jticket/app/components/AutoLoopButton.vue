@@ -5,7 +5,7 @@
 // "Stop at the end of next loop" button lives in <AutoLoopPanel>.
 import type { Project, Ticket } from '~/composables/useTracker'
 import { DEFAULT_ORCHESTRATION, ORCHESTRATION_BUDGET_MAX, type AutoMode } from '~/utils/autoLoop'
-import { EFFORTS, PLAN_MODELS, PLAN_MODEL_KEYS, PLAN_ORCHESTRATORS_MAX, type Effort, type PlanModel } from '~/utils/runPlan'
+import { BUDGET_MIN, EFFORTS, PLAN_MODELS, PLAN_MODEL_KEYS, PLAN_ORCHESTRATORS_MAX, type Effort, type PlanModel } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[]; allTickets: Ticket[] }>()
 const { busy, start, turnOff } = useAutoLoop()
@@ -28,7 +28,8 @@ const modeItems = [
 ]
 const modelItems = PLAN_MODEL_KEYS.map((m) => ({ label: PLAN_MODELS[m].label, value: m }))
 const effortItems = EFFORTS.map((e) => ({ label: `${e} effort`, value: e }))
-const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX }, (_, i) => ({ label: `${i + 1} at a time${orchestrators.value > 1 ? ' each' : ''}`, value: i + 1 }))
+// Never 1: an orchestrator running one subagent at a time costs more than the work (BUDGET_MIN).
+const budgetItems = Array.from({ length: ORCHESTRATION_BUDGET_MAX - BUDGET_MIN + 1 }, (_, i) => ({ label: `${BUDGET_MIN + i} at a time${orchestrators.value > 1 ? ' each' : ''}`, value: BUDGET_MIN + i }))
 const orchestratorItems = Array.from({ length: PLAN_ORCHESTRATORS_MAX }, (_, i) => ({ label: `${i + 1} orchestrator${i ? 's' : ''}`, value: i + 1 }))
 
 const afkFrontier = computed(() =>

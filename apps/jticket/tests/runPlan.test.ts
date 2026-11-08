@@ -22,8 +22,11 @@ import {
   type AutoWorldTicket,
 } from '../app/utils/autoLoop'
 import {
+  BUDGET_MIN,
+  GROUP_MIN,
   REVIEW_DEFAULT,
   coerceGroups,
+  liveGroups,
   coerceRunPlan,
   dispatchSummary,
   groupRunnerOf,
@@ -261,7 +264,7 @@ describe('plan transitions', () => {
 
 describe('claimVerdict — run plans', () => {
   it('refuses HITL tickets, and makes blocked ones wait', () => {
-    const st = running(plan(), { orchestration: { mode: 'orchestrated', model: 'opus', effort: 'high', budget: 2, orchestrators: 1 }, phase: 'implementing', tickets: ['T-1', 'T-2'] })
+    const st = running(plan(), { orchestration: { mode: 'orchestrated', model: 'opus', effort: 'high', budget: 2, orchestrators: 1 }, phase: 'implementing', tickets: ['T-1', 'T-2', 'T-3', 'T-4'] })
     expect(claimVerdict(st, { tickets: [t('T-1', { hitl: true })] }, 'T-1')).toMatchObject({ ok: false, wait: false })
     expect(claimVerdict(st, { tickets: [t('T-2', { frontier: false })] }, 'T-2')).toMatchObject({ ok: false, wait: true })
   })
@@ -350,11 +353,12 @@ describe('per-step dispatch', () => {
   })
 
   it('the step\'s record says how it ran', () => {
-    const p = plan(s('s1', 'implement', { tickets: ['T-1'], dispatch: orch, groups: [['T-1']] }), s('s2', 'implement', { tickets: ['T-2'] }))
+    const four = ['T-1', 'T-2', 'T-3', 'T-4']
+    const p = plan(s('s1', 'implement', { tickets: four, dispatch: orch, groups: [four] }), s('s2', 'implement', { tickets: ['T-5'] }))
     const run = { mode: 'sessions' as const, model: 'haiku' as const, effort: 'high' as const, budget: 2, orchestrators: 1 }
-    const first = advancePlan(running(p, { orchestration: run, phase: 'implementing', cursor: 0, tickets: ['T-1'], stepStartedAt: AT }), AT, 'tip-1')
+    const first = advancePlan(running(p, { orchestration: run, phase: 'implementing', cursor: 0, tickets: four, stepStartedAt: AT }), AT, 'tip-1')
     expect(first.planLog[0]!.dispatch).toEqual(orch)
-    const second = advancePlan({ ...first, phase: 'implementing', tickets: ['T-2'], stepStartedAt: AT }, AT, 'tip-2')
+    const second = advancePlan({ ...first, phase: 'implementing', tickets: ['T-5'], stepStartedAt: AT }, AT, 'tip-2')
     expect(second.planLog[1]!.dispatch).toEqual(run)
     const skipped = advancePlan(running(p, { orchestration: run, phase: 'idle', cursor: 0 }), AT, 'tip-0', 'nothing to run')
     expect(skipped.planLog[0]!.dispatch).toBeUndefined()
@@ -413,19 +417,31 @@ describe('orchestrator groups — the human says which tickets go together', () 
     expect(stepShapeLabel({ tickets: ['T-1'], groups: [], dispatch: null }, orch)).toBe('1 own agent at once')
   })
 
-  it('planProblems refuses an own-agent ticket beside two orchestrators — nothing else about the shape', () => {
-    const tickets = keys.map((k) => pt(k))
-    const two = plan(s('s1', 'implement', { tickets: keys, groups: [['T-1'], ['T-2']] }))
+  it('planProblems refuses an own-agent ticket beside two orchestrators, and a group too small to pay for an orchestrator', () => {
+    const eight = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6', 'T-7', 'T-8']
+    const tickets = eight.map((k) => pt(k))
+    const two = plan(s('s1', 'implement', { tickets: eight, groups: [['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7']] }))
     expect(planProblems(two, tickets).map((p) => p.message)).toEqual([
-      "Step 1 runs 2 orchestrators, so T-3, T-4 can't run as their own agent beside them — put them in a group, or in a step of their own.",
+      "Step 1 runs 2 orchestrators, so T-8 can't run as its own agent beside them — put it in a group, or in a step of its own.",
+      "Step 1's orchestrator 2 has only 3 tickets (T-5, T-6, T-7) — an orchestrator needs 4 or more to pay for itself; run them as their own agents instead.",
     ])
-    expect(planProblems(plan(s('s1', 'implement', { tickets: keys, groups: [['T-1'], ['T-2', 'T-3', 'T-4']] })), tickets)).toEqual([])
-    expect(planProblems(plan(s('s1', 'implement', { tickets: keys, groups: [['T-1']] })), tickets)).toEqual([])
+    expect(GROUP_MIN).toBe(4)
+    expect(planProblems(plan(s('s1', 'implement', { tickets: eight, groups: [['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7', 'T-8']] })), tickets)).toEqual([])
+    expect(planProblems(plan(s('s1', 'implement', { tickets: eight, groups: [['T-1', 'T-2', 'T-3', 'T-4']] })), tickets)).toEqual([])
+    expect(planProblems(plan(s('s1', 'implement', { tickets: keys, groups: [['T-1']] })), keys.map((k) => pt(k))).map((p) => p.message)).toEqual([
+      "Step 1's orchestrator 1 has only one ticket (T-1) — an orchestrator needs 4 or more to pay for itself; run it as its own agent instead.",
+    ])
     // More tickets than sessions is no problem: the rest queue.
-    const many = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6', 'T-7']
+    const many = [...eight, 'T-9']
     expect(planProblems(plan(s('s1', 'implement', { tickets: many })), many.map((k) => pt(k)))).toEqual([])
     // A frozen (already run) step isn't re-checked.
     expect(planProblems(two, tickets, { frozen: 1 })).toEqual([])
+  })
+
+  it('an orchestrated step never runs at budget 1 — coerceRunPlan lifts it to BUDGET_MIN', () => {
+    expect(BUDGET_MIN).toBe(2)
+    const got = coerceRunPlan({ steps: [{ id: 's1', kind: 'implement', tickets: keys, dispatch: { ...orch, budget: 1 }, groups: [keys] }] })!.steps[0]!
+    expect(got.dispatch!.budget).toBe(2)
   })
 
   it('the engine runs a step\'s own-agent tickets as a queue: as many as there are free sessions, in the step\'s order', () => {
@@ -447,13 +463,16 @@ describe('orchestrator groups — the human says which tickets go together', () 
     const held = world({ tickets: six.map((k) => t(k, k === 'T-5' ? { frontier: false } : {})) })
     expect(soloQueue(st, held, six)).toEqual({ ready: ['T-1', 'T-2', 'T-3', 'T-4'], queued: ['T-6'] })
     // Mixed: the orchestrator takes a session, so three own agents run at once.
-    const mixed = running(plan(s('s1', 'implement', { tickets: six, groups: [['T-6']] })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: six })
-    expect(planStep(mixed, w)).toEqual({ kind: 'dispatchTickets', keys: ['T-1', 'T-2', 'T-3'] })
+    const seven = [...six, 'T-7']
+    const w7 = world({ tickets: seven.map((k) => t(k)) })
+    const mixed = running(plan(s('s1', 'implement', { tickets: seven, groups: [['T-4', 'T-5', 'T-6', 'T-7']] })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: seven })
+    expect(planStep(mixed, w7)).toEqual({ kind: 'dispatchTickets', keys: ['T-1', 'T-2', 'T-3'] })
     const mixedOut = { ...mixed, dispatched: { 'T-1': AT, 'T-2': AT, 'T-3': AT } }
-    expect(planStep(mixedOut, w)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-6']] })
+    expect(planStep(mixedOut, w7)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-4', 'T-5', 'T-6', 'T-7']] })
     // Orchestrators only: nothing solo to queue.
-    const boxed = running(plan(s('s1', 'implement', { tickets: six, groups: [['T-1', 'T-2', 'T-3'], ['T-4', 'T-5', 'T-6']] })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: six })
-    expect(planStep(boxed, w)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-2', 'T-3'], ['T-4', 'T-5', 'T-6']] })
+    const eight = [...seven, 'T-8']
+    const boxed = running(plan(s('s1', 'implement', { tickets: eight, groups: [['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7', 'T-8']] })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: eight })
+    expect(planStep(boxed, world({ tickets: eight.map((k) => t(k)) }))).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7', 'T-8']] })
     // The plain loop has no cap: every frontier ticket goes out at once.
     const loop = { ...newAutoLoop(AT), enabled: true, orchestration: run, phase: 'implementing' as const, tickets: six }
     expect(planStep(loop, w)).toEqual({ kind: 'dispatchTickets', keys: six })
@@ -476,16 +495,23 @@ describe('orchestrator groups — the human says which tickets go together', () 
 
   it('a grouped step starts one orchestrator per group, with exactly those tickets — however the run was started', () => {
     const run = { mode: 'orchestrated' as const, model: 'opus' as const, effort: 'high' as const, budget: 2, orchestrators: 1 }
-    const p = plan(s('s1', 'implement', { tickets: keys, groups: [['T-1', 'T-4'], ['T-2'], ['T-3']] }))
-    const st = running(p, { orchestration: run, phase: 'implementing', cursor: 0, tickets: keys })
-    const w = world({ tickets: keys.map((k) => t(k)) })
-    expect(planStep(st, w)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-4'], ['T-2'], ['T-3']] })
-    expect(effectiveOrchestration(st)).toEqual({ ...run, orchestrators: 3 })
+    const eight = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6', 'T-7', 'T-8']
+    const p = plan(s('s1', 'implement', { tickets: eight, groups: [['T-1', 'T-4', 'T-6', 'T-8'], ['T-2', 'T-3', 'T-5', 'T-7']] }))
+    const st = running(p, { orchestration: run, phase: 'implementing', cursor: 0, tickets: eight })
+    const w = world({ tickets: eight.map((k) => t(k)) })
+    expect(planStep(st, w)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-4', 'T-6', 'T-8'], ['T-2', 'T-3', 'T-5', 'T-7']] })
+    expect(effectiveOrchestration(st)).toEqual({ ...run, orchestrators: 2 })
     // A HITL ticket in a group is left out of the share; an empty box starts nothing.
-    const human = world({ tickets: [t('T-1'), t('T-2'), t('T-3'), t('T-4', { hitl: true })] })
-    const boxed = running(plan(s('s1', 'implement', { tickets: keys, groups: [['T-4'], ['T-1', 'T-2'], [], ['T-3']] })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: keys })
-    expect(planStep(boxed, human)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-2'], ['T-3']] })
-    expect(effectiveOrchestration(boxed)).toEqual({ ...run, orchestrators: 3 })
+    const human = world({ tickets: eight.map((k) => t(k, k === 'T-4' ? { hitl: true } : {})) })
+    const boxed = running(plan(s('s1', 'implement', { tickets: eight, groups: [[], ['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7', 'T-8']] })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: eight })
+    expect(planStep(boxed, human)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-1', 'T-2', 'T-3'], ['T-5', 'T-6', 'T-7', 'T-8']] })
+    expect(effectiveOrchestration(boxed)).toEqual({ ...run, orchestrators: 2 })
+    // A group that has shrunk under GROUP_MIN by the time the step starts (tickets already finished) runs as own agents.
+    expect(liveGroups([['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7', 'T-8']], ['T-1', 'T-2', 'T-3', 'T-5', 'T-6', 'T-7', 'T-8'])).toEqual([[], ['T-5', 'T-6', 'T-7', 'T-8']])
+    const shrunk = running(p, { orchestration: run, phase: 'implementing', cursor: 0, tickets: ['T-1', 'T-4', 'T-2', 'T-3', 'T-5', 'T-7'] })
+    expect(effectiveOrchestration(shrunk)).toEqual({ ...run, orchestrators: 1 })
+    expect(orchestratedKeys(shrunk, shrunk.tickets)).toEqual(['T-2', 'T-3', 'T-5', 'T-7'])
+    expect(planStep(shrunk, w)).toEqual({ kind: 'dispatchTickets', keys: ['T-1', 'T-4'] })
     // Ungrouped on a plan step = every ticket its own agent, whatever the run's setting says.
     const plain = running(plan(s('s1', 'implement', { tickets: keys, dispatch: { ...orch, orchestrators: 2 } })), { orchestration: run, phase: 'implementing', cursor: 0, tickets: keys })
     expect(effectiveOrchestration(plain).mode).toBe('sessions')
@@ -494,27 +520,29 @@ describe('orchestrator groups — the human says which tickets go together', () 
 
   it('solo agents and orchestrators run side by side in one step', () => {
     const run = { mode: 'sessions' as const, model: 'opus' as const, effort: 'high' as const, budget: 2, orchestrators: 1 }
-    const step = s('s1', 'implement', { tickets: keys, dispatch: { ...orch, model: 'opus' }, groups: [['T-2', 'T-4']], runners: { 'T-3': { model: 'haiku', effort: 'low' } } })
-    const st = running(plan(step), { orchestration: run, phase: 'implementing', cursor: 0, tickets: keys })
-    const w = world({ tickets: keys.map((k) => t(k)) })
+    const six = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6']
+    const group = ['T-2', 'T-4', 'T-5', 'T-6']
+    const step = s('s1', 'implement', { tickets: six, dispatch: { ...orch, model: 'opus' }, groups: [group], runners: { 'T-3': { model: 'haiku', effort: 'low' } } })
+    const st = running(plan(step), { orchestration: run, phase: 'implementing', cursor: 0, tickets: six })
+    const w = world({ tickets: six.map((k) => t(k)) })
     expect(effectiveOrchestration(st)).toMatchObject({ mode: 'orchestrated', orchestrators: 1, model: 'opus', effort: 'high', budget: 2 })
-    expect(orchestratedKeys(st, keys)).toEqual(['T-2', 'T-4'])
+    expect(orchestratedKeys(st, six)).toEqual(group)
     // The solo tickets go out first, each as its own agent on its own runner…
     expect(planStep(st, w)).toEqual({ kind: 'dispatchTickets', keys: ['T-1', 'T-3'] })
     expect(runnerFor(st, 'T-1')).toEqual({ model: 'opus', effort: 'high' })
     expect(runnerFor(st, 'T-3')).toEqual({ model: 'haiku', effort: 'low' })
     // …then the orchestrator starts with exactly its group.
     const soloOut = { ...st, dispatched: { 'T-1': AT, 'T-3': AT } }
-    expect(planStep(soloOut, w)).toEqual({ kind: 'dispatchOrchestrators', shares: [['T-2', 'T-4']] })
+    expect(planStep(soloOut, w)).toEqual({ kind: 'dispatchOrchestrators', shares: [group] })
     // A solo ticket is never an orchestrator's to claim; a grouped one is, under the step's budget.
-    const both = { ...soloOut, orchestrators: [{ ...newOrchestrator(1, ['T-2', 'T-4']), dispatchedAt: AT }] }
+    const both = { ...soloOut, orchestrators: [{ ...newOrchestrator(1, group), dispatchedAt: AT }] }
     expect(claimVerdict(both, w, 'T-1')).toMatchObject({ ok: false, status: 409, wait: false })
     expect(claimVerdict(both, w, 'T-2')).toEqual({ ok: true, again: false })
     // Solo agents in flight never count against the orchestrator's budget.
     expect(inFlight(both, w)).toEqual([])
     // Everyone dispatched and working: the step waits on them all.
     const all = { ...both, dispatched: { ...both.dispatched, 'T-2': AT } }
-    expect(planStep(all, world({ tickets: keys.map((k) => t(k, { status: 'in_progress', claimed: true })), agents: { 'T-1': 'working', 'T-3': 'working' }, orchestrators: { 0: 'working' } }))).toMatchObject({ kind: 'wait', pending: keys })
+    expect(planStep(all, world({ tickets: six.map((k) => t(k, { status: 'in_progress', claimed: true })), agents: { 'T-1': 'working', 'T-3': 'working' }, orchestrators: { 0: 'working' } }))).toMatchObject({ kind: 'wait', pending: six })
   })
 })
 
@@ -631,14 +659,15 @@ describe('group runners — an orchestrator group with its own subagent model an
 
   it("each orchestrator slot runs its group's runner; a slot off a plan step runs the phase's", () => {
     const run = { mode: 'sessions' as const, model: 'opus' as const, effort: 'high' as const, budget: 2, orchestrators: 1 }
-    const step = s('s1', 'implement', { tickets: keys, dispatch: orch, groups: [['T-1', 'T-2'], ['T-3', 'T-4']], groupRunners: [{ model: 'sonnet', effort: 'low' }, null] })
+    const eight = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6', 'T-7', 'T-8']
+    const step = s('s1', 'implement', { tickets: eight, dispatch: orch, groups: [['T-1', 'T-2', 'T-3', 'T-4'], ['T-5', 'T-6', 'T-7', 'T-8']], groupRunners: [{ model: 'sonnet', effort: 'low' }, null] })
     const st = running(plan(step), {
       orchestration: run,
       phase: 'implementing',
       cursor: 0,
-      tickets: keys,
-      // Shares come from groupShares — T-2 finished before the orchestrators started, so slot 0 holds T-1 alone.
-      orchestrators: [{ ...newOrchestrator(1, ['T-1']), dispatchedAt: AT }, { ...newOrchestrator(1, ['T-3', 'T-4']), dispatchedAt: AT }],
+      tickets: eight,
+      // Shares come from groupShares — T-2 was HITL, so slot 0 holds the other three.
+      orchestrators: [{ ...newOrchestrator(1, ['T-1', 'T-3', 'T-4']), dispatchedAt: AT }, { ...newOrchestrator(1, ['T-5', 'T-6', 'T-7', 'T-8']), dispatchedAt: AT }],
     })
     expect(slotRunner(st, 0)).toEqual({ model: 'sonnet', effort: 'low' })
     expect(slotRunner(st, 1)).toEqual({ model: 'opus', effort: 'high' })

@@ -231,8 +231,9 @@ merges/reviews/gates sparingly (always a review at the end; HITL tickets in
 their own step + gate, or left out), keeps every implement step to the
 concurrency rule — at most 4 sessions at once, an orchestrator counting as one:
 own agents only (4 at once), mixed (1 orchestrator + 3), or 2 orchestrators
-alone; budget ≤ 2 per orchestrator; groups are folded to 2 and budget clamped
-on save, a solo ticket beside two orchestrators is a `problems` entry — orders
+alone; budget 2 per orchestrator (a 1 is lifted on save) and 4+ tickets in a
+group; groups are folded to 2 on save, a solo ticket beside two orchestrators
+or a group under 4 tickets is a `problems` entry — orders
 each step's ticket list as its dispatch queue (the engine starts the next
 own-agent ticket as a session frees), PUTs the plan until `problems` is `[]`,
 and reports back via `POST …/run-plan/built`. `project.runPlanBuild` marks it
