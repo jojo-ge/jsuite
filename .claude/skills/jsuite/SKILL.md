@@ -124,9 +124,13 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   the steps from there on — finished tickets in a step are never a problem,
   they're skipped. **Build with Fable** = `POST …/run-plan/build` (`DELETE` cancels):
   one Fable 5.1 high `/jrunplan` session (prompt kind `runplan:build`) PUTs the
-  plan until `problems` is `[]` and reports via `…/run-plan/built`. Its plans
-  keep to one orchestrator at a time and at most 2 tickets in flight (one
-  group with budget ≤ 2, or ≤ 2 solo tickets, per implement step).
+  plan until `problems` is `[]` and reports via `…/run-plan/built`. Every
+  implement step keeps to the **concurrency rule**: at most 4 sessions at
+  once (an orchestrator counts as one) — own agents only (4 at once), mixed
+  (1 orchestrator + 3 own agents at once), or 2 orchestrators alone with no
+  solo ticket; each orchestrator ≤ 2 in flight. A step may hold more tickets
+  than that: its ticket list is a **queue** in the builder's order, and the
+  engine starts the next own-agent ticket as a session frees.
 - **Graphs** (`/graphs`) — cross-project blocked-by edges link projects into
   graphs named "first → last" with each project's status and outcome report.
   Display only; id `G-<KEY>`.

@@ -8,7 +8,7 @@
 import type { LocalPr, Project, Ticket } from '~/composables/useTracker'
 import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, effectiveOrchestration, inFlight, orchestratedKeys, type AutoLoop } from '~/utils/autoLoop'
 import { outcomeDocOf } from '~/utils/projectGraphs'
-import { PLAN_MODELS, PLAN_STEP_LABELS, runnerLabel } from '~/utils/runPlan'
+import { PLAN_MODELS, PLAN_STEP_LABELS, runnerLabel, soloTickets, stepShape } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[] }>()
 const { prs, docs } = useTracker()
@@ -69,6 +69,26 @@ const pending = computed(() => {
   }
 })
 
+// A run plan's implement step runs its own-agent tickets as a queue: the
+// sessions it may run at once (stepShape), the ones running, and the ones
+// still waiting for a session (in the step's order).
+const soloQueue = computed(() => {
+  const a = auto.value
+  const step = plan.value?.steps[a?.cursor ?? -1]
+  if (!a || a.phase !== 'implementing' || !step || step.kind !== 'implement') return null
+  const shape = stepShape(step)
+  const solo = shape.solo.filter((k) => a.tickets.includes(k))
+  const done = (k: string) => {
+    const t = byKey.value.get(k)
+    return !t || ticketDone(t)
+  }
+  const running = solo.filter((k) => a.dispatched[k] && !done(k))
+  const waiting = solo.filter((k) => !a.dispatched[k] && !done(k))
+  return { slots: shape.soloSlots, running, waiting }
+})
+const queuedKeys = computed(() => new Set(soloQueue.value?.waiting ?? []))
+const queueText = (q: NonNullable<typeof soloQueue.value>) => `${q.running.length} of ${q.slots} own-agent session${q.slots === 1 ? '' : 's'} running${q.waiting.length ? `, ${q.waiting.length} queued (${q.waiting.join(', ')})` : ''}`
+
 const phaseText = computed(() => {
   const a = auto.value
   if (!a) return ''
@@ -88,7 +108,8 @@ const phaseText = computed(() => {
     const n = orch.length
     const what = a.phase === 'implementing' ? `${n} ${plan.value ? '' : 'frontier '}ticket${n === 1 ? '' : 's'}` : `${n} agreed finding${n === 1 ? '' : 's'}`
     const at = plan.value ? `${planStepNo.value}: ` : ''
-    const beside = solo ? ` ${solo} other${solo === 1 ? '' : 's'} run as their own agents beside it.` : ''
+    const q = soloQueue.value
+    const beside = solo ? ` ${solo} other${solo === 1 ? '' : 's'} run as their own agents beside it${q ? ` — ${queueText(q)}` : ''}.` : ''
     const count = Math.max(1, a.orchestrators.length)
     const started = a.orchestrators.filter((x) => x.dispatchedAt).length
     if (!started) return `${at}Starting ${o.orchestrators > 1 ? `${o.orchestrators} Fable 5.1 orchestrators` : 'a Fable 5.1 orchestrator'} for ${what}.${beside}`
@@ -101,8 +122,10 @@ const phaseText = computed(() => {
     switch (a.phase) {
       case 'idle':
         return 'Between steps — starting the next one.'
-      case 'implementing':
-        return `${planStepNo.value}: implementing ${n} ticket${n === 1 ? '' : 's'}, each as its own agent${a.lastSliceDoc ? ` — every session read ${a.lastSliceDoc} first` : ''}.`
+      case 'implementing': {
+        const q = soloQueue.value
+        return `${planStepNo.value}: implementing ${n} ticket${n === 1 ? '' : 's'}, each as its own agent${q && (q.waiting.length || n > q.slots) ? ` — ${queueText(q)}` : ''}${a.lastSliceDoc ? ` — every session read ${a.lastSliceDoc} first` : ''}.`
+      }
       case 'slice-reporting':
         return `${planStepNo.value}: an Opus 5.5 session is writing the slice report — facts only, what the last slice built and decided — for this step's agents to read first.`
       case 'arch-reviewing':
@@ -296,9 +319,10 @@ async function turnOffNow() {
         :class="ticketDone(t) && 'opacity-60'"
       >
         <UIcon
-          :name="ticketDone(t) ? 'i-lucide-circle-check' : t.status === 'in_progress' || flying.includes(t.key) ? 'i-lucide-loader-circle' : 'i-lucide-circle-dashed'"
-          :class="[ticketDone(t) ? 'text-success' : 'text-muted', !ticketDone(t) && (t.status === 'in_progress' || flying.includes(t.key)) && 'animate-spin']"
+          :name="ticketDone(t) ? 'i-lucide-circle-check' : queuedKeys.has(t.key) ? 'i-lucide-list-ordered' : t.status === 'in_progress' || flying.includes(t.key) ? 'i-lucide-loader-circle' : 'i-lucide-circle-dashed'"
+          :class="[ticketDone(t) ? 'text-success' : queuedKeys.has(t.key) ? 'text-amber-500' : 'text-muted', !ticketDone(t) && !queuedKeys.has(t.key) && (t.status === 'in_progress' || flying.includes(t.key)) && 'animate-spin']"
           class="size-3.5"
+          :title="queuedKeys.has(t.key) ? 'Queued — starts as a session frees' : undefined"
         />
         <span class="font-mono">{{ t.key }}</span>
         <span class="max-w-48 truncate text-muted">{{ t.title }}</span>

@@ -3,7 +3,9 @@
 // a spine of step nodes from Start to End, ticket cards stacked under each
 // implement step in orchestrator / own-agent boxes, review arcs above the
 // spine showing what each review reads, blocker arrows between cards, and
-// slice-report markers on the spine. Started, each node wears its state and
+// slice-report markers on the spine. An own-agent box past its free sessions
+// draws a queue line: the cards below it start as sessions free, and each
+// wears its place in the queue. Started, each node wears its state and
 // what it did. Clicking a node opens the step's modal (when editable);
 // clicking a card opens the ticket.
 import type { PlanStepRecord } from '~/utils/autoLoop'
@@ -197,6 +199,11 @@ const px = (n: number) => `${n}px`
           <span class="truncate">{{ b.label }}</span>
         </div>
       </div>
+      <!-- the queue line in an own-agent box: above it starts at once, below it waits for a session -->
+      <template v-for="b in layout.boxes.filter((b) => b.queueY !== null)" :key="`q${b.step}`">
+        <div class="absolute border-t border-dashed border-amber-500/70" :style="{ left: px(b.x + GRAPH.boxPad), top: px(b.queueY!), width: px(b.w - GRAPH.boxPad * 2) }" />
+        <span class="absolute -translate-y-1/2 rounded-full border border-amber-500/40 bg-default px-1.5 text-[9.5px] font-medium text-amber-600" :style="{ left: px(b.x + GRAPH.boxPad + 6), top: px(b.queueY!) }" title="The step's own-agent tickets run in this order; these start as sessions above them finish">queue ↓</span>
+      </template>
 
       <!-- ticket cards -->
       <button
@@ -204,14 +211,15 @@ const px = (n: number) => `${n}px`
         :key="`t${t.key}`"
         type="button"
         class="absolute flex flex-col overflow-hidden rounded-md border bg-default px-2 py-1.5 text-left shadow-sm transition hover:border-primary hover:shadow"
-        :class="[t.unknown ? 'border-error/60' : t.hitl || t.paused ? 'border-warning/60' : 'border-default', t.finished && 'opacity-55']"
+        :class="[t.unknown ? 'border-error/60' : t.hitl || t.paused ? 'border-warning/60' : 'border-default', t.finished && 'opacity-55', t.queued && !t.finished && 'border-dashed bg-elevated/40']"
         :style="{ left: px(t.x), top: px(t.y), width: px(t.w), height: px(t.h) }"
-        :title="`${t.key} — ${t.title}\n${t.group === null ? 'own agent' : `orchestrator ${t.group + 1}`} · ${t.runner}`"
+        :title="`${t.key} — ${t.title}\n${t.group === null ? `own agent · ${t.order} in the queue${t.queued ? ' (starts as a session frees)' : ''}` : `orchestrator ${t.group + 1}`} · ${t.runner}`"
         @click.stop="emit('open', t.key)"
         @mouseenter="hover = t.key"
         @mouseleave="hover = null"
       >
         <div class="flex items-center gap-1 text-[10.5px]">
+          <span v-if="t.order !== null" class="rounded px-1 text-[9.5px] tabular-nums" :class="t.queued ? 'bg-amber-500/15 text-amber-600' : 'bg-elevated text-dimmed'">{{ t.order }}</span>
           <span class="font-mono text-muted">{{ t.key }}</span>
           <UIcon v-if="t.finished" name="i-lucide-circle-check" class="size-3 text-success" />
           <span v-if="t.hitl" class="ml-auto rounded bg-warning/15 px-1 text-[9.5px] font-medium text-warning">HITL</span>
@@ -240,6 +248,7 @@ const px = (n: number) => `${n}px`
       </button>
       <span class="flex items-center gap-1.5"><span class="inline-block h-0 w-5 border-t-2 border-error" /> wrong order</span>
       <span class="flex items-center gap-1.5"><UIcon name="i-lucide-file-text" class="size-3" /> slice report</span>
+      <span class="flex items-center gap-1.5" title="Own-agent tickets run in queue order: at most 4 sessions at once in a step, 3 beside an orchestrator; two orchestrators run alone"><span class="inline-block h-0 w-5 border-t border-dashed border-amber-500/70" /> queue — starts as a session frees</span>
     </div>
   </div>
 </template>

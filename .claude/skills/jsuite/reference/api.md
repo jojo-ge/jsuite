@@ -228,9 +228,13 @@ cancels) dispatches one Fable 5.1 high `/jrunplan` session (prompt kind
 `runplan:build`) that reads the project, docs, open tickets and code, weighs
 each ticket, chooses who runs what on which model/effort, places
 merges/reviews/gates sparingly (always a review at the end; HITL tickets in
-their own step + gate, or left out), keeps every implement step to one
-orchestrator at a time and at most 2 tickets in flight (one group with budget
-≤ 2, or ≤ 2 solo tickets), PUTs the plan until `problems` is `[]`,
+their own step + gate, or left out), keeps every implement step to the
+concurrency rule — at most 4 sessions at once, an orchestrator counting as one:
+own agents only (4 at once), mixed (1 orchestrator + 3), or 2 orchestrators
+alone; budget ≤ 2 per orchestrator; groups are folded to 2 and budget clamped
+on save, a solo ticket beside two orchestrators is a `problems` entry — orders
+each step's ticket list as its dispatch queue (the engine starts the next
+own-agent ticket as a session frees), PUTs the plan until `problems` is `[]`,
 and reports back via `POST …/run-plan/built`. `project.runPlanBuild` marks it
 in progress; the tab is read-only meanwhile.
 

@@ -67,7 +67,10 @@
 // step by step instead of looping — `cursor` is the step in progress. Each step
 // is one of the phases above with the human's parameters: implement is
 // 'implementing' over the step's tickets (HITL ones are waited on, never
-// dispatched; one not on the frontier yet waits), merge is 'merging' over the
+// dispatched; one not on the frontier yet waits) under the step's concurrency
+// rule — the step's ticket list is a queue, and own-agent tickets go out in
+// that order only while fewer than `stepSoloSlots` of them are running
+// (`soloQueue`); the plain loop has no such cap — merge is 'merging' over the
 // plan's open PRs, review is 'reviewing' from the step's checkpoint and always
 // runs on through 'fixing' and 'merging-fixes', and gate is 'gate' until the
 // human presses Continue. Where the loop would move to its next phase, a plan
@@ -96,6 +99,7 @@ import {
   reviewBaseSha,
   runnerOf,
   stepGroups,
+  stepSoloSlots,
   type DispatchMode,
   type PlanDispatch,
   type PlanModel,
@@ -762,8 +766,9 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       const orch = orchestratedKeys(state, afk)
       const solo = afk.filter((k) => !orch.includes(k))
       // A run plan's ticket goes out once it's on the frontier — one still
-      // blocked, or claimed by hand, waits its turn.
-      const toDispatch = solo.filter((k) => !state.dispatched[k] && (!plan || ticket(k)?.frontier))
+      // blocked, or claimed by hand, waits its turn — and only while the
+      // step has a session free for it (the plain loop runs them all at once).
+      const { ready: toDispatch, queued } = soloQueue(state, world, solo)
       if (toDispatch.length) return { kind: 'dispatchTickets', keys: toDispatch }
       if (orch.length) {
         const step = orchestratorStep(state, world, orch)
@@ -773,9 +778,10 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       if (watched) return watched
       if (pending.length) {
         const human = pending.filter((k) => ticket(k)?.hitl)
-        const held = solo.filter((k) => !state.dispatched[k] && !ticket(k)?.frontier)
+        const held = solo.filter((k) => !state.dispatched[k] && !ticket(k)?.frontier && !queued.includes(k))
         const note = [
           human.length ? `waiting on you for ${human.join(', ')} (HITL)` : '',
+          queued.length ? `${queued.join(', ')} queued — ${queued.length === 1 ? 'starts' : 'start'} as a session frees` : '',
           held.length ? `${held.join(', ')} ${held.length === 1 ? 'is' : 'are'} blocked or claimed — dispatched once free` : '',
         ].filter(Boolean).join('; ')
         return { kind: 'wait', pending, ...(note ? { note } : {}) }
@@ -1220,6 +1226,25 @@ function slotStep(o: AutoOrchestrator, index: number, world: AutoWorld, mine: st
     return { kind: 'restartOrchestrator', index, reason: 'it stopped with tickets still open and did not carry on after being prompted to' }
   }
   return null
+}
+
+/**
+ * A run plan step's own-agent queue: of its undispatched own-agent tickets
+ * (`solo`, in the step's order), `ready` are the ones to hand out this tick —
+ * on the frontier, and no more than the step has sessions free for
+ * (stepSoloSlots less the own-agent tickets still running) — and `queued`
+ * the ones on the frontier that wait for a session. Outside a run plan
+ * every undispatched ticket is ready: the plain loop has no cap.
+ */
+export function soloQueue(state: AutoLoop, world: Pick<AutoWorld, 'tickets'>, solo: string[]): { ready: string[]; queued: string[] } {
+  const ticket = (k: string) => world.tickets.find((t) => t.key === k)
+  const step = implementStep(state)
+  const waiting = solo.filter((k) => !state.dispatched[k])
+  if (!step) return { ready: waiting, queued: [] }
+  const eligible = waiting.filter((k) => ticket(k)?.frontier)
+  const running = solo.filter((k) => state.dispatched[k] && !finished(ticket(k))).length
+  const free = Math.max(0, stepSoloSlots(stepGroups(step).length) - running)
+  return { ready: eligible.slice(0, free), queued: eligible.slice(free) }
 }
 
 /** The phase's ticket keys (implementing / fixing), else []. */

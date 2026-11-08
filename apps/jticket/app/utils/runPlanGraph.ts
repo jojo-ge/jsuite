@@ -5,8 +5,11 @@
 // does the slice-report marker before every implement step after the first.
 // Under an implement node hang its tickets: one card each, stacked in boxes —
 // a box per orchestrator group (its subagents' runner in the header) and one
-// for the tickets that run as their own agent. Merge, review and gate steps
-// are a node on the spine and nothing below.
+// for the tickets that run as their own agent, in the step's queue order:
+// the cards past the step's free sessions (stepShape) are marked queued, and
+// the box carries the divider's y so the component can draw the line between
+// what starts at once and what waits. Merge, review and gate steps are a node
+// on the spine and nothing below.
 //
 // Above the spine, a review's ARC shows what it reads: from the checkpoint
 // (the Start node, or the end of an earlier step) over to the review node.
@@ -25,6 +28,7 @@ import {
   runnerOf,
   soloTickets,
   stepGroupEntries,
+  stepShape,
   type PlanDispatch,
   type PlanStep,
   type RunPlan,
@@ -52,6 +56,10 @@ export interface GraphTicket {
   step: number
   /** Its orchestrator group within the step, or null for its own agent. */
   group: number | null
+  /** Own agent: its 1-based place in the step's queue (null in a group). */
+  order: number | null
+  /** Own agent past the step's free sessions — starts as one frees. */
+  queued: boolean
   runner: string
   hitl: boolean
   paused: boolean
@@ -71,6 +79,8 @@ export interface GraphBox {
   h: number
   label: string
   tickets: string[]
+  /** Own-agent box with queued tickets: the y of the line between the ones that start at once and the queue (null = no queue). */
+  queueY: number | null
 }
 
 /** A step's node on the spine. */
@@ -170,10 +180,11 @@ export const GRAPH = {
 
 const summaryOf = (s: PlanStep, fallback: PlanDispatch): string => {
   if (s.kind === 'implement') {
-    const solo = soloTickets(s).length
+    const shape = stepShape(s)
+    const solo = shape.solo.length
     const groups = stepGroupEntries(s, fallback).length
     const parts: string[] = []
-    if (solo) parts.push(`${solo} own agent${solo === 1 ? '' : 's'}`)
+    if (solo) parts.push(`${solo} own agent${solo === 1 ? '' : 's'}${shape.queued.length ? ` (${shape.soloSlots} at once)` : ''}`)
     if (groups) parts.push(`${groups} orchestrator${groups === 1 ? '' : 's'}`)
     return parts.join(' · ') || 'no tickets'
   }
@@ -221,20 +232,25 @@ export function layoutRunPlan(plan: RunPlan, info: Record<string, GraphTicketInf
       const d = s.dispatch ?? fallback
       let by = nodeTop + nodeH + GRAPH.drop
       const cardW = colW - GRAPH.boxPad * 2
+      const shape = stepShape(s)
       const place = (keys: string[], group: number | null, label: string, runnerFor: (k: string) => string) => {
         const h = GRAPH.boxHead + GRAPH.boxPad + keys.length * (GRAPH.cardH + GRAPH.cardGap) - GRAPH.cardGap + GRAPH.boxPad
-        boxes.push({ step: i, group, x, y: by, w: colW, h, label, tickets: keys })
+        const cardY = (n: number) => by + GRAPH.boxHead + GRAPH.boxPad + n * (GRAPH.cardH + GRAPH.cardGap)
+        const queueAt = group === null && keys.length > shape.soloSlots ? shape.soloSlots : null
+        boxes.push({ step: i, group, x, y: by, w: colW, h, label, tickets: keys, queueY: queueAt === null ? null : cardY(queueAt) - GRAPH.cardGap / 2 })
         keys.forEach((k, n) => {
           const t = info[k]
           tickets.push({
             key: k,
             title: t?.title ?? '(unknown ticket)',
             x: x + GRAPH.boxPad,
-            y: by + GRAPH.boxHead + GRAPH.boxPad + n * (GRAPH.cardH + GRAPH.cardGap),
+            y: cardY(n),
             w: cardW,
             h: GRAPH.cardH,
             step: i,
             group,
+            order: group === null ? n + 1 : null,
+            queued: group === null && n >= shape.soloSlots,
             runner: runnerFor(k),
             hitl: !!t?.hitl,
             paused: !!t?.paused,
@@ -246,7 +262,10 @@ export function layoutRunPlan(plan: RunPlan, info: Record<string, GraphTicketInf
       }
       stepGroupEntries(s, d).forEach((g, gi) => place(g.tickets, gi, `Orchestrator ${gi + 1} · ${runnerLabel(g.runner)}`, () => runnerLabel(groupRunnerOf(s, g.tickets[0]!, d))))
       const solo = soloTickets(s)
-      if (solo.length) place(solo, null, solo.length === 1 ? 'Own agent' : 'Own agents', (k) => runnerLabel(runnerOf(s, k, d)))
+      if (solo.length) {
+        const pace = !shape.soloSlots ? ' · none beside 2 orchestrators' : solo.length > shape.soloSlots ? ` · ${shape.soloSlots} at once, ${shape.queued.length} queued` : ''
+        place(solo, null, `${solo.length === 1 ? 'Own agent' : 'Own agents'}${pace}`, (k) => runnerLabel(runnerOf(s, k, d)))
+      }
       bottom = Math.max(bottom, by - GRAPH.boxGap)
     }
     x += colW

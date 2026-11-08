@@ -11,8 +11,11 @@
 //               subagents on the step's model and effort — or the group's own
 //               (`groupRunners`, one per group: a box of small fixes on Sonnet
 //               low beside a box of core work on Opus high). Solo agents and
-//               orchestrators run side by side in one step. A HITL ticket is
-//               never dispatched — the step waits for the human to finish it
+//               orchestrators run side by side in one step, under the
+//               concurrency rule (STEP_SESSIONS_MAX below): the ticket list
+//               is a queue, and own-agent tickets past the free sessions
+//               start as earlier ones finish. A HITL ticket is never
+//               dispatched — the step waits for the human to finish it
 //   merge       the merge sweep over every open PR the plan's tickets have so
 //               far; skipped when there's none
 //   review      a consensus review in jReview over base…integration tip, where
@@ -92,9 +95,33 @@ export interface PlanDispatch {
   orchestrators: number
 }
 
+/** The jButton's plain loop: what its confirm modal offers. */
 export const PLAN_BUDGET_MAX = 4
 export const PLAN_ORCHESTRATORS_MAX = 4
 export const DEFAULT_DISPATCH: PlanDispatch = { mode: 'sessions', model: PLAN_MODEL_DEFAULT, effort: EFFORT_DEFAULT, budget: 2, orchestrators: 1 }
+
+// ── A run plan step's concurrency rule ──────────────────────────────────────
+// Too many sessions at once slow every one of them down, so an implement step
+// takes one of three shapes, and never more than STEP_SESSIONS_MAX sessions
+// run at once (an orchestrator counts as one, whatever its budget):
+//
+//   own agents only      up to 4 own-agent sessions at once
+//   mixed                1 orchestrator + up to 3 own-agent sessions at once
+//   orchestrators only   2 orchestrators, no own-agent ticket beside them
+//
+// Each orchestrator works at most STEP_BUDGET_MAX tickets at once. A step may
+// hold more tickets than it can run at once: its ticket list is a QUEUE in the
+// builder's order, and the engine starts the next own-agent ticket as a
+// session frees (stepSoloSlots). Groups and budget are clamped on the way in;
+// the mixed shape with two orchestrators is a planProblems problem.
+export const STEP_ORCHESTRATORS_MAX = 2
+export const STEP_BUDGET_MAX = 2
+export const STEP_SESSIONS_MAX = 4
+
+/** How many own-agent sessions a step with `orchestrators` groups may run at once. */
+export function stepSoloSlots(orchestrators: number): number {
+  return orchestrators >= STEP_ORCHESTRATORS_MAX ? 0 : Math.max(0, STEP_SESSIONS_MAX - Math.max(0, orchestrators))
+}
 
 /** A review step's reviewers — and the optional architectural pass that runs before them. */
 export interface ReviewSetting {
@@ -214,6 +241,8 @@ export function coerceRunPlan(raw: any): RunPlan | null {
     let groups = s.kind === 'implement' ? coerceGroups(s.groups, tickets) : []
     const dispatch = s.kind === 'implement' ? coerceDispatch(s.dispatch) : null
     if (dispatch) {
+      // A step's orchestrators work at most STEP_BUDGET_MAX tickets at once.
+      dispatch.budget = Math.min(STEP_BUDGET_MAX, dispatch.budget)
       // From before groups meant "orchestrated": an orchestrated step with no
       // group was one orchestrator with every ticket — keep it that.
       if (dispatch.mode === 'orchestrated' && !groups.some((g) => g.length) && tickets.length) groups = [[...tickets]]
@@ -254,7 +283,7 @@ export function coerceRunPlan(raw: any): RunPlan | null {
 
 /**
  * A step's orchestrator groups off the wire: only the step's tickets, each in
- * one group at most, at most PLAN_ORCHESTRATORS_MAX groups (the rest fold into
+ * one group at most, at most STEP_ORCHESTRATORS_MAX groups (the rest fold into
  * the last). Empty groups are kept — a box the human just added, waiting for
  * a ticket to be dragged in.
  */
@@ -266,10 +295,36 @@ export function coerceGroups(raw: unknown, tickets: string[]): string[][] {
     if (!Array.isArray(g)) continue
     const keys = g.filter((k): k is string => typeof k === 'string' && tickets.includes(k) && !seen.has(k))
     keys.forEach((k) => seen.add(k))
-    if (groups.length < PLAN_ORCHESTRATORS_MAX) groups.push(keys)
+    if (groups.length < STEP_ORCHESTRATORS_MAX) groups.push(keys)
     else groups[groups.length - 1]!.push(...keys)
   }
   return groups
+}
+
+/**
+ * The step's shape under the concurrency rule: its own-agent tickets in queue
+ * order, how many of them run at once (`soloSlots`), its orchestrator count,
+ * and the sessions it runs at once in all. `queued` are the own-agent tickets
+ * past the slots — they start as sessions free.
+ */
+export function stepShape(step: Pick<PlanStep, 'tickets' | 'groups'>): { solo: string[]; orchestrators: number; soloSlots: number; sessions: number; queued: string[] } {
+  const solo = soloTickets(step)
+  const orchestrators = stepGroups(step).length
+  const soloSlots = stepSoloSlots(orchestrators)
+  return { solo, orchestrators, soloSlots, sessions: orchestrators + Math.min(solo.length, soloSlots), queued: solo.slice(soloSlots) }
+}
+
+/** The shape in words — the wizard's confirm line, the board's step card, the graph's own-agent box. */
+export function stepShapeLabel(step: Pick<PlanStep, 'tickets' | 'groups' | 'dispatch'>, fallback: PlanDispatch): string {
+  const { solo, orchestrators, soloSlots, queued } = stepShape(step)
+  const budget = (step.dispatch ?? fallback).budget
+  const parts: string[] = []
+  if (solo.length) {
+    const running = Math.min(solo.length, soloSlots)
+    parts.push(`${running} own agent${running === 1 ? '' : 's'} at once${queued.length ? ` (${queued.length} queued)` : ''}`)
+  }
+  if (orchestrators) parts.push(`${orchestrators} orchestrator${orchestrators > 1 ? 's' : ''}, ${budget} in flight${orchestrators > 1 ? ' each' : ''}`)
+  return parts.join(' + ') || 'no tickets'
 }
 
 /** The step's orchestrators' tickets — its groups cut down to its tickets, empties dropped. */
@@ -322,7 +377,9 @@ export function implementSummary(step: PlanStep, fallback: PlanDispatch): string
       const label = runnerLabel(runnerOf(step, k, d))
       tally.set(label, (tally.get(label) ?? 0) + 1)
     }
-    parts.push(`${solo.length} ticket${solo.length === 1 ? '' : 's'} each with its own agent (${[...tally].map(([l, n]) => `${n} on ${l}`).join(', ')})`)
+    const slots = stepSoloSlots(orch.length)
+    const pace = !slots ? ` — none can run beside ${orch.length} orchestrators` : solo.length > slots ? `, ${slots} at once in queue order` : ''
+    parts.push(`${solo.length} ticket${solo.length === 1 ? '' : 's'} each with its own agent (${[...tally].map(([l, n]) => `${n} on ${l}`).join(', ')})${pace}`)
   }
   if (orch.length) {
     const n = orch.reduce((a, g) => a + g.length, 0)
@@ -412,6 +469,12 @@ export function planProblems(plan: RunPlan, tickets: PlanTicket[], opts: { froze
     const at = `Step ${i + 1}`
     if (s.kind === 'implement' && i >= frozen) {
       if (!s.tickets.length) problems.push({ stepId: s.id, message: `${at} has no tickets.` })
+      // The concurrency rule's one shape coercion can't settle: two
+      // orchestrators leave no session for an own-agent ticket.
+      const shape = stepShape(s)
+      if (shape.orchestrators >= STEP_ORCHESTRATORS_MAX && shape.solo.length) {
+        problems.push({ stepId: s.id, message: `${at} runs ${shape.orchestrators} orchestrators, so ${shape.solo.join(', ')} can't run as ${shape.solo.length === 1 ? 'its' : 'their'} own agent beside them — put ${shape.solo.length === 1 ? 'it' : 'them'} in a group, or in a step of ${shape.solo.length === 1 ? 'its' : 'their'} own.` })
+      }
       for (const k of s.tickets) {
         const t = byKey.get(k)
         if (!t) {

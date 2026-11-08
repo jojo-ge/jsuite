@@ -58,26 +58,42 @@ changes a contract others build on, whether tests exist around it.
 | heavy | a new module, a migration, a cross-cutting contract change, anything with design in it | its own agent — Opus 5.5 `high` (Fable 5.1 `high` only when it needs real judgment) |
 
 Orchestrators pay off on **several related small or medium tickets**: one
-Fable 5.1 session shares worktree slots, runs them through subagents and
-spec-checks each. A heavy ticket alone gains nothing from one. A group of
-light tickets runs cheap in its own step and a group of medium ones in the
-next — each group carries its own model and effort (`groupRunners`). Keep one
-orchestrator's share to roughly eight tickets at most; a longer list is split
-over consecutive steps.
+Fable 5.1 session shares worktree slots, runs them through subagents (at most
+2 at once) and spec-checks each. A heavy ticket alone gains nothing from one.
+Two groups may run side by side in one step — a box of light tickets on a
+cheap runner beside a box of medium ones — each group carrying its own model
+and effort (`groupRunners`). Keep one orchestrator's share to roughly eight
+tickets at most; a longer list is split over consecutive steps.
 
 ## 3. Shape the steps
 
 - **Implement steps** hold tickets that can run side by side: disjoint areas,
   no open blocker among them.
-- **Concurrency cap: one orchestrator at a time, at most 2 tickets in
-  flight.** Too many sessions at once slow every one of them down. Every
-  implement step is EITHER one orchestrator group (`budget` 1 or 2, no solo
-  ticket beside it) OR at most 2 solo tickets (no group). Never two groups in
-  a step, never a group beside a solo. Work that would have run as several
-  groups side by side becomes consecutive implement steps instead (no merge
-  is needed between them unless a blocker says so); a group with its own
-  runner is its own step. The engine would accept up to 4 groups × 4 in
-  flight — don't.
+- **Concurrency rule — at most 4 sessions at once in a step.** Too many
+  sessions at once slow every one of them down. An orchestrator counts as one
+  session whatever its budget, and each orchestrator works at most 2 tickets
+  at once (`budget` 1 or 2). An implement step takes one of three shapes:
+
+  | Shape | Own-agent tickets running | Orchestrators |
+  | --- | --- | --- |
+  | own agents only | up to 4 at once | 0 |
+  | mixed | up to 3 at once | 1 |
+  | orchestrators only | none — not one solo ticket | 2 |
+
+  Never more than 2 groups in a step; with 2 groups, every ticket of the step
+  is in one of them (the validator refuses a solo ticket beside two
+  orchestrators; a third group is folded into the second on save; a budget
+  over 2 is clamped).
+- **A step is a queue.** It may hold more tickets than it can run at once:
+  `tickets` is the dispatch order, and the engine starts the next own-agent
+  ticket as a session frees (the 5th of five solo tickets starts when one of
+  the first four finishes; beside an orchestrator, the 4th starts when one of
+  the first three does). **You choose the order** — that is the ordering
+  rule, and it is yours, not a fixed "own agents first": put the heavy or
+  long-running tickets first so they don't tail the step, the ones whose
+  area the others touch least last, and the step's orchestrator group where
+  you like. Dependencies never ride on queue order: an open blocker still
+  needs its own earlier step with a merge between (next bullet).
 - **Blockers**: a ticket's open blocker must sit in an **earlier** implement
   step with a **merge** step between them — the validator refuses anything
   else. Layer the blocker graph: everything unblocked first, then what it
@@ -107,17 +123,24 @@ The body is `{ "steps": [...] }`. Every step has `id` (`s1`, `s2`, …, unique)
 and `kind`; the rest by kind:
 
 ```jsonc
-{ "id": "s1", "kind": "implement",
-  "tickets": ["TICK-7", "TICK-8", "TICK-9"],
+{ "id": "s1", "kind": "implement",                           // MIXED: 1 orchestrator + own agents, 3 of them at once
+  "tickets": ["TICK-12", "TICK-13", "TICK-14", "TICK-15", "TICK-7", "TICK-8", "TICK-9"],   // the QUEUE — own agents start in this order
   "dispatch": { "mode": "orchestrated", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
-  "groups": [["TICK-7", "TICK-8", "TICK-9"]],              // ONE orchestrator group holding every ticket of the step; budget ≤ 2
-  "groupRunners": [{ "model": "sonnet", "effort": "low" }]  // per group; null = the step's dispatch
-}
-{ "id": "s2", "kind": "implement",
-  "tickets": ["TICK-12", "TICK-13"],                         // solo tickets: at most 2 in a step, and no group beside them
-  "dispatch": { "mode": "sessions", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
-  "groups": [],
+  "groups": [["TICK-7", "TICK-8", "TICK-9"]],              // the orchestrator's group; budget ≤ 2
+  "groupRunners": [{ "model": "sonnet", "effort": "low" }], // per group; null = the step's dispatch
   "runners": { "TICK-12": { "model": "fable", "effort": "high" } }   // a solo ticket's own model/effort
+  // TICK-12, -13, -14 start with the orchestrator; TICK-15 starts when one of them finishes
+}
+{ "id": "s2", "kind": "implement",                           // ORCHESTRATORS ONLY: two groups, nothing solo beside them
+  "tickets": ["TICK-20", "TICK-21", "TICK-22", "TICK-23", "TICK-24"],
+  "dispatch": { "mode": "orchestrated", "model": "opus", "effort": "medium", "budget": 2, "orchestrators": 2 },
+  "groups": [["TICK-20", "TICK-21", "TICK-22"], ["TICK-23", "TICK-24"]],
+  "groupRunners": [{ "model": "haiku", "effort": "low" }, null]
+}
+{ "id": "s6", "kind": "implement",                           // OWN AGENTS ONLY: 4 at once, the 5th queued
+  "tickets": ["TICK-30", "TICK-31", "TICK-32", "TICK-33", "TICK-34"],
+  "dispatch": { "mode": "sessions", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
+  "groups": []
 }
 { "id": "s3", "kind": "merge" }
 { "id": "s4", "kind": "review", "reviewers": 2, "base": "",       // "" = since the previous review or plan start; "start"; or an earlier step id
@@ -135,9 +158,12 @@ jt put /api/projects/$P/run-plan @plan.json | jq '.problems'
 ```
 
 The answer's `problems` are what would stop the plan running (a blocker in
-the wrong step, a missing merge, a ticket from another project). The
-concurrency cap in §3 is yours to keep — the validator does not check it. Fix
-and PUT again until it is `[]`. The draft saves each time, so the human sees
+the wrong step, a missing merge, a ticket from another project, a solo ticket
+beside two orchestrators). The rest of the concurrency rule is applied on
+save (groups folded to 2, budget clamped to 2) and the queue is enforced by
+the engine — so a step with more tickets than sessions is fine, and the order
+you PUT is the order they start. Fix and PUT again until it is `[]`. The draft
+saves each time, so the human sees
 the board fill. A finished ticket (`done` with its PR open, or `merged`) may
 stay in a step: the engine skips it, and a done one's PR is swept by the next
 merge — so don't rebuild a plan just because part of it already ran.
@@ -149,6 +175,6 @@ jt post /api/projects/$P/run-plan/built '{"summary": "<one line: N steps, how th
 ```
 
 This unlocks the tab. Then reply with a few lines — the steps in order, each
-with who runs what and why that weight, and a note that every step keeps to
-one orchestrator / 2 in flight — and stop. Don't start the plan;
-that's the human's button.
+with its shape (own agents / mixed / two orchestrators), who runs what and
+why that weight, and why the queue is in that order — and stop. Don't start
+the plan; that's the human's button.

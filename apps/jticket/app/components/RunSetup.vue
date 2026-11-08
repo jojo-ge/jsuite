@@ -27,7 +27,11 @@ import {
   EFFORTS,
   PLAN_MODELS,
   PLAN_MODEL_KEYS,
-  PLAN_ORCHESTRATORS_MAX,
+  STEP_BUDGET_MAX,
+  STEP_ORCHESTRATORS_MAX,
+  STEP_SESSIONS_MAX,
+  stepShape,
+  stepShapeLabel,
   PLAN_REVIEWERS_MAX,
   PLAN_REVIEWERS_MIN,
   REVIEW_DEFAULT,
@@ -215,6 +219,10 @@ const stepSummary = (s: PlanStep) => {
 }
 const soloRunner = (s: PlanStep, k: string) => runnerOf(s, k, runDefault.value)
 const groupEntries = (s: PlanStep) => stepGroupEntries(s, runDefault.value)
+// The step's shape under the concurrency rule — how many own agents run at once, which queue.
+const shapeOf = (s: PlanStep) => stepShape(s)
+const shapeLabel = (s: PlanStep) => stepShapeLabel(s, runDefault.value)
+const stepBudget = (s: PlanStep) => (s.dispatch ?? runDefault.value).budget
 
 // ── The modal ──────────────────────────────────────────────────────────────
 const open = ref(false)
@@ -323,6 +331,20 @@ watch(picked, (keys) => {
   for (const k of Object.keys(runners.value)) if (!keys.includes(k)) delete runners.value[k]
 })
 const solos = computed(() => picked.value.filter((k) => !groups.value.some((g) => g.includes(k))))
+// The queue: `picked` is the step's ticket order — own agents start in it, as sessions allow.
+function moveTicket(k: string, by: -1 | 1) {
+  const i = picked.value.indexOf(k)
+  const j = i + by
+  if (i < 0 || j < 0 || j >= picked.value.length) return
+  const next = [...picked.value]
+  next.splice(i, 1)
+  next.splice(j, 0, k)
+  picked.value = next
+}
+const liveGroups = computed(() => groups.value.filter((g) => g.length).length)
+const builtShape = computed(() => stepShape({ tickets: picked.value, groups: groups.value }))
+const soloPlace = (k: string) => solos.value.indexOf(k) + 1
+const soloQueued = (k: string) => soloPlace(k) > builtShape.value.soloSlots
 const runnerIdOf = (k: string): string => {
   const gi = groups.value.findIndex((g) => g.includes(k))
   return gi < 0 ? 'solo' : String(gi)
@@ -345,10 +367,11 @@ function setGroupRunner(gi: number, patch: Partial<Runner>) {
   list[gi] = next.model === model.value && next.effort === effort.value ? null : next
   groupRunners.value = list
 }
+// Two orchestrators run alone: with both boxes filled, "its own agent" is off the menu.
 const runnerItems = computed(() => [
-  { label: 'Its own agent', value: 'solo' },
+  { label: 'Its own agent', value: 'solo', disabled: liveGroups.value >= STEP_ORCHESTRATORS_MAX },
   ...groups.value.map((g, i) => ({ label: `Orchestrator ${i + 1} (${g.length})`, value: String(i) })),
-  ...(groups.value.length < PLAN_ORCHESTRATORS_MAX ? [{ label: `+ New orchestrator ${groups.value.length + 1}`, value: String(groups.value.length) }] : []),
+  ...(groups.value.length < STEP_ORCHESTRATORS_MAX ? [{ label: `+ New orchestrator ${groups.value.length + 1}`, value: String(groups.value.length) }] : []),
 ])
 const soloOf = (k: string): Runner => runners.value[k] ?? { model: model.value, effort: effort.value }
 function setSolo(k: string, patch: Partial<Runner>) {
@@ -358,7 +381,7 @@ function setSolo(k: string, patch: Partial<Runner>) {
 }
 const modelItems = PLAN_MODEL_KEYS.map((m) => ({ label: PLAN_MODELS[m].label, value: m }))
 const effortItems = EFFORTS.map((e) => ({ label: e, value: e }))
-const budgetItems = [1, 2, 3, 4].map((n) => ({ label: String(n), value: n }))
+const budgetItems = Array.from({ length: STEP_BUDGET_MAX }, (_, i) => ({ label: String(i + 1), value: i + 1 }))
 const reviewerItems = Array.from({ length: PLAN_REVIEWERS_MAX - PLAN_REVIEWERS_MIN + 1 }, (_, i) => ({ label: `${PLAN_REVIEWERS_MIN + i} reviewers`, value: PLAN_REVIEWERS_MIN + i }))
 
 // What the step would be, as built so far — and the plan with it in, validated.
@@ -387,6 +410,7 @@ const previewPlan = computed<RunPlan>(() => {
 })
 const previewProblems = computed(() => planProblems(previewPlan.value, planTickets.value, { frozen: frozen.value }).filter((p) => p.stepId === built.value.id))
 const summary = computed(() => (kind.value === 'implement' ? implementSummary(built.value, runDefault.value) : reviewSummary(built.value)))
+const builtShapeLabel = computed(() => stepShapeLabel(built.value, runDefault.value))
 const positionItems = computed(() => {
   const n = draft.value.steps.filter((s) => s.id !== editing.value?.id).length
   return Array.from({ length: n - frozen.value + 1 }, (_, i) => frozen.value + i).map((i) => ({ label: i === 0 ? 'first' : i === n ? 'last' : `after step ${i}`, value: i }))
@@ -596,18 +620,28 @@ async function resumeRun() {
           </div>
           <div class="mt-2 grid gap-2" :class="stepGroups(step).length ? 'sm:grid-cols-2' : ''">
             <div v-if="soloTickets(step).length" class="rounded-md bg-elevated/40 px-2.5 py-2">
-              <div class="mb-1 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-user-round" class="size-3.5 text-primary" /> Own agent each</div>
-              <div v-for="k in soloTickets(step)" :key="k" class="flex items-center gap-1.5 py-0.5 text-sm">
+              <div class="mb-1 flex items-center gap-1 text-xs text-muted">
+                <UIcon name="i-lucide-user-round" class="size-3.5 text-primary" /> Own agent each
+                <span v-if="shapeOf(step).soloSlots === 0" class="text-error">· none can run beside {{ shapeOf(step).orchestrators }} orchestrators</span>
+                <span v-else-if="shapeOf(step).queued.length" :title="`At most ${STEP_SESSIONS_MAX} sessions run at once in a step (an orchestrator counts as one). The rest start, in this order, as sessions free.`">· {{ shapeOf(step).soloSlots }} at once, in this order</span>
+              </div>
+              <template v-for="(k, n) in soloTickets(step)" :key="k">
+                <div v-if="n === shapeOf(step).soloSlots && n > 0" class="my-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-amber-600">
+                  <span class="h-px flex-1 border-t border-dashed border-amber-500/60" />queued — start as sessions free<span class="h-px flex-1 border-t border-dashed border-amber-500/60" />
+                </div>
+                <div class="flex items-center gap-1.5 py-0.5 text-sm" :class="n >= shapeOf(step).soloSlots && 'opacity-75'">
+                <span class="w-4 shrink-0 text-right text-[10px] tabular-nums" :class="n >= shapeOf(step).soloSlots ? 'text-amber-600' : 'text-dimmed'">{{ n + 1 }}</span>
                 <NuxtLink :to="`/tickets/${k}`" class="font-mono text-xs text-muted hover:underline" @click.stop>{{ k }}</NuxtLink>
                 <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title ?? '(unknown)' }}</span>
                 <UBadge v-if="byKey.get(k) && isHitl(byKey.get(k)!)" color="warning" variant="subtle" size="xs">HITL · waits on you</UBadge>
                 <UIcon v-if="byKey.get(k) && isFinished(byKey.get(k)!.status)" name="i-lucide-circle-check" class="size-3.5 shrink-0 text-success" />
                 <UTooltip v-if="problemsForTicket(k).length" :text="problemsForTicket(k).map((p) => p.message).join(' ')"><UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 text-error" /></UTooltip>
                 <span class="shrink-0 text-xs text-muted">{{ runnerLabel(soloRunner(step, k)) }}</span>
-              </div>
+                </div>
+              </template>
             </div>
             <div v-for="(e, gi) in groupEntries(step)" :key="gi" class="rounded-md bg-elevated/40 px-2.5 py-2">
-              <div class="mb-1 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-bot" class="size-3.5 text-primary" /> Orchestrator {{ gi + 1 }} · {{ runnerLabel(e.runner) }} subagents</div>
+              <div class="mb-1 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-bot" class="size-3.5 text-primary" /> Orchestrator {{ gi + 1 }} · {{ runnerLabel(e.runner) }} subagents · {{ stepBudget(step) }} in flight</div>
               <div v-for="k in e.tickets" :key="k" class="flex items-center gap-1.5 py-0.5 text-sm">
                 <NuxtLink :to="`/tickets/${k}`" class="font-mono text-xs text-muted hover:underline" @click.stop>{{ k }}</NuxtLink>
                 <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title ?? '(unknown)' }}</span>
@@ -715,8 +749,13 @@ async function resumeRun() {
                 </div>
               </div>
               <ul class="flex max-h-72 flex-col divide-y divide-default overflow-y-auto rounded-md border border-default">
-                <li v-for="k in picked" :key="k" class="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
+                <li v-for="(k, n) in picked" :key="k" class="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
+                  <span class="flex flex-col -space-y-1">
+                    <button type="button" class="text-dimmed hover:text-default disabled:opacity-30" :disabled="n === 0" :aria-label="`Move ${k} up`" @click="moveTicket(k, -1)"><UIcon name="i-lucide-chevron-up" class="size-3.5" /></button>
+                    <button type="button" class="text-dimmed hover:text-default disabled:opacity-30" :disabled="n === picked.length - 1" :aria-label="`Move ${k} down`" @click="moveTicket(k, 1)"><UIcon name="i-lucide-chevron-down" class="size-3.5" /></button>
+                  </span>
                   <UIcon :name="runnerIdOf(k) === 'solo' ? 'i-lucide-user-round' : 'i-lucide-bot'" class="size-4 shrink-0" :class="runnerIdOf(k) === 'solo' ? 'text-muted' : 'text-primary'" />
+                  <span v-if="runnerIdOf(k) === 'solo'" class="rounded px-1 text-[10px] tabular-nums" :class="soloQueued(k) ? 'bg-amber-500/15 text-amber-600' : 'bg-elevated text-dimmed'" :title="soloQueued(k) ? 'Queued — starts as a session frees' : 'Starts when the step does'">{{ soloPlace(k) }}{{ soloQueued(k) ? ' · queued' : '' }}</span>
                   <span class="font-mono text-xs text-muted">{{ k }}</span>
                   <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title }}</span>
                   <template v-if="runnerIdOf(k) === 'solo'">
@@ -744,9 +783,17 @@ async function resumeRun() {
               <UFormField label="Default effort">
                 <USelect v-model="effort" :items="effortItems" size="sm" class="w-full" />
               </UFormField>
-              <UFormField v-if="groups.length" label="In flight, per orchestrator">
+              <UFormField v-if="groups.length" label="In flight, per orchestrator" :help="`At most ${STEP_BUDGET_MAX}`">
                 <USelect v-model="budget" :items="budgetItems" size="sm" class="w-full" />
               </UFormField>
+            </div>
+            <div class="rounded-md border px-3 py-2 text-xs" :class="builtShape.orchestrators >= STEP_ORCHESTRATORS_MAX && builtShape.solo.length ? 'border-error/60 bg-error/5' : 'border-default bg-elevated/30'">
+              <p class="font-medium">{{ builtShapeLabel }} · {{ builtShape.sessions }} session{{ builtShape.sessions === 1 ? '' : 's' }} at once</p>
+              <p class="mt-0.5 text-muted">
+                At most {{ STEP_SESSIONS_MAX }} sessions run at once in a step: up to 4 own agents, or 1 orchestrator beside up to 3, or 2 orchestrators alone (each orchestrator works at most {{ STEP_BUDGET_MAX }} tickets at once).
+                The arrows set the order — own agents past the free sessions start, in that order, as earlier ones finish.
+                <span v-if="builtShape.orchestrators >= STEP_ORCHESTRATORS_MAX && builtShape.solo.length" class="text-error">With two orchestrators nothing runs as its own agent: put {{ builtShape.solo.join(', ') }} in a group, or in a step of {{ builtShape.solo.length === 1 ? 'its' : 'their' }} own.</span>
+              </p>
             </div>
             <p class="text-xs text-muted">{{ summary }}</p>
           </div>
@@ -755,17 +802,19 @@ async function resumeRun() {
           <div v-else class="flex flex-col gap-3">
             <div class="rounded-md border border-default px-3 py-2 text-sm">
               <p class="font-medium">{{ summary }}</p>
+              <p class="mt-0.5 text-xs text-muted">{{ builtShapeLabel }} · {{ builtShape.sessions }} session{{ builtShape.sessions === 1 ? '' : 's' }} at once</p>
               <div class="mt-2 grid gap-2" :class="groups.length ? 'sm:grid-cols-2' : ''">
                 <div v-if="solos.length" class="rounded bg-elevated/40 px-2 py-1.5">
-                  <div class="mb-0.5 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-user-round" class="size-3.5" /> Own agent each</div>
-                  <div v-for="k in solos" :key="k" class="flex gap-1 text-xs">
+                  <div class="mb-0.5 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-user-round" class="size-3.5" /> Own agent each<span v-if="builtShape.queued.length"> · {{ builtShape.soloSlots }} at once, in this order</span></div>
+                  <div v-for="(k, n) in solos" :key="k" class="flex gap-1 text-xs" :class="n >= builtShape.soloSlots && 'opacity-75'">
+                    <span class="w-3 shrink-0 text-right tabular-nums" :class="n >= builtShape.soloSlots ? 'text-amber-600' : 'text-dimmed'">{{ n + 1 }}</span>
                     <span class="font-mono text-muted">{{ k }}</span>
                     <span class="min-w-0 flex-1 truncate">{{ byKey.get(k)?.title }}</span>
                     <span class="shrink-0 text-muted">{{ runnerLabel(soloOf(k)) }}</span>
                   </div>
                 </div>
                 <div v-for="(g, gi) in groups" :key="gi" class="rounded bg-elevated/40 px-2 py-1.5">
-                  <div class="mb-0.5 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-bot" class="size-3.5 text-primary" /> Orchestrator {{ gi + 1 }} · {{ runnerLabel(groupRunnerFor(gi)) }} subagents</div>
+                  <div class="mb-0.5 flex items-center gap-1 text-xs text-muted"><UIcon name="i-lucide-bot" class="size-3.5 text-primary" /> Orchestrator {{ gi + 1 }} · {{ runnerLabel(groupRunnerFor(gi)) }} subagents · {{ budget }} in flight</div>
                   <div v-for="k in g" :key="k" class="text-xs"><span class="font-mono text-muted">{{ k }}</span> {{ byKey.get(k)?.title }}</div>
                 </div>
               </div>

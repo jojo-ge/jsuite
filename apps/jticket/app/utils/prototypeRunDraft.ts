@@ -8,7 +8,7 @@ import { isFinished, isHitl } from '~/composables/useTracker'
 import {
   DEFAULT_DISPATCH,
   PLAN_MODELS,
-  PLAN_ORCHESTRATORS_MAX,
+  STEP_ORCHESTRATORS_MAX,
   coerceRunPlan,
   dispatchSummary,
   newPlanStep,
@@ -106,7 +106,7 @@ export function useRunDraft(props: { project: Project; tickets: Ticket[]; allTic
   }
   function addGroup(step: PlanStep) {
     const groups = groupsOf(step)
-    if (groups.length < PLAN_ORCHESTRATORS_MAX) step.groups = [...groups, []]
+    if (groups.length < STEP_ORCHESTRATORS_MAX) step.groups = [...groups, []]
   }
   function removeGroup(step: PlanStep, gi: number) {
     const groups = groupsOf(step)

@@ -21,7 +21,9 @@ Two rules hold for the whole run:
   one message so your turn waits on them. The loop reads a stopped session
   as stalled: it prompts you once, then replaces you.
 - **The budget is the server's.** A ticket runs only once you claim it, and a
-  claim past the budget is refused. Your plan fits under it.
+  claim past the budget is refused. Your plan fits under it. In a run plan
+  the budget is at most 2 — a step runs at most 4 sessions at once, and an
+  orchestrator counts as one of them whatever it has in flight.
 
 ```bash
 P=PROJ-2   # the project key you were invoked with

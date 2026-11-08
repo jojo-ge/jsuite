@@ -48,22 +48,22 @@ describe('layoutRunPlan — a horizontal pipeline', () => {
     const step = s('s1', 'implement', {
       tickets: ['T-1', 'T-2', 'T-3', 'T-4', 'T-5'],
       dispatch: { ...run, model: 'opus', effort: 'high' },
-      groups: [['T-3', 'T-4'], ['T-5']],
-      groupRunners: [{ model: 'sonnet', effort: 'low' }, null],
+      groups: [['T-3', 'T-4', 'T-5']],
+      groupRunners: [{ model: 'sonnet', effort: 'low' }],
       runners: { 'T-2': { model: 'haiku', effort: 'low' } },
     })
     const l = layoutRunPlan(plan(step), info(['T-1', 'T-2', 'T-3', 'T-4', 'T-5'], { 'T-4': { hitl: true } }), run)
     const node = l.nodes[0]!
-    expect(l.boxes.map((b) => [b.group, b.label, b.tickets])).toEqual([
-      [0, 'Orchestrator 1 · Sonnet 5.5 low', ['T-3', 'T-4']],
-      [1, 'Orchestrator 2 · Opus 5.5 high', ['T-5']],
-      [null, 'Own agents', ['T-1', 'T-2']],
+    expect(l.boxes.map((b) => [b.group, b.label, b.tickets, b.queueY])).toEqual([
+      [0, 'Orchestrator 1 · Sonnet 5.5 low', ['T-3', 'T-4', 'T-5'], null],
+      [null, 'Own agents', ['T-1', 'T-2'], null],
     ])
-    expect(l.tickets.find((t) => t.key === 'T-1')).toMatchObject({ group: null, runner: 'Opus 5.5 high' })
-    expect(l.tickets.find((t) => t.key === 'T-2')).toMatchObject({ group: null, runner: 'Haiku 5.5 low' })
-    expect(l.tickets.find((t) => t.key === 'T-3')).toMatchObject({ group: 0, runner: 'Sonnet 5.5 low' })
+    expect(l.tickets.find((t) => t.key === 'T-1')).toMatchObject({ group: null, order: 1, queued: false, runner: 'Opus 5.5 high' })
+    expect(l.tickets.find((t) => t.key === 'T-2')).toMatchObject({ group: null, order: 2, queued: false, runner: 'Haiku 5.5 low' })
+    expect(l.tickets.find((t) => t.key === 'T-3')).toMatchObject({ group: 0, order: null, queued: false, runner: 'Sonnet 5.5 low' })
     expect(l.tickets.find((t) => t.key === 'T-4')).toMatchObject({ group: 0, hitl: true })
-    expect(l.tickets.find((t) => t.key === 'T-5')).toMatchObject({ group: 1, runner: 'Opus 5.5 high' })
+    expect(l.tickets.find((t) => t.key === 'T-5')).toMatchObject({ group: 0, runner: 'Sonnet 5.5 low' })
+    expect(node.summary).toBe('2 own agents · 1 orchestrator')
     // Boxes sit under the node, stacked without overlap, inside the column; every card inside its box.
     let last = node.y + node.h
     for (const b of l.boxes) {
@@ -82,6 +82,29 @@ describe('layoutRunPlan — a horizontal pipeline', () => {
     // A plan with no tickets stays as tall as the spine needs.
     const bare = layoutRunPlan(plan(s('s1', 'merge')), {}, run)
     expect(bare.height).toBe(bare.spineY + GRAPH.nodeH / 2 + GRAPH.pad)
+  })
+
+  it('own agents past the step\'s free sessions are queued, in the step\'s order, with the queue line between', () => {
+    const six = ['T-1', 'T-2', 'T-3', 'T-4', 'T-5', 'T-6']
+    // Own agents only: 4 at once, two queued.
+    const solo = layoutRunPlan(plan(s('s1', 'implement', { tickets: six })), info(six), run)
+    expect(solo.tickets.map((t) => [t.order, t.queued])).toEqual([[1, false], [2, false], [3, false], [4, false], [5, true], [6, true]])
+    const box = solo.boxes[0]!
+    expect(box.label).toBe('Own agents · 4 at once, 2 queued')
+    // The line sits between the 4th and the 5th card.
+    const fourth = solo.tickets[3]!
+    const fifth = solo.tickets[4]!
+    expect(box.queueY).toBeGreaterThan(fourth.y + fourth.h)
+    expect(box.queueY).toBeLessThan(fifth.y)
+    expect(solo.nodes[0]!.summary).toBe('6 own agents (4 at once)')
+    // Beside an orchestrator: 3 at once.
+    const mixed = layoutRunPlan(plan(s('s1', 'implement', { tickets: six, groups: [['T-6']] })), info(six), run)
+    expect(mixed.tickets.filter((t) => t.group === null).map((t) => [t.key, t.queued])).toEqual([['T-1', false], ['T-2', false], ['T-3', false], ['T-4', true], ['T-5', true]])
+    expect(mixed.boxes.find((b) => b.group === null)!.label).toBe('Own agents · 3 at once, 2 queued')
+    // Two orchestrators: nothing runs as its own agent — the box says so (planProblems refuses the plan).
+    const two = layoutRunPlan(plan(s('s1', 'implement', { tickets: six, groups: [['T-1'], ['T-2']] })), info(six), run)
+    expect(two.boxes.find((b) => b.group === null)!.label).toBe('Own agents · none beside 2 orchestrators')
+    expect(two.tickets.filter((t) => t.group === null).every((t) => t.queued)).toBe(true)
   })
 
   it('a ticket the project lacks is drawn as unknown', () => {
