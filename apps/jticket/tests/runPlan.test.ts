@@ -93,13 +93,22 @@ describe('planProblems — strict order', () => {
     expect(planProblems(p, [pt('T-1', { status: 'merged' }), pt('T-2', { blockedBy: ['T-1'] })])).toEqual([])
   })
 
-  it('refuses a ticket placed twice, an unknown or finished ticket, and an empty implement step', () => {
-    const p = plan(s('s1', 'implement', { tickets: ['T-1', 'T-9'] }), s('s2', 'merge'), s('s3', 'implement', { tickets: ['T-1', 'T-3'] }), s('s4', 'implement'))
-    const msgs = planProblems(p, [pt('T-1'), pt('T-3', { status: 'done' })]).map((x) => x.message)
+  it('refuses a ticket placed twice, an unknown ticket, and an empty implement step — a finished one may stay', () => {
+    const p = plan(s('s1', 'implement', { tickets: ['T-1', 'T-9'] }), s('s2', 'merge'), s('s3', 'implement', { tickets: ['T-1', 'T-3', 'T-4'] }), s('s4', 'implement'))
+    const msgs = planProblems(p, [pt('T-1'), pt('T-3', { status: 'merged' }), pt('T-4', { status: 'done' })]).map((x) => x.message)
     expect(msgs.some((m) => m.includes('T-1 is already in step 1'))).toBe(true)
     expect(msgs.some((m) => m.includes('T-9 is not one'))).toBe(true)
-    expect(msgs.some((m) => m.includes('T-3 is already done'))).toBe(true)
+    expect(msgs.some((m) => m.includes('T-3'))).toBe(false)
+    expect(msgs.some((m) => m.includes('T-4'))).toBe(false)
     expect(msgs.some((m) => m.includes('no tickets'))).toBe(true)
+  })
+
+  it('a plan that already ran part-way passes as it is — its finished tickets are skipped, not refused', () => {
+    // Steps 1–2 ran and merged; T-3 (blocked by T-1) is still to do.
+    const p = plan(s('s1', 'implement', { tickets: ['T-1', 'T-2'] }), s('s2', 'merge'), s('s3', 'implement', { tickets: ['T-3'] }))
+    const tickets = [pt('T-1', { status: 'merged' }), pt('T-2', { status: 'merged' }), pt('T-3', { blockedBy: ['T-1'] })]
+    expect(planProblems(p, tickets)).toEqual([])
+    expect(planProblems(p, tickets, { frozen: 2 })).toEqual([])
   })
 
   it('refuses a review based on a step that is not before it; allows the plan start', () => {

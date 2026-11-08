@@ -16,9 +16,16 @@ import {
   type AutoWorld,
   type AutoWorldTicket,
   type HerdrPaneSeen,
+  type PlanStepRecord,
+  finishPlan,
+  planResumePoint,
+  resumePlanRun,
+  withPlanHistory,
   splitShares,
   inFlightOf,
   slotTickets,} from '../app/utils/autoLoop'
+
+import { newPlanStep, type PlanStep, type PlanStepKind, type RunPlan } from '../app/utils/runPlan'
 
 const AT = '2026-09-24T00:00:00.000Z'
 
@@ -584,5 +591,70 @@ describe('panesToClean', () => {
     const history = [{ loop: 1, tickets: [], fixTickets: [], reviewKey: 'r-1', startedAt: AT, endedAt: AT }]
     expect([...finishedReviews(loop({ phase: 'reviewing', reviewKey: 'r-2', history }))]).toEqual(['r-1'])
     expect([...finishedReviews(loop({ phase: 'fixing', reviewKey: 'r-2', history }))]).toEqual(['r-1', 'r-2'])
+  })
+})
+
+describe('run plan — continuing a stopped run', () => {
+  const step = (id: string, kind: PlanStepKind, tickets: string[] = []): PlanStep => newPlanStep({ steps: [] }, kind, { id, tickets })
+  const plan = (...steps: PlanStep[]): RunPlan => ({ steps })
+  const THREE = plan(step('s1', 'implement', ['T-1']), step('s2', 'merge'), step('s3', 'implement', ['T-2']), step('s4', 'review'))
+  const record = (stepId: string, kind: PlanStepKind, tickets: string[] = []): PlanStepRecord => ({ stepId, kind, tickets, fixTickets: [], prs: [], reviewKey: null, skipped: '', startedAt: AT, endedAt: AT })
+  // Stopped while step 3 was implementing: steps 1–2 finished, checkpoints recorded.
+  const midRun = (): AutoLoop =>
+    loop({
+      plan: THREE,
+      cursor: 2,
+      phase: 'implementing',
+      tickets: ['T-2'],
+      planLog: [record('s1', 'implement', ['T-1']), record('s2', 'merge')],
+      checkpoints: { start: 'sha-0', s1: 'sha-1', s2: 'sha-2' },
+      lastSliceDoc: 'DOC-9',
+    })
+
+  it('stopping leaves where it got to — the step it was in, the finished steps and the checkpoints', () => {
+    const stopped = withPlanHistory(midRun(), AT)
+    expect(stopped.resume).toMatchObject({ cursor: 2, checkpoints: { start: 'sha-0', s1: 'sha-1', s2: 'sha-2' }, lastSliceDoc: 'DOC-9', stoppedAt: AT })
+    expect(stopped.resume!.planLog.map((r) => r.stepId)).toEqual(['s1', 's2'])
+    expect(stopped.resume!.plan).toEqual(THREE)
+    // The history record still counts the abandoned step as far as it got.
+    expect(stopped.history.at(-1)!.plan!.map((r) => r.stepId)).toEqual(['s1', 's2', 's3'])
+  })
+
+  it('a run that never entered a step, or ran to the end, leaves nothing to continue', () => {
+    expect(planResumePoint(loop({ plan: THREE, cursor: 0 }), AT)).toBeNull()
+    expect(planResumePoint(loop({ plan: THREE, cursor: 4, checkpoints: { start: 'sha-0' } }), AT)).toBeNull()
+    expect(finishPlan(midRun(), AT, false).resume).toBeNull()
+  })
+
+  it('the resume point outlives a plain loop in between, and survives the disk', () => {
+    const stopped = withPlanHistory(midRun(), AT)
+    expect(newAutoLoop(AT, stopped).resume).toEqual(stopped.resume)
+    expect(coerceAutoLoop(JSON.parse(JSON.stringify(stopped)))!.resume).toEqual(stopped.resume)
+  })
+
+  it('an unedited plan continues at the step it stopped in, with the finished steps done', () => {
+    const resume = withPlanHistory(midRun(), AT).resume!
+    const start = resumePlanRun(resume, THREE)
+    expect(start.cursor).toBe(2)
+    expect(start.planLog.map((r) => r.stepId)).toEqual(['s1', 's2'])
+    expect(start.checkpoints).toEqual({ start: 'sha-0', s1: 'sha-1', s2: 'sha-2' })
+    expect(start.lastSliceDoc).toBe('DOC-9')
+  })
+
+  it('an edited plan is matched by step id — finished steps stay finished wherever they sit', () => {
+    const resume = withPlanHistory(midRun(), AT).resume!
+    // The merge step was taken out: the run continues at what is now step 2.
+    const shorter = plan(step('s1', 'implement', ['T-1']), step('s3', 'implement', ['T-2']), step('s4', 'review'))
+    expect(resumePlanRun(resume, shorter)).toMatchObject({ cursor: 1 })
+    expect(resumePlanRun(resume, shorter).planLog.map((r) => r.stepId)).toEqual(['s1'])
+    // A new step slotted in before the stopped one runs first; the finished steps before it stay done.
+    const inserted = plan(step('s1', 'implement', ['T-1']), step('s2', 'merge'), step('s5', 'gate'), step('s3', 'implement', ['T-2']))
+    expect(resumePlanRun(resume, inserted).cursor).toBe(2)
+    // A finished step edited since (a ticket added) is new work: the run continues from it.
+    const edited = plan(step('s1', 'implement', ['T-1', 'T-9']), step('s2', 'merge'), step('s3', 'implement', ['T-2']))
+    expect(resumePlanRun(resume, edited)).toMatchObject({ cursor: 0, planLog: [] })
+    // Every step the stopped run finished was removed: it starts over, but keeps the plan's start checkpoint.
+    const fresh = plan(step('s9', 'implement', ['T-3']))
+    expect(resumePlanRun(resume, fresh)).toMatchObject({ cursor: 0, planLog: [], checkpoints: { start: 'sha-0', s1: 'sha-1', s2: 'sha-2' } })
   })
 })

@@ -12,11 +12,14 @@
 // sessions read, their reviews, the fixes they filed.
 // Every edit saves straight away (PUT …/run-plan); a half-built draft is
 // fine, and the problems that would stop it running show on the cards.
-// Started, the plan is locked whole — Unlock & stop ends the run. The Build
+// Started, the plan is locked whole — Unlock & stop ends the run. A run that
+// ended early leaves where it got to (auto.resume): Continue plan picks the
+// plan up at that step, its finished steps shown done, and only the steps
+// from there on are checked — Start from the top is the other button. The Build
 // button hands the whole job to one Fable 5.1 session (`/jrunplan`): while
 // it works (project.runPlanBuild) the tab is read-only too.
 import type { Project, Ticket } from '~/composables/useTracker'
-import type { PlanStepRecord } from '~/utils/autoLoop'
+import { resumePlanRun, type PlanStepRecord } from '~/utils/autoLoop'
 import type { GraphTicketInfo } from '~/utils/runPlanGraph'
 import {
   ARCH_DEFAULT,
@@ -49,7 +52,7 @@ import {
 } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[]; allTickets: Ticket[] }>()
-const { busy, startPlan, turnOff } = useAutoLoop()
+const { busy, startPlan, resumePlan, turnOff } = useAutoLoop()
 const { refresh } = useTracker()
 const { openEditTicket } = useTrackerModals()
 const toast = useToast()
@@ -100,16 +103,32 @@ const loopRunning = computed(() => !!auto.value?.enabled && !auto.value.plan)
 const building = computed(() => !!props.project.runPlanBuild)
 // The plan can be edited: not running (locked whole), not being built.
 const editable = computed(() => !planRunning.value && !building.value)
-// Steps the running plan has started (finished, skipped, or in progress) are locked.
+// A stopped run, and where the draft would pick it up (matched by step id, so
+// edits since the stop are allowed for — utils/autoLoop.ts resumePlanRun).
+const resume = computed(() => (!auto.value?.enabled && auto.value?.resume) || null)
+const resumeStart = computed(() => (resume.value ? resumePlanRun(resume.value, draft.value) : null))
+// Continue has something to do: a stopped run, and a step left after where it got to.
+const canResume = computed(() => !!resumeStart.value && resumeStart.value.cursor < draft.value.steps.length)
+// Steps the running plan has started (finished, skipped, or in progress) are
+// locked. Stopped, the steps the run finished aren't locked — but they're not
+// re-checked either: Continue skips them, and their tickets have moved on.
 const frozen = computed(() => {
   const a = auto.value
-  if (!planRunning.value || !a) return 0
-  return a.cursor + (a.phase === 'idle' ? 0 : 1)
+  if (planRunning.value && a) return a.cursor + (a.phase === 'idle' ? 0 : 1)
+  if (canResume.value) return resumeStart.value!.cursor
+  return 0
 })
-const locked = (i: number) => !editable.value || i < frozen.value
-const recordOf = (i: number): PlanStepRecord | undefined => (planRunning.value ? auto.value?.planLog[i] : undefined)
+const locked = (i: number) => !editable.value || (planRunning.value && i < frozen.value)
+const recordOf = (i: number): PlanStepRecord | undefined => (planRunning.value ? auto.value?.planLog[i] : canResume.value ? resumeStart.value!.planLog[i] : undefined)
 function stepState(i: number): { label: string; color: 'success' | 'info' | 'neutral' | 'warning' } | null {
   const a = auto.value
+  if (canResume.value) {
+    const { cursor } = resumeStart.value!
+    const record = recordOf(i)
+    if (i < cursor) return record?.skipped ? { label: `skipped — ${record.skipped}`, color: 'neutral' } : { label: 'done', color: 'success' }
+    if (i === cursor) return { label: 'continues here', color: 'warning' }
+    return null
+  }
   if (!planRunning.value || !a) return null
   const record = a.planLog[i]
   if (i < a.cursor) return record?.skipped ? { label: `skipped — ${record.skipped}`, color: 'neutral' } : { label: 'done', color: 'success' }
@@ -435,7 +454,8 @@ async function cancelBuild() {
 // turns off now; sessions already in herdr carry on) — the strip's "Stop
 // after this step" is the gentler way out.
 async function unlockAndStop() {
-  if (!window.confirm(`Unlock ${props.project.key}'s plan? That stops the run now — step ${(auto.value?.cursor ?? 0) + 1} is abandoned (sessions already running in herdr carry on). To finish the step first, use "Stop after this step" on the strip above.`)) return
+  const n = (auto.value?.cursor ?? 0) + 1
+  if (!window.confirm(`Unlock ${props.project.key}'s plan? That stops the run now — step ${n} is abandoned (sessions already running in herdr carry on), and Continue plan picks it up again from step ${n}. To finish the step first, use "Stop after this step" on the strip above.`)) return
   await turnOff(props.project).catch(() => {})
 }
 const canNext = computed(() => (wizard.value === 0 ? picked.value.length > 0 : true))
@@ -446,20 +466,33 @@ const title = computed(() => {
 })
 
 // ── Starting ───────────────────────────────────────────────────────────────
+// With a stopped run to continue, Continue plan is the main button and
+// `problems` covers only the steps from there on; Start from the top is
+// checked whole by the server (its 409 comes back as a toast).
 const startBlocker = computed(() => {
   const p = props.project
   if (!p.repo) return 'This project has no repo — set one first.'
   if (!p.integrationBranch) return 'Cut an integration branch first (the Branch button) — merges land on it.'
   if (loopRunning.value) return 'The jButton loop is running — turn it off to run a plan instead.'
-  if (!draft.value.steps.some((s) => s.kind === 'implement')) return 'Add an implement step — nothing would run.'
+  if (!canResume.value && !draft.value.steps.some((s) => s.kind === 'implement')) return 'Add an implement step — nothing would run.'
   if (problems.value.length) return 'Fix the problems on the cards first.'
   return ''
 })
+const resumeLabel = computed(() => (canResume.value ? `Continue plan · step ${resumeStart.value!.cursor + 1}` : 'Continue plan'))
+const stoppedAgo = computed(() => (resume.value?.stoppedAt ? new Date(resume.value.stoppedAt).toLocaleString() : ''))
 async function start() {
   if (startBlocker.value) return
   const n = draft.value.steps.length
-  if (!window.confirm(`Run ${props.project.key}'s plan — ${n} step${n === 1 ? '' : 's'}, top to bottom? Hand dispatch of AFK tickets is off while it runs.`)) return
+  const again = canResume.value ? ` The stopped run is forgotten: steps it already finished run again (finished tickets are skipped, reviews are not).` : ''
+  if (!window.confirm(`Run ${props.project.key}'s plan — ${n} step${n === 1 ? '' : 's'}, top to bottom? Hand dispatch of AFK tickets is off while it runs.${again}`)) return
   await startPlan(props.project).catch(() => {})
+}
+async function resumeRun() {
+  if (startBlocker.value || !canResume.value) return
+  const { cursor } = resumeStart.value!
+  const left = draft.value.steps.length - cursor
+  if (!window.confirm(`Continue ${props.project.key}'s plan from step ${cursor + 1} — ${left} step${left === 1 ? '' : 's'} left? The steps before it stay done; its checkpoints carry over. Hand dispatch of AFK tickets is off while it runs.`)) return
+  await resumePlan(props.project).catch(() => {})
 }
 </script>
 
@@ -476,6 +509,7 @@ async function start() {
         <button type="button" role="tab" class="flex items-center gap-1 px-2 py-1" :class="view === 'graph' ? 'bg-primary text-inverted' : 'text-muted hover:bg-elevated'" :aria-selected="view === 'graph'" @click="view = 'graph'"><UIcon name="i-lucide-git-fork" class="size-3.5" /> Graph</button>
       </div>
       <UBadge v-if="planRunning" color="success" variant="subtle" size="sm" icon="i-lucide-lock">running · step {{ (auto?.cursor ?? 0) + 1 }} of {{ draft.steps.length }} · locked</UBadge>
+      <UBadge v-else-if="canResume" color="warning" variant="subtle" size="sm" icon="i-lucide-octagon-pause">stopped · continues at step {{ resumeStart!.cursor + 1 }} of {{ draft.steps.length }}</UBadge>
       <UBadge v-else-if="building" color="primary" variant="subtle" size="sm" icon="i-lucide-loader-circle" :ui="{ leadingIcon: 'animate-spin' }">Fable 5.1 is building the plan · read-only</UBadge>
       <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
         <!-- running: the one way to edit is to stop -->
@@ -495,7 +529,15 @@ async function start() {
           <UTooltip :text="buildBlocker || 'One Fable 5.1 session (high effort) reads the project, its docs, every open ticket and the code, and writes the plan — who runs what, on which model and effort, with merges, reviews and gates where they belong'">
             <UButton icon="i-lucide-wand-sparkles" color="primary" variant="soft" size="sm" :loading="buildBusy === 'build'" :disabled="!!buildBlocker || !!busy" @click="buildWithAgent">Build with Fable</UButton>
           </UTooltip>
-          <UTooltip :text="startBlocker || 'Start the plan — the jButton turns on and walks it; the plan locks until the run ends'">
+          <template v-if="canResume">
+            <UTooltip :text="startBlocker || `Start the plan again from step 1 — the run stopped ${stoppedAgo} is forgotten`">
+              <UButton icon="i-lucide-rotate-ccw" color="neutral" variant="soft" size="sm" :loading="busy === 'plan'" :disabled="!!startBlocker || !!busy || !!buildBusy" @click="start">Start from the top</UButton>
+            </UTooltip>
+            <UTooltip :text="startBlocker || `Pick the plan up where the run stopped ${stoppedAgo}: steps ${resumeStart!.cursor} and before stay done, step ${resumeStart!.cursor + 1} runs next; the plan locks until the run ends`">
+              <UButton icon="i-lucide-step-forward" color="success" size="sm" :loading="busy === 'resume'" :disabled="!!startBlocker || !!busy || !!buildBusy" @click="resumeRun">{{ resumeLabel }}</UButton>
+            </UTooltip>
+          </template>
+          <UTooltip v-else :text="startBlocker || 'Start the plan — the jButton turns on and walks it; the plan locks until the run ends'">
             <UButton icon="i-lucide-play" color="success" size="sm" :loading="busy === 'plan'" :disabled="!!startBlocker || !!busy || !!buildBusy" @click="start">Start plan</UButton>
           </UTooltip>
         </template>

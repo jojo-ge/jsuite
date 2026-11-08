@@ -41,6 +41,8 @@ export function useAutoLoop() {
     // Walk the project's Run setup plan step by step instead of looping.
     startPlan: (p: Project, orchestration?: AutoOrchestration) =>
       post(p, { enabled: true, plan: true, ...(orchestration ? { orchestration } : {}) }, 'plan'),
+    // Pick the plan up where the last run stopped (project.auto.resume).
+    resumePlan: (p: Project) => post(p, { enabled: true, plan: true, resume: true }, 'resume'),
     // Run plan: pass the gate step in progress.
     continueGate: (p: Project) => post(p, { continue: true }, 'continue'),
     turnOff: (p: Project) => post(p, { enabled: false }, 'off'),

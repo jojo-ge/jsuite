@@ -117,7 +117,16 @@ plan?, continue?}`:
   `tickets: [keys]` limits that loop to those keys (**Loop selected**); 409
   unless at least one is an AFK frontier ticket (HITL is never dispatched).
 - `plan: true` — walk `project.runPlan` instead of looping (**Start plan**);
-  409 with no plan, with `problems`, or with no implement step.
+  409 with no plan, with `problems`, or with no implement step. A finished
+  ticket (done/merged) in a step is not a problem — the engine skips it.
+- `plan: true, resume: true` — **Continue plan**: pick the plan up where the
+  last run stopped (`project.auto.resume`: the plan it walked, `cursor`,
+  `planLog`, `checkpoints`, `lastSliceDoc`; left by Unlock & stop / Stop after
+  this step, cleared when a plan runs to its end). The saved plan's steps are
+  matched to the stopped run's by id and content (`resumePlanRun`): the leading
+  run of unchanged finished steps stay done, the run continues at the next;
+  only the steps from there on are validated (`frozen`). 409 with nothing to
+  continue, or when every step already ran.
 - `continue: true` — pass the gate step in progress (409 when auto is off).
 - `enabled: false` — stop; "Stop at the end of next loop" sets `stopRequested`.
 
@@ -198,7 +207,9 @@ cancels) dispatches one Fable 5.1 high `/jrunplan` session (prompt kind
 `runplan:build`) that reads the project, docs, open tickets and code, weighs
 each ticket, chooses who runs what on which model/effort, places
 merges/reviews/gates sparingly (always a review at the end; HITL tickets in
-their own step + gate, or left out), PUTs the plan until `problems` is `[]`,
+their own step + gate, or left out), keeps every implement step to one
+orchestrator at a time and at most 2 tickets in flight (one group with budget
+≤ 2, or ≤ 2 solo tickets), PUTs the plan until `problems` is `[]`,
 and reports back via `POST …/run-plan/built`. `project.runPlanBuild` marks it
 in progress; the tab is read-only meanwhile.
 

@@ -59,16 +59,25 @@ changes a contract others build on, whether tests exist around it.
 
 Orchestrators pay off on **several related small or medium tickets**: one
 Fable 5.1 session shares worktree slots, runs them through subagents and
-spec-checks each. A heavy ticket alone gains nothing from one. Inside one
-step, a group of light tickets may run cheap beside a group of medium ones —
-each group carries its own model and effort (`groupRunners`).
+spec-checks each. A heavy ticket alone gains nothing from one. A group of
+light tickets runs cheap in its own step and a group of medium ones in the
+next — each group carries its own model and effort (`groupRunners`). Keep one
+orchestrator's share to roughly eight tickets at most; a longer list is split
+over consecutive steps.
 
 ## 3. Shape the steps
 
 - **Implement steps** hold tickets that can run side by side: disjoint areas,
-  no open blocker among them. Up to 4 orchestrator groups per step, each with
-  1–4 in flight (`budget`); group by area so one orchestrator's subagents
-  don't collide.
+  no open blocker among them.
+- **Concurrency cap: one orchestrator at a time, at most 2 tickets in
+  flight.** Too many sessions at once slow every one of them down. Every
+  implement step is EITHER one orchestrator group (`budget` 1 or 2, no solo
+  ticket beside it) OR at most 2 solo tickets (no group). Never two groups in
+  a step, never a group beside a solo. Work that would have run as several
+  groups side by side becomes consecutive implement steps instead (no merge
+  is needed between them unless a blocker says so); a group with its own
+  runner is its own step. The engine would accept up to 4 groups × 4 in
+  flight — don't.
 - **Blockers**: a ticket's open blocker must sit in an **earlier** implement
   step with a **merge** step between them — the validator refuses anything
   else. Layer the blocker graph: everything unblocked first, then what it
@@ -99,16 +108,21 @@ and `kind`; the rest by kind:
 
 ```jsonc
 { "id": "s1", "kind": "implement",
-  "tickets": ["TICK-7", "TICK-8", "TICK-9", "TICK-12"],
+  "tickets": ["TICK-7", "TICK-8", "TICK-9"],
   "dispatch": { "mode": "orchestrated", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
-  "groups": [["TICK-7", "TICK-8"], ["TICK-9"]],            // orchestrator groups; a ticket in none runs as its own agent
-  "groupRunners": [{ "model": "sonnet", "effort": "low" }, null],   // per group; null = the step's dispatch
-  "runners": { "TICK-12": { "model": "opus", "effort": "high" } }   // a solo ticket's own model/effort
+  "groups": [["TICK-7", "TICK-8", "TICK-9"]],              // ONE orchestrator group holding every ticket of the step; budget ≤ 2
+  "groupRunners": [{ "model": "sonnet", "effort": "low" }]  // per group; null = the step's dispatch
 }
-{ "id": "s2", "kind": "merge" }
-{ "id": "s3", "kind": "review", "reviewers": 2, "base": "",       // "" = since the previous review or plan start; "start"; or an earlier step id
+{ "id": "s2", "kind": "implement",
+  "tickets": ["TICK-12", "TICK-13"],                         // solo tickets: at most 2 in a step, and no group beside them
+  "dispatch": { "mode": "sessions", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
+  "groups": [],
+  "runners": { "TICK-12": { "model": "fable", "effort": "high" } }   // a solo ticket's own model/effort
+}
+{ "id": "s3", "kind": "merge" }
+{ "id": "s4", "kind": "review", "reviewers": 2, "base": "",       // "" = since the previous review or plan start; "start"; or an earlier step id
   "review": { "model": "opus", "effort": "medium", "arch": null } } // arch: null, or { "model", "effort" } for the architectural pass first
-{ "id": "s4", "kind": "gate", "note": "check the migration on staging" }
+{ "id": "s5", "kind": "gate", "note": "check the migration on staging" }
 ```
 
 Models: `opus`, `sonnet`, `haiku`, `fable`. Efforts: `low`, `medium`,
@@ -121,8 +135,12 @@ jt put /api/projects/$P/run-plan @plan.json | jq '.problems'
 ```
 
 The answer's `problems` are what would stop the plan running (a blocker in
-the wrong step, a missing merge, a finished ticket). Fix and PUT again until
-it is `[]`. The draft saves each time, so the human sees the board fill.
+the wrong step, a missing merge, a ticket from another project). The
+concurrency cap in §3 is yours to keep — the validator does not check it. Fix
+and PUT again until it is `[]`. The draft saves each time, so the human sees
+the board fill. A finished ticket (`done` with its PR open, or `merged`) may
+stay in a step: the engine skips it, and a done one's PR is swept by the next
+merge — so don't rebuild a plan just because part of it already ran.
 
 ## 5. Report back — last
 
@@ -131,5 +149,6 @@ jt post /api/projects/$P/run-plan/built '{"summary": "<one line: N steps, how th
 ```
 
 This unlocks the tab. Then reply with a few lines — the steps in order, each
-with who runs what and why that weight — and stop. Don't start the plan;
+with who runs what and why that weight, and a note that every step keeps to
+one orchestrator / 2 in flight — and stop. Don't start the plan;
 that's the human's button.

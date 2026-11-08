@@ -18,6 +18,12 @@
 //     plan          — with enabled: true, walk the project's Run setup plan
 //                     (project.runPlan) step by step instead of looping; 409
 //                     with the problems when it can't run as built
+//     resume        — with plan: true, pick the plan up where the last run
+//                     stopped (project.auto.resume — Continue plan) instead of
+//                     at step 1: the steps that run finished stay finished,
+//                     its checkpoints and slice report carry over, and only
+//                     the steps from there on are validated (409 with the
+//                     problems). 409 when there is nothing to continue
 //   enabled: false  — off now; sessions already running in herdr carry on
 //   stopRequested   — true = finish the loop in progress, then turn off;
 //                     false = keep going after all
@@ -26,7 +32,7 @@
 //
 // Returns the project's loop state. The loop itself is advanced by
 // server/plugins/autoLoop.ts; enabling nudges the first tick straight away.
-import { coerceOrchestration } from '../../../../app/utils/autoLoop'
+import { coerceOrchestration, resumePlanRun, type PlanResumeStart } from '../../../../app/utils/autoLoop'
 import { PLAN_STEP_LABELS } from '../../../../app/utils/runPlan'
 
 export default defineEventHandler(async (event) => {
@@ -40,6 +46,7 @@ export default defineEventHandler(async (event) => {
       tickets?: unknown
       orchestration?: unknown
       plan?: unknown
+      resume?: unknown
       continue?: unknown
     }>(event)) ?? {}
   const store = loadStore()
@@ -58,13 +65,25 @@ export default defineEventHandler(async (event) => {
     if (project.runPlanBuild) throw createError({ statusCode: 409, statusMessage: `Fable 5.1 is still building ${project.key}'s run plan — wait for it, or cancel the build in Run setup` })
   }
 
-  // A run plan: the Run setup tab's, runnable as built.
+  // A run plan: the Run setup tab's, runnable as built — from the top, or
+  // (resume) from where the last run stopped. Continuing re-checks only the
+  // steps still to run: the finished ones' tickets have moved on since, and
+  // that is exactly what used to stop a stopped plan from starting again.
   const plan = enabling && body.plan === true ? project.runPlan : undefined
+  let resumeAt: PlanResumeStart | undefined
   if (enabling && body.plan === true) {
     if (!plan?.steps.length) throw createError({ statusCode: 409, statusMessage: `${project.key} has no run plan — build one in the Run setup tab first` })
-    const problems = runPlanProblems(store, project, plan)
+    if (body.resume === true) {
+      const resume = project.auto?.resume
+      if (!resume) throw createError({ statusCode: 409, statusMessage: `${project.key}'s plan has nothing to continue — Start plan runs it from the top` })
+      resumeAt = resumePlanRun(resume, plan)
+      if (resumeAt.cursor >= plan.steps.length) {
+        throw createError({ statusCode: 409, statusMessage: `every step of ${project.key}'s plan already ran — Start plan runs it again from the top` })
+      }
+    }
+    const problems = runPlanProblems(store, project, plan, resumeAt?.cursor ?? 0)
     if (problems.length) throw createError({ statusCode: 409, statusMessage: problems.map((p) => p.message).join(' '), data: { problems } })
-    if (!plan.steps.some((s) => s.kind === 'implement')) {
+    if (!resumeAt && !plan.steps.some((s) => s.kind === 'implement')) {
       throw createError({ statusCode: 409, statusMessage: `the plan has no ${PLAN_STEP_LABELS.implement} step — nothing would run` })
     }
   }
@@ -97,6 +116,7 @@ export default defineEventHandler(async (event) => {
     only,
     orchestration: enabling ? (coerceOrchestration(body.orchestration) ?? undefined) : undefined,
     plan: plan ?? undefined,
+    resumeAt,
     continueGate: body.continue === true,
   })
   saveStore(store)

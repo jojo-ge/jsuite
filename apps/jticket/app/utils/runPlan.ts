@@ -384,8 +384,11 @@ const finished = (s: PlanTicket['status'] | undefined) => s === 'done' || s === 
  * implement step with a merge between them, so the ticket starts from code
  * that has its blockers in it. `tickets` is every ticket a blocker can name
  * (the project's and whatever outside it they wait on); a blocker missing
- * from it is treated as settled. `frozen` steps (already run, or running)
- * aren't re-checked — their tickets have moved on since.
+ * from it is treated as settled. A finished ticket (`done`, `merged`) may stay
+ * in a step: the engine skips it, so a plan that already ran part-way (or a
+ * stopped one) starts again as it is. `frozen` steps (already run, or
+ * running — or, continuing a stopped plan, the steps it finished) aren't
+ * re-checked at all.
  */
 export function planProblems(plan: RunPlan, tickets: PlanTicket[], opts: { frozen?: number } = {}): PlanProblem[] {
   const problems: PlanProblem[] = []
@@ -415,7 +418,10 @@ export function planProblems(plan: RunPlan, tickets: PlanTicket[], opts: { froze
           problems.push({ stepId: s.id, message: `${k} is not one of this project's tickets.` })
           continue
         }
-        if (finished(t.status)) problems.push({ stepId: s.id, message: `${k} is already ${t.status} — take it out.` })
+        // A finished ticket is no problem: it's skipped at implement time,
+        // and a done one's PR is swept by the next merge step (a plan built
+        // after a partial run, or a stopped one started from the top).
+        if (finished(t.status)) continue
         for (const b of t.blockedBy) {
           const blocker = byKey.get(b)
           if (!blocker || finished(blocker.status)) continue

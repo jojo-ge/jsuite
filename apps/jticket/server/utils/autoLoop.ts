@@ -48,6 +48,7 @@ import {
   type AutoOrchestration,
   type ClaimVerdict,
   type AutoPause,
+  type PlanResumeStart,
   type AutoStep,
   type AutoWorld,
   type HerdrPaneSeen,
@@ -1265,6 +1266,8 @@ export function setAutoMode(
     orchestration?: AutoOrchestration
     /** With enabled: true — walk this run plan instead of looping. */
     plan?: RunPlan
+    /** With plan — pick it up where the last run stopped (resumePlanRun) instead of at step 1. */
+    resumeAt?: PlanResumeStart
     /** Run plan: pass the gate in progress. */
     continueGate?: boolean
   },
@@ -1275,7 +1278,12 @@ export function setAutoMode(
     // A fresh start: whatever the last run left behind is history now. A
     // one-loop run carries `once` (and its picks) into the first loop.
     auto = { ...newAutoLoop(at, auto), enabled: true, ended: null, once: patch.once === true, only: patch.only ?? [] }
-    if (patch.plan) auto = { ...auto, once: false, only: [], plan: structuredClone(patch.plan), cursor: 0 }
+    // A plan run — from the top, or from where the stopped one got to. Either
+    // way the resume point is spent: this run leaves its own when it stops.
+    if (patch.plan) auto = { ...auto, once: false, only: [], plan: structuredClone(patch.plan), cursor: 0, resume: null }
+    if (patch.plan && patch.resumeAt) {
+      auto = { ...auto, cursor: patch.resumeAt.cursor, planLog: [...patch.resumeAt.planLog], checkpoints: { ...patch.resumeAt.checkpoints }, lastSliceDoc: patch.resumeAt.lastSliceDoc }
+    }
     // How this run dispatches — fixed while it runs, remembered for the next.
     if (patch.orchestration) auto.orchestration = coerceOrchestration(patch.orchestration) ?? auto.orchestration
   } else if (patch.enabled === false && auto.enabled) {

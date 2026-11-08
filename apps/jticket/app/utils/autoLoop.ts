@@ -74,7 +74,10 @@
 // moves to its next step, recording the integration tip as that step's
 // checkpoint (reviews name a checkpoint as their base). A step with nothing to
 // do is skipped. After the last step the plan is done: the outcome report runs
-// if no open ticket is left, and auto mode turns off.
+// if no open ticket is left, and auto mode turns off. A plan run that ends
+// early (Unlock & stop, Stop after this step) leaves `resume` — where it got
+// to — so Continue plan picks the saved plan up from that step with the same
+// checkpoints, instead of starting from the top (resumePlanRun).
 //
 // Cleanup: after every step that ends a phase, the loop closes the herdr
 // panes it's finished with (panesToClean) so they don't stack up.
@@ -276,6 +279,21 @@ export interface PlanStepRecord {
   endedAt: string
 }
 
+/**
+ * A plan run that ended early (stopped, turned off), as far as it got: the
+ * plan it walked, the step it was in or about to start, and what Continue
+ * plan carries over — the finished steps' records, the checkpoints (so a
+ * later review still reads from the right sha) and the latest slice report.
+ */
+export interface PlanResume {
+  plan: RunPlan
+  cursor: number
+  planLog: PlanStepRecord[]
+  checkpoints: Record<string, string>
+  lastSliceDoc: string
+  stoppedAt: string
+}
+
 export interface AutoLoopRecord {
   loop: number
   tickets: string[]
@@ -366,6 +384,8 @@ export interface AutoLoop {
   checkpoints: Record<string, string>
   /** Run plan: the human pressed Continue on the gate in progress. */
   gatePassed: boolean
+  /** Where the last plan run stopped early — what Continue plan picks up from (null = nothing to continue). */
+  resume: PlanResume | null
   history: AutoLoopRecord[]
   /** Why auto mode last turned itself off. */
   ended: null | { reason: 'stopped' | 'complete' | 'turned-off' | 'plan-finished'; at: string }
@@ -447,6 +467,8 @@ export function newAutoLoop(at: string, prev?: AutoLoop | null): AutoLoop {
     planLog: [],
     checkpoints: {},
     gatePassed: false,
+    // Outlives the run that left it: a plain loop in between doesn't lose it.
+    resume: prev?.resume ?? null,
     history: prev?.history ?? [],
     ended: prev?.ended ?? null,
   }
@@ -498,6 +520,26 @@ const PHASES: AutoPhase[] = ['idle', 'implementing', 'merging', 'reviewing', 'fi
 const strs = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
+function coercePlanLog(raw: unknown): PlanStepRecord[] {
+  return Array.isArray(raw) ? raw.filter((r: any) => r && typeof r === 'object' && typeof r.stepId === 'string') : []
+}
+function coerceCheckpoints(raw: unknown): Record<string, string> {
+  return raw && typeof raw === 'object' ? Object.fromEntries(Object.entries(raw).filter((e): e is [string, string] => typeof e[1] === 'string')) : {}
+}
+export function coercePlanResume(raw: any): PlanResume | null {
+  if (!raw || typeof raw !== 'object') return null
+  const plan = coerceRunPlan(raw.plan)
+  if (!plan) return null
+  return {
+    plan,
+    cursor: Number.isInteger(raw.cursor) && raw.cursor > 0 ? raw.cursor : 0,
+    planLog: coercePlanLog(raw.planLog),
+    checkpoints: coerceCheckpoints(raw.checkpoints),
+    lastSliceDoc: str(raw.lastSliceDoc),
+    stoppedAt: str(raw.stoppedAt),
+  }
+}
+
 /** Whatever is on disk, made safe to drive — null when there's nothing usable. */
 export function coerceAutoLoop(raw: any): AutoLoop | null {
   if (!raw || typeof raw !== 'object') return null
@@ -548,12 +590,10 @@ export function coerceAutoLoop(raw: any): AutoLoop | null {
     plan: coerceRunPlan(raw.plan),
     cursor: Number.isInteger(raw.cursor) && raw.cursor > 0 ? raw.cursor : 0,
     stepStartedAt: str(raw.stepStartedAt),
-    planLog: Array.isArray(raw.planLog) ? raw.planLog.filter((r: any) => r && typeof r === 'object' && typeof r.stepId === 'string') : [],
-    checkpoints:
-      raw.checkpoints && typeof raw.checkpoints === 'object'
-        ? Object.fromEntries(Object.entries(raw.checkpoints).filter((e): e is [string, string] => typeof e[1] === 'string'))
-        : {},
+    planLog: coercePlanLog(raw.planLog),
+    checkpoints: coerceCheckpoints(raw.checkpoints),
     gatePassed: raw.gatePassed === true,
+    resume: coercePlanResume(raw.resume),
     history: Array.isArray(raw.history) ? raw.history.slice(-AUTO_HISTORY_CAP) : [],
     ended: raw.ended && typeof raw.ended === 'object' ? raw.ended : null,
   }
@@ -855,9 +895,14 @@ function planIdleStep(state: AutoLoop, world: AutoWorld): AutoStep {
       return enter('implementing', { tickets: open })
     }
     case 'merge': {
-      // Every open PR of the plan's tickets so far — review fixes included, and
+      // Every open PR of the plan's tickets so far: the implement steps before
+      // this one (a ticket already done when the plan started was skipped
+      // there, but its PR still has to land), review fixes included, and
       // anything an earlier sweep left behind.
-      const ours = new Set(state.planLog.flatMap((r) => [...r.tickets, ...r.fixTickets]))
+      const ours = new Set([
+        ...plan.steps.slice(0, state.cursor).filter((s) => s.kind === 'implement').flatMap((s) => s.tickets),
+        ...state.planLog.flatMap((r) => [...r.tickets, ...r.fixTickets]),
+      ])
       const prs = world.prs
         .filter((p) => ours.has(p.ticketKey) && (p.status === 'open' || p.status === 'conflicted'))
         .map((p) => p.key)
@@ -1009,19 +1054,75 @@ export function enterPlanStep(state: AutoLoop, step: Extract<AutoStep, { kind: '
  * outcome report runs (no open ticket left) or auto mode turns off.
  */
 export function finishPlan(state: AutoLoop, at: string, report: boolean): AutoLoop {
-  const next = newAutoLoop(at, withPlanHistory(state, at))
+  // Nothing left to continue: the plan ran to its end.
+  const next = { ...newAutoLoop(at, withPlanHistory(state, at)), resume: null }
   return report
     ? { ...next, enabled: true, phase: 'reporting', phaseStartedAt: at, ended: null }
     : { ...next, enabled: false, ended: { reason: 'plan-finished', at } }
 }
 
-/** A run plan ending early (stopped, turned off) still leaves its record. */
+/**
+ * A run plan ending early (stopped, turned off) still leaves its record — and
+ * where it got to (`resume`), so Continue plan can pick it up. The step it
+ * stopped in is the one to continue from: it ran again from idle, finished
+ * tickets are skipped and ones a carried-on session still holds are waited
+ * on, not dispatched twice.
+ */
 export function withPlanHistory(state: AutoLoop, at: string): AutoLoop {
-  if (!state.plan || (!state.planLog.length && state.phase === 'idle')) return state
+  if (!state.plan) return state
+  const resume = planResumePoint(state, at)
+  if (!state.planLog.length && state.phase === 'idle') return { ...state, resume }
   // The step it stopped in counts as far as it got.
   const partial = state.phase !== 'idle' ? planStepRecord(state, at) : null
   const log = partial ? { ...state, planLog: [...state.planLog, partial] } : state
-  return { ...state, history: [...state.history, planHistoryRecord(log, at)].slice(-AUTO_HISTORY_CAP) }
+  return { ...state, resume, history: [...state.history, planHistoryRecord(log, at)].slice(-AUTO_HISTORY_CAP) }
+}
+
+/** Where a plan run is up to, for Continue plan — null past its last step (nothing left). */
+export function planResumePoint(state: AutoLoop, at: string): PlanResume | null {
+  // Never entered a step (no start checkpoint yet), or past the last one: a fresh start is the same thing.
+  if (!state.plan || !state.checkpoints.start || state.cursor >= state.plan.steps.length) return null
+  return {
+    plan: structuredClone(state.plan),
+    cursor: state.cursor,
+    planLog: [...state.planLog],
+    checkpoints: { ...state.checkpoints },
+    lastSliceDoc: state.lastSliceDoc,
+    stoppedAt: at,
+  }
+}
+
+/** What a resumed run starts from (resumePlanRun). */
+export interface PlanResumeStart {
+  /** The index in `plan` to pick up at. */
+  cursor: number
+  /** The records of the steps before it, one per step, in order. */
+  planLog: PlanStepRecord[]
+  checkpoints: Record<string, string>
+  lastSliceDoc: string
+}
+
+/**
+ * Where the saved plan picks a stopped run up. The plan may have been edited
+ * since (the run was locked; stopped, it isn't), so steps are matched by id:
+ * the run continues at the first step the stopped run hadn't finished — the
+ * leading run of steps with a record in the stopped run's log, each still as
+ * it was when it ran, are done, and their records come along in the saved
+ * plan's order. A finished step that was edited since (a ticket added, say)
+ * counts as new: the run continues from it. An unedited plan resumes at the
+ * step it stopped in. Checkpoints come whole: they're keyed by step id, so a
+ * removed step's is harmless and a kept step's still names the right sha.
+ */
+export function resumePlanRun(resume: PlanResume, plan: RunPlan): PlanResumeStart {
+  const records = new Map(resume.planLog.map((r) => [r.stepId, r]))
+  const ran = new Map(resume.plan.steps.map((s) => [s.id, JSON.stringify(s)]))
+  const planLog: PlanStepRecord[] = []
+  for (const step of plan.steps) {
+    const r = records.get(step.id)
+    if (!r || ran.get(step.id) !== JSON.stringify(step)) break
+    planLog.push(r)
+  }
+  return { cursor: planLog.length, planLog, checkpoints: { ...resume.checkpoints }, lastSliceDoc: resume.lastSliceDoc }
 }
 
 /**
