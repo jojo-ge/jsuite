@@ -1,6 +1,7 @@
 ---
 name: jcode
-description: Build a feature the jCode way — build and ship it test-first as usual, then pose its core piece as a standalone coding problem in jCode (a sandbox with a stub, cases and a runner; brief → hints → answer, disclosed one rung at a time) for the human to hand-code. Use when the user says "with jcode", "/jcode", "jcode this", "pose the core as a problem", or wants coding problems drawn from the features Claude builds.
+description: Build a feature as usual, then pose its core as a coding problem in jCode for you to hand-code.
+disable-model-invocation: true
 argument-hint: "[feature]"
 ---
 
