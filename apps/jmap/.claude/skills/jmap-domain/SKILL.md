@@ -18,7 +18,7 @@ Standing rules:
   `mktemp -d`) — never in the repo, never as the deliverable.
 - Mapping is **read-only**: no branches, PRs or repo edits.
 - jTicket is driven with the `jt` CLI (on PATH after `./jsuite setup`, else
-  `~/code/jsuite/bin/jt`; `$JTICKET_URL` overrides the base). Values starting
+  `bin/jt` in the jSuite checkout; `$JTICKET_URL` overrides the base). Values starting
   with `@` are read from a file; raw verbs take `@file.json` or `-` (stdin).
 
 Invocation: `/jmap-domain [TICK-n]`
@@ -29,8 +29,8 @@ Invocation: `/jmap-domain [TICK-n]`
 jt projects >/dev/null && echo up || echo down
 ```
 
-If down: tell the user jTicket isn't running (`cd ~/code/jsuite && ./jsuite
-status`, then `./jsuite start`) and STOP. Never fall back to writing files.
+If down: tell the user jTicket isn't running (`jsuite
+status`, then `jsuite start`) and STOP. Never fall back to writing files.
 
 ## 1. Read your ticket, claim it
 

@@ -36,7 +36,7 @@ curl -s --max-time 3 -o /dev/null "$JDIFF/" && echo up || echo down
 ```
 
 If down: tell the user jDiff isn't running
-(`cd ~/code/jsuite && ./jsuite start`) and STOP.
+(`jsuite start`) and STOP.
 
 ## 2. Read the change — all of it
 

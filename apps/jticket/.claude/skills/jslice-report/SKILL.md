@@ -26,7 +26,7 @@ P=PROJ-2
 ```
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`. Other apps
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`. Other apps
 (jReview) stay `curl`.
 
 ## The contract

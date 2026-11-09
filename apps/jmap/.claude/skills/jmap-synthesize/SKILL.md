@@ -20,7 +20,7 @@ Standing rules:
   else `mktemp -d`) — never in the repo, never as the deliverable.
 - Synthesis is **read-only** on the repo.
 - jTicket is driven with the `jt` CLI (on PATH after `./jsuite setup`, else
-  `~/code/jsuite/bin/jt`; `$JTICKET_URL` overrides the base). jMap (:43007)
+  `bin/jt` in the jSuite checkout; `$JTICKET_URL` overrides the base). jMap (:43007)
   is plain curl.
 
 Invocation: `/jmap-synthesize [TICK-n]`
@@ -34,8 +34,8 @@ curl -sk --max-time 3 "$JMAP/api/maps" >/dev/null && echo jmap-up || JMAP="http:
 curl -s --max-time 3 "$JMAP/api/maps" >/dev/null && echo jmap-up || echo jmap-down
 ```
 
-If either is down: tell the user (`cd ~/code/jsuite && ./jsuite status`, then
-`./jsuite start`) and STOP. Never fall back to writing files.
+If either is down: tell the user (`jsuite status`, then
+`jsuite start`) and STOP. Never fall back to writing files.
 
 ## 1. Read your ticket, claim it
 

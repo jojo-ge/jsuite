@@ -20,7 +20,7 @@ P=PROJ-2   # the project key you were invoked with
 ```
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`.
 
 ## 1. Read everything the plan rests on
 

@@ -6,7 +6,8 @@ Usage:
     chart.py --list
 
 The diagram is stored as a chart in <.data root>/jchart/<key>.json — the root is
-$JSUITE_DATA_DIR when set, else ~/code/jsuite/.data. jChart
+$JSUITE_DATA_DIR when set, else the .data/ of the jSuite checkout
+(found from this script's location, or `jsuite root`). jChart
 lays it out as editable Excalidraw shapes on first open; the user can then
 redraw it freely and pin notes to individual shapes.
 
@@ -26,7 +27,24 @@ import urllib.request
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
 EDGE_BASE = "https://jchart.local"
 DIRECT_BASE = "http://localhost:43003"
-DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.expanduser("~/code/jsuite/.data")
+
+def jsuite_root():
+    """The jSuite checkout: $JSUITE_ROOT, else the checkout this script lives in
+    (`jsuite setup` links skills there), else what `jsuite root` prints."""
+    if os.environ.get("JSUITE_ROOT"):
+        return os.environ["JSUITE_ROOT"]
+    here = os.path.dirname(os.path.realpath(__file__))
+    while here != os.path.dirname(here):
+        if os.path.isfile(os.path.join(here, "jsuite")) and os.path.isdir(os.path.join(here, "apps")):
+            return here
+        here = os.path.dirname(here)
+    try:
+        return subprocess.run(["jsuite", "root"], capture_output=True, text=True, timeout=5).stdout.strip() or None
+    except OSError:
+        return None
+
+
+DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.join(jsuite_root() or "jsuite-not-found", ".data")
 DATA_DIR = os.path.join(DATA_ROOT, "jchart")
 
 # Preferred browser (macOS app name). Override with --browser or $JCHART_BROWSER.
@@ -62,7 +80,7 @@ def pick_base():
 def not_running():
     print(
         "error: jChart isn't reachable.\n"
-        "  Start the suite with:  cd ~/code/jsuite && ./jsuite status, then ./jsuite start\n"
+        "  Start the suite with:  jsuite status, then jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
     )

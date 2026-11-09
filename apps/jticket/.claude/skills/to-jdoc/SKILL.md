@@ -19,12 +19,12 @@ shared document (`documentKey`: title page, blocks, glossary).
 ## Before you start
 
 1. Confirm the app is running. Every call goes through `jt` (on PATH after
-   `./jsuite setup`, else `~/code/jsuite/bin/jt`), which talks to jTicket's
+   `./jsuite setup`, else `bin/jt` in the jSuite checkout), which talks to jTicket's
    fixed port, `http://localhost:43000` (`$JTICKET_URL` overrides; the Caddy
    edge also serves it at `https://jticket.local`). Quick check:
    ```bash
    jt projects >/dev/null && echo up \
-     || echo "not up — from ~/code/jsuite: ./jsuite status, then ./jsuite start"
+     || echo "not up — jsuite status, then ./jsuite start"
    ```
 
 ## The content format: blocks
@@ -122,9 +122,9 @@ jt patch /api/docs/DOC-3 @revised-blocks.json     # {"blocks": [...]}
 
 The user reviews in either app — hovering a block and pinning notes. Read them
 off disk or the API:
-- `~/code/jsuite/.data/jexplain/<documentKey>.json` — the document
-- `~/code/jsuite/.data/jexplain/<documentKey>.notes.json` — their notes
-- chart edits land in `~/code/jsuite/.data/jchart/<chartKey>.json`
+- `$(jsuite root)/.data/jexplain/<documentKey>.json` — the document
+- `$(jsuite root)/.data/jexplain/<documentKey>.notes.json` — their notes
+- chart edits land in `$(jsuite root)/.data/jchart/<chartKey>.json`
 
 ## Workflow tips
 

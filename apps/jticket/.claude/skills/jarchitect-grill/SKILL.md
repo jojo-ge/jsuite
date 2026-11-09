@@ -23,11 +23,11 @@ Invocation: `/jarchitect-grill [TICK-n]`
 jt projects >/dev/null && echo up || echo down
 ```
 
-If jTicket is down: say so (from `~/code/jsuite`: `./jsuite status`, then
-`./jsuite start`) and STOP.
+If jTicket is down: say so (`jsuite status`, then
+`jsuite start`) and STOP.
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`.
 
 ## 1. Read the candidate cold
 

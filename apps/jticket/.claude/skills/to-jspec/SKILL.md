@@ -34,7 +34,7 @@ here also shows up in jExplain's article list; that is by design.
    `https://jexplain.local/e/<documentKey>`), and say plainly that it is a local
    draft — nothing has been posted to Confluence.
 
-Every call goes through `jt` (on PATH after `./jsuite setup`, else `~/code/jsuite/bin/jt`),
+Every call goes through `jt` (on PATH after `./jsuite setup`, else `bin/jt` in the jSuite checkout),
 which talks to jTicket's fixed port, `http://localhost:43000` (`$JTICKET_URL` overrides).
 Connect first, as always — if jTicket is down, say so and stop rather than writing a file
 as a fallback:

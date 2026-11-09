@@ -26,11 +26,11 @@ Invocation: `/jarchitect-scan [TICK-n]`
 jt projects >/dev/null && echo up || echo down
 ```
 
-If down: tell the user jTicket isn't running (from `~/code/jsuite`: `./jsuite status`,
-then `./jsuite start`) and STOP. Never fall back to writing an HTML report or files.
+If down: tell the user jTicket isn't running (`jsuite status`,
+then `jsuite start`) and STOP. Never fall back to writing an HTML report or files.
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`.
 
 ## 1. Read your ticket, claim it
 

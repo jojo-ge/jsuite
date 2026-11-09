@@ -17,7 +17,7 @@ repo already has Claude's version. This is practice, marked honestly.
 
 Invocation: `/jcode-mark [KEY attempt=N]`. The herdr pane is already in
 the sandbox directory; by hand, `cd` to `sandbox.dir` first. If jCode doesn't
-answer: `cd ~/code/jsuite && ./jsuite status`, then `./jsuite start`.
+answer: `jsuite status`, then `jsuite start`.
 
 ## 1. Read the kata — the whole record
 

@@ -8,7 +8,7 @@ Usage:
 The doc is a j-explain JSON authoring payload (title, blocks, glossary — see the
 skill's SKILL.md for the block vocabulary). It's stored as an explainer at
 <.data root>/jexplain/<key>.json (the root is $JSUITE_DATA_DIR when set, else
-~/code/jsuite/.data); chart blocks with inline mermaid are materialised into the
+the jSuite checkout's .data/); chart blocks with inline mermaid are materialised into the
 shared jChart store (<.data root>/jchart/), where the user
 can also open them in the full jChart workbench.
 
@@ -27,7 +27,24 @@ import urllib.request
 # fallback for when Caddy/Docker is down but the Nuxt app itself is up.
 EDGE_BASE = "https://jexplain.local"
 DIRECT_BASE = "http://localhost:43004"
-DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.expanduser("~/code/jsuite/.data")
+
+def jsuite_root():
+    """The jSuite checkout: $JSUITE_ROOT, else the checkout this script lives in
+    (`jsuite setup` links skills there), else what `jsuite root` prints."""
+    if os.environ.get("JSUITE_ROOT"):
+        return os.environ["JSUITE_ROOT"]
+    here = os.path.dirname(os.path.realpath(__file__))
+    while here != os.path.dirname(here):
+        if os.path.isfile(os.path.join(here, "jsuite")) and os.path.isdir(os.path.join(here, "apps")):
+            return here
+        here = os.path.dirname(here)
+    try:
+        return subprocess.run(["jsuite", "root"], capture_output=True, text=True, timeout=5).stdout.strip() or None
+    except OSError:
+        return None
+
+
+DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.join(jsuite_root() or "jsuite-not-found", ".data")
 DATA_DIR = os.path.join(DATA_ROOT, "jexplain")
 CHART_DATA_DIR = os.path.join(DATA_ROOT, "jchart")
 
@@ -64,7 +81,7 @@ def pick_base():
 def not_running():
     print(
         "error: jExplain isn't reachable.\n"
-        "  Start the suite with:  cd ~/code/jsuite && ./jsuite status, then ./jsuite start\n"
+        "  Start the suite with:  jsuite status, then jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
     )

@@ -6,7 +6,7 @@ instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
 names; a single Caddy container routes them to the native dev servers:
 
 ```sh
-cd ~/code/jsuite
+git clone git@github.com:jojo-ge/jsuite.git && cd jsuite
 ./jsuite setup      # once (re-runnable) — see Setup below
 ./jsuite start      # apps + edge
 ```
@@ -279,7 +279,8 @@ Always include the scheme: `https://jticket.local`.
 ./jsuite status           # pid + live HTTPS status code per app
 ./jsuite logs [app|edge]  # tail -F; no arg = every app
 ./jsuite open [app]       # open in the browser (default: the index)
-./jsuite setup            # onboarding: OrbStack check, pnpm install, skill install,
+./jsuite root             # print this checkout's path (skills use it to find .data/)
+./jsuite setup            # onboarding: OrbStack check, pnpm install, skill links,
                           # .data migrations, cleanup of the old mkcert/hosts edge — re-runnable
 ```
 

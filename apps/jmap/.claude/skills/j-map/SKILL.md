@@ -31,9 +31,9 @@ curl -sk --max-time 3 https://jmap.local/api/maps >/dev/null && echo up || echo 
 ```
 
 If down: tell the user the suite isn't running
-(`cd ~/code/jsuite && ./jsuite status`, then `./jsuite start`) and STOP.
+(`jsuite status`, then `jsuite start`) and STOP.
 Do not fall back to mapping the codebase yourself in this session. Creating a
-map also needs jTicket up — the same `./jsuite start` covers both.
+map also needs jTicket up — the same `jsuite start` covers both.
 
 ## 2. Create the map
 
@@ -69,10 +69,10 @@ continues in herdr sessions dispatched from jTicket, without you.
 - `curl -sk https://jmap.local/api/maps/<key>` — the map + synthesis graph
 - `curl -sk https://jmap.local/api/maps/<key>/progress` — live ticket/doc state
 - `jt get "/api/docs?projectId=PROJ-n"` — the project's doc records (`jt` is
-  jTicket's CLI, on PATH after `./jsuite setup`, else `~/code/jsuite/bin/jt`)
+  jTicket's CLI, on PATH after `./jsuite setup`, else `bin/jt` in the jSuite checkout)
 - `jt get /api/documents/<documentKey>` — a doc's blocks (content lives only
   here, never on the `/api/docs` records)
-- On disk: `~/code/jsuite/.data/jmap/<key>.json`
+- On disk: `$(jsuite root)/.data/jmap/<key>.json`
 
 The synthesis's `nodes`/`edges`/`nodeNotes`/`commentary` are the distilled
 architecture — quote from them rather than re-deriving the map by hand.

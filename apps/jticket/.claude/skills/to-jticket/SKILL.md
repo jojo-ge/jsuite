@@ -13,7 +13,7 @@ Confluence-style pages. It is not connected to Jira or Confluence and has no rel
 to them. It exists so a breakdown or a document can be authored **locally first**, for
 the user to review and edit before they hand-author anything elsewhere.
 
-Every call goes through `jt` (on PATH after `./jsuite setup`, else `~/code/jsuite/bin/jt`;
+Every call goes through `jt` (on PATH after `./jsuite setup`, else `bin/jt` in the jSuite checkout;
 `jt help`), a thin CLI over jTicket's HTTP API — never hand-built `curl`.
 `jt get|post|patch|put|delete PATH [JSON|@file.json|-]` reaches any endpoint without a
 verb (`-` reads the body from stdin); `field=@file.md` reads a value from a file; lists
@@ -27,7 +27,7 @@ jt projects >/dev/null && echo up || echo down
 
 If it is **down**, tell the user and stop — do not write files as a fallback, and do
 not start the server yourself unless they ask. jTicket is part of the jSuite — from the
-jsuite repo root (`~/code/jsuite`): `./jsuite status`, then `./jsuite start`.
+`jsuite status`, then `jsuite start`.
 
 Read the response of every write: jTicket **silently drops** refs it cannot resolve
 (see [Gotchas](#gotchas)).

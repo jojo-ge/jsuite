@@ -53,6 +53,14 @@ export function dataRoot() {
   return cachedRoot
 }
 
+/** The monorepo root itself (the checkout `jsuite root` prints), found the same way. */
+export function suiteRoot() {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const root = findRoot(here) ?? findRoot(process.cwd())
+  if (!root) throw new Error(`@jsuite/data: could not locate the jSuite monorepo root above ${here} or ${process.cwd()}`)
+  return root
+}
+
 /** `<root>/.data/<app>`, created if missing. */
 export function appDataDir(app) {
   const dir = join(dataRoot(), app)

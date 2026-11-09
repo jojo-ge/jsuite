@@ -962,7 +962,7 @@ export function orchestratorPrompt(projectKey: string, phase: string, keys: stri
   const who = of > 1 ? `you are orchestrator ${slot} of ${of} (orchestrator=${slot} on the queue and every claim), your tickets: ` : ''
   return (
     `/jorchestrate ${projectKey} — jTicket's auto loop, ${phase} phase: ${who}${keys.join(', ')}, at most ${budget} in flight, subagents on ${model} at ${effort} effort (model: "${model}", effort: "${effort}"). ` +
-    `Don't ask questions — record each one as a follow-up HITL ticket in ${projectKey} — and never end your turn while a subagent you started is still running.`
+    `Don't ask questions — record each one as a follow-up HITL ticket in ${projectKey} — and end your turn between subagent reports: the watchdog reads a session waiting on running subagents as working.`
   )
 }
 

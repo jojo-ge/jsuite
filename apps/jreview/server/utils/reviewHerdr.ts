@@ -1,4 +1,4 @@
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
@@ -10,7 +10,11 @@ import {
   herdrJson,
   invalidateHerdrState,
 } from '@jsuite/herdr'
+import { suiteRoot } from '@jsuite/data'
 import { isReviewTab, type Review } from '../../app/utils/reviewTypes'
+
+// The publish step reviewers read by path (jreview-report is typed-only, so it cannot be invoked mid-task).
+const REPORT_SKILL = join(suiteRoot(), 'apps/jreview/.claude/skills/jreview-report/SKILL.md')
 
 const pExecFile = promisify(execFile)
 
@@ -24,8 +28,10 @@ const pExecFile = promisify(execFile)
 //     `/jarch-review …` on an architecture pass) — claude only runs a skill
 //     when `/name` is the first token; mid-sentence it is a mere permission
 //     grant — and the rest of the line is the context: the global skill, never
-//     the target repo's own, then `/jreview-report` publishes the report as a
-//     jExplain document at the reviewer's pre-assigned key. That document
+//     the target repo's own, then the jreview-report skill publishes the report as
+//     a jExplain document at the reviewer's pre-assigned key. That skill is
+//     typed-only, so the prompt names its file for the reviewer to read and
+//     follow; a mid-sentence `/jreview-report` would never run. That document
 //     landing in the pool IS the completion signal — the watcher plugin sees it.
 //   - the TRIAGER — one job tab, dispatched by the watcher once every reviewer
 //     is settled. `/jreview-triage <key>` dedupes the reports, publishes the
@@ -87,7 +93,7 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
         ]
       : []),
     'Work unattended: do not stop to ask questions — if no spec turns up, carry on without one and say so.',
-    `When the review is complete, publish it into jReview with /jreview-report review=${review.key} reviewer=${n} doc=${r.docKey}.`,
+    `When the review is complete, publish it into jReview: read ${REPORT_SKILL} and follow it with review=${review.key} reviewer=${n} doc=${r.docKey}.`,
   ].join(' ')
 }
 

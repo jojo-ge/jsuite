@@ -66,14 +66,15 @@ if $DO_SKILLS; then
       continue
     fi
 
-    # An existing entry may be a real directory or a symlink into ~/.agents/skills
-    # (how the skills CLI installs). Either way, replace it outright.
+    # Link, not copy (same as ./jsuite setup): the installed skill IS the
+    # checkout's. An existing entry (an old copy, or a symlink into
+    # ~/.agents/skills from the skills CLI) is replaced.
     if [ -e "$dest" ] || [ -L "$dest" ]; then
       run rm -rf "$dest"
     fi
 
-    run cp -R "$src" "$dest"
-    say "  installed $skill"
+    run ln -s "$src" "$dest"
+    say "  linked $skill"
   done
 fi
 
