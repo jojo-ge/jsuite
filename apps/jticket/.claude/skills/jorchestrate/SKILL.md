@@ -51,7 +51,7 @@ N=1        # which orchestrator you are, when the hand-off says "orchestrator N 
 ```
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl` —
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl` —
 in your own calls and in every prompt you hand a subagent. `jt claim` exits **75**
 when the budget is full.
 
@@ -166,8 +166,13 @@ one.
    `effort: "<subagentEffort>"`, `description: "Implement TICK-7 in lane A"`, prompt:
 
    > You are implementing TICK-7. Your worktree is `<slot path>`, with branch
-   > `<branch>` checked out — work only there, using absolute paths. Invoke the
-   > `jimplement` skill with this hand-off: `<prompt from the claim>`
+   > `<branch>` checked out — work only there, using absolute paths. Read
+   > `<jsuite root>/apps/jticket/.claude/skills/jimplement/SKILL.md` and follow
+   > it with this hand-off: `<prompt from the claim>`
+
+   Fill `<jsuite root>` with what `jsuite root` prints. jimplement is typed-only,
+   so a subagent cannot invoke it as a skill; reading the file gives it the
+   same steps.
 
    It reports back, later, with its PR key, what it built, and anything left
    undone.

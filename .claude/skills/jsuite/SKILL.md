@@ -5,12 +5,12 @@ description: Map of the jSuite local product ecosystem — what jTicket, jDiff, 
 
 # jSuite — the local product ecosystem
 
-A pnpm-workspace monorepo at `~/code/jsuite`: eight local Nuxt apps behind one
+A pnpm-workspace monorepo (`jsuite root` prints where it is checked out): eight local Nuxt apps behind one
 Caddy edge. OrbStack resolves the `.local` names and terminates HTTPS.
 
 ```sh
-cd ~/code/jsuite && ./jsuite start    # apps + Caddy edge
-./jsuite status | stop | restart | logs [app] | open [app] | setup
+jsuite start    # apps + Caddy edge
+jsuite status | stop | restart | logs [app] | open [app] | setup
 ```
 
 | App | URL | Port | What it is |
@@ -228,7 +228,7 @@ session files only agreed findings (in-scope → the project; out-of-scope →
 
 - **One edge**: Caddy routes each `.local` name to its host port; only Caddy is
   Dockerised, apps run natively (jDiff needs host `git`/`gh`/`claude`).
-- **One state directory**: `~/code/jsuite/.data/<app>/` (gitignored) via
+- **One state directory**: `$(jsuite root)/.data/<app>/` (gitignored) via
   `@jsuite/data` (`appDataDir`/`appDataFile`).
 - **One chart pool**: `@jsuite/charting` serves `/api/charts` over
   `.data/jchart/` in every consumer — a chart in a jExplain article is the
@@ -250,6 +250,6 @@ session files only agreed findings (in-scope → the project; out-of-scope →
   installs them all globally from `SKILLS_MANIFEST` and shims `jsuite` + `jt`
   into `~/.local/bin`.
 
-If an app isn't responding: `cd ~/code/jsuite && ./jsuite status`, then
-`./jsuite start` (it refuses ports held by processes it didn't launch — kill a
-stale dev server first). Logs: `./jsuite logs <app>`.
+If an app isn't responding: `jsuite status`, then
+`jsuite start` (it refuses ports held by processes it didn't launch — kill a
+stale dev server first). Logs: `jsuite logs <app>`.

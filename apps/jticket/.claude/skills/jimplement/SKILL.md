@@ -1,6 +1,6 @@
 ---
 name: jimplement
-description: Implement work that is already broken down as tickets in the local jTicket app — claim a ticket, build it in the codebase's worktree, open its local PR, and record the outcome back on the board. Invoked as "/jimplement [TICK-n]" (or with a project key, or nothing) by hand, by jTicket's herdr buttons, its auto loop and run plans, or an orchestrator's subagent. Not for planning (that is /jwayfinder) or for a first breakdown (/to-jticket).
+description: Implement work that is already broken down as tickets in the local jTicket app — claim a ticket, build it in the codebase's worktree, open its local PR, and record the outcome back on the board. Invoked as "/jimplement [TICK-n]" (or with a project key, or nothing) by hand, by jTicket's herdr buttons, its auto loop and run plans; an orchestrator's subagent reads this file by path instead. Not for planning (that is /jwayfinder) or for a first breakdown (/to-jticket).
 disable-model-invocation: true
 argument-hint: "[TICK-n]"
 ---
@@ -24,11 +24,11 @@ jt projects >/dev/null && echo up || echo down
 
 If it is **down**, tell the user and stop — do not fall back to implementing from memory
 or from files, and do not start the server yourself unless they ask. jTicket is
-`apps/jticket` of `~/code/jsuite`; from that root, `./jsuite status`, then `./jsuite start`
+`apps/jticket` of the jSuite checkout (`jsuite root`); `jsuite status`, then `jsuite start`
 (starts every app).
 
 Every call below goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`. It
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`. It
 prints a ticket or project as JSON, lists as tab-separated rows (`--json` for raw), reads a
 field from a file with `field=@file.md`, and reaches any endpoint without a verb as
 `jt get|post|patch|put|delete PATH [JSON]`.

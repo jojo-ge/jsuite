@@ -27,11 +27,11 @@ ticket per session**.
 jt projects >/dev/null && echo up || echo down
 ```
 
-If it is **down**, tell the user and stop. jTicket is `apps/jticket` of `~/code/jsuite`;
-from that root, `./jsuite status`, then `./jsuite start` (starts every app).
+If it is **down**, tell the user and stop. jTicket is `apps/jticket` of the jSuite
+checkout (`jsuite root`); `jsuite status`, then `jsuite start` (starts every app).
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`: `jt ls`, `jt show`, `jt set`,
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`: `jt ls`, `jt show`, `jt set`,
 `jt project`, and `jt get|post|patch|put|delete PATH [JSON|@file.json|-]` for the rest.
 Full API reference: the `to-jticket` skill's
 [reference/api.md](../to-jticket/reference/api.md); markdown dialect for map bodies,

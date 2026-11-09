@@ -16,7 +16,7 @@ Standing rules:
   source of truth; a re-import discards hand edits (notes survive).
 - Read the data files rather than waiting for a paste.
 - Script: `~/.claude/skills/j-chart/scripts/chart.py` (installed by
-  `./jsuite setup`; source at `~/code/jsuite/apps/jchart/.claude/skills/j-chart/scripts/chart.py`).
+  `./jsuite setup`; source at `$(jsuite root)/apps/jchart/.claude/skills/j-chart/scripts/chart.py`).
 
 ## Workflow
 
@@ -31,8 +31,8 @@ Standing rules:
    file paths. The key is a slug of the title (or `--key slug`). Re-running
    with the same key and **no** `--replace` creates a new chart with a `-2`
    suffix; `--replace` overwrites the chart in place and keeps its notes.
-   If jChart isn't reachable the script says so: `cd ~/code/jsuite && ./jsuite
-   status`, then `./jsuite start`.
+   If jChart isn't reachable the script says so: `jsuite
+   status`, then `jsuite start`.
 
 3. **Tell the user how to use it.** In the browser they can:
    - edit the diagram directly (full Excalidraw toolbar; autosaves);
@@ -47,7 +47,7 @@ Standing rules:
 
 4. **Read the result back.** Either the pasted markdown, or the files
    (paths printed by the script; data root is `$JSUITE_DATA_DIR` if set,
-   else `~/code/jsuite/.data`):
+   else `$(jsuite root)/.data`):
    - `.data/jchart/<key>.json` — title, Mermaid source, live Excalidraw scene
    - `.data/jchart/<key>.notes.json` — `{ general, notes: [{ id, elementId, label, text }] }`
 

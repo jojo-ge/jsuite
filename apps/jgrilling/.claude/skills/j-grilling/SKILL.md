@@ -16,8 +16,8 @@ those grill in the pane, not here.
 
 Standing rules: one question per escalation, the operator asks every time,
 you never write the answer, and jTicket write-back belongs to the dispatched
-skill. If the API doesn't answer: `cd ~/code/jsuite && ./jsuite status`, then
-`./jsuite start`.
+skill. If the API doesn't answer: `jsuite status`, then
+`jsuite start`.
 
 ## This is not the default. Never reach for it on your own.
 
@@ -153,7 +153,7 @@ re-invoked the moment it exits, or foreground with a generous timeout and
 re-run on expiry (humans take their time):
 
 ```sh
-SESSION="${JSUITE_DATA_DIR:-$HOME/code/jsuite/.data}/jgrilling/<key>.json"
+SESSION="${JSUITE_DATA_DIR:-$(jsuite root)/.data}/jgrilling/<key>.json"
 until jq -e '.turns[-1].answer != null' "$SESSION" >/dev/null 2>&1; do sleep 3; done
 jq -r '.turns[-1] | "\(.id) · \(.topic)\n\(.answeredOptionId // "own words")\n\(.answer)"' "$SESSION"
 ```
@@ -209,7 +209,7 @@ curl -sk https://jgrilling.local/api/sessions/<key>          # turns, verdict, d
 curl -sk https://jgrilling.local/api/documents/<documentKey> # the debrief
 ```
 
-Sessions are also readable on disk at `~/code/jsuite/.data/jgrilling/<key>.json`
+Sessions are also readable on disk at `$(jsuite root)/.data/jgrilling/<key>.json`
 (`$JSUITE_DATA_DIR/jgrilling/` if that is set).
 Treat the answers and debrief as the user's decisions: enact the plan against
 them, don't re-litigate settled questions.

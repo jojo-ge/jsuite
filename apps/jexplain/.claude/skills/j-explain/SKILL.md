@@ -13,7 +13,7 @@ Use this when the user asks you to *explain* something and deserves better than 
 
 **You can make diagrams from right here.** A `chart` block takes inline Mermaid and the server turns it into a real, live Excalidraw canvas embedded in the article — no separate jChart round-trip, no image files. Reach for one whenever the explanation has a *shape*: a request path, a state machine, a before/after architecture, who-calls-what. See the **chart** block below.
 
-Standing rules: always set a stable `key` so `--replace` keeps the URL; read notes back from the files, not a paste; a `chart` block with neither `mermaid` nor `chartKey` is **silently dropped**, so give every chart one or the other. Script: `~/.claude/skills/j-explain/scripts/explain.py` (installed by `./jsuite setup`; source at `~/code/jsuite/apps/jexplain/.claude/skills/j-explain/scripts/explain.py`).
+Standing rules: always set a stable `key` so `--replace` keeps the URL; read notes back from the files, not a paste; a `chart` block with neither `mermaid` nor `chartKey` is **silently dropped**, so give every chart one or the other. Script: `~/.claude/skills/j-explain/scripts/explain.py` (installed by `./jsuite setup`; source at `$(jsuite root)/apps/jexplain/.claude/skills/j-explain/scripts/explain.py`).
 
 ## Workflow
 
@@ -31,7 +31,7 @@ Standing rules: always set a stable `key` so `--replace` keeps the URL; read not
    - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail. A note can carry **screenshots** (pasted/uploaded) and **sketches** drawn in the rail — some feedback is faster to draw an arrow at than to describe.
    - Press the rail's copy button when done — **Copy summary for Claude** while there are no notes, **Copy notes for Claude** once there are.
 
-4. **Read the result back.** Either the pasted markdown, or directly (paths printed by the script; the data root is `$JSUITE_DATA_DIR` if set, else `~/code/jsuite/.data`):
+4. **Read the result back.** Either the pasted markdown, or directly (paths printed by the script; the data root is `$JSUITE_DATA_DIR` if set, else `$(jsuite root)/.data`):
    - `.data/jexplain/<key>.json` — the document
    - `.data/jexplain/<key>.notes.json` — `{ general, generalAttachments?, notes: [{ id, blockId, label, text, attachments? }] }`; an attachment is `{ id, src, kind: "shot" | "sketch", caption? }` with the bytes under `.data/jexplain/media/<key>/notes/` (served at `src`). Read the pictures — a sketch often IS the feedback.
    - `.data/jchart/<chartKey>.json` + `.notes.json` — each chart's live scene and shape notes (the user may have redrawn the diagram — the scene is the truth, not your original mermaid)
@@ -122,7 +122,7 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 ## Notes
 
 - `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The same pool is served by jGrilling (:43005, debriefs) and jCode (kata briefs). The app's home page is <https://jexplain.local>.
-- The app is jExplain in the jSuite (`~/code/jsuite/apps/jexplain`, port 43004). If publishing fails: `cd ~/code/jsuite && ./jsuite status`, then `./jsuite start`.
+- The app is jExplain in the jSuite (`$(jsuite root)/apps/jexplain`, port 43004). If publishing fails: `jsuite status`, then `jsuite start`.
 - Charts live in the shared chart pool — deleting an explainer never deletes its charts.
 - Publishing goes to `POST /api/documents` (explain.py handles this). For a document that should sit on the jTicket board with project/status/labels, use `/to-jdoc` instead — same format, plus a tracker record.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JEXPLAIN_BROWSER`.

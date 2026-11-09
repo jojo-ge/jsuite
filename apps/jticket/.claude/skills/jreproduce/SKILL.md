@@ -26,13 +26,13 @@ Invocation: `/jreproduce [TICK-n]`
 jt projects >/dev/null && echo up || echo down
 ```
 
-If jTicket is down: say so (from `~/code/jsuite`: `./jsuite status`, then `./jsuite start`)
+If jTicket is down: say so (`jsuite status`, then `jsuite start`)
 and STOP. Do
 not reproduce from memory — without the board there is nowhere to record the
 finding, which is the entire deliverable.
 
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`~/code/jsuite/bin/jt`; `jt help`), never hand-built `curl`.
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`.
 API reference: the `to-jticket` skill's [reference/api.md](../to-jticket/reference/api.md).
 Markdown dialect for anything you write into a resolution or doc: the `to-jspec` skill.
 

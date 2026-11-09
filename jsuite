@@ -274,11 +274,12 @@ cmd_setup() {
     for skill in $skills; do
       src="$HERE/$app/.claude/skills/$skill"
       if [[ ! -f "$src/SKILL.md" ]]; then warn "skip $skill (not found in $app)"; continue; fi
-      # An existing entry may be a real directory or a symlink into
-      # ~/.agents/skills (how the skills CLI installs). Replace it outright.
+      # Link, not copy: the installed skill IS the checkout's, so a pull updates
+      # it and its scripts resolve this checkout. An existing entry (an old copy,
+      # or a symlink into ~/.agents/skills from the skills CLI) is replaced.
       rm -rf "${dest:?}/$skill"
-      cp -R "$src" "$dest/$skill"
-      ok "$skill (from $app)"
+      ln -s "$src" "$dest/$skill"
+      ok "$skill -> $app"
     done
   done
   # Shims on PATH: `jsuite` and `jt` (bin/jt — the jTicket CLI every skill drives
@@ -343,5 +344,7 @@ case "${1:-start}" in
   logs) shift; cmd_logs "$@" ;;
   open) shift; cmd_open "$@" ;;
   setup) cmd_setup ;;
-  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup}" ;;
+  # Where this checkout lives, for skills and scripts: `$(jsuite root)/.data/jchart`.
+  root) echo "$HERE" ;;
+  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup|root}" ;;
 esac

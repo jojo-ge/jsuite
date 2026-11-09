@@ -186,8 +186,8 @@ cd <sandbox.dir> && <sandbox.run>            # every case ✗ "not implemented y
 # temporarily paste your answer into solution.ts, run again: every case ✓, then put the stub back
 ```
 
-If the POST fails with no 400 body the app is probably down: `cd ~/code/jsuite
-&& ./jsuite status`, then `./jsuite start`. `key` is optional (a slug of the
+If the POST fails with no 400 body the app is probably down: `jsuite status`, then
+`jsuite start`. `key` is optional (a slug of the
 title otherwise) — pass it so the stub's URL matches. **A taken key gets a
 suffix** (`rate-limiter-refill-2`), and then the URL baked into the stub is
 wrong: check `GET https://jcode.local/api/katas/<key>` first (404 = free),
@@ -209,5 +209,5 @@ own resolution is unaffected — the feature shipped in step 1.
 `GET https://jcode.local/api/katas/<key>/full` returns everything you posted,
 attempts and verdicts included — the answer never leaves the file, so it is
 always retrievable. `GET …/api/katas/<key>` is the redacted view the page
-uses. Katas are on disk at `~/code/jsuite/.data/jcode/<key>.json`,
-sandboxes at `~/code/jsuite/.data/jcode/sandbox/<key>/`.
+uses. Katas are on disk at `$(jsuite root)/.data/jcode/<key>.json`,
+sandboxes at `$(jsuite root)/.data/jcode/sandbox/<key>/`.

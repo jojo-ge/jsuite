@@ -1,6 +1,6 @@
 ---
 name: jreview-report
-description: Publish a finished code review into jReview as a jExplain document at a pre-assigned key — the document landing is how jReview knows this reviewer is done. Invoked as `/jreview-report review=[key] reviewer=[n] doc=[docKey]` by a jReview reviewer session after its review skill has run. Not for general use.
+description: Publish a finished code review into jReview as a jExplain document at a pre-assigned key — the document landing is how jReview knows this reviewer is done. Read and followed by a jReview reviewer session after its review skill has run (its prompt gives this file's path and `review=[key] reviewer=[n] doc=[docKey]`). Not for general use.
 argument-hint: "[review=KEY reviewer=N doc=DOCKEY]"
 disable-model-invocation: true
 ---

@@ -114,13 +114,13 @@ function focusBlock(blockId: string) {
 
 function buildMarkdown(): string {
   let out = `## Document notes: ${props.doc.title ?? key.value}\n\n`
-  out += `Document file: \`~/code/jsuite/.data/jexplain/${key.value}.json\`\n`
-  out += `Notes file: \`~/code/jsuite/.data/jexplain/${key.value}.notes.json\`\n\n`
+  out += `Document file: \`$(jsuite root)/.data/jexplain/${key.value}.json\`\n`
+  out += `Notes file: \`$(jsuite root)/.data/jexplain/${key.value}.notes.json\`\n\n`
 
   // Attachments are listed as on-disk paths, not URLs: the point of pasting a
   // screenshot or drawing an arrow is that Claude can then *read the picture*.
   const mediaFile = (src: string) =>
-    `~/code/jsuite/.data/jexplain/media/${key.value}/notes/${src.split('/').pop()}`
+    `$(jsuite root)/.data/jexplain/media/${key.value}/notes/${src.split('/').pop()}`
   const attachLines = (as: NoteAttachment[] | undefined, indent: string) =>
     (as ?? [])
       .map((a) => `${indent}- [${a.kind === 'sketch' ? 'drawing' : 'screenshot'}] \`${mediaFile(a.src)}\`${a.caption?.trim() ? ` — ${a.caption.trim()}` : ''}\n`)
@@ -153,7 +153,7 @@ function buildMarkdown(): string {
     out += '### Charts\n'
     for (const c of charts) {
       if (c.type === 'chart')
-        out += `- \`${c.chartKey}\` — shared with jChart; scene + shape notes in \`~/code/jsuite/.data/jchart/${c.chartKey}.json\` / \`.notes.json\`\n`
+        out += `- \`${c.chartKey}\` — shared with jChart; scene + shape notes in \`$(jsuite root)/.data/jchart/${c.chartKey}.json\` / \`.notes.json\`\n`
     }
   }
   return out
