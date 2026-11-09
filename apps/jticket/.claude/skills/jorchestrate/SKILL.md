@@ -1,6 +1,6 @@
 ---
 name: jorchestrate
-description: Run one phase of an orchestrated jTicket auto loop — run the phase's tickets through implementer subagents (on the model the hand-off names — Opus by default) in pooled worktree lanes that each refill the moment they free, spec-check every ticket against its acceptance criteria, and mark it done. Invoked as "/jorchestrate [PROJ-n] orchestrator=N …" by jTicket's auto loop and run plans; not for general use.
+description: Run one phase of a jTicket auto loop through implementer subagents, spec-checking and closing each ticket.
 disable-model-invocation: true
 argument-hint: "[PROJ-n orchestrator=N …]"
 ---

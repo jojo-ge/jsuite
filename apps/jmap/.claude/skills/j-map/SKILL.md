@@ -1,6 +1,7 @@
 ---
 name: j-map
-description: Map a codebase in jMap — creating a map creates a jMap-mode jTicket project whose herdr-dispatched tickets scope the repo and document each domain, and jMap synthesizes the docs into an interactive dependency map. Use when the user says "map this codebase", "make a jmap", "jmap this repo", or wants an architecture map of a repository.
+description: Map a codebase in jMap — its domains, an interactive dependency map and walkthrough docs.
+disable-model-invocation: true
 argument-hint: "[repo path]"
 ---
 

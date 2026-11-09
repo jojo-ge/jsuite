@@ -1,6 +1,6 @@
 ---
 name: jimplement
-description: Implement work that is already broken down as tickets in the local jTicket app — claim a ticket, build it in the codebase's worktree, open its local PR, and record the outcome back on the board. Invoked as "/jimplement [TICK-n]" (or with a project key, or nothing) by hand, by jTicket's herdr buttons, its auto loop and run plans; an orchestrator's subagent reads this file by path instead. Not for planning (that is /jwayfinder) or for a first breakdown (/to-jticket).
+description: Implement a jTicket ticket — claim it, build it in a worktree, open its PR and record the outcome on the board.
 disable-model-invocation: true
 argument-hint: "[TICK-n]"
 ---
@@ -16,19 +16,23 @@ This skill **does** the work. If the way to the destination isn't clear yet — 
 still open, questions to resolve — that's `/jwayfinder`, not this. If there's no
 breakdown at all yet, that's `/to-jticket` in tickets mode first.
 
+Who runs it: a person typing `/jimplement [TICK-n]` (or a project key, or nothing),
+jTicket's herdr buttons, its auto loop and run plans. An orchestrator's subagent reads
+this file by path instead.
+
 ## Connect first — always
 
 ```bash
 jt projects >/dev/null && echo up || echo down
 ```
 
-If it is **down**, tell the user and stop — do not fall back to implementing from memory
-or from files, and do not start the server yourself unless they ask. jTicket is
+If it is **down**, tell the user and stop: the board is the only source of the work, and
+the server starts when they ask for it. jTicket is
 `apps/jticket` of the jSuite checkout (`jsuite root`); `jsuite status`, then `jsuite start`
 (starts every app).
 
 Every call below goes through `jt` (on PATH after `./jsuite setup`; else
-`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`. It
+`bin/jt` in the jSuite checkout; `jt help`), every endpoint included. It
 prints a ticket or project as JSON, lists as tab-separated rows (`--json` for raw), reads a
 field from a file with `field=@file.md`, and reaches any endpoint without a verb as
 `jt get|post|patch|put|delete PATH [JSON]`.
@@ -55,18 +59,18 @@ jt projects
 The **frontier** is `todo` + unblocked + unclaimed + takeable on this machine (on a
 shared project the peer's tickets are read-only here, so they never surface), and jTicket
 computes it for you.
-Never start a ticket whose `blocked` is `true` — its blockers hold facts you need. If the
+Start only tickets whose `blocked` is `false` — a blocked ticket's blockers hold facts you need. If the
 frontier is empty but tickets remain, say so and stop; something is blocked or claimed.
 
 A ticket's `type` says what kind of work it is (`story`, `task`, `bug`, `review`,
 `verification`, `research`, `decision`, `docs`); its agency is a tag in `labels`.
 A **`hitl`** ticket needs the human in the loop. Confirm they're here for it before
-claiming, and never answer their side of it. Put its questions to them **in this
+claiming, and leave their side of it to them. Put its questions to them **in this
 terminal** (`/grilling`) — they come to the herdr pane to answer. Only when they
 ask for one question in the browser do you escalate it with **`/j-grilling`**;
-never route the whole interview there. **`afk`** tickets you can take cold. A
-**`prototype`**-tagged ticket is throwaway work that must never ship — build it to
-answer its question, and never merge it or open a PR from it.
+the rest of the interview stays here. **`afk`** tickets you can take cold. A
+**`prototype`**-tagged ticket is throwaway work that stays on its branch — build it to
+answer its question, with no PR and no merge.
 
 ## 2. Claim it — before any work
 
@@ -130,8 +134,7 @@ says otherwise. The PR holds the commits, so anything still uncommitted in the
 worktree is disposable: use the guide's forced form rather than leaving the
 worktree behind (a refused non-interactive teardown is not a reason to skip
 it). Keep the branch — the merge sweep deletes it after merging. If teardown
-fails anyway, name the path in your report. Never build in the repo's own
-checkout.
+fails anyway, name the path in your report. Build only in the worktree.
 
 Standard `/implement` discipline, plus the project's own conventions — read the repo's
 `CLAUDE.md`/`AGENTS.md` and invoke whatever skills it names for the layers you're
@@ -164,7 +167,7 @@ Only open a PR when the user asks for one — and note **which kind** they asked
 
 **A LOCAL PR** ("local PR", "PR in jticket", or the hand-off prompt says so) is jTicket's
 own review unit: ticket branch → integration branch, merged by jTicket with a squash —
-**no push, no `gh`, nothing leaves the machine**. The prompt usually names the branch
+**everything stays on this machine — no push, no `gh`**. The prompt usually names the branch
 jTicket already cut (`on the existing branch tick/TICK-7-…`); work on that branch. If it
 doesn't, cut one first:
 
@@ -173,8 +176,7 @@ jt branch TICK-7
 # → { "branch": "tick/TICK-7-persist-cart", ... }  (off the integration branch, local only)
 ```
 
-**The order is fixed: commit → open the PR → mark the ticket `done`. Never the other way
-round.** A `done` ticket on a local-PR hand-off means "its PR exists and is ready to merge"
+**The order is fixed: commit → open the PR → mark the ticket `done`, last.** A `done` ticket on a local-PR hand-off means "its PR exists and is ready to merge"
 — jTicket's auto loop starts the merge sweep the moment every ticket is `done`, and a PR
 that lands a few seconds later is skipped: never merged, never reviewed.
 
@@ -187,11 +189,11 @@ that lands a few seconds later is skipped: never merged, never reviewed.
    ```
 
    Check the response carries a PR `key`. If the call fails, the ticket is **not**
-   finished — fix what it complains about and open it again. Never mark a ticket `done`
-   whose PR didn't open.
+   finished — fix what it complains about and open it again. Mark `done` as the last call,
+   after the PR exists.
 3. **Keep working if there's more to do.** An open PR is not a finished ticket. The PR
    follows the branch, so further commits on it — review fixes, remaining acceptance
-   criteria, a red test — land in the same PR; don't open a second one. The ticket stays
+   criteria, a red test — land in the same PR, one PR per ticket. The ticket stays
    `in_progress` throughout. Reword the description (`PATCH /api/prs/PR-n`) if the change
    grew.
 4. **Mark the ticket `done`** (§5) only once the PR is open **and** the work is complete —
@@ -200,7 +202,7 @@ that lands a few seconds later is skipped: never merged, never reviewed.
    the report back.
 
 If the ticket turns out to need no code change (already fixed, invalid, investigation
-only), there's nothing to merge: don't open an empty PR — record why in the resolution
+only), there's nothing to merge: skip the PR — record why in the resolution
 and mark it `done`.
 
 Do **not** merge it yourself — the merge button is the human's. Merging moves the ticket
@@ -261,8 +263,8 @@ left in the resolution, and say so.
 **Dispatched by jTicket's auto loop** (the hand-off says so): nobody is watching the pane,
 and the loop waits on this ticket, so it always ends `done`. If the criteria can't be met,
 record what's done and what's left in the resolution, file the remainder as a new AFK
-ticket in the same project (§6), and mark this one `done` anyway. Never end the turn with
-the ticket open or with a question. A session that stops with the ticket open gets
+ticket in the same project (§6), and mark this one `done` anyway. End the turn with the
+ticket `done` and no question pending. A session that stops with the ticket open gets
 prompted to finish, and then has the ticket closed for it.
 
 ## 6. Advance the board
@@ -295,7 +297,7 @@ invocation rather than draining the project unasked.
   `{ author, body }`; PATCHing `comments` does nothing. Discussion goes in comments, the
   final answer in `resolution`; anything longer becomes a doc (`POST /api/docs`) linked
   from it.
-- **Deletes are unrecoverable** — the store is one JSON file. Never delete a ticket unless
-  the user asks for that ticket by key.
+- **Deletes are unrecoverable** — the store is one JSON file. Delete only a ticket the user
+  names by key; anything else you would remove, close with a resolution saying why.
 - Other sessions may be working the same project in parallel. Re-read a ticket before
   patching it if time has passed since you loaded it.

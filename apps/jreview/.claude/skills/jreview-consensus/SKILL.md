@@ -1,6 +1,6 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run for jTicket's auto loop — read every reviewer's jExplain report, keep only the findings EVERY reviewer raised, file the in-scope ones (and any critical break) straight into the loop's jTicket project as AFK bug tickets, route out-of-scope ones to the project's "follow ups" project, and POST the in-project ticket keys back to jReview. Invoked as `/jreview-consensus [key]` by the session jReview dispatches once all of a consensus review's reviewers have reported. Not for general use.
+description: Close a consensus jReview run — file the findings every reviewer agreed on as jTicket tickets.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---

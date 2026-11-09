@@ -1,6 +1,7 @@
 ---
 name: j-chart
-description: Draw a diagram the human can edit and annotate — author Mermaid, push it into jChart as an editable Excalidraw canvas, then read the user's redraw and per-shape notes back from .data/jchart. Use when the user says "jchart this", "draw this in jchart", "diagram this so I can edit it", or wants a diagram they will move shapes on and pin notes to. For a diagram inside an article, use j-explain's chart block instead (same chart pool).
+description: Draw a diagram in jChart as an editable canvas, then read back your redraw and per-shape notes.
+disable-model-invocation: true
 ---
 
 # j-chart — an editable, annotatable diagram
