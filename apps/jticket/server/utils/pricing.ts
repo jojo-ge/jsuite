@@ -28,6 +28,7 @@ const price = (input: number, output: number, cacheRead: number): ModelPrice => 
 
 /** Seed rates (first-party API, 2026-10). Keys match by exact id, then longest prefix. */
 export const DEFAULT_PRICES: PriceTable = {
+  'claude-fable-5-2': price(10, 50, 0.25),
   'claude-fable-5-1': price(10, 50, 0.25),
   'claude-fable-5': price(10, 50, 0.25),
   'claude-mythos-5-1': price(10, 50, 0.25),

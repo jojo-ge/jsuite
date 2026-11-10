@@ -296,7 +296,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   },
   'runplan:build': {
     label: 'Build the run plan',
-    hint: "The Run setup tab's Build button — one Fable 5.1 session reads the project and writes its run plan. A codebase or project override is where to say \"never Haiku here\" or \"two orchestrators at most\".",
+    hint: "The Run setup tab's Build button — one Fable 5.2 session reads the project and writes its run plan. A codebase or project override is where to say \"never Haiku here\" or \"two orchestrators at most\".",
     group: 'Run setup',
     level: 'project',
     command: 'Build run plan',

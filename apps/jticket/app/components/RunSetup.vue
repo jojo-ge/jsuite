@@ -16,7 +16,7 @@
 // ended early leaves where it got to (auto.resume): Continue plan picks the
 // plan up at that step, its finished steps shown done, and only the steps
 // from there on are checked — Start from the top is the other button. The Build
-// button hands the whole job to one Fable 5.1 session (`/jrunplan`): while
+// button hands the whole job to one Fable 5.2 session (`/jrunplan`): while
 // it works (project.runPlanBuild) the tab is read-only too.
 import type { Project, Ticket } from '~/composables/useTracker'
 import { resumePlanRun, type PlanStepRecord } from '~/utils/autoLoop'
@@ -440,7 +440,7 @@ async function clearPlan() {
 }
 
 // ── Building with an agent ─────────────────────────────────────────────────
-// One Fable 5.1 session reads the project and writes the plan (POST
+// One Fable 5.2 session reads the project and writes the plan (POST
 // …/run-plan/build → /jrunplan in herdr). It replaces whatever is drafted.
 const buildBusy = ref<'' | 'build' | 'cancel'>('')
 const buildBlocker = computed(() => {
@@ -451,11 +451,11 @@ const buildBlocker = computed(() => {
 async function buildWithAgent() {
   if (buildBlocker.value || !editable.value) return
   const n = draft.value.steps.length
-  if (n && !window.confirm(`Replace the current plan (${n} step${n === 1 ? '' : 's'}) with one Fable 5.1 builds? It reads the project, its docs, every open ticket and the code, then writes the plan here.`)) return
+  if (n && !window.confirm(`Replace the current plan (${n} step${n === 1 ? '' : 's'}) with one Fable 5.2 builds? It reads the project, its docs, every open ticket and the code, then writes the plan here.`)) return
   buildBusy.value = 'build'
   try {
     await $fetch(`/api/projects/${props.project.id}/run-plan/build`, { method: 'POST', body: {} })
-    toast.add({ title: 'Run setup', description: 'Fable 5.1 is building the plan in herdr — this tab is read-only until it reports back.', icon: 'i-lucide-wand-sparkles' })
+    toast.add({ title: 'Run setup', description: 'Fable 5.2 is building the plan in herdr — this tab is read-only until it reports back.', icon: 'i-lucide-wand-sparkles' })
   } catch (err: any) {
     toast.add({ title: 'Run setup', description: String(err?.data?.statusMessage ?? err?.data?.message ?? err?.message ?? err), icon: 'i-lucide-triangle-alert', color: 'error' })
   } finally {
@@ -537,7 +537,7 @@ async function resumeRun() {
       </div>
       <UBadge v-if="planRunning" color="success" variant="subtle" size="sm" icon="i-lucide-lock">running · step {{ (auto?.cursor ?? 0) + 1 }} of {{ draft.steps.length }} · locked</UBadge>
       <UBadge v-else-if="canResume" color="warning" variant="subtle" size="sm" icon="i-lucide-octagon-pause">stopped · continues at step {{ resumeStart!.cursor + 1 }} of {{ draft.steps.length }}</UBadge>
-      <UBadge v-else-if="building" color="primary" variant="subtle" size="sm" icon="i-lucide-loader-circle" :ui="{ leadingIcon: 'animate-spin' }">Fable 5.1 is building the plan · read-only</UBadge>
+      <UBadge v-else-if="building" color="primary" variant="subtle" size="sm" icon="i-lucide-loader-circle" :ui="{ leadingIcon: 'animate-spin' }">Fable 5.2 is building the plan · read-only</UBadge>
       <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
         <!-- running: the one way to edit is to stop -->
         <template v-if="planRunning">
@@ -553,7 +553,7 @@ async function resumeRun() {
         <template v-else>
           <span v-if="startBlocker" class="text-xs text-warning">{{ startBlocker }}</span>
           <UButton v-if="draft.steps.length" size="xs" variant="ghost" color="neutral" icon="i-lucide-eraser" @click="clearPlan">Clear</UButton>
-          <UTooltip :text="buildBlocker || 'One Fable 5.1 session (high effort) reads the project, its docs, every open ticket and the code, and writes the plan — who runs what, on which model and effort, with merges, reviews and gates where they belong'">
+          <UTooltip :text="buildBlocker || 'One Fable 5.2 session (high effort) reads the project, its docs, every open ticket and the code, and writes the plan — who runs what, on which model and effort, with merges, reviews and gates where they belong'">
             <UButton icon="i-lucide-wand-sparkles" color="primary" variant="soft" size="sm" :loading="buildBusy === 'build'" :disabled="!!buildBlocker || !!busy" @click="buildWithAgent">Build with Fable</UButton>
           </UTooltip>
           <template v-if="canResume">
@@ -668,9 +668,9 @@ async function resumeRun() {
         </ul>
       </div>
 
-      <p v-if="!draft.steps.length && !building" class="rounded-lg border border-dashed border-default px-4 py-8 text-center text-sm text-muted">No steps yet. Add the first one below — or let Fable 5.1 build the plan.</p>
+      <p v-if="!draft.steps.length && !building" class="rounded-lg border border-dashed border-default px-4 py-8 text-center text-sm text-muted">No steps yet. Add the first one below — or let Fable 5.2 build the plan.</p>
       <p v-if="building" class="flex items-center justify-center gap-2 rounded-lg border border-dashed border-primary/40 px-4 py-4 text-center text-sm text-muted">
-        <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin text-primary" /> Fable 5.1 is reading the project and writing the plan in herdr; the steps appear here as it saves them.
+        <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin text-primary" /> Fable 5.2 is reading the project and writing the plan in herdr; the steps appear here as it saves them.
       </p>
       <UAlert v-if="planWide.length && editable && view === 'board'" color="warning" variant="subtle" icon="i-lucide-triangle-alert" :description="planWide.map((p) => p.message).join(' ')" />
 
@@ -777,7 +777,7 @@ async function resumeRun() {
                 <USelect :model-value="groupRunnerFor(gi).model" :items="modelItems" size="xs" class="w-28" :aria-label="`Orchestrator ${gi + 1} subagent model`" @update:model-value="(v: PlanModel) => setGroupRunner(gi, { model: v })" />
                 <USelect :model-value="groupRunnerFor(gi).effort" :items="effortItems" size="xs" class="w-24" :aria-label="`Orchestrator ${gi + 1} subagent effort`" @update:model-value="(v: Effort) => setGroupRunner(gi, { effort: v })" />
               </div>
-              <p class="mt-1 text-xs text-muted">A box of small tickets can run cheap beside a box of heavy ones — each orchestrator (always Fable 5.1) runs its group through subagents on the model and effort set here.</p>
+              <p class="mt-1 text-xs text-muted">A box of small tickets can run cheap beside a box of heavy ones — each orchestrator (always Fable 5.2) runs its group through subagents on the model and effort set here.</p>
             </div>
             <div class="grid gap-3 sm:grid-cols-3">
               <UFormField label="Default model" :help="groups.length ? 'For any orchestrator or own agent not set above' : 'For any own agent not set above'">

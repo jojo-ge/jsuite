@@ -79,11 +79,11 @@ describe('readTranscript + subagents', () => {
           { id: 'a2', name: 'Agent', input: { description: 'implement TICK-8', prompt: 'You are implementing TICK-8. Invoke the jimplement skill …', model: 'opus' } },
         ],
         usage: { input_tokens: 100, output_tokens: 300 },
-        model: 'claude-fable-5-1',
+        model: 'claude-fable-5-2',
       })
       .result(T(5.5), 'a1', 'Async agent launched successfully.\nagentId: aaa111 (internal)', { toolUseResult: { isAsync: true, agentId: 'aaa111', prompt: '…' } })
       .result(T(5.6), 'a2', 'Async agent launched successfully.\nagentId: bbb222 (internal)', { toolUseResult: { isAsync: true, agentId: 'bbb222', prompt: '…' } })
-      .assistant(T(400), { tools: [{ id: 'a3', name: 'Agent', input: { description: 'spec check', prompt: 'Spec-review TICK-7. Diff: … End with VERDICT: PASS or VERDICT: FAIL', model: 'opus' } }], usage: { input_tokens: 50, output_tokens: 100 }, model: 'claude-fable-5-1' })
+      .assistant(T(400), { tools: [{ id: 'a3', name: 'Agent', input: { description: 'spec check', prompt: 'Spec-review TICK-7. Diff: … End with VERDICT: PASS or VERDICT: FAIL', model: 'opus' } }], usage: { input_tokens: 50, output_tokens: 100 }, model: 'claude-fable-5-2' })
       .result(T(400.5), 'a3', 'launched', { toolUseResult: { isAsync: true, agentId: 'ccc333' } })
     const impl7 = new TranscriptBuilder('orch-1', '/repo/.worktrees/slot-1')
       .prompt(T(6), 'You are implementing TICK-7…')
@@ -119,7 +119,7 @@ describe('readTranscript + subagents', () => {
     expect(report.subagents[0]).toMatchObject({ firstEditAt: T(10), edits: 1 })
     expect(report.subagents[0]!.verification).toMatchObject({ count: 1, filtered: 1, whole: 0, wallMs: 10_000 })
     // Orchestrator (Fable) + subagents (Opus), summed by model.
-    expect(report.totalCost.lines.map((l) => l.model).sort()).toEqual(['claude-fable-5-1', 'claude-opus-5-5'])
+    expect(report.totalCost.lines.map((l) => l.model).sort()).toEqual(['claude-fable-5-2', 'claude-opus-5-5'])
     expect(report.totalCost.usd).toBeCloseTo(report.session.cost.usd + report.subagents.reduce((a, s) => a + s.cost.usd, 0), 10)
     // Two implementers overlapped (6s → 100s), the spec check ran alone.
     expect(report.concurrency.max).toBe(2)

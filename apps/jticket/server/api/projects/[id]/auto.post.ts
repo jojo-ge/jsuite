@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
   if (enabling) {
     const blocked = autoModeBlocker(store, project)
     if (blocked) throw createError({ statusCode: 409, statusMessage: blocked })
-    if (project.runPlanBuild) throw createError({ statusCode: 409, statusMessage: `Fable 5.1 is still building ${project.key}'s run plan — wait for it, or cancel the build in Run setup` })
+    if (project.runPlanBuild) throw createError({ statusCode: 409, statusMessage: `Fable 5.2 is still building ${project.key}'s run plan — wait for it, or cancel the build in Run setup` })
   }
 
   // A run plan: the Run setup tab's, runnable as built — from the top, or

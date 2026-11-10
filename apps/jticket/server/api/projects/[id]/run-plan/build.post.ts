@@ -1,4 +1,4 @@
-// The Run setup tab's Build button: dispatch one Fable 5.1 `/jrunplan` session
+// The Run setup tab's Build button: dispatch one Fable 5.2 `/jrunplan` session
 // (the `runplan:build` hand-off, prompt layers applied) that reads the project
 // and writes its run plan. Marks project.runPlanBuild until the session
 // reports back (POST …/run-plan/built) or is cancelled (DELETE …/run-plan/build).

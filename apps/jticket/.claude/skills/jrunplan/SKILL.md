@@ -1,6 +1,6 @@
 ---
 name: jrunplan
-description: Build a jTicket project's run plan — read the project, its docs, every open ticket and the code, weigh each ticket, decide who runs what on which model and effort, and place merges, reviews and gates sparingly; save it through the run-plan API until it has no problems, then report back. Invoked as "/jrunplan [PROJ-n]" by the Run setup tab's Build button (one Fable 5.1 session at high effort). Not for general use.
+description: Build a jTicket project's run plan — read the project, its docs, every open ticket and the code, weigh each ticket, decide who runs what on which model and effort, and place merges, reviews and gates sparingly; save it through the run-plan API until it has no problems, then report back. Invoked as "/jrunplan [PROJ-n]" by the Run setup tab's Build button (one Fable 5.2 session at high effort). Not for general use.
 disable-model-invocation: true
 argument-hint: "[PROJ-n]"
 ---
@@ -55,10 +55,10 @@ changes a contract others build on, whether tests exist around it.
 | --- | --- | --- |
 | light | a one-file fix, a doc, a rename, a copy change, a test gap | grouped under an orchestrator — Sonnet 5.5 or Haiku 5.5, `low`/`medium` |
 | medium | a feature inside one module, a bug with a clear repro | grouped under an orchestrator on Opus 5.5 `medium`/`high`, or its own agent |
-| heavy | a new module, a migration, a cross-cutting contract change, anything with design in it | its own agent — Opus 5.5 `high` (Fable 5.1 `high` only when it needs real judgment) |
+| heavy | a new module, a migration, a cross-cutting contract change, anything with design in it | its own agent — Opus 5.5 `high` (Fable 5.2 `high` only when it needs real judgment) |
 
 Orchestrators pay off on **four or more related small or medium tickets**: one
-Fable 5.1 session shares worktree slots, runs them through subagents (2 at
+Fable 5.2 session shares worktree slots, runs them through subagents (2 at
 once) and spec-checks each. A heavy ticket alone gains nothing from one, and
 neither does a box of two or three: measured over a real run, every
 orchestrator that had one subagent going at a time cost more than the work it

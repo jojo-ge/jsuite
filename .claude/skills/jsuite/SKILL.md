@@ -87,7 +87,7 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
 - **Auto mode (the jButton)** — the server loops implement → merge → review →
   fix → merge (`server/plugins/autoLoop.ts`). Each loop dispatches the AFK
   frontier on Opus 5.5 (`/jimplement`, local PRs) — or, **orchestrated**, one
-  Fable 5.1 `/jorchestrate` session per phase working tickets through Opus 5.5
+  Fable 5.2 `/jorchestrate` session per phase working tickets through Opus 5.5
   subagents in pooled worktrees, claiming each via `POST …/auto/claim` (budget
   2–4 in flight, never 1, enforced server-side) and spec-checking it before marking it
   done; a stalled orchestrator is replaced — waits for every ticket, runs the
@@ -107,7 +107,7 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
 - **Run setup / run plans** — `project.runPlan` (`PUT …/run-plan`; 409 while
   running — **Unlock & stop** / **Stop after this step**). Steps: **implement**
   (each ticket its own `/jimplement` agent, Opus 5.5 high by default, or a
-  Fable 5.1 `/jorchestrate` group with its own model/effort and budget;
+  Fable 5.2 `/jorchestrate` group with its own model/effort and budget;
   `GET …/auto/queue?orchestrator=n`, a solo ticket's claim is refused),
   **merge**, **review** from a checkpoint (optional `/jarch-review` pass first:
   `arch-reviewing` → `arch-fixing` → `arch-merging`; then a 2–4 reviewer
@@ -123,7 +123,7 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   for), keeps the finished steps' records and checkpoints, and validates only
   the steps from there on — finished tickets in a step are never a problem,
   they're skipped. **Build with Fable** = `POST …/run-plan/build` (`DELETE` cancels):
-  one Fable 5.1 high `/jrunplan` session (prompt kind `runplan:build`) PUTs the
+  one Fable 5.2 high `/jrunplan` session (prompt kind `runplan:build`) PUTs the
   plan until `problems` is `[]` and reports via `…/run-plan/built`. Every
   implement step keeps to the **concurrency rule**: at most 4 sessions at
   once (an orchestrator counts as one) — own agents only (4 at once), mixed

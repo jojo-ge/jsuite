@@ -52,7 +52,7 @@ const script = computed(() =>
     const dsp = d.dispatchOf(s)
     if (dsp.mode === 'orchestrated') {
       const groups = d.groupsOf(s).filter((g) => g.length)
-      return `${n}. Implement — ${groups.length || 1} Fable 5.1 orchestrator${groups.length > 1 ? 's' : ''} on ${PLAN_MODELS[dsp.model].label} subagents, ${dsp.budget} in flight each: ${groups.map((g, gi) => `orchestrator ${gi + 1} takes ${g.join(', ')}`).join('; ') || 'no tickets yet'}.`
+      return `${n}. Implement — ${groups.length || 1} Fable 5.2 orchestrator${groups.length > 1 ? 's' : ''} on ${PLAN_MODELS[dsp.model].label} subagents, ${dsp.budget} in flight each: ${groups.map((g, gi) => `orchestrator ${gi + 1} takes ${g.join(', ')}`).join('; ') || 'no tickets yet'}.`
     }
     return `${n}. Implement — ${s.tickets.length} ticket${s.tickets.length === 1 ? '' : 's'} each in its own ${PLAN_MODELS[dsp.model].label} session: ${s.tickets.join(', ') || 'none yet'}.`
   }),
@@ -162,7 +162,7 @@ const script = computed(() =>
               <span class="text-muted">Run as</span>
               <USelect
                 :model-value="selected.dispatch?.mode ?? 'default'"
-                :items="[{ label: 'As the plan was started', value: 'default' }, { label: 'Separate sessions, one per ticket', value: 'sessions' }, { label: 'Orchestrated (Fable 5.1 + subagents)', value: 'orchestrated' }]"
+                :items="[{ label: 'As the plan was started', value: 'default' }, { label: 'Separate sessions, one per ticket', value: 'sessions' }, { label: 'Orchestrated (Fable 5.2 + subagents)', value: 'orchestrated' }]"
                 size="sm"
                 class="w-64"
                 :disabled="d.locked(selectedIndex)"

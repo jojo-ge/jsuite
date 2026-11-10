@@ -36,7 +36,7 @@
  * - `worktree:kickoff` — asks a codebase how it does worktrees (codebase-level; no project)
  * - `worktree:connect` — connects a project's integration branch to the
  *   codebase's worktree setup (project-level; not a ticket)
- * - `runplan:build` — the Run setup tab's Build button: one Fable 5.1 session
+ * - `runplan:build` — the Run setup tab's Build button: one Fable 5.2 session
  *   writes the project's run plan (project-level; not a ticket)
  */
 export const PROMPT_KINDS = [

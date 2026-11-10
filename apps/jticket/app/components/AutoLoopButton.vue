@@ -24,7 +24,7 @@ const orchestrated = computed(() => mode.value === 'orchestrated')
 const modelLabel = computed(() => PLAN_MODELS[model.value].label)
 const modeItems = [
   { label: 'One session per ticket', value: 'sessions', description: 'Every ticket at once, each in its own session and worktree on the model below. Fastest, heaviest.' },
-  { label: 'Orchestrated', value: 'orchestrated', description: 'One Fable 5.1 session runs the tickets through subagents on the model below, in pooled worktrees, deciding what runs side by side. Lighter, slower.' },
+  { label: 'Orchestrated', value: 'orchestrated', description: 'One Fable 5.2 session runs the tickets through subagents on the model below, in pooled worktrees, deciding what runs side by side. Lighter, slower.' },
 ]
 const modelItems = PLAN_MODEL_KEYS.map((m) => ({ label: PLAN_MODELS[m].label, value: m }))
 const effortItems = EFFORTS.map((e) => ({ label: `${e} effort`, value: e }))
@@ -141,8 +141,8 @@ async function confirmStart() {
         <ol class="flex list-decimal flex-col gap-1.5 pl-5">
           <li v-if="orchestrated">
             <span class="font-medium">Implement</span> —
-            <template v-if="orchestrators > 1">{{ orchestrators }} <span class="font-mono text-xs">Fable 5.1</span> orchestrators share the AFK frontier out between them, each working its share through</template>
-            <template v-else>a <span class="font-mono text-xs">Fable 5.1</span> orchestrator works the AFK frontier through</template>
+            <template v-if="orchestrators > 1">{{ orchestrators }} <span class="font-mono text-xs">Fable 5.2</span> orchestrators share the AFK frontier out between them, each working its share through</template>
+            <template v-else>a <span class="font-mono text-xs">Fable 5.2</span> orchestrator works the AFK frontier through</template>
             <span class="font-mono text-xs">{{ modelLabel }}</span> subagents, at most {{ budget }} at a time{{ orchestrators > 1 ? ' each' : '' }}, and spec-checks each ticket against its acceptance criteria before marking it done.
           </li>
           <li v-else><span class="font-medium">Implement</span> — every AFK ticket on the frontier goes to herdr on <span class="font-mono text-xs">{{ modelLabel }}</span>.</li>

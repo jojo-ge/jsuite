@@ -16,7 +16,7 @@ export const SLICE_MODEL = process.env.JTICKET_SLICE_MODEL?.trim() || 'claude-op
 export const SLICE_EFFORT = process.env.JTICKET_SLICE_EFFORT?.trim() || 'medium'
 
 /** Orchestrated auto loops — one session per phase that runs the tickets through subagents (Opus unless the run says otherwise). */
-export const ORCHESTRATE_MODEL = process.env.JTICKET_ORCHESTRATE_MODEL?.trim() || 'claude-fable-5-1'
+export const ORCHESTRATE_MODEL = process.env.JTICKET_ORCHESTRATE_MODEL?.trim() || 'claude-fable-5-2'
 
 /**
  * The CLI model id a run's chosen model pins its sessions to. Opus and Fable
@@ -28,6 +28,6 @@ export function modelIdFor(model: PlanModel): string {
   return PLAN_MODELS[model].id
 }
 
-/** The Run setup tab's Build button — one Fable 5.1 session at high effort reads the project and writes its run plan. */
-export const RUNPLAN_MODEL = process.env.JTICKET_RUNPLAN_MODEL?.trim() || 'claude-fable-5-1'
+/** The Run setup tab's Build button — one Fable 5.2 session at high effort reads the project and writes its run plan. */
+export const RUNPLAN_MODEL = process.env.JTICKET_RUNPLAN_MODEL?.trim() || 'claude-fable-5-2'
 export const RUNPLAN_EFFORT = process.env.JTICKET_RUNPLAN_EFFORT?.trim() || 'high'

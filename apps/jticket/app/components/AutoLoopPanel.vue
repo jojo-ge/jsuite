@@ -112,8 +112,8 @@ const phaseText = computed(() => {
     const beside = solo ? ` ${solo} other${solo === 1 ? '' : 's'} run as their own agents beside it${q ? ` — ${queueText(q)}` : ''}.` : ''
     const count = Math.max(1, a.orchestrators.length)
     const started = a.orchestrators.filter((x) => x.dispatchedAt).length
-    if (!started) return `${at}Starting ${o.orchestrators > 1 ? `${o.orchestrators} Fable 5.1 orchestrators` : 'a Fable 5.1 orchestrator'} for ${what}.${beside}`
-    const who = count > 1 ? `${count} Fable 5.1 orchestrators are` : 'A Fable 5.1 orchestrator is'
+    if (!started) return `${at}Starting ${o.orchestrators > 1 ? `${o.orchestrators} Fable 5.2 orchestrators` : 'a Fable 5.2 orchestrator'} for ${what}.${beside}`
+    const who = count > 1 ? `${count} Fable 5.2 orchestrators are` : 'A Fable 5.2 orchestrator is'
     const cap = count > 1 ? `${flying.value.length} of ${o.budget * count} in flight (${o.budget} each)` : `${flying.value.length} of ${o.budget} in flight`
     return `${at}${who} working ${what} through ${model} subagents at ${o.effort} effort — ${cap}, each spec-checked before it's done.${beside}`
   }

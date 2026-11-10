@@ -365,17 +365,17 @@ describe('per-step dispatch', () => {
   })
 
   it('summarises a dispatch for the builder', () => {
-    expect(dispatchSummary(orch, 3)).toBe('One Fable 5.1 orchestrator runs 3 tickets through Sonnet 5.5 subagents, at most 3 in flight, spec-checking each before it\'s done.')
+    expect(dispatchSummary(orch, 3)).toBe('One Fable 5.2 orchestrator runs 3 tickets through Sonnet 5.5 subagents, at most 3 in flight, spec-checking each before it\'s done.')
     expect(dispatchSummary({ mode: 'sessions', model: 'opus', effort: 'high', budget: 2, orchestrators: 1 }, 1)).toBe('1 ticket at once, each in its own Opus 5.5 session and worktree.')
     const mixed = s('s1', 'implement', { tickets: ['T-1', 'T-2', 'T-3'], dispatch: { ...orch, model: 'opus' }, groups: [['T-3']], runners: { 'T-2': { model: 'haiku', effort: 'low' } } })
     expect(implementSummary(mixed, orch)).toBe(
-      '2 tickets each with its own agent (1 on Opus 5.5 high, 1 on Haiku 5.5 low), beside 1 Fable 5.1 orchestrator working 1 ticket through Opus 5.5 high subagents, 3 in flight each.',
+      '2 tickets each with its own agent (1 on Opus 5.5 high, 1 on Haiku 5.5 low), beside 1 Fable 5.2 orchestrator working 1 ticket through Opus 5.5 high subagents, 3 in flight each.',
     )
     expect(reviewSummary(s('s2', 'review', { reviewers: 3, review: { model: 'opus', effort: 'medium', arch: { model: 'opus', effort: 'high' } } }))).toBe(
       'architectural & technical reviewer first (Opus 5.5 high; its architectural findings must be fixed), then 3 reviewers (Opus 5.5 medium) — findings they all raise are fixed and merged here',
     )
     expect(dispatchSummary({ ...orch, orchestrators: 2 }, 5)).toBe(
-      '2 Fable 5.1 orchestrators share 5 tickets out between them, each running its share through Sonnet 5.5 subagents, at most 3 in flight each, spec-checking every ticket before it\'s done.',
+      '2 Fable 5.2 orchestrators share 5 tickets out between them, each running its share through Sonnet 5.5 subagents, at most 3 in flight each, spec-checking every ticket before it\'s done.',
     )
   })
 })
@@ -647,14 +647,14 @@ describe('group runners — an orchestrator group with its own subagent model an
   it('the summary tallies the subagents by runner, and says the queue pace when there are more own agents than sessions', () => {
     const step = s('s1', 'implement', { tickets: keys, dispatch: orch, groups: [['T-1', 'T-2'], ['T-3']], groupRunners: [{ model: 'sonnet', effort: 'low' }, null] })
     expect(implementSummary(step, orch)).toBe(
-      '2 tickets each with its own agent (2 on Opus 5.5 high) — none can run beside 2 orchestrators, beside 2 Fable 5.1 orchestrators working 3 tickets through subagents (2 on Sonnet 5.5 low, 1 on Opus 5.5 high), 2 in flight each.',
+      '2 tickets each with its own agent (2 on Opus 5.5 high) — none can run beside 2 orchestrators, beside 2 Fable 5.2 orchestrators working 3 tickets through subagents (2 on Sonnet 5.5 low, 1 on Opus 5.5 high), 2 in flight each.',
     )
     const mixed = s('s1', 'implement', { tickets: keys, dispatch: orch, groups: [['T-1']] })
     expect(implementSummary(mixed, orch)).toBe(
-      '4 tickets each with its own agent (4 on Opus 5.5 high), 3 at once in queue order, beside 1 Fable 5.1 orchestrator working 1 ticket through Opus 5.5 high subagents, 2 in flight each.',
+      '4 tickets each with its own agent (4 on Opus 5.5 high), 3 at once in queue order, beside 1 Fable 5.2 orchestrator working 1 ticket through Opus 5.5 high subagents, 2 in flight each.',
     )
     const same = s('s1', 'implement', { tickets: ['T-1', 'T-2'], dispatch: orch, groups: [['T-1', 'T-2']] })
-    expect(implementSummary(same, orch)).toBe('1 Fable 5.1 orchestrator working 2 tickets through Opus 5.5 high subagents, 2 in flight each.')
+    expect(implementSummary(same, orch)).toBe('1 Fable 5.2 orchestrator working 2 tickets through Opus 5.5 high subagents, 2 in flight each.')
   })
 
   it("each orchestrator slot runs its group's runner; a slot off a plan step runs the phase's", () => {

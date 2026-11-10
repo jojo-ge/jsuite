@@ -152,7 +152,7 @@ plan?, continue?}`:
 - `enabled: false` — stop; "Stop at the end of next loop" sets `stopRequested`.
 
 Each loop: dispatch the AFK frontier on Opus 5.5 (`/jimplement`, local PRs) —
-or, in **orchestrated** mode (`project.auto.orchestration`), one Fable 5.1
+or, in **orchestrated** mode (`project.auto.orchestration`), one Fable 5.2
 `/jorchestrate` session per phase working tickets through Opus 5.5 subagents
 in pooled worktrees — wait for every ticket (finished with no PR → look twice
 more, 20s apart, then skip the merge) → merge sweep on Sonnet 5, which reports
@@ -194,7 +194,7 @@ step) and on a shared project's peer side.
 Steps: **implement** (3-step wizard: pick tickets → who runs each → confirm).
 Each ticket runs as its own `/jimplement` agent — `--model`/`--effort` from the
 step's `dispatch` (Opus 5.5 high by default) or the ticket's `runners[key]` —
-unless in an orchestrator group (`step.groups`): then a Fable 5.1
+unless in an orchestrator group (`step.groups`): then a Fable 5.2
 `/jorchestrate` session works that group through subagents on the step's
 model/effort or the group's own (`step.groupRunners`), under its own budget.
 Solo agents and orchestrators run side by side (`orchestratedKeys` /
@@ -224,7 +224,7 @@ Strict ordering: a ticket's open blockers must each sit in an earlier
 implement step with a merge between (`runPlanProblems`).
 
 **Build with Fable**: `POST /api/projects/:id/run-plan/build` (`DELETE`
-cancels) dispatches one Fable 5.1 high `/jrunplan` session (prompt kind
+cancels) dispatches one Fable 5.2 high `/jrunplan` session (prompt kind
 `runplan:build`) that reads the project, docs, open tickets and code, weighs
 each ticket, chooses who runs what on which model/effort, places
 merges/reviews/gates sparingly (always a review at the end; HITL tickets in

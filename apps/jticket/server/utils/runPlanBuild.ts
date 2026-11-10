@@ -1,6 +1,6 @@
 // Building a run plan with an agent — the Run setup tab's Build button.
 //
-// One Fable 5.1 session (`/jrunplan`, the `runplan:build` hand-off resolved
+// One Fable 5.2 session (`/jrunplan`, the `runplan:build` hand-off resolved
 // through the prompt layers) reads the project and writes its plan through
 // PUT …/run-plan, then reports back (POST …/run-plan/built). While it works,
 // `project.runPlanBuild` marks the plan as the agent's: the tab is read-only
@@ -30,7 +30,7 @@ export async function startRunPlanBuild(projectId: string): Promise<{ agent: str
   if (project.runPlanBuild) {
     const agents = await herdrAgents()
     const live = agents?.has(project.runPlanBuild.agent) ?? true
-    if (live) throw createError({ statusCode: 409, statusMessage: `Fable 5.1 is already building ${project.key}'s run plan (since ${project.runPlanBuild.startedAt}) — cancel it first to start over` })
+    if (live) throw createError({ statusCode: 409, statusMessage: `Fable 5.2 is already building ${project.key}'s run plan (since ${project.runPlanBuild.startedAt}) — cancel it first to start over` })
   }
   const prompt = buildPlanPrompt(store, project)
   const { agent, paneId } = await dispatchProjectSession(project, 'run plan', prompt, { model: RUNPLAN_MODEL, effort: RUNPLAN_EFFORT, session: { role: 'runplan-build' } })

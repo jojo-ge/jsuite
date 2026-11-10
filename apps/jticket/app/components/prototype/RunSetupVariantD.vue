@@ -199,7 +199,7 @@ function describe(solo: string[], orch: string[][], m: PlanModel, eff: string, b
   }
   if (orch.length) {
     const n = orch.reduce((a, g) => a + g.length, 0)
-    parts.push(`${orch.length} Fable 5.1 orchestrator${orch.length > 1 ? 's' : ''} working ${n} ticket${n === 1 ? '' : 's'} through ${PLAN_MODELS[m].label} subagents, ${b} in flight each`)
+    parts.push(`${orch.length} Fable 5.2 orchestrator${orch.length > 1 ? 's' : ''} working ${n} ticket${n === 1 ? '' : 's'} through ${PLAN_MODELS[m].label} subagents, ${b} in flight each`)
   }
   return `${parts.join(', beside ') || 'no tickets'}${orch.length ? ` · subagents at ${eff} effort` : ''}.`
 }

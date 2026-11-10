@@ -181,7 +181,7 @@ export type AutoMode = DispatchMode
 /**
  * The run's dispatch setting — a PlanDispatch by another name (the jButton
  * predates run plans): mode, the model and effort the sessions (or,
- * orchestrated, the subagents — the orchestrator itself is always Fable 5.1)
+ * orchestrated, the subagents — the orchestrator itself is always Fable 5.2)
  * run on, the per-orchestrator budget, and how many orchestrators.
  */
 export type AutoOrchestration = PlanDispatch

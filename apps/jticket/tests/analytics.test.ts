@@ -54,7 +54,7 @@ describe('buildAnalytics', () => {
       .assistant(T(600), { text: 'done', usage: { output_tokens: 10 } })
       .write(dir)
     // Orchestrated: claim at 1000, implementer 1010→1300 (edit at 1050, whole run 1100→1220), spec check 1320→1340, second implementer (fix) 1400→1450.
-    const orch = new TranscriptBuilder('orch-1', REPO, 'claude-fable-5-1')
+    const orch = new TranscriptBuilder('orch-1', REPO, 'claude-fable-5-2')
       .prompt(T(900), '/jorchestrate PROJ-1 — jTicket\'s auto loop, implementing phase')
       .assistant(T(1005), { tools: [{ id: 'a1', name: 'Agent', input: { description: 'Implement TICK-2', prompt: 'You are implementing TICK-2. Invoke the jimplement skill with this hand-off: …' } }], usage: { input_tokens: 500, output_tokens: 200 } })
       .result(T(1006), 'a1', 'launched', { toolUseResult: { agentId: 'i1' } })
@@ -85,7 +85,7 @@ describe('buildAnalytics', () => {
     })
     const sessions = [
       sessionRow({ id: 'solo-1', role: 'implement', ticketKey: 'TICK-1', projectId: 'p1', projectKey: 'PROJ-1', repo: REPO, cwd: REPO, loop: 1, model: 'claude-opus-5-5', effort: 'high', dispatchedAt: T(5) }),
-      sessionRow({ id: 'orch-1', role: 'orchestrate', tickets: ['TICK-2'], projectId: 'p1', projectKey: 'PROJ-1', repo: REPO, cwd: REPO, loop: 2, orchestrator: 1, model: 'claude-fable-5-1', dispatchedAt: T(899) }),
+      sessionRow({ id: 'orch-1', role: 'orchestrate', tickets: ['TICK-2'], projectId: 'p1', projectKey: 'PROJ-1', repo: REPO, cwd: REPO, loop: 2, orchestrator: 1, model: 'claude-fable-5-2', dispatchedAt: T(899) }),
       sessionRow({ id: 'merge-1', role: 'merge', projectId: 'p1', projectKey: 'PROJ-1', repo: REPO, cwd: REPO, loop: 2, model: 'claude-sonnet-5', dispatchedAt: T(1999) }),
       sessionRow({ id: 'gone-1', role: 'implement', ticketKey: 'TICK-3', projectId: 'p1', projectKey: 'PROJ-1', repo: REPO, cwd: REPO, dispatchedAt: T(3000) }),
     ]
@@ -239,13 +239,13 @@ describe('backfill', () => {
     const bdir = join(root, cwdSlug('/bf'))
     new TranscriptBuilder('bf-impl', '/bf').prompt(T(0), '/jimplement TICK-7 in a worktree').assistant(T(1), { text: 'hi', usage: { output_tokens: 1 } }).write(bdir)
     new TranscriptBuilder('bf-chat', '/bf').prompt(T(0), 'what does this file do?').assistant(T(1), { text: 'hi' }).write(bdir)
-    new TranscriptBuilder('bf-wt', '/bf/.worktrees/x').prompt(T(0), '/jorchestrate PROJ-7 implementing phase: TICK-7').assistant(T(1), { text: 'hi', model: 'claude-fable-5-1', usage: { output_tokens: 1 } }).write(join(root, cwdSlug('/bf/.worktrees/x')))
+    new TranscriptBuilder('bf-wt', '/bf/.worktrees/x').prompt(T(0), '/jorchestrate PROJ-7 implementing phase: TICK-7').assistant(T(1), { text: 'hi', model: 'claude-fable-5-2', usage: { output_tokens: 1 } }).write(join(root, cwdSlug('/bf/.worktrees/x')))
     const st = store({ projects: [project('p7', 'PROJ-7', { repo: '/bf' })], tickets: [ticket('t7', 'TICK-7', 'p7')] })
     const r1 = await backfillSessions(st)
     expect(r1).toMatchObject({ scanned: 3, added: 2, skipped: { known: 0, unmatched: 1, unreadable: 0 }, byRole: { implement: 1, orchestrate: 1 } })
     const rows = loadSessions()
     expect(rows.find((s) => s.id === 'bf-impl')).toMatchObject({ role: 'implement', ticketKey: 'TICK-7', projectKey: 'PROJ-7', source: 'backfill', model: 'claude-opus-5-5', dispatchedAt: T(0) })
-    expect(rows.find((s) => s.id === 'bf-wt')).toMatchObject({ role: 'orchestrate', tickets: ['TICK-7'], cwd: '/bf/.worktrees/x', model: 'claude-fable-5-1' })
+    expect(rows.find((s) => s.id === 'bf-wt')).toMatchObject({ role: 'orchestrate', tickets: ['TICK-7'], cwd: '/bf/.worktrees/x', model: 'claude-fable-5-2' })
     const r2 = await backfillSessions(st)
     expect(r2).toMatchObject({ added: 0, skipped: { known: 2 } })
   })

@@ -31,7 +31,7 @@
 //   session, facts only) and that step's sessions read it first.
 //   gate        waits for the human to press Continue
 //
-// A plan is built by hand in the tab, or by one Fable 5.1 session the tab's
+// A plan is built by hand in the tab, or by one Fable 5.2 session the tab's
 // Build button dispatches (`/jrunplan`; `project.runPlanBuild` marks it in
 // progress — the tab is read-only until it reports back). Started, the plan
 // is locked whole: unlocking it stops the run.
@@ -49,7 +49,7 @@ export const PLAN_MODELS: Record<PlanModel, { label: string; id: string }> = {
   opus: { label: 'Opus 5.5', id: 'claude-opus-5-5' },
   sonnet: { label: 'Sonnet 5.5', id: 'claude-sonnet-5-5' },
   haiku: { label: 'Haiku 5.5', id: 'claude-haiku-5-5' },
-  fable: { label: 'Fable 5.1', id: 'claude-fable-5-1' },
+  fable: { label: 'Fable 5.2', id: 'claude-fable-5-2' },
 }
 export const PLAN_MODEL_DEFAULT: PlanModel = 'opus'
 export const PLAN_MODEL_KEYS = Object.keys(PLAN_MODELS) as PlanModel[]
@@ -78,7 +78,7 @@ export type DispatchMode = 'sessions' | 'orchestrated'
 
 /**
  * One batch's dispatch: 'sessions' runs every ticket at once, each in its own
- * session on `model`; 'orchestrated' runs `orchestrators` Fable 5.1
+ * session on `model`; 'orchestrated' runs `orchestrators` Fable 5.2
  * orchestrators side by side, the batch's tickets shared out between them,
  * each working its share through subagents on `model` with at most `budget`
  * in flight.
@@ -186,8 +186,8 @@ export function dispatchSummary(d: PlanDispatch, n?: number): string {
   const what = n === undefined ? 'the tickets' : `${n} ticket${n === 1 ? '' : 's'}`
   if (d.mode !== 'orchestrated') return `${what[0]!.toUpperCase()}${what.slice(1)} at once, each in its own ${model} session and worktree.`
   return d.orchestrators > 1
-    ? `${d.orchestrators} Fable 5.1 orchestrators share ${what} out between them, each running its share through ${model} subagents, at most ${d.budget} in flight each, spec-checking every ticket before it's done.`
-    : `One Fable 5.1 orchestrator runs ${what} through ${model} subagents, at most ${d.budget} in flight, spec-checking each before it's done.`
+    ? `${d.orchestrators} Fable 5.2 orchestrators share ${what} out between them, each running its share through ${model} subagents, at most ${d.budget} in flight each, spec-checking every ticket before it's done.`
+    : `One Fable 5.2 orchestrator runs ${what} through ${model} subagents, at most ${d.budget} in flight, spec-checking each before it's done.`
 }
 
 export interface PlanStep {
@@ -413,7 +413,7 @@ export function implementSummary(step: PlanStep, fallback: PlanDispatch): string
       tally.set(label, (tally.get(label) ?? 0) + e.tickets.length)
     }
     const through = tally.size === 1 ? `${[...tally.keys()][0]} subagents` : `subagents (${[...tally].map(([l, c]) => `${c} on ${l}`).join(', ')})`
-    parts.push(`${orch.length} Fable 5.1 orchestrator${orch.length > 1 ? 's' : ''} working ${n} ticket${n === 1 ? '' : 's'} through ${through}, ${d.budget} in flight each`)
+    parts.push(`${orch.length} Fable 5.2 orchestrator${orch.length > 1 ? 's' : ''} working ${n} ticket${n === 1 ? '' : 's'} through ${through}, ${d.budget} in flight each`)
   }
   return `${parts.join(', beside ') || 'No tickets yet'}.`
 }
