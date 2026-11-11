@@ -1,12 +1,13 @@
 // Everything the project view needs about a project's GitHub side: the repo it
 // points at, the state of its integration branch, and the open PRs that belong
-// to it — each already carrying a jDiff link and a github.com link.
+// to it — each already carrying a Diff tab link and a github.com link.
 //
 // Degrades in layers rather than failing whole: an unconfigured project answers
 // { configured: false } with a suggested branch name, and a `gh` that can't
 // reach GitHub (offline, not logged in) still returns the branch state with the
 // failure reported in `prsError`.
 import type { ProjectPr } from '../../../utils/github'
+import { diffTabUrl } from '../../../../app/utils/diffTarget'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -48,7 +49,7 @@ export default defineEventHandler(async (event) => {
         name: branchName,
         local: await localBranchExists(path, branchName),
         remote: await remoteBranchExists(path, branchName),
-        jdiffUrl: jdiffBranchUrl(path, branchName, ctx.defaultBranch),
+        diffUrl: diffTabUrl(project.key),
         githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branchName)}` : null,
         // "Open the roll-up PR" — the integration branch against the default branch.
         comparePrUrl: ctx.slug
@@ -75,7 +76,7 @@ export default defineEventHandler(async (event) => {
   let prsError: string | null = null
   try {
     prs = matchProjectPrs(await listOpenPrs(path, force), {
-      repoPath: path,
+      projectKey: project.key,
       integrationBranch: branchName,
       keys: projectKeys(store, project),
     })
@@ -88,7 +89,6 @@ export default defineEventHandler(async (event) => {
     repo: path,
     slug: ctx.slug,
     repoUrl: ctx.slug ? `https://github.com/${ctx.slug}` : null,
-    jdiffRepoUrl: jdiffPrsUrl(path),
     defaultBranch: ctx.defaultBranch,
     integrationBranch: branchName,
     suggestedBranch,

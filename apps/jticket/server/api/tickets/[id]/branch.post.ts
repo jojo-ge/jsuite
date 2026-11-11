@@ -7,6 +7,8 @@
 // not re-cut.
 //
 // Body: { branch? }  — defaults to 'tick/<TICK-n>-<title-slug>'
+import { diffTabUrl } from '../../../../app/utils/diffTarget'
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<{ branch?: string }>(event).catch(() => ({}) as { branch?: string })
@@ -21,6 +23,7 @@ export default defineEventHandler(async (event) => {
     base: cut.base,
     created: cut.created,
     adopted: cut.adopted,
-    jdiffUrl: jdiffBranchUrl(cut.path, cut.branch, cut.base),
+    // The project's Diff tab on the branch, against what it was cut from.
+    diffUrl: diffTabUrl(store.projects.find((p) => p.id === ticket.projectId)?.key ?? ticket.projectId, { head: cut.branch, base: cut.base }),
   }
 })

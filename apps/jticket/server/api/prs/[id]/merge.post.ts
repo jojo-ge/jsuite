@@ -58,6 +58,5 @@ export default defineEventHandler(async (event) => {
     headDeleted: result.headDeleted,
     headWorktree: result.headWorktree,
     mergedAs: result.mergedAs,
-    jdiffBaseUrl: jdiffBranchUrl(path, pr.baseBranch),
   }
 })

@@ -26,7 +26,9 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | POST | `/api/prs/:id/merge` | Squash-merge locally (a real merge when the PR brings upstream history); deletes the branch, ticket → `merged`; 409 on conflict |
 | POST | `/api/projects/:id/integration-branch` | Cut (or adopt) the project's empty integration branch off the default branch and push it |
 | GET | `/api/projects/:id/branches?q=&fetch=1` | Branches in the project's repo, local + origin, for adopting an integration branch |
-| GET | `/api/projects/:id/github` | The project's GitHub side: repo, integration-branch state, its open PRs with jDiff + github.com links |
+| GET | `/api/projects/:id/github` | The project's GitHub side: repo, integration-branch state, its open PRs with Diff tab (`diffUrl`) + github.com links |
+| GET | `/api/projects/:id/diff` | The Diff tab's rows for a target: none = the project's branch, `?pr=PR-n`, `?gh=<n>`, or `?head=&base=` → `{ target, files }` |
+| GET | `/api/projects/:id/diff/file` | One file at a commit, highlighted (`?oid=<headOid>&path=`) → `{ lines }` |
 | POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` (the only remote write) |
 | POST | `/api/projects/:id/auto` | The jButton: `{enabled, once?, tickets?, plan?, continue?, stopRequested?, retry?}` — auto mode / run plan on or off |
 | GET | `/api/projects/:id/auto/queue?orchestrator=n` | An orchestrated loop's phase as the orchestrator sees it (409 unless orchestrated) |
@@ -253,8 +255,8 @@ comment's `id`, not an index). There is no comment edit — delete and re-post.
 ### Local PRs
 
 GitHub for the local repo: a local PR is one **ticket branch** squash-merged onto the
-project's **integration branch** by jTicket itself — no push, no GitHub, no diffs (jDiff
-renders those). Exactly one ticket per PR, one open PR per ticket. The flow:
+project's **integration branch** by jTicket itself — no push, no GitHub; the diff is on the project's Diff tab
+(`/projects/PROJ-n?tab=diff&pr=PR-n`, the PR's `diffUrl`). Exactly one ticket per PR, one open PR per ticket. The flow:
 
 ```bash
 # 1. Cut the ticket's branch (off the integration branch, local only, recorded on the ticket)

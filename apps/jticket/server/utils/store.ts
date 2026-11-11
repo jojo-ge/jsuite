@@ -71,8 +71,8 @@ export interface Project {
   description: string
   mode: ProjectMode
   // GitHub integration (both '' when the project isn't wired to a repo).
-  // `repo` is a path to a LOCAL clone ('~' allowed) — the same thing jDiff
-  // takes as ?repo=, so a PR row can link straight into it.
+  // `repo` is a path to a LOCAL clone ('~' allowed) — what the Diff tab and
+  // the PR rows read with git/gh.
   repo: string
   // The project's integration branch: an empty branch cut from the default
   // branch that the project's PRs target, and which lands as one PR when the
@@ -227,7 +227,7 @@ export interface LocalPr {
   conflictFiles: string[]
   mergeCommit: string // oid of the squash (or merge) commit, '' until merged
   // Oid of the squash commit's parent (the base tip it landed on), '' until
-  // merged — keeps mergeParent..mergeCommit reviewable in jDiff after the
+  // merged — keeps mergeParent..mergeCommit reviewable on the Diff tab after the
   // head branch is deleted.
   mergeParent: string
   mergedAt: string | null
@@ -395,8 +395,8 @@ export function loadStore(): Store {
         ...pr,
         conflictFiles: pr.conflictFiles ?? [],
         mergeCommit: pr.mergeCommit ?? '',
-        // PRs merged before this field existed keep '' — their jDiff link
-        // degrades to the base branch (localPrs.ts prJdiffUrl).
+        // PRs merged before this field existed keep '' — their Diff tab
+        // falls back to commit^ (app/utils/diffTarget.ts localPrRefs).
         mergeParent: pr.mergeParent ?? '',
         mergedAt: pr.mergedAt ?? null,
       })),

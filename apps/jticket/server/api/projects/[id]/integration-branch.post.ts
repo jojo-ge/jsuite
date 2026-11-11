@@ -10,6 +10,8 @@
 // Body: { branch?: string, base?: string }  (both optional)
 //   branch — defaults to 'proj/<KEY>-<title-slug>'
 //   base   — defaults to the repo's default branch
+import { diffTabUrl } from '../../../../app/utils/diffTarget'
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<{ branch?: string; base?: string }>(event)
@@ -52,7 +54,7 @@ export default defineEventHandler(async (event) => {
     created: !hadLocal && !hadRemote,
     pushed: !hadRemote,
     adopted: hadLocal || hadRemote,
-    jdiffUrl: jdiffBranchUrl(path, branch, base),
+    diffUrl: diffTabUrl(project.key),
     githubUrl: ctx.slug ? `https://github.com/${ctx.slug}/tree/${encodeURIComponent(branch)}` : null,
   }
 })

@@ -188,7 +188,7 @@ defineExpose({ save, reset, saving, canSave })
         <UButton size="xs" color="neutral" variant="ghost" @click="customRepo = true">Use a different repo</UButton>
       </div>
 
-      <UFormField v-if="showRepoField" label="Repo" help="Path to a local clone — the same path jDiff takes. '~' is fine.">
+      <UFormField v-if="showRepoField" label="Repo" help="Path to a local clone. '~' is fine.">
         <div class="flex gap-2">
           <UInput v-model="form.repo" placeholder="~/code/my-repo" class="flex-1 font-mono text-sm" />
           <UButton

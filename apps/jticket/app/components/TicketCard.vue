@@ -24,10 +24,9 @@ const emit = defineEmits<{ edit: [Ticket]; delete: [Ticket]; copy: [Ticket]; run
 const { changed, projects, prs, togglePaused } = useTracker()
 const moved = computed(() => !!changed.value[props.ticket.id])
 
-// "See the changes" — the ticket's diff in jDiff, via its local PR (exact
+// "See the changes" — the project's Diff tab on the ticket's local PR (exact
 // squash diff once merged) or its work branch. Shown once the work exists.
-const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
-const diffUrl = computed(() => ticketDiffUrl(props.ticket, projects.value, prs.value, jdiffBase))
+const diffUrl = computed(() => ticketDiffUrl(props.ticket, projects.value, prs.value))
 
 // The ticket's project — resolved once: it carries the share that decides
 // ownership, and so both the peer badge and the frontier ring below.
@@ -154,16 +153,14 @@ const ring = computed(() => {
       <UBadge v-if="doneCount" color="neutral" variant="outline" size="sm" icon="i-lucide-check-square">
         {{ doneCount }} AC
       </UBadge>
-      <UTooltip v-if="diffUrl" text="See this ticket's changes in jDiff">
+      <UTooltip v-if="diffUrl" text="See this ticket's changes">
         <UButton
           :to="diffUrl"
-          target="_blank"
-          external
           icon="i-lucide-git-compare"
           size="xs"
           color="neutral"
           variant="ghost"
-          aria-label="See this ticket's changes in jDiff"
+          aria-label="See this ticket's changes"
           @click.stop
         />
       </UTooltip>

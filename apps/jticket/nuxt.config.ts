@@ -6,11 +6,8 @@ export default defineNuxtConfig({
   // @jsuite/charting — docs here are the same objects jExplain renders.
   extends: ['@jsuite/documents'],
   modules: ['@nuxt/ui'],
-  // Where jDiff lives, so the client can link a project's branch straight into
-  // a review. Same override the server side and the jdiff CLI use.
   runtimeConfig: {
     public: {
-      jdiffUrl: process.env.JDIFF_URL ?? 'https://jdiff.local',
       // The chart editor is this app's /charts/<key>: embedded charts link in-origin.
       chartEditorBase: '',
     },

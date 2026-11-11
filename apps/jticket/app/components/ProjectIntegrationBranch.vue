@@ -22,7 +22,7 @@ interface GithubInfo {
     name: string
     local: boolean
     remote: boolean
-    jdiffUrl: string
+    diffUrl: string
     githubUrl: string | null
   } | null
 }
@@ -188,8 +188,8 @@ async function useBranch(name: string) {
           <span class="font-mono text-sm font-medium">{{ gh.branch.name }}</span>
           <span class="text-xs text-muted">off {{ gh.defaultBranch }} · local PRs land here</span>
           <div class="ml-auto flex items-center gap-1">
-            <UButton :to="gh.branch.jdiffUrl" target="_blank" external icon="i-lucide-git-compare" size="xs" color="neutral" variant="ghost">
-              jDiff
+            <UButton :to="gh.branch.diffUrl" icon="i-lucide-git-compare" size="xs" color="neutral" variant="ghost">
+              Diff
             </UButton>
             <UButton
               v-if="gh.branch.githubUrl && gh.branch.remote"

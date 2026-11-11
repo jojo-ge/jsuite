@@ -40,6 +40,8 @@ const endpoints = [
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
   { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch, local PRs (with commits) and matching GitHub PRs (?force=1 skips the 30s cache)" },
   { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
+  { m: 'GET', p: '/api/projects/:id/diff', d: "The Diff tab's side-by-side rows, highlighted: the project's branch, ?pr=PR-n, ?gh=<n>, or ?head=&base=" },
+  { m: 'GET', p: '/api/projects/:id/diff/file', d: 'One file at a commit, highlighted line by line (?oid=&path=) — the Diff tab\'s gaps and full view' },
   { m: 'POST', p: '/api/projects/:id/integration-pr', d: 'Push, then open (or find) the roll-up PR on GitHub via gh: integration → default branch — the only remote write in the local-PR flow' },
   { m: 'GET', p: '/api/projects/:id/branches', d: 'Branches in the project\'s repo, local + origin (?q= search, ?fetch=1 pulls origin first)' },
   { m: 'GET', p: '/api/prs', d: 'List local PRs (?projectId= &repo= &ticket= &status=open|conflicted|merged|closed)' },
@@ -424,7 +426,7 @@ const methodColor: Record<string, string> = {
         <p class="mb-3 text-sm text-muted">
           GitHub for your local: a PR is a <strong>ticket branch</strong> squash-merged onto the
           project's <strong>integration branch</strong> by jTicket itself — title, ticket, commits,
-          description, destination and a merge button, no diffs (jDiff has those), nothing pushed.
+          description, destination and a merge button, nothing pushed — the diff is on the project's Diff tab.
           Exactly one ticket per PR; merging it is what moves the ticket to <code>merged</code>.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ localPrExample }}</code></pre>

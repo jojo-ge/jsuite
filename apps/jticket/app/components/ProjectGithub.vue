@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The project's PRs, on the project page: its local PRs (ticket branches
 // squash-merged onto the integration branch right here) and every open GitHub
-// PR that belongs to it — each row linking into jDiff (local diff review) and
+// PR that belongs to it — each row linking to the project's Diff tab and
 // github.com — plus the roll-up PR, the project's one real GitHub PR
 // (integration branch → default branch). Cutting or setting the integration
 // branch is the Overview tab (ProjectIntegrationBranch).
@@ -30,7 +30,7 @@ interface ProjectPr {
   deletions?: number
   matchedBy: ('integration' | 'base' | 'key')[]
   keys: string[]
-  jdiffUrl: string
+  diffUrl: string
   githubUrl: string
 }
 interface PrCommit {
@@ -57,7 +57,7 @@ interface LocalPrRow {
   mergeCommit: string
   mergedAt: string | null
   updatedAt: string
-  jdiffUrl: string | null
+  diffUrl: string | null
   commits: PrCommit[]
 }
 interface GithubInfo {
@@ -65,7 +65,6 @@ interface GithubInfo {
   repo: string
   slug: string | null
   repoUrl?: string | null
-  jdiffRepoUrl?: string | null
   defaultBranch: string
   integrationBranch: string
   suggestedBranch: string
@@ -73,7 +72,7 @@ interface GithubInfo {
     name: string
     local: boolean
     remote: boolean
-    jdiffUrl: string
+    diffUrl: string
     githubUrl: string | null
     comparePrUrl: string | null
   } | null
@@ -234,51 +233,6 @@ async function closePr(pr: LocalPrRow) {
 // still announces itself. Pinned open when it's a tab of its own.
 const open = ref(!!props.pinnedOpen)
 
-// ── jDiff reviews — dispatched from here, findings reported back to jTicket ──
-// A local-PR review comments its findings onto the PR's ticket (whole-branch
-// reviews are the Review tab's jReview runs). The
-// running state comes from jDiff's job registry, polled only while the panel
-// is open; jDiff being down just means no badges, never an error.
-interface ReviewStatus { available: boolean; running: string[] }
-const reviewStatus = ref<ReviewStatus>({ available: false, running: [] })
-async function refreshReviewStatus() {
-  try {
-    reviewStatus.value = await $fetch<ReviewStatus>(`/api/projects/${props.project.id}/review-status`)
-  } catch { /* transient — the next poll retries */ }
-}
-let reviewTick: ReturnType<typeof setInterval> | undefined
-watch(open, (o) => {
-  // Client-only: pinned open, this fires during SSR, where timers are refused.
-  if (import.meta.server) return
-  if (o && !reviewTick) {
-    refreshReviewStatus()
-    reviewTick = setInterval(refreshReviewStatus, 8_000)
-  } else if (!o && reviewTick) {
-    clearInterval(reviewTick)
-    reviewTick = undefined
-  }
-}, { immediate: true })
-onUnmounted(() => { if (reviewTick) clearInterval(reviewTick) })
-
-// jDiff keys branch runs "branch/<name>".
-const reviewRunning = (branch: string) => reviewStatus.value.running.includes(`branch/${branch}`)
-
-const dispatchingReview = ref('')
-async function runPrReview(pr: LocalPrRow) {
-  dispatchingReview.value = pr.id
-  try {
-    const res = await $fetch<{ agent: string; attached: boolean }>(`/api/prs/${pr.id}/review`, { method: 'POST' })
-    toast.add(res.attached
-      ? { title: `A review is already running for ${pr.headBranch}`, description: 'Attached to it — this run keeps its original context.', color: 'neutral', icon: 'i-lucide-sparkles' }
-      : { title: `Review dispatched for ${pr.key}`, description: `Agent ${res.agent} — findings land as a comment on ${pr.ticketKey ?? 'its ticket'}.`, color: 'success', icon: 'i-lucide-sparkles' })
-  } catch (err: any) {
-    toast.add({ title: `Could not dispatch the review for ${pr.key}`, description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
-  } finally {
-    dispatchingReview.value = ''
-    refreshReviewStatus()
-  }
-}
-
 // Per-row commit fold-out — the "commit details" a PR row carries.
 const expandedPrs = reactive(new Set<string>())
 function togglePr(id: string) {
@@ -415,19 +369,6 @@ async function createPr() {
           >{{ data.slug }}</a>
           <span v-else class="font-medium">{{ data.slug ?? 'local repo' }}</span>
           <span class="truncate font-mono text-xs text-muted">{{ data.repo }}</span>
-          <UButton
-            v-if="data.jdiffRepoUrl"
-            :to="data.jdiffRepoUrl"
-            target="_blank"
-            external
-            icon="i-lucide-git-compare"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            class="ml-auto"
-          >
-            jDiff
-          </UButton>
         </div>
 
         <!-- The integration branch — cut or set on the Overview tab; its roll-up PR here -->
@@ -550,28 +491,15 @@ async function createPr() {
               </p>
             </div>
             <div class="flex shrink-0 items-center gap-1">
-              <UTooltip text="Review the branch in jDiff">
+              <UTooltip text="See the diff">
                 <UButton
-                  v-if="pr.jdiffUrl"
-                  :to="pr.jdiffUrl"
-                  target="_blank"
-                  external
+                  v-if="pr.diffUrl"
+                  :to="pr.diffUrl"
                   icon="i-lucide-git-compare"
                   size="xs"
                   color="neutral"
                   variant="ghost"
-                  aria-label="Review in jDiff"
-                />
-              </UTooltip>
-              <UTooltip :text="`Run the jDiff review — findings land as a comment on ${pr.ticketKey ?? 'its ticket'}`">
-                <UButton
-                  icon="i-lucide-sparkles"
-                  size="xs"
-                  color="secondary"
-                  variant="ghost"
-                  :loading="dispatchingReview === pr.id || reviewRunning(pr.headBranch)"
-                  aria-label="Run the jDiff review"
-                  @click="runPrReview(pr)"
+                  aria-label="See the diff"
                 />
               </UTooltip>
               <UButton
@@ -658,16 +586,14 @@ async function createPr() {
             </div>
           </div>
           <div class="flex shrink-0 gap-1">
-            <UTooltip text="Review in jDiff">
+            <UTooltip text="See the diff">
               <UButton
-                :to="pr.jdiffUrl"
-                target="_blank"
-                external
+                :to="pr.diffUrl"
                 icon="i-lucide-git-compare"
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                aria-label="Review in jDiff"
+                aria-label="See the diff"
               />
             </UTooltip>
             <UTooltip text="Open on GitHub">

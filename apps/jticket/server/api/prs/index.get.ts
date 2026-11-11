@@ -1,5 +1,5 @@
 // List local PRs (?projectId= &repo= &ticket= &status=), newest first. Rows carry the
-// ticket key/title and a jDiff link; commit details are on GET /api/prs/:id
+// ticket key/title and a Diff tab link (diffUrl); commit details are on GET /api/prs/:id
 // (and inline on the project's /github payload), not here — this list stays a
 // pure store read, no git.
 export default defineEventHandler((event) => {

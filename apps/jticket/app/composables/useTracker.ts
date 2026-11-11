@@ -3,6 +3,7 @@ import type { AutoLoop } from '~/utils/autoLoop'
 import type { RunPlan, RunPlanBuild } from '~/utils/runPlan'
 import type { PrReview } from '~/utils/reviewPlan'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
+import { diffTabUrl, ticketDiffTarget } from '../utils/diffTarget'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
 export type TicketType = 'story' | 'task' | 'bug' | 'review' | 'verification' | 'research' | 'decision' | 'docs'
@@ -29,7 +30,7 @@ export interface Project {
   description: string
   mode: ProjectMode
   // GitHub link — '' when the project isn't wired to a repo. `repo` is a path
-  // to a local clone (what jDiff takes as ?repo=); `integrationBranch` is the
+  // to a local clone (what the Diff tab reads); `integrationBranch` is the
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string
@@ -118,7 +119,7 @@ export interface Ticket {
 }
 
 // A local pull request (see server/utils/store.ts) as GET /api/prs returns it:
-// the record plus the derived ticketKey/ticketTitle/jdiffUrl.
+// the record plus the derived ticketKey/ticketTitle/diffUrl.
 export interface LocalPr {
   id: string
   key: string
@@ -137,7 +138,8 @@ export interface LocalPr {
   updatedAt: string
   ticketKey?: string | null
   ticketTitle?: string | null
-  jdiffUrl?: string | null
+  /** The project's Diff tab on this PR (a jTicket path). */
+  diffUrl?: string | null
 }
 
 // A tracker record wrapping a document in the shared @jsuite/documents pool —
@@ -338,25 +340,19 @@ export function mergeQueueOf<T extends Pick<LocalPr, 'projectId' | 'status' | 'k
 // every other kind it is overridable per project. Both the copy buttons and
 // the herdr dispatch build it with usePrompts().mergePrompt().
 
-// ── Where "see this ticket's changes" points in jDiff ──
-// Prefer the ticket's newest non-closed local PR — the server already derived
-// the right URL for it (head vs base while open, the exact squash diff once
-// merged). Fall back to the ticket's work branch against the project's
+// ── Where "see this ticket's changes" points: the project's Diff tab ──
+// On the ticket's newest non-closed local PR (head vs base while open, the
+// exact squash diff once merged), else its work branch against the project's
 // integration branch. Null when there is nothing to diff.
 export function ticketDiffUrl(
   ticket: Pick<Ticket, 'id' | 'branch' | 'projectId'>,
   projects: Project[],
   prs: LocalPr[],
-  jdiffBase: string,
 ): string | null {
-  const prUrl = prs
-    .filter((pr) => pr.ticketId === ticket.id && pr.status !== 'closed')
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .find((pr) => pr.jdiffUrl)?.jdiffUrl
-  if (prUrl) return prUrl
   const project = projects.find((p) => p.id === ticket.projectId)
-  if (!ticket.branch || !project?.repo) return null
-  return jdiffBranchLink(jdiffBase, project.repo, ticket.branch, project.integrationBranch || undefined)
+  if (!project) return null
+  const target = ticketDiffTarget(ticket, project, prs)
+  return target ? diffTabUrl(project.key, target) : null
 }
 
 export const DOC_STATUS_META: Record<DocStatus, { label: string; color: 'neutral' | 'success' }> = {

@@ -170,7 +170,7 @@ A project can be wired to a local clone, which turns on its pull-request view:
 # guessing a path (each row carries its slug and which projects use it)
 jt get /api/repos
 
-# wire the project to a repo (path, '~' allowed — the same path jDiff takes)
+# wire the project to a repo (path, '~' allowed)
 jt patch /api/projects/PROJ-3 '{ "repo": "~/code/my-repo" }'
 
 # cut the integration branch: an EMPTY branch off the default branch, pushed to
@@ -182,7 +182,7 @@ jt post /api/projects/PROJ-3/integration-branch '{}'    # or { "branch": "...", 
 jt get "/api/projects/PROJ-3/branches?q=checkout"
 jt patch /api/projects/PROJ-3 '{ "integrationBranch": "release/checkout" }'
 
-# the project's open PRs, each with a jDiff link and a github.com link
+# the project's open PRs, each with a Diff tab link and a github.com link
 jt get /api/projects/PROJ-3/github
 ```
 

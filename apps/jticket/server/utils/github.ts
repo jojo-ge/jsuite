@@ -4,7 +4,7 @@
 // branch*: an empty branch cut from the repo's default branch that the
 // project's PRs target, and which itself lands as one PR when the project is
 // done. Nothing here talks to the GitHub API directly — it shells out to the
-// same two tools jDiff uses:
+// two tools:
 //
 //   - `git` cuts, pushes and checks the integration branch
 //   - `gh`  lists open PRs and resolves the repo's slug + default branch
@@ -19,12 +19,9 @@ import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
 import type { Project, Store } from './store'
 import { assertCommandAllowed } from './sandbox'
+import { diffTabUrl } from '../../app/utils/diffTarget'
 
 const pExecFile = promisify(execFile)
-
-// jDiff's base URL, so a PR row can deep-link into the local diff viewer.
-// Matches the jdiff CLI's own JDIFF_URL override.
-const JDIFF_BASE = (process.env.JDIFF_URL ?? 'https://jdiff.local').replace(/\/+$/, '')
 
 export async function run(cmd: string, args: string[], cwd: string): Promise<string> {
   assertCommandAllowed(cmd, args, cwd)
@@ -299,31 +296,14 @@ export interface ProjectPr extends GhPr {
   matchedBy: PrMatch[]
   /** Project keys named by the PR's head branch or title. */
   keys: string[]
-  jdiffUrl: string
+  /** The project's Diff tab on this PR (a jTicket path). */
+  diffUrl: string
   githubUrl: string
-}
-
-export function jdiffPrUrl(repoPath: string, number: number | string): string {
-  return `${JDIFF_BASE}/pr/${number}?repo=${encodeURIComponent(repoPath)}`
-}
-
-/** jDiff's PR list for the whole repo. */
-export function jdiffPrsUrl(repoPath: string): string {
-  return `${JDIFF_BASE}/prs?repo=${encodeURIComponent(repoPath)}`
-}
-
-// `branch`/`base` take any ref jDiff's isSafeRef accepts — commit oids
-// included, which is how merged local PRs link to their exact squash diff.
-// Carry `base` whenever it's known: jDiff's branch page can fall back to the
-// repo's default branch, but its branch-summary page cannot.
-export function jdiffBranchUrl(repoPath: string, branch: string, base?: string): string {
-  const baseParam = base ? `&base=${encodeURIComponent(base)}` : ''
-  return `${JDIFF_BASE}/branch?repo=${encodeURIComponent(repoPath)}&branch=${encodeURIComponent(branch)}${baseParam}`
 }
 
 export function matchProjectPrs(
   prs: GhPr[],
-  opts: { repoPath: string; integrationBranch: string; keys: string[] },
+  opts: { projectKey: string; integrationBranch: string; keys: string[] },
 ): ProjectPr[] {
   const branch = opts.integrationBranch.trim()
   // \b either side so TICK-4 doesn't match inside TICK-42, and so a branch like
@@ -342,7 +322,7 @@ export function matchProjectPrs(
     if (keys.length) matchedBy.push('key')
 
     if (!matchedBy.length) continue
-    matched.push({ ...pr, matchedBy, keys, jdiffUrl: jdiffPrUrl(opts.repoPath, pr.number), githubUrl: pr.url })
+    matched.push({ ...pr, matchedBy, keys, diffUrl: diffTabUrl(opts.projectKey, { gh: pr.number }), githubUrl: pr.url })
   }
 
   // The roll-up PR first, then most recently touched.

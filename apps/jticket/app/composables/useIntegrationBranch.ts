@@ -55,12 +55,6 @@ export function useIntegrationBranch() {
   return { creating, revision, invalidate, createBranch }
 }
 
-/** jDiff's branch-review page for a repo path (as stored — '~' is expanded by jDiff). */
-export function jdiffBranchLink(base: string, repo: string, branch: string, baseBranch?: string): string {
-  const baseParam = baseBranch ? `&base=${encodeURIComponent(baseBranch)}` : ''
-  return `${base.replace(/\/+$/, '')}/branch?repo=${encodeURIComponent(repo)}&branch=${encodeURIComponent(branch)}${baseParam}`
-}
-
 export function branchErrorText(err: any): string {
   return String(err?.data?.statusMessage ?? err?.data?.message ?? err?.statusMessage ?? err?.message ?? err)
 }

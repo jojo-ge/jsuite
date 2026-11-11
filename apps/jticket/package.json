@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.120",
+    "@jsuite/charting": "workspace:*",
     "@jsuite/data": "workspace:*",
     "@jsuite/documents": "workspace:*",
     "@jsuite/herdr": "workspace:*",
@@ -23,9 +24,10 @@
     "@supabase/realtime-js": "^2.112.4",
     "h3": "^1.15.11",
     "nuxt": "^4.5.0",
+    "parse-diff": "^0.12.0",
+    "shiki": "^3.0.0",
     "vue": "^3.5.0",
-    "vue-router": "^4.4.0",
-    "@jsuite/charting": "workspace:*"
+    "vue-router": "^4.4.0"
   },
   "devDependencies": {
     "tsx": "^4.23.13",

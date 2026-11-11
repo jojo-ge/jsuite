@@ -47,22 +47,25 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'run' | 'review-setup' | 'overview' | 'docs' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
-const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'review-setup', 'overview', 'docs', 'prs', 'review', 'agents', 'loops', 'analytics']
+type ProjectTab = 'board' | 'run' | 'review-setup' | 'overview' | 'docs' | 'diff' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'review-setup', 'overview', 'docs', 'diff', 'prs', 'review', 'agents', 'loops', 'analytics']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
     const q = String(route.query.tab ?? '')
-    // The retired Branches tab: its integration-branch card now sits on Overview.
-    if (q === 'branches') return 'overview'
+    // The retired Branches tab: old links land on the Diff tab that replaced it.
+    if (q === 'branches') return 'diff'
     // A PR review project has no Pull requests tab (see tabItems) —
     // a deep link to one lands on the board instead of rendering it anyway.
     if (project.value?.mode === 'prreview' && q === 'prs') return 'board'
     return (PROJECT_TABS as string[]).includes(q) ? (q as ProjectTab) : 'board'
   },
   set: (value) => {
-    // ?review= belongs to the Review tab; leaving it drops the selection.
-    router.replace({ query: { ...route.query, tab: value === 'board' ? undefined : value, review: value === 'review' ? route.query.review : undefined } })
+    // ?review= belongs to the Review tab, and the Diff tab's target
+    // (?pr= / ?gh= / ?head= / ?base=) to it; leaving either drops them.
+    const { pr, gh, head, base, ...rest } = route.query
+    const diff = value === 'diff' ? { pr, gh, head, base } : {}
+    router.replace({ query: { ...rest, ...diff, tab: value === 'board' ? undefined : value, review: value === 'review' ? route.query.review : undefined } })
   },
 })
 // Open local PRs — the PRs tab's badge, so a waiting queue still shows while
@@ -85,6 +88,8 @@ const tabItems = computed(() => [
     : []),
   { label: 'Overview', value: 'overview', icon: 'i-lucide-align-left' },
   { label: 'Docs', value: 'docs', icon: 'i-lucide-file-text', badge: projectDocs.value.length || undefined },
+  // Diff — the project's branch, a local PR or a GitHub PR, side by side (was jDiff).
+  { label: 'Diff', value: 'diff', icon: 'i-lucide-git-compare' },
   // A PR review project's branch is a mirror of someone's PR head — nothing to land on or roll up.
   ...(project.value?.mode === 'prreview'
     ? []
@@ -121,15 +126,12 @@ async function openDocPreview(d: Doc) {
 }
 
 // The integration branch, from the header: cut it in one click when the project
-// has a repo but no branch yet, and once it exists show it as a chip that opens
-// the branch review in jDiff. The GitHub panel below refetches on its own (the
-// composable bumps a shared revision).
+// has a repo but no branch yet, and once it exists open its Diff tab. The
+// GitHub panel below refetches on its own (the composable bumps a shared
+// revision).
 const { creating: creatingBranch, createBranch } = useIntegrationBranch()
-const jdiffBase = useRuntimeConfig().public.jdiffUrl as string
-const branchReviewUrl = computed(() =>
-  project.value?.repo && project.value.integrationBranch
-    ? jdiffBranchLink(jdiffBase, project.value.repo, project.value.integrationBranch)
-    : null,
+const branchDiffUrl = computed(() =>
+  project.value?.repo && project.value.integrationBranch ? diffTabUrl(project.value.key) : null,
 )
 
 // The header's ⋯ menu — everything the header used to lay out as buttons
@@ -139,8 +141,8 @@ const menuItems = computed(() => {
   if (!p) return []
   const branch = p.repo && !p.integrationBranch
     ? [{ label: 'Cut integration branch', icon: 'i-lucide-git-branch-plus', onSelect: () => createBranch(p.id) }]
-    : branchReviewUrl.value
-      ? [{ label: `Review ${p.integrationBranch} in jDiff`, icon: 'i-lucide-git-branch', to: branchReviewUrl.value, target: '_blank', external: true }]
+    : branchDiffUrl.value
+      ? [{ label: `Diff ${p.integrationBranch}`, icon: 'i-lucide-git-compare', to: branchDiffUrl.value }]
       : []
   return [
     [
@@ -396,6 +398,9 @@ async function removeProject() {
             </UTooltip>
           </div>
         </section>
+
+        <!-- Diff — jDiff's side-by-side viewer over the target in the query -->
+        <ProjectDiff v-else-if="tab === 'diff'" :project="project" @configure="openEditProject(project)" />
 
         <!-- Pull requests — local PRs onto the integration branch, GitHub's, and the roll-up PR -->
         <ProjectGithub v-else-if="tab === 'prs'" :project="project" pinned-open @configure="openEditProject(project)" />

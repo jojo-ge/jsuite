@@ -136,8 +136,7 @@ raise a toast; the header dot says whether the stream is actually connected.
 
 ## GitHub
 
-A project can point at a **local clone** (`repo` — a path, `~` allowed: the same
-path jDiff takes as `?repo=`) and own an **integration branch**: an *empty*
+A project can point at a **local clone** (`repo` — a path, `~` allowed) and own an **integration branch**: an *empty*
 branch cut from the repo's default branch that the project's PRs target, and
 which lands as one roll-up PR when the project is done. Both are edited on the
 project form; nothing here needs a GitHub token — it shells out to the `git` and
@@ -160,7 +159,7 @@ untouched).
 
 The project header carries the branch: a **Branch** button while the project has
 a repo but no integration branch (one click — same call as below), which becomes
-a chip naming the branch and linking to its jDiff review once it exists.
+a menu entry opening its **Diff** tab once it exists.
 
 The project page's **Overview** tab manages the integration branch, under the
 description:
@@ -192,11 +191,34 @@ PR** button (below):
   | `base` | the PR **targets** the integration branch |
   | `key` | the PR's head branch or title names one of the project's keys (`PROJ-3`, `TICK-12`) — so work that went straight to the default branch still shows up |
 
-  Every row links to **jDiff** (`https://jdiff.local/pr/N?repo=…`, overridable
-  with `JDIFF_URL`) for the local diff review, and to **github.com**.
+  Every row links to the project's **Diff** tab on that PR, and to **github.com**.
 
 `gh` is best-effort: without it (offline, not logged in, no GitHub remote) the
 branch side still works and the PR list reports why it's empty.
+
+### The Diff tab
+
+A project's **Diff** tab is the side-by-side diff viewer (it replaced jDiff and
+the old Branches tab): a file list, syntax-highlighted rows built server-side,
+the hidden context between hunks expandable in place, and a full-file view. It
+shows one **target**, named in the page's query, so every "see the changes"
+link — ticket cards, local and GitHub PR rows, the integration branch — opens it
+on the right one (`app/utils/diffTarget.ts`, `diffTabUrl`):
+
+| Query | Diffs |
+| --- | --- |
+| *(none)* | the project's own branch: the integration branch vs the default branch; a PR review project's `jreview/pr-<n>` vs its base |
+| `?pr=PR-n` | a local PR: its ticket branch vs the integration branch; once merged, the squash commit vs its parent |
+| `?gh=<n>` | a GitHub PR: its head (fetched into `refs/remotes/jticket/pr-<n>`) vs its base |
+| `?head=…&base=…` | any two refs — a ticket branch with no PR yet (`base` defaults to the integration branch) |
+
+`GET /api/projects/:id/diff` (same params) answers `{ target: {kind, label, head,
+base, headOid, baseOid}, files }` — the diff is three-dot (merge-base → head,
+as GitHub shows it) and cached per commit pair; `GET /api/projects/:id/diff/file?oid=&path=`
+is one file at a commit, highlighted, for the gaps and the full view. Rows are
+built in `server/utils/diffBuild.ts` (parse-diff) and highlighted in both
+themes by `server/utils/diffHighlight.ts` (the same shiki the documents package
+uses). The PR-list fields `diffUrl` carry these links as jTicket paths.
 
 ### Local pull requests
 
@@ -204,7 +226,7 @@ GitHub for your local: single-ticket review happens entirely on the machine, and
 only the integration branch ever talks to origin. A **local PR** is a store
 record (`prs[]`, `PR-n` keys) — title, description, one ticket, head branch,
 base branch, lifecycle — over the project's repo; git holds the code, jTicket
-holds the story. No diffs here: every row links into jDiff.
+holds the story. Each row links to its diff on the project's **Diff** tab.
 
 The loop, per ticket:
 

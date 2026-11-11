@@ -18,6 +18,7 @@ import type { LocalPr, Store, Ticket } from './store'
 import { parseWorktreeList } from './worktrees'
 import type { WorktreeEntry } from './worktrees'
 import { assertCommandAllowed } from './sandbox'
+import { diffTabUrl } from '../../app/utils/diffTarget'
 
 // run() (github.ts) wraps failures in an h3 error and drops the exit code and
 // stdout, but merge-tree's conflict answer *is* a non-zero exit with output —
@@ -213,21 +214,13 @@ export function suggestTicketBranchName(ticket: Pick<Ticket, 'key' | 'title'>): 
 /** What every GET returns for a PR: the record plus who/where it points at. */
 export function withPrDerived(store: Store, pr: LocalPr, repoPath: string | null) {
   const ticket = store.tickets.find((t) => t.id === pr.ticketId)
+  const project = store.projects.find((p) => p.id === pr.projectId)
   return {
     ...pr,
     ticketKey: ticket?.key ?? null,
     ticketTitle: ticket?.title ?? null,
-    jdiffUrl: repoPath ? prJdiffUrl(pr, repoPath) : null,
+    // The project's Diff tab on this PR — head vs base while open, the exact
+    // squash diff once merged (app/utils/diffTarget.ts localPrRefs).
+    diffUrl: repoPath ? diffTabUrl(project?.key ?? pr.projectId, { pr: pr.key }) : null,
   }
-}
-
-// Where "review this PR" should land in jDiff. Open/conflicted: the head
-// branch against its base. Merged: the exact squash diff (parent..commit —
-// jDiff takes bare oids as refs); PRs merged before mergeParent existed fall
-// back to the base branch, since their head branch is gone.
-function prJdiffUrl(pr: LocalPr, repoPath: string): string {
-  if (pr.status !== 'merged') return jdiffBranchUrl(repoPath, pr.headBranch, pr.baseBranch)
-  return pr.mergeCommit && pr.mergeParent
-    ? jdiffBranchUrl(repoPath, pr.mergeCommit, pr.mergeParent)
-    : jdiffBranchUrl(repoPath, pr.baseBranch)
 }
