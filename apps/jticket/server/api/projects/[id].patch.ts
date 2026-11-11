@@ -15,7 +15,15 @@ export default defineEventHandler(async (event) => {
 
   if (body.title !== undefined) project.title = body.title.trim()
   if (body.description !== undefined) project.description = body.description.trim()
-  if (body.mode !== undefined) project.mode = coerceProjectMode(body.mode)
+  if (body.mode !== undefined) {
+    // Nothing moves into or out of PR review mode: the mode and its prReview
+    // record (the PR, the plan, the runs) come and go together.
+    const mode = coerceProjectMode(body.mode)
+    if (mode !== project.mode && (mode === 'prreview' || project.mode === 'prreview')) {
+      throw createError({ statusCode: 400, statusMessage: 'a project cannot be switched into or out of PR review mode — make one with POST /api/projects/pr-review' })
+    }
+    project.mode = mode
+  }
   if (body.starred !== undefined) project.starred = body.starred === true
   if (body.position !== undefined) {
     project.position = typeof body.position === 'number' && Number.isFinite(body.position) ? body.position : null

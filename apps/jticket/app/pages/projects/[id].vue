@@ -53,6 +53,9 @@ const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
     const q = String(route.query.tab ?? '')
+    // A PR review project has no Branches / Pull requests tabs (see tabItems) —
+    // a deep link to one lands on the board instead of rendering it anyway.
+    if (project.value?.mode === 'prreview' && (q === 'branches' || q === 'prs')) return 'board'
     return (PROJECT_TABS as string[]).includes(q) ? (q as ProjectTab) : 'board'
   },
   set: (value) => {

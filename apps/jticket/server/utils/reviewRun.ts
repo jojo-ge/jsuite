@@ -45,7 +45,7 @@ async function reviewWorld(project: Project, run: ReviewRun): Promise<ReviewRunW
 }
 
 /** One project's tick. Never throws. */
-export async function advanceReviewRun(projectId: string): Promise<void> {
+async function tickReviewRun(projectId: string): Promise<void> {
   try {
     const store = loadStore()
     const project = store.projects.find((p) => p.id === projectId)
@@ -90,7 +90,7 @@ export async function advanceReviewRun(projectId: string): Promise<void> {
 /** Each check in its own session, claimed before the dispatch so a restart never sends it twice. */
 async function dispatchChecks(projectId: string, keys: string[]) {
   for (const key of keys) {
-    let claimed = false
+    let claimed = false as boolean
     updateRun(projectId, (r) => {
       if (r.status !== 'running' || r.dispatched[key]) return false
       r.dispatched[key] = now()
@@ -119,7 +119,7 @@ async function dispatchChecks(projectId: string, keys: string[]) {
 
 /** Ask jReview for the run's agreement review of the PR's diff. */
 async function startRunReview(projectId: string) {
-  let body: Record<string, unknown> | null = null
+  let body = null as Record<string, unknown> | null
   updateRun(projectId, (r, project) => {
     if (r.status !== 'running' || r.reviewRequestedAt) return false
     const step = r.plan.steps[r.cursor]
@@ -166,7 +166,7 @@ export async function tickReviewRuns(): Promise<void> {
   ticking = true
   try {
     const ids = loadStore().projects.filter((p) => p.prReview?.run?.status === 'running').map((p) => p.id)
-    for (const id of ids) await advanceReviewRun(id)
+    for (const id of ids) await tickReviewRun(id)
   } finally {
     ticking = false
   }

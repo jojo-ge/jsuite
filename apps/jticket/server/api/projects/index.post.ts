@@ -3,6 +3,12 @@ export default defineEventHandler(async (event) => {
   if (!body?.title?.trim()) {
     throw createError({ statusCode: 400, statusMessage: 'title is required' })
   }
+  // A PR review project is only ever made with its pull request attached
+  // (POST /api/projects/pr-review) — one made here would have no prReview and
+  // render a blank Review setup tab.
+  if (coerceProjectMode(body.mode) === 'prreview') {
+    throw createError({ statusCode: 400, statusMessage: 'PR review projects are made with POST /api/projects/pr-review {repo, pr}' })
+  }
   const store = loadStore()
   const ts = now()
   const project: Project = {

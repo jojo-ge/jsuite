@@ -35,6 +35,7 @@ const MODE_BADGE: Partial<Record<Project['mode'], { label: string; color: 'prima
   todo: { label: 'TODO list', color: 'warning', icon: 'i-lucide-list-todo' },
   architect: { label: 'Architect', color: 'info', icon: 'i-lucide-drafting-compass' },
   predeploy: { label: 'Predeploy', color: 'error', icon: 'i-lucide-bug' },
+  prreview: { label: 'PR review', color: 'primary', icon: 'i-lucide-git-pull-request' },
 }
 const modeBadge = computed(() => MODE_BADGE[props.project.mode] ?? null)
 

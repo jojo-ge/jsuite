@@ -48,8 +48,9 @@ interface FormState {
 }
 
 // A new ticket starts as the type its project's mode implies — a pre-deploy
-// sweep is bugs, a jMap project is docs — and Task everywhere else.
-const MODE_DEFAULT_TYPE: Partial<Record<ProjectMode, TicketType>> = { predeploy: 'bug', jmap: 'docs' }
+// sweep is bugs, a jMap project is docs, a PR review project's tickets are
+// checks — and Task everywhere else (matches defaultTicketType on the server).
+const MODE_DEFAULT_TYPE: Partial<Record<ProjectMode, TicketType>> = { predeploy: 'bug', jmap: 'docs', prreview: 'verification' }
 
 function blank(): FormState {
   const mode = props.projects.find((p) => p.id === props.defaultProjectId)?.mode

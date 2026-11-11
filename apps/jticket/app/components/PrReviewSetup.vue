@@ -46,8 +46,13 @@ let clock: ReturnType<typeof setInterval> | undefined
 onMounted(() => { clock = setInterval(() => { now.value = new Date() }, 30_000) })
 onUnmounted(() => { if (clock) clearInterval(clock) })
 
-/** A check's verdict, off the first `**Verdict:** …` line of its resolution. */
+/**
+ * A check's verdict, off the first `**Verdict:** …` line of its resolution —
+ * only once the check is finished: a rerun reopens checks with last run's
+ * resolution still on them, and that verdict isn't this run's.
+ */
 function checkVerdict(t: Ticket | undefined): string {
+  if (!t || !isFinished(t.status)) return ''
   return /verdict:?\**\s*`?(pass|fail|concern|inconclusive)/i.exec(t?.resolution ?? '')?.[1]?.toLowerCase() ?? ''
 }
 const VERDICT_COLOR: Record<string, 'success' | 'error' | 'warning' | 'neutral'> = { pass: 'success', fail: 'error', concern: 'warning', inconclusive: 'neutral' }
