@@ -3,8 +3,8 @@
 Detail behind `SKILL.md`. Every path is verified against `apps/*/server/api/**`
 (route files) — a path not listed there does not exist. Base URLs:
 `https://<app>.local` or `http://localhost:<port>` (jTicket :43000, jDiff
-:43002, jChart :43003, jExplain :43004, jGrilling :43005, jCode :43006, jMap
-:43007, jReview :43008).
+:43002, jChart :43003, jExplain :43004, jGrilling :43005, jCode :43006,
+jReview :43008).
 
 ## jTicket — the `jt` CLI
 
@@ -311,14 +311,6 @@ included — for the marker), `GET …/files`, `GET …/run`, `GET …/watch`,
 `POST …/attempts/:id/dispatch` (Mark it → `/jcode-mark` into herdr via
 `server/utils/kataHerdr.ts`), `POST …/attempts/:id/mark` (the verdict).
 Sandbox `.data/jcode/sandbox/<key>/`, record `.data/jcode/<key>.json`.
-
-## jMap (:43007)
-
-`GET/POST /api/maps`, `GET/DELETE /api/maps/:key`, `GET …/progress` (polls the
-jTicket project), `POST …/synthesize-ticket` (creates the `/jmap-synthesize`
-ticket in jTicket), `POST …/synthesis` (the graph posted back). jMap runs no
-claude and dispatches nothing — jTicket's herdr buttons dispatch every phase.
-State `.data/jmap/`.
 
 ## Shared packages
 

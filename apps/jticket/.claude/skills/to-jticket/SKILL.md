@@ -48,7 +48,7 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
 ## 2. Core model
 
 - **Project** `PROJ-n` — `{ key, title, description, mode, repo, integrationBranch }`. `mode` is
-  `standard`, `wayfinder`, `jmap`, `predeploy` (a pre-deploy bug sweep — each ticket is one
+  `standard`, `wayfinder`, `predeploy` (a pre-deploy bug sweep — each ticket is one
   suspected bug and dispatches `/jreproduce`, which reproduces it as a failing test and never
   fixes it), or one of the two modes you must never create with a plain POST: `todo` (a
   codebase's auto-created TODO list — see **Codebases** below) and `architect` (one

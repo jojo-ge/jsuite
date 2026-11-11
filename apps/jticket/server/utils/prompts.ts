@@ -28,7 +28,6 @@
  * - `batch` — the board's One session button: several ticked tickets worked in
  *   order by one session, each on its own hand-off (project-level; not a ticket)
  * - `wayfinder` — a wayfinder frontier ticket
- * - `jmap:*` — a mapping job, picked by the ticket's `jmap:` label
  * - `todo` — a todo-list ticket's grilling
  * - `architect:*` — the architecture scan and a candidate's go/no-go grilling
  * - `predeploy` — a pre-deploy bug reproduction
@@ -45,9 +44,6 @@ export const PROMPT_KINDS = [
   'standard:integration',
   'batch',
   'wayfinder',
-  'jmap:scope',
-  'jmap:domain',
-  'jmap:synthesize',
   'todo',
   'architect:scan',
   'architect:grill',

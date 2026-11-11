@@ -44,9 +44,7 @@ const WAYFINDER_LABEL = /^wayfinder:(research|prototype|grilling|task)$/
 export function defaultTicketType(labels: readonly string[], projectMode?: string | null): TicketType {
   if (labels.includes('arch:scan')) return 'research'
   if (labels.includes('arch:candidate')) return 'decision'
-  if (labels.some((l) => l.startsWith('jmap:'))) return 'docs'
   if (labels.includes('review:finding')) return 'bug'
-  if (projectMode === 'jmap') return 'docs'
   if (projectMode === 'predeploy') return 'bug'
   if (projectMode === 'prreview') return 'verification'
   return 'task'

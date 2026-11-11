@@ -51,10 +51,10 @@ export function useHerdrDispatch() {
       }),
   }))
 
-  // Which prompt a ticket fires is its project's mode plus, inside jMap and
+  // Which prompt a ticket fires is its project's mode plus, inside
   // architect mode, its own label — see promptKindFor. Only standard mode
   // consults the hand-off picker, which is why the picker is hidden on the
-  // other boards. Wayfinder, jMap, todo, architect and predeploy hand-offs are
+  // other boards. Wayfinder, todo, architect, predeploy and PR-check hand-offs are
   // the bare command: no PR target (a predeploy reproduction makes its own
   // throwaway worktree and tears it down again).
   function projectOf(t: Ticket) {
@@ -85,7 +85,7 @@ export function useHerdrDispatch() {
   // moment the prompt is handed off (copied or dispatched) — off the integration
   // branch, local only. A failed cut (no repo, no integration branch) still
   // hands off; the agent will be told to cut a branch itself via POST
-  // /api/prs's error. Wayfinder and jMap tickets never get branches — their
+  // /api/prs's error. Wayfinder tickets never get branches — their
   // work is research/docs, not code; a predeploy ticket cuts none either — the
   // reproduction lives and dies in its own worktree.
   async function resolveBranch(t: Ticket, mode: ProjectMode): Promise<string> {

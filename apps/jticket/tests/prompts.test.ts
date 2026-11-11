@@ -117,12 +117,6 @@ describe('promptKindFor', () => {
     expect(promptKindFor('predeploy', { labels: [] }, 'master')).toBe('predeploy')
   })
 
-  it("reads a jMap ticket's label", () => {
-    expect(promptKindFor('jmap', { labels: ['jmap:scope'] }, 'local')).toBe('jmap:scope')
-    expect(promptKindFor('jmap', { labels: ['jmap:synthesize'] }, 'local')).toBe('jmap:synthesize')
-    expect(promptKindFor('jmap', { labels: [] }, 'local')).toBe('jmap:domain')
-  })
-
   it('splits an architect board into the scan and its candidates', () => {
     expect(promptKindFor('architect', { labels: ['arch:scan'] }, 'local')).toBe('architect:scan')
     expect(promptKindFor('architect', { labels: ['arch:candidate'] }, 'local')).toBe('architect:grill')
@@ -150,10 +144,8 @@ describe('the built-in prompts', () => {
     )
   })
 
-  it('is the bare command in wayfinder, jMap, architect and predeploy mode', () => {
+  it('is the bare command in wayfinder, architect and predeploy mode', () => {
     expect(resolve({ mode: 'wayfinder' }).text).toBe('/jwayfinder TICK-42')
-    expect(resolve({ mode: 'jmap', ticket: { labels: ['jmap:scope'] } }).text).toBe('/jmap-scope TICK-42')
-    expect(resolve({ mode: 'jmap' }).text).toBe('/jmap-domain TICK-42')
     expect(resolve({ mode: 'architect', ticket: { labels: ['arch:scan'] } }).text).toBe('/jarchitect-scan TICK-42')
     expect(resolve({ mode: 'architect' }).text).toBe('/jarchitect-grill TICK-42')
     expect(resolve({ mode: 'predeploy' }).text).toBe('/jreproduce TICK-42')

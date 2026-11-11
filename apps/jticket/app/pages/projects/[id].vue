@@ -204,15 +204,6 @@ async function removeProject() {
                   Wayfinder
                 </UBadge>
                 <UBadge
-                  v-else-if="project.mode === 'jmap'"
-                  color="success"
-                  variant="subtle"
-                  size="sm"
-                  icon="i-lucide-map"
-                >
-                  jMap
-                </UBadge>
-                <UBadge
                   v-else-if="project.mode === 'todo'"
                   color="warning"
                   variant="subtle"

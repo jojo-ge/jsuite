@@ -33,11 +33,11 @@ pnpm dev          # http://localhost:43000
 ## Data model
 
 - **Project** — `{ key: "PROJ-1", title, description, mode, repo, integrationBranch }`. Top-level grouping; contains tickets.
-  - `mode`: `standard` (plain tracker) · `wayfinder` (see **Wayfinder mode** below — the `description` *is* the map body) · `jmap` (codebase-mapping jobs) · `todo` (a codebase's todo list, one per repo) · `architect` (one architecture scan) · `predeploy` (suspected bugs reproduced before a deploy). The mode picks which prompt a ticket's herdr hand-off fires — `/jimplement`, `/jwayfinder`, `/jmap-*`, `/jarchitect-*`, `/jreproduce`.
+  - `mode`: `standard` (plain tracker) · `wayfinder` (see **Wayfinder mode** below — the `description` *is* the map body) · `todo` (a codebase's todo list, one per repo) · `architect` (one architecture scan) · `predeploy` (suspected bugs reproduced before a deploy). The mode picks which prompt a ticket's herdr hand-off fires — `/jimplement`, `/jwayfinder`, `/jarchitect-*`, `/jreproduce`.
   - `repo` / `integrationBranch`: the optional GitHub link — see **GitHub** below. Both `""` when unset.
 - **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
-  - `type`: the kind of work — `story` (user-facing slice of value) · `task` (technical work) · `bug` (something broken) · `review` (review code/PR/doc) · `verification` (confirm something works — QA, acceptance, post-deploy check) · `research` (investigate; output is knowledge) · `decision` (a choice to make/grill out) · `docs` (write/refresh documentation). With no `type`, mode labels / the project mode pick one: `arch:scan` → `research`, `arch:candidate` → `decision`, `jmap:*` / jmap projects → `docs`, `review:finding` / predeploy projects → `bug`, else `task`.
+  - `type`: the kind of work — `story` (user-facing slice of value) · `task` (technical work) · `bug` (something broken) · `review` (review code/PR/doc) · `verification` (confirm something works — QA, acceptance, post-deploy check) · `research` (investigate; output is knowledge) · `decision` (a choice to make/grill out) · `docs` (write/refresh documentation). With no `type`, mode labels / the project mode pick one: `arch:scan` → `research`, `arch:candidate` → `decision`, `review:finding` / predeploy projects → `bug`, else `task`.
   - `status`: `todo` · `in_progress` · `done`
   - `assignee`: free-form name of who is working on it — agents self-assign by name; `""` = unassigned. Filter with `GET /api/tickets?assignee=<name>`. In wayfinder terms, the assignee **is** the claim.
   - `labels`: free-form strings, plus the **tags**: exactly one of `afk` (agent-runnable) or `hitl` (needs a human; gets its own herdr tab) — the server adds `afk` when neither is sent — and optional `prototype` (throwaway work that must never ship; combines with any type). Filter with `GET /api/tickets?label=<label>`. Legacy writes (`"type": "AFK"|"HITL"`, `wayfinder:<sub-type>` labels) are still accepted and folded into this shape; `./jsuite setup` migrates stored tickets.
@@ -348,12 +348,12 @@ ticket.prompt (promptMode 'append' | 'replace')     the ticket's own text
         → the built-in text                         app/utils/prompts.ts
 ```
 
-There are fourteen **kinds**, each picked by what fires it — the three
-`standard:*` PR targets of the hand-off picker, `wayfinder`, `jmap:scope` /
-`jmap:domain` / `jmap:synthesize` (by the ticket's `jmap:` label), `todo`,
-`architect:scan` / `architect:grill`, `predeploy`, the project-level `merge`
-sweep and `worktree:connect`, and the codebase-level `worktree:kickoff` (see
-**Codebase worktrees**).
+There are fifteen **kinds**, each picked by what fires it — the three
+`standard:*` PR targets of the hand-off picker, the board's `batch` session,
+`wayfinder`, `todo`, `architect:scan` / `architect:grill`, `predeploy`, a PR
+review project's `prcheck` tickets, the project-level `merge` sweep,
+`worktree:connect`, `runplan:build` and `prreview:assess`, and the
+codebase-level `worktree:kickoff` (see **Codebase worktrees**).
 A kind is stored only when overridden, so an untouched jTicket fires exactly
 the strings it always has (`tests/prompts.test.ts` pins them).
 

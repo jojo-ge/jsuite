@@ -26,9 +26,6 @@ export const PROMPT_KINDS = [
   'standard:integration',
   'batch',
   'wayfinder',
-  'jmap:scope',
-  'jmap:domain',
-  'jmap:synthesize',
   'todo',
   'architect:scan',
   'architect:grill',
@@ -174,33 +171,6 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     vars: TICKET_VARS,
     template: '/jwayfinder {key}',
   },
-  'jmap:scope': {
-    label: 'jMap scope',
-    hint: "The jmap:scope ticket — the pass that carves the repo into domains.",
-    group: 'jMap',
-    level: 'ticket',
-    command: '/jmap-scope',
-    vars: TICKET_VARS,
-    template: '/jmap-scope {key}',
-  },
-  'jmap:domain': {
-    label: 'jMap domain',
-    hint: 'Every other mapping ticket — one domain documented per ticket.',
-    group: 'jMap',
-    level: 'ticket',
-    command: '/jmap-domain',
-    vars: TICKET_VARS,
-    template: '/jmap-domain {key}',
-  },
-  'jmap:synthesize': {
-    label: 'jMap synthesize',
-    hint: 'The jmap:synthesize ticket — the docs folded into one dependency map.',
-    group: 'jMap',
-    level: 'ticket',
-    command: '/jmap-synthesize',
-    vars: TICKET_VARS,
-    template: '/jmap-synthesize {key}',
-  },
   todo: {
     label: 'Todo grilling',
     hint: "A todo-list ticket's interview, run in the herdr terminal.",
@@ -337,7 +307,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
 }
 
 /** The editor's sections, in the order they render. */
-export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees', 'Run setup', 'PR review'] as const
+export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees', 'Run setup', 'PR review'] as const
 export function promptKindsInGroup(group: string): PromptKind[] {
   return PROMPT_KINDS.filter((k) => PROMPT_KIND_META[k].group === group)
 }
@@ -401,13 +371,8 @@ export function ticketPromptVars(
 
 // ── Which kind is this hand-off? ────────────────────────────────────────────
 // The same branching the dispatch used to do inline: a project's mode picks
-// the family, and inside jMap and architect mode the ticket's label picks the
-// job. Standard mode is the only one the hand-off picker applies to.
-export function jmapPromptKind(ticket: Pick<Ticket, 'labels'>): PromptKind {
-  if (ticket.labels.includes('jmap:scope')) return 'jmap:scope'
-  if (ticket.labels.includes('jmap:synthesize')) return 'jmap:synthesize'
-  return 'jmap:domain'
-}
+// the family, and inside architect mode the ticket's label picks the job.
+// Standard mode is the only one the hand-off picker applies to.
 
 export function promptKindFor(
   mode: ProjectMode,
@@ -415,7 +380,6 @@ export function promptKindFor(
   target: 'local' | 'master' | 'integration',
 ): PromptKind {
   if (mode === 'wayfinder') return 'wayfinder'
-  if (mode === 'jmap') return jmapPromptKind(ticket)
   if (mode === 'todo') return 'todo'
   if (mode === 'architect') return ticket.labels.includes('arch:scan') ? 'architect:scan' : 'architect:grill'
   if (mode === 'predeploy') return 'predeploy'

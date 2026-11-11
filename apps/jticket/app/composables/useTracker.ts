@@ -11,7 +11,7 @@ export type TicketTag = AgencyTag | 'prototype' | 'paused'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy' | 'prreview'
+export type ProjectMode = 'standard' | 'wayfinder' | 'todo' | 'architect' | 'predeploy' | 'prreview'
 export type ShareSide = 'creator' | 'importer'
 
 // Two-party sync (see server/utils/ownership.ts): which side this machine is

@@ -111,7 +111,6 @@ function slugForBranch(title: string): string {
 const modeOptions = computed(() => [
   { label: 'Standard — plain tracker', value: 'standard' },
   { label: 'Wayfinder — the description is a map, tickets have a frontier', value: 'wayfinder' },
-  { label: 'jMap — tickets are codebase-mapping jobs dispatched with /jmap-* commands', value: 'jmap' },
   { label: 'Predeploy — tickets are suspected bugs, reproduced (never fixed) with /jreproduce', value: 'predeploy' },
   // Only so the locked select on the TODO project can render its own value —
   // never offered as a choice (the select is disabled whenever this applies).

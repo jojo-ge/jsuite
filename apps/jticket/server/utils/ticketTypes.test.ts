@@ -45,7 +45,6 @@ describe('defaultTicketType', () => {
   it('reads mode labels first, then the project mode', () => {
     expect(defaultTicketType(['arch', 'arch:scan'], 'architect')).toBe('research')
     expect(defaultTicketType(['arch:candidate'], 'architect')).toBe('decision')
-    expect(defaultTicketType(['jmap:domain'], null)).toBe('docs')
     expect(defaultTicketType(['review:finding'], 'standard')).toBe('bug')
     expect(defaultTicketType([], 'predeploy')).toBe('bug')
     expect(defaultTicketType([], 'wayfinder')).toBe('task')

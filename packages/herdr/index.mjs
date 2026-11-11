@@ -95,7 +95,7 @@ export async function herdrJson(args, opts = {}) {
 // Every list-then-act step here (find-or-create a workspace, pick a pane to
 // split, pick a free agent name, start + prompt claude) races any other
 // dispatcher doing the same — and the dispatchers are several processes
-// (jTicket's auto loop and buttons, jReview's watcher, jDiff, jCode, jMap) on
+// (jTicket's auto loop and buttons, jReview's watcher, jDiff, jCode) on
 // one herdr server. So they all queue on one lock: in-process callers on a
 // promise chain, processes on a lock file in .data/herdr/. Re-entrant within
 // one async call chain, so a caller can hold it across a whole

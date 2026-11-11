@@ -1,11 +1,11 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jCode, jMap and jReview each do, how they share data, charts and herdr dispatch, and which app, skill or endpoint a request should route to (the same routing table as the repo's CLAUDE.md, for sessions outside it). Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, how to drive jTicket (the `jt` CLI, auto mode, run plans, Branches, Today), or how to start/stop/manage the suite. API and engine detail lives in reference/api.md.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jCode and jReview each do, how they share data, charts and herdr dispatch, and which app, skill or endpoint a request should route to (the same routing table as the repo's CLAUDE.md, for sessions outside it). Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, how to drive jTicket (the `jt` CLI, auto mode, run plans, Branches, Today), or how to start/stop/manage the suite. API and engine detail lives in reference/api.md.
 ---
 
 # jSuite — the local product ecosystem
 
-A pnpm-workspace monorepo (`jsuite root` prints where it is checked out): eight local Nuxt apps behind one
+A pnpm-workspace monorepo (`jsuite root` prints where it is checked out): seven local Nuxt apps behind one
 Caddy edge. OrbStack resolves the `.local` names and terminates HTTPS.
 
 ```sh
@@ -22,7 +22,6 @@ jsuite status | stop | restart | logs [app] | open [app] | setup
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
 | jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser |
 | jCode | https://jcode.local | 43006 | hand-code a shipped feature's core as a sandbox kata |
-| jMap | https://jmap.local | 43007 | codebase cartographer — domains, walkthrough docs, interactive map |
 | jReview | https://jreview.local | 43008 | multi-reviewer code review → deduped findings → tickets |
 
 Always include the scheme: `https://<app>.local`. Bare host ports
@@ -42,7 +41,6 @@ Always include the scheme: `https://<app>.local`. Bare host ports
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
 | be grilled about a plan | `grilling` in the terminal — `j-grilling` only when the operator asks for ONE question in the browser; jGrilling's **Up next** strip lists the HITL grilling frontier from jTicket and starts a ticket in herdr |
 | build a feature and hand-code its core ("with jcode") | `jcode` — ship as usual, then publish the core as a kata; the page's Mark-it dispatches `jcode-mark` |
-| map a codebase / architecture map of a repo | `j-map` (front door) — a jMap-mode jTicket project whose tickets run `jmap-scope` / `jmap-domain` / `jmap-synthesize` |
 | review someone's GitHub PR, reviewers sized to it, findings → post to the PR | skill `make-jreview-project N` in the repo → a jTicket **PR review project** (mode `prreview`): Fable 5.2 `/jreview-assess` picks 2–4 reviewers + one shared brief + optional `/jpr-check` checks into the project's own **review plan** (Review setup tab — not Run setup); a jReview agreement review (consensus + adversarial verification + approvability) hands findings back to the Review tab, whose **Post to PR** sends a COMMENT review under your gh auth (never an approval) and **Rerun review** re-runs on the new head |
 | a thorough multi-reviewer review of a branch, findings → tickets | jReview New review (4 Opus 5.5 reviewers on the global `/code-review`; `jreview-report`, `jreview-triage`); from a jTicket project's **Review** tab the findings join that project |
 | a few small tasks/decision tickets in ONE session ("run these together") | jTicket board: tick 2+ frontier cards → **One session** — one claude session, tickets in key order, each on its own hand-off; prompt kind `batch` (overridable per project/codebase/global); no claims, budget or subagents; HITL asks in that pane; 409 under auto mode unless every ticket is HITL (`POST /api/projects/:id/herdr-batch`) |
@@ -200,14 +198,6 @@ brief, 2–3 hints, hidden answer. *Mark it* dispatches `jcode-mark` into herdr
 server-side (brief → hints → answer); nothing ships from a kata. Skills:
 `jcode`, `jcode-mark`.
 
-**jMap** — the cartographer, orchestrated entirely through jTicket. A map is a
-jMap-mode jTicket project; jTicket's herdr buttons dispatch every phase
-(`/jmap-scope` → one `jmap:domain` ticket per part; `/jmap-domain` publishes a
-walkthrough doc; `/jmap-synthesize`, created from the map room's Synthesize
-button, POSTs the graph back). jMap runs no claude and dispatches nothing — it
-polls progress and renders the interactive SVG map. State `.data/jmap/`.
-Skills: `j-map`, `jmap-scope`, `jmap-domain`, `jmap-synthesize`.
-
 **jReview** — multi-reviewer code review. Pick a codebase, branch (open PRs via
 `gh`) and target (defaults to the PR's base; a branch not checked out is
 reviewed in a detached worktree); Run dispatches **four Opus 5.5 reviewers**
@@ -250,7 +240,7 @@ never an approval. State `.data/jreview/`. Skills: `jreview-report`,
   by **jTicket** (ticket work, loops, batches, merges, worktree prompts,
   slice/outcome reports), **jDiff** (review/ask/tour/chains on Opus 5),
   **jCode** (`jcode-mark`) and **jReview** (reviewers, triage, consensus).
-  jMap's phases are dispatched by jTicket; jChart, jExplain and jGrilling
+  jChart, jExplain and jGrilling
   dispatch nothing. No app runs a headless claude of its own.
 - **Notes loop everywhere**: jChart and jExplain keep human feedback in
   `<key>.notes.json` sidecars — annotate in the browser, Claude reads it back.

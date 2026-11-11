@@ -1,6 +1,6 @@
 // The projects page's manual order. `position` is set by dragging (PUT
 // /api/projects/order numbers the whole list); null means the project was never
-// placed — new from jReview, jMap or the architecture scan — and those sort
+// placed — new from jReview or the architecture scan — and those sort
 // first, newest first, so fresh work lands where you'll see it.
 
 export interface OrderedProject {

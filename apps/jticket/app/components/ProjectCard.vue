@@ -31,7 +31,6 @@ const emit = defineEmits<{
 
 const MODE_BADGE: Partial<Record<Project['mode'], { label: string; color: 'primary' | 'success' | 'warning' | 'info' | 'error'; icon: string }>> = {
   wayfinder: { label: 'Wayfinder', color: 'primary', icon: 'i-lucide-compass' },
-  jmap: { label: 'jMap', color: 'success', icon: 'i-lucide-map' },
   todo: { label: 'TODO list', color: 'warning', icon: 'i-lucide-list-todo' },
   architect: { label: 'Architect', color: 'info', icon: 'i-lucide-drafting-compass' },
   predeploy: { label: 'Predeploy', color: 'error', icon: 'i-lucide-bug' },

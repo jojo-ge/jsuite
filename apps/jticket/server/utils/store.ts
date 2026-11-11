@@ -34,13 +34,10 @@ export type TicketTransfer = '' | 'pending' | 'declined'
 // A local PR's lifecycle. 'conflicted' is a failed merge attempt — the repo was
 // left untouched; rebase the head branch and merge again.
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-// A project is a plain tracker, a wayfinder effort, a jMap codebase-mapping
-// effort, a codebase's TODO list, an architecture review, or a pre-deploy
-// bug sweep. In 'wayfinder'
+// A project is a plain tracker, a wayfinder effort, a codebase's TODO list, an
+// architecture review, a pre-deploy bug sweep, or a PR review. In 'wayfinder'
 // mode the project description is the wayfinder *map* body and its tickets are
-// grouped into frontier / blocked / done. In 'jmap' mode the tickets are
-// mapping jobs dispatched to herdr with /jmap-* commands (no branches, no PRs)
-// and their output is docs the jMap app synthesizes. In 'todo' mode the
+// grouped into frontier / blocked / done. In 'todo' mode the
 // project is its codebase's one running todo list — human-written one-liner
 // tickets exercised with the Grill action (no branches, no PRs); made only by
 // get-or-create (POST /api/projects/todo), one per codebase. In 'architect'
@@ -59,9 +56,9 @@ export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 // never-pushed copy of the PR head (jreview/pr-<n>), its tickets are checks run
 // against that head (/jpr-check), and its own review plan — not a run plan —
 // runs the checks and a jReview agreement review (app/utils/reviewPlan.ts).
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy' | 'prreview'
+export type ProjectMode = 'standard' | 'wayfinder' | 'todo' | 'architect' | 'predeploy' | 'prreview'
 
-const PROJECT_MODES: ProjectMode[] = ['wayfinder', 'jmap', 'todo', 'architect', 'predeploy', 'prreview']
+const PROJECT_MODES: ProjectMode[] = ['wayfinder', 'todo', 'architect', 'predeploy', 'prreview']
 
 export function coerceProjectMode(mode: unknown): ProjectMode {
   return PROJECT_MODES.includes(mode as ProjectMode) ? (mode as ProjectMode) : 'standard'
@@ -87,7 +84,7 @@ export interface Project {
   // The projects page's manual order and its Project backlog — both
   // machine-local view state, like starred: never on the sync wire. position
   // null means "never placed": those sort first, newest first, so a project
-  // jReview/jMap/the scan just made lands on top. PUT /api/projects/order
+  // jReview/the scan just made lands on top. PUT /api/projects/order
   // numbers a whole list; hidden parks a project in the Project backlog
   // section (its tickets, loop and links are untouched).
   position: number | null
@@ -147,7 +144,7 @@ export interface Ticket {
   projectId: string | null // parent project; null = backlog
   assignee: string // who is working on it — free-form name (e.g. an agent id); '' = unassigned
   // Free-form, plus the well-known tags (ticketTypes.ts): exactly one of
-  // 'afk' | 'hitl', and optionally 'prototype'. Mode labels (arch:*, jmap:*)
+  // 'afk' | 'hitl', and optionally 'prototype'. Mode labels (arch:*)
   // live here too.
   labels: string[]
   resolution: string // the answer, recorded on resolution (jdoc); '' until resolved

@@ -1,6 +1,6 @@
 // Driving Herdr (the terminal workspace manager) from jTicket.
 //
-// The adapter itself lives in @jsuite/herdr (shared with jMap): binary
+// The adapter itself lives in @jsuite/herdr (shared with jDiff and jReview): binary
 // resolution, JSON exec, state cache, workspace/tab/pane topology, agent
 // start with its retry dance. Re-exported here so Nitro auto-imports keep
 // working for the herdr routes. jTicket's own topology choices: one workspace

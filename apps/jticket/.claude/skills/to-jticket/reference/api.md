@@ -110,7 +110,7 @@ POST /api/projects
 { "title": "Checkout",                  // required
   "description": "Everything payments-related",
   "repo": "~/code/my-repo",             // the codebase this project belongs to
-  "mode": "standard" }                  // or "wayfinder" / "jmap" / "predeploy"; anything else → "standard"
+  "mode": "standard" }                  // or "wayfinder" / "predeploy"; anything else → "standard"
                                         // ("todo" and "architect" have their own endpoints below — don't POST them here)
 ```
 
@@ -218,7 +218,7 @@ take it cold) or `hitl` (needs a human; gets its own herdr tab) — the server a
 when neither is sent. `prototype` marks throwaway work that must never ship and
 combines with any type (a wayfinder prototype is `research` + `prototype`). With no
 `type`, the server infers one: `arch:scan` → `research`, `arch:candidate` → `decision`,
-`jmap:*` or a jmap project → `docs`, `review:finding` or a predeploy project → `bug`,
+`review:finding` or a predeploy project → `bug`,
 else `task`. Legacy input — `"type": "AFK" | "HITL"`, `wayfinder:<sub-type>` labels —
 is still accepted and folded into this shape; don't send it.
 
