@@ -18,6 +18,7 @@ import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
 import type { Project, Store } from './store'
+import { assertCommandAllowed } from './sandbox'
 
 const pExecFile = promisify(execFile)
 
@@ -26,6 +27,7 @@ const pExecFile = promisify(execFile)
 const JDIFF_BASE = (process.env.JDIFF_URL ?? 'https://jdiff.local').replace(/\/+$/, '')
 
 export async function run(cmd: string, args: string[], cwd: string): Promise<string> {
+  assertCommandAllowed(cmd, args, cwd)
   try {
     const { stdout } = await pExecFile(cmd, args, { cwd, maxBuffer: 16 * 1024 * 1024 })
     return stdout
@@ -41,6 +43,7 @@ export async function run(cmd: string, args: string[], cwd: string): Promise<str
 // "does this ref exist?" probes, where a non-zero exit just means "no".
 async function tryRun(cmd: string, args: string[], cwd: string): Promise<string | null> {
   try {
+    assertCommandAllowed(cmd, args, cwd)
     const { stdout } = await pExecFile(cmd, args, { cwd, maxBuffer: 16 * 1024 * 1024 })
     return stdout
   } catch {

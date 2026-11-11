@@ -57,6 +57,19 @@ async function herdrBin() {
 }
 
 /**
+ * HERDR_SESSION names a herdr session other than the default — a jTicket
+ * sandbox (`./jsuite sandbox`) dispatches into its own, so the live suite's
+ * pane sweeps never see its panes and it never sees theirs. Unset = the
+ * default session, as before. The session must be running (`herdr session
+ * attach <name>` in a terminal); until it is, herdr reports
+ * server_not_running and dispatch stays unavailable.
+ */
+function sessionArgs() {
+  const name = process.env.HERDR_SESSION?.trim()
+  return name ? ['--session', name] : []
+}
+
+/**
  * Run a herdr CLI command and return its raw stdout. Throws HerdrError 503 (not
  * installed), 504 `cli_timeout` (no answer within `opts.timeoutMs`, default
  * 30s), or 502 carrying herdr's error `code`.
@@ -68,7 +81,7 @@ async function herdrRun(args, opts = {}) {
   }
   const timeoutMs = opts.timeoutMs ?? CLI_TIMEOUT_MS
   try {
-    const { stdout } = await pExecFile(bin, args, { maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs, killSignal: 'SIGKILL' })
+    const { stdout } = await pExecFile(bin, [...sessionArgs(), ...args], { maxBuffer: 16 * 1024 * 1024, timeout: timeoutMs, killSignal: 'SIGKILL' })
     return stdout
   } catch (err) {
     if (err?.killed) {

@@ -61,6 +61,28 @@ that app's own skill rather than improvising one app's job in another.
 - **Don't restart apps blindly.** `./jsuite status` first; `./jsuite start` is
   idempotent for already-running apps but refuses ports held by processes it
   didn't start. Logs are at `logs/<app>.log` (`./jsuite logs <app>`).
+- **From a worktree, run jTicket only as a sandbox.** The live suite runs from
+  the main checkout, and live projects are mid-run. In a worktree, never run
+  `./jsuite start|stop|restart|setup` (setup repoints the global skill links
+  at the worktree) and never touch the Caddyfile or OrbStack. To see a change
+  in the running app, use `./jsuite sandbox`:
+  - It runs jTicket in the foreground from this checkout on the first free
+    port from 43100, over a copy of the live `.data` in `.sandbox/data`.
+    `--fresh` takes a new copy.
+  - Engines are off: no auto loop, review runner or share sync. `--engines`
+    turns them on.
+  - git/gh writes are refused, and so are herdr sessions, except inside the
+    throwaway repos you pass with `--repos /abs/a:/abs/b`.
+  - Sessions it starts go into herdr session `jsuite-sandbox`, never the live
+    one. Someone has to run `herdr session attach jsuite-sandbox` in a
+    terminal first.
+  - Those sessions are pointed back at the sandbox: their prompts are
+    rewritten, and `JTICKET_URL` is set for their commands.
+
+  The rules live in `apps/jticket/server/utils/sandbox.ts` and
+  `sandboxRules.ts`. A sandbox session still reads the globally installed
+  skills (the live versions), so skill edits on a branch aren't exercised
+  until it merges.
 
 ## Layout
 

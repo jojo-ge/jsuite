@@ -2,6 +2,7 @@
 # jsuite — one command for the whole local dev suite.
 #
 #   ./jsuite start | stop | restart | status | logs [app] | open [app] | setup
+#   ./jsuite sandbox [--port N] [--fresh] [--repos A:B] [--engines]
 #
 # The Nuxt apps run natively on fixed ports (they need host git/gh/claude and
 # the macOS GUI, so they are deliberately NOT containerised). A single Caddy
@@ -333,6 +334,78 @@ cmd_setup() {
   bold "Now run: $0 start"
 }
 
+# ---------------------------------------------------------------- sandbox --
+# A second jTicket that can't disturb the live suite — for building and
+# testing jTicket from a worktree. It runs in the foreground from THIS
+# checkout, over a copy of the live .data (taken once into .sandbox/data;
+# --fresh re-takes it), on the first free port from 43100. No Caddy, no
+# pidfile, no skill links: start/stop/setup are never touched.
+#
+# Everything that could reach live state is switched off or redirected
+# (apps/jticket/server/utils/sandbox.ts):
+#   JTICKET_SANDBOX=1     git/gh writes and herdr sessions only inside
+#                         --repos (throwaway fixtures; none by default)
+#   JTICKET_ENGINES=off   no auto loop, review runner or share sync (--engines: on)
+#   JTICKET_URL           sessions it starts are pointed back at the sandbox
+#   HERDR_SESSION         its panes live in herdr session `jsuite-sandbox`
+#                         (start it with `herdr session attach jsuite-sandbox`;
+#                         until then dispatch is simply unavailable)
+#   JREVIEW/JDIFF_API_URL pointed nowhere — the live jReview and jDiff would
+#                         dispatch into the live herdr and post to :43000
+cmd_sandbox() {
+  local port="" fresh=0 repos="" engines=off
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --port) port="$2"; shift 2 ;;
+      --fresh) fresh=1; shift ;;
+      --repos) repos="$2"; shift 2 ;;
+      --engines) engines=on; shift ;;
+      *) die "usage: $0 sandbox [--port N] [--fresh] [--repos /abs/repo:/abs/other] [--engines]" ;;
+    esac
+  done
+  [[ -d "$HERE/node_modules" ]] || die "deps not installed in this checkout — run: pnpm install"
+  if [[ -z "$port" ]]; then
+    for port in $(seq 43100 43199); do port_listening "$port" || break; done
+  fi
+  port_listening "$port" && die "port $port is in use"
+  (( port >= 43000 && port <= 43099 )) && die "ports 43000–43099 belong to the live suite"
+
+  # The live data lives in the MAIN checkout (the one whose .git this shares).
+  local common main src sb data
+  common="$(git -C "$HERE" rev-parse --path-format=absolute --git-common-dir)"
+  main="$(dirname "$common")"
+  src="$main/.data"
+  sb="$HERE/.sandbox"
+  data="$sb/data"
+  if [[ $fresh == 1 || ! -d "$data" ]]; then
+    bold "copying $src -> $data"
+    rm -rf "$data"; mkdir -p "$data"
+    # Caches are rebuilt on demand; the relay config would join live shares'
+    # channels; the herdr lock belongs to the live dispatchers.
+    rsync -a \
+      --exclude 'jdiff/diff-cache/' --exclude 'jdiff/pr-list-cache/' \
+      --exclude 'herdr/' --exclude 'jticket/sync.json' \
+      --exclude 'jticket/sandbox-session-settings.json' \
+      "$src/" "$data/"
+  fi
+  [[ "$(cd "$data" && pwd -P)" != "$(cd "$src" && pwd -P)" ]] || die "sandbox data resolves to the live .data"
+
+  export JSUITE_DATA_DIR="$data"
+  export JTICKET_SANDBOX=1
+  export JTICKET_ENGINES="$engines"
+  export JTICKET_URL="http://localhost:$port"
+  export JTICKET_SANDBOX_REPOS="$repos"
+  export HERDR_SESSION="${HERDR_SESSION:-jsuite-sandbox}"
+  export JREVIEW_API_URL="http://127.0.0.1:9" JDIFF_API_URL="http://127.0.0.1:9"
+  unset JTICKET_SUPABASE_URL JTICKET_SUPABASE_KEY JSUITE_HERDR_LOCK
+
+  bold "jTicket sandbox"
+  ok "http://localhost:$port  (data $data)"
+  dim "engines $engines · herdr session $HERDR_SESSION · writable repos: ${repos:-none}"
+  cd "$ROOT/jticket"
+  exec pnpm dev --port "$port"
+}
+
 case "${1:-start}" in
   start) cmd_start ;;
   stop) cmd_stop ;;
@@ -341,7 +414,8 @@ case "${1:-start}" in
   logs) shift; cmd_logs "$@" ;;
   open) shift; cmd_open "$@" ;;
   setup) cmd_setup ;;
+  sandbox) shift; cmd_sandbox "$@" ;;
   # Where this checkout lives, for skills and scripts: `$(jsuite root)/.data/jchart`.
   root) echo "$HERE" ;;
-  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup|root}" ;;
+  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup|sandbox|root}" ;;
 esac

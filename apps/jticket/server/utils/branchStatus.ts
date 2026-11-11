@@ -11,11 +11,13 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { run } from './github'
 import { worktreeOf, type PrCommit } from './localPrs'
+import { assertCommandAllowed } from './sandbox'
 
 const pExecFile = promisify(execFile)
 
 async function tryGit(cwd: string, args: string[]): Promise<string | null> {
   try {
+    assertCommandAllowed('git', args, cwd)
     const { stdout } = await pExecFile('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 })
     return stdout
   } catch {
@@ -55,7 +57,9 @@ export async function fetchBranches(path: string, branches: string[]): Promise<b
   let ok = true
   for (const b of branches) {
     try {
-      await pExecFile('git', ['fetch', '--quiet', 'origin', `+refs/heads/${b}:refs/remotes/origin/${b}`], { cwd: path })
+      const args = ['fetch', '--quiet', 'origin', `+refs/heads/${b}:refs/remotes/origin/${b}`]
+      assertCommandAllowed('git', args, path)
+      await pExecFile('git', args, { cwd: path })
     } catch (err: any) {
       if (/couldn't find remote ref/i.test(String(err?.stderr ?? ''))) {
         await tryGit(path, ['update-ref', '-d', `refs/remotes/origin/${b}`])

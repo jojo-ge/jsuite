@@ -11,22 +11,43 @@
 //
 // Everything degrades: no herdr binary or no running server ⇒ state reports
 // { available: false } and the UI hides the buttons.
-import { acquirePackedPane } from '@jsuite/herdr'
+//
+// The four calls that create panes or talk to claude are wrapped here for
+// sandbox mode (server/utils/sandbox.ts): a sandbox makes panes only in its
+// writable repos, and every prompt it sends — and every session it starts —
+// is pointed back at the sandbox's own jTicket. Outside a sandbox the
+// wrappers pass straight through.
+import * as herdr from '@jsuite/herdr'
+import { assertDispatchAllowed, sessionClaudeArgs, sessionPrompt } from './sandbox'
 
 export {
   HerdrError,
   herdrJson,
   herdrState,
   invalidateHerdrState,
-  ensureHerdrWorkspace,
-  createJobTab,
   renamePane,
   focusHerdrWindow,
-  startClaudeIn,
-  submitPrompt,
   withHerdrLock,
 } from '@jsuite/herdr'
 export type { HerdrTab, HerdrWorkspace, HerdrState } from '@jsuite/herdr'
+
+export function ensureHerdrWorkspace(label: string, cwd: string) {
+  assertDispatchAllowed(cwd)
+  return herdr.ensureHerdrWorkspace(label, cwd)
+}
+
+export function createJobTab(workspaceId: string, baseLabel: string, cwd: string) {
+  assertDispatchAllowed(cwd)
+  return herdr.createJobTab(workspaceId, baseLabel, cwd)
+}
+
+export function startClaudeIn(paneId: string, name: string, prompt: string, opts: { args?: string[] } = {}) {
+  return herdr.startClaudeIn(paneId, name, sessionPrompt(prompt), { ...opts, args: [...(opts.args ?? []), ...sessionClaudeArgs()] })
+}
+
+export function submitPrompt(agentName: string, prompt: string) {
+  return herdr.submitPrompt(agentName, sessionPrompt(prompt))
+}
 
 /**
  * A shell pane for a ticket: the first ticket tab (label = project key, then
@@ -34,4 +55,7 @@ export type { HerdrTab, HerdrWorkspace, HerdrState } from '@jsuite/herdr'
  * Merge tabs ('KEY · merge…') are never packed with ticket panes — the packed
  * tab regex only matches 'KEY' / 'KEY · <number>'.
  */
-export const acquireTicketPane = acquirePackedPane
+export function acquireTicketPane(workspaceId: string, baseLabel: string, cwd: string, freshTab: { tabId: string; paneId: string } | null) {
+  assertDispatchAllowed(cwd)
+  return herdr.acquirePackedPane(workspaceId, baseLabel, cwd, freshTab)
+}

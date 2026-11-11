@@ -3,6 +3,8 @@ node_modules/
 .output/
 # every app's state — see packages/data
 .data/
+# ./jsuite sandbox — its copy of .data
+.sandbox/
 .DS_Store
 logs/
 run/

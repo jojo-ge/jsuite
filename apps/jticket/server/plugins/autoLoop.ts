@@ -7,6 +7,8 @@
 const TICK_MS = 5_000
 
 export default defineNitroPlugin((nitroApp) => {
+  // A sandbox runs over a copy of real projects — its engines stay off unless asked for.
+  if (!enginesEnabled()) return console.log('[jticket] auto loop off (sandbox / JTICKET_ENGINES=off)')
   let running = false
 
   async function tick() {

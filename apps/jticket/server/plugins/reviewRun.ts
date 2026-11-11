@@ -6,6 +6,7 @@
 const TICK_MS = 5_000
 
 export default defineNitroPlugin((nitroApp) => {
+  if (!enginesEnabled()) return console.log('[jticket] review runner off (sandbox / JTICKET_ENGINES=off)')
   const timer = setInterval(() => {
     tickReviewRuns().catch((err) => console.error('[jticket] review run tick failed:', err))
   }, TICK_MS)

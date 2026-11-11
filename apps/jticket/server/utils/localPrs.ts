@@ -17,6 +17,7 @@ import { promisify } from 'node:util'
 import type { LocalPr, Store, Ticket } from './store'
 import { parseWorktreeList } from './worktrees'
 import type { WorktreeEntry } from './worktrees'
+import { assertCommandAllowed } from './sandbox'
 
 // run() (github.ts) wraps failures in an h3 error and drops the exit code and
 // stdout, but merge-tree's conflict answer *is* a non-zero exit with output —
@@ -24,6 +25,7 @@ import type { WorktreeEntry } from './worktrees'
 const pExecFile = promisify(execFile)
 
 async function git(cwd: string, args: string[]): Promise<string> {
+  assertCommandAllowed('git', args, cwd)
   const { stdout } = await pExecFile('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 })
   return stdout
 }

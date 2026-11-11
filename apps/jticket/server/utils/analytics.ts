@@ -20,6 +20,7 @@ import { readSessionTranscript, type TranscriptSession } from './transcripts'
 import { metricsOf, sessionReport, sumCosts, type SessionCost, type SessionMetrics, type SessionReport, type SubagentMetrics, type VerificationSummary } from './sessionMetrics'
 import { loadPrices } from './pricing'
 import { DEFAULT_VERIFICATION_RULES, type VerificationRun, type VerificationRule } from './verification'
+import { assertCommandAllowed } from './sandbox'
 
 const pExecFile = promisify(execFile)
 
@@ -251,7 +252,9 @@ async function linesChangedOf(repo: string, pr: LocalPr | undefined): Promise<nu
   let n: number | null = null
   try {
     const range = pr.mergeParent ? `${pr.mergeParent}..${pr.mergeCommit}` : `${pr.mergeCommit}^..${pr.mergeCommit}`
-    const { stdout } = await pExecFile('git', ['-C', repo, 'diff', '--shortstat', range], { timeout: 10_000 })
+    const args = ['-C', repo, 'diff', '--shortstat', range]
+    assertCommandAllowed('git', args, repo)
+    const { stdout } = await pExecFile('git', args, { timeout: 10_000 })
     const ins = /(\d+) insertions?/.exec(stdout)
     const del = /(\d+) deletions?/.exec(stdout)
     n = (ins ? parseInt(ins[1]!, 10) : 0) + (del ? parseInt(del[1]!, 10) : 0)

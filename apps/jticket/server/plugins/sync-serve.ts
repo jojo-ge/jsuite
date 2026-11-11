@@ -3,6 +3,7 @@
 // can reach us whenever the app is up (spec DOC-30 — no browser tab involved).
 // No relay configured = the loop never starts and sync stays off.
 export default defineNitroPlugin(() => {
+  if (!enginesEnabled()) return console.log('[jticket] share sync off (sandbox / JTICKET_ENGINES=off)')
   if (!syncConfigured()) return
   const timer = setInterval(() => {
     void useSyncServer().tick().catch(() => {})
