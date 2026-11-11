@@ -9,8 +9,8 @@ The doc is a j-explain JSON authoring payload (title, blocks, glossary — see t
 skill's SKILL.md for the block vocabulary). It's stored as a document at
 <.data root>/jexplain/<key>.json (the root is $JSUITE_DATA_DIR when set, else
 the jSuite checkout's .data/); chart blocks with inline mermaid are materialised into the
-shared jChart store (<.data root>/jchart/), where the user
-can also open them in the full jChart workbench.
+shared chart pool (<.data root>/jchart/), where the user
+can also open them in jTicket's chart editor (/charts/<key>).
 
 Prints the reading URL (jTicket's /e/<key> reader) plus the data file paths to read the user's notes back
 from without waiting for a paste.

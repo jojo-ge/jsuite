@@ -149,7 +149,7 @@ JSON
 
 - **Every candidate gets a before/after pair**: two `chart` blocks with
   explicit stable `chartKey`s (`arch-tick-<n>-before` / `arch-tick-<n>-after`,
-  lowercase). The mermaid materialises into real jChart charts the human can
+  lowercase). The mermaid materialises into real charts the human can
   edit and annotate — draw the shallowness in Before and the deepened module
   in After. Re-publishing with identical mermaid never clobbers hand edits.
 - One prose section per candidate, named by its ticket key, mirroring the

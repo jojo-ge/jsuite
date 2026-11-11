@@ -31,7 +31,7 @@ shared document (`documentKey`: title page, blocks, glossary).
 
 The body is **not markdown** — it is the block vocabulary of the shared
 document system: `prose`, `callout`, `code`, `diff`, `chart` (live Excalidraw,
-shared with jChart), `image` (a screenshot — local `file` path or inline
+the same charts jTicket's chart editor opens), `image` (a screenshot — local `file` path or inline
 `base64`, copied into the doc's media dir), `steps`, `compare`, `timeline`,
 `takeaway`, plus an optional `glossary`. **The full vocabulary with worked examples lives in the
 `j-explain` skill** (`~/.claude/skills/j-explain/SKILL.md`) — read its "Block

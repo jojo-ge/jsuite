@@ -11,6 +11,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       jdiffUrl: process.env.JDIFF_URL ?? 'https://jdiff.local',
+      // The chart editor is this app's /charts/<key>: embedded charts link in-origin.
+      chartEditorBase: '',
     },
   },
   css: ['~/assets/css/main.css'],

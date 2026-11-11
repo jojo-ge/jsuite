@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * A live chart from the shared jChart store, embedded in the article. This is
+ * A live chart from the shared chart pool, embedded in the article. This is
  * the real chart object — edits made here autosave to .data/jchart/<key>.json,
- * and "Open in jChart" opens the same doc in the full workbench.
+ * and "Open editor" opens the same chart in jTicket's chart editor
+ * (/charts/<key>), which has the shape-notes panel.
  */
 import type { ChartBlock } from '../../types'
 import type { Scene, SceneElement } from '@jsuite/charting/scene'
@@ -41,7 +42,7 @@ function onSceneChange(scene: Scene) {
 
 async function onCanvasReady() {
   // A chart the skill just created is Mermaid text with no shapes yet — lay it
-  // out on first open, exactly like jChart's page does.
+  // out on first open, exactly like the editor does.
   const c = chart.value
   if (c && c.source?.type === 'mermaid' && c.source.text.trim() && !c.scene?.elements?.length) {
     importing.value = true
@@ -57,7 +58,10 @@ async function onCanvasReady() {
   }
 }
 
-const jchartUrl = computed(() => `https://jchart.local/c/${props.block.chartKey}`)
+// jTicket sets chartEditorBase to '' so the link stays on its own origin (the
+// sandbox included); apps still rendering documents elsewhere link to jTicket.
+const editorBase = String(useRuntimeConfig().public.chartEditorBase ?? 'https://jticket.local')
+const editorUrl = computed(() => `${editorBase}/charts/${encodeURIComponent(props.block.chartKey)}`)
 const statusLabel = computed(
   () => ({ idle: '', saving: 'Saving…', saved: 'Saved', error: 'Save failed' })[status.value],
 )
@@ -72,13 +76,13 @@ const statusLabel = computed(
         {{ statusLabel }}
       </span>
       <UButton
-        :to="jchartUrl"
+        :to="editorUrl"
         target="_blank"
         icon="i-lucide-external-link"
         color="neutral"
         variant="ghost"
         size="xs"
-        label="Open in jChart"
+        label="Open editor"
       />
     </figcaption>
 

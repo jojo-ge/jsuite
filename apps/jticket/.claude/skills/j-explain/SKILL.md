@@ -5,13 +5,13 @@ description: Explain something as a blog-style article in jTicket's document rea
 
 # j-explain
 
-Explain a concept, a PR, a system, or a decision as a **blog-style article** in jTicket's document reader (`/e/<key>`, the page jExplain used to serve) — rich typed blocks instead of a wall of text, with **live editable charts** (shared with jChart) and per-block notes that come back to you.
+Explain a concept, a PR, a system, or a decision as a **blog-style article** in jTicket's document reader (`/e/<key>`, the page jExplain used to serve) — rich typed blocks instead of a wall of text, with **live editable charts** (the same charts jTicket's chart editor opens) and per-block notes that come back to you.
 
 The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving articles like these and jTicket docs, all read in jTicket. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/docs` when a document belongs on the board.
 
 Use this when the user asks you to *explain* something and deserves better than terminal markdown: a PR walkthrough, an architecture tour, a "how does X actually work", a post-mortem, a comparison of options.
 
-**You can make diagrams from right here.** A `chart` block takes inline Mermaid and the server turns it into a real, live Excalidraw canvas embedded in the article — no separate jChart round-trip, no image files. Reach for one whenever the explanation has a *shape*: a request path, a state machine, a before/after architecture, who-calls-what. See the **chart** block below.
+**You can make diagrams from right here.** A `chart` block takes inline Mermaid and the server turns it into a real, live Excalidraw canvas embedded in the article — no separate chart round-trip, no image files. Reach for one whenever the explanation has a *shape*: a request path, a state machine, a before/after architecture, who-calls-what. See the **chart** block below.
 
 Standing rules: always set a stable `key` so `--replace` keeps the URL; read notes back from the files, not a paste; a `chart` block with neither `mermaid` nor `chartKey` is **silently dropped**, so give every chart one or the other. Script: `~/.claude/skills/j-explain/scripts/explain.py` (installed by `./jsuite setup`; source at `$(jsuite root)/apps/jticket/.claude/skills/j-explain/scripts/explain.py`).
 
@@ -27,7 +27,7 @@ Standing rules: always set a stable `key` so `--replace` keeps the URL; read not
 
 3. **Tell the user how to use it.** In the browser they can:
    - Read it as an article — glossary terms show definitions on hover.
-   - **Edit any chart directly on its canvas** (full Excalidraw) — it's the same chart object jChart opens; "Open in jChart" jumps to the full workbench with shape-level notes.
+   - **Edit any chart directly on its canvas** (full Excalidraw) — it's the same chart object the chart editor opens; **Open editor** jumps to `/charts/<key>`, the full editor, which is where shape-level notes are pinned.
    - Hover any block and click the 💬 button in the margin to **pin a note to that block**; general notes live in the right rail. A note can carry **screenshots** (pasted/uploaded) and **sketches** drawn in the rail — some feedback is faster to draw an arrow at than to describe.
    - Press the rail's copy button when done — **Copy summary for Claude** while there are no notes, **Copy notes for Claude** once there are.
 
@@ -84,15 +84,15 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
   "commentary": "Everything else in the PR is plumbing for this line." }
 ```
 
-**chart** — a live Excalidraw canvas, embedded. **This is how you make a diagram in an explainer.** Write Mermaid inline (any kind Mermaid supports: flowchart, sequence, state, class, ER…) and the server materialises it into the **shared jChart store**, keeping only a `chartKey` reference in the block. Optional: `chartKey` (to reuse/name one), `height` (px, default 420), `caption`. A chart block with neither `mermaid` nor `chartKey` is dropped silently.
+**chart** — a live Excalidraw canvas, embedded. **This is how you make a diagram in an explainer.** Write Mermaid inline (any kind Mermaid supports: flowchart, sequence, state, class, ER…) and the server materialises it into the **shared chart pool** (`.data/jchart/`), keeping only a `chartKey` reference in the block. Optional: `chartKey` (to reuse/name one), `height` (px, default 420), `caption`. A chart block with neither `mermaid` nor `chartKey` is dropped silently.
 ```json
 { "type": "chart", "title": "Request path", "caption": "Where the stale read happens.",
   "mermaid": "flowchart LR\n  A[Req] --> B{Hit?}\n  B -->|yes| C[Return]\n  B -->|no| D[Fetch]" }
 ```
 - Use as many chart blocks in one document as the story needs — each becomes its own chart in the pool.
-- The chart is **fully editable in place**: the reader drags shapes, retypes labels, draws new ones, and pins notes to individual shapes — all on the page, no jChart detour. "Open in jChart" is there for the full workbench.
+- The chart is **fully editable in place**: the reader drags shapes, retypes labels and draws new ones on the page. Shape notes are **not** pinned on the page: on the page a chart takes a block note like any other block (💬 in the margin); per-shape notes are pinned in the full editor (**Open editor** → `/charts/<key>`) and land in `.data/jchart/<key>.notes.json`, not in the document's notes.
 - On `--replace`, a chart whose mermaid is **byte-identical** to last time is left completely untouched, so hand edits and shape notes survive. Changing the mermaid rebuilds the layout (notes survive, hand edits don't) — so don't retouch mermaid you didn't mean to change.
-- Charts you author here **are** jChart charts. Embed an existing one with just `{ "type": "chart", "chartKey": "..." }`, and set `chartKey` yourself when you want a stable, nameable chart rather than a slug derived from the doc key + title.
+- Charts you author here **are** the chart editor's charts (`j-chart` pushes to the same pool). Embed an existing one with just `{ "type": "chart", "chartKey": "..." }`, and set `chartKey` yourself when you want a stable, nameable chart rather than a slug derived from the doc key + title.
 - After the user has edited, read the live scene from `.data/jchart/<chartKey>.json` — not your original mermaid — and its shape notes from `<chartKey>.notes.json`.
 
 **image** — a screenshot or picture, framed like a screenshot, click to zoom, with its own note thread (notes pin to block ids, so one image = one conversation). Give it bytes one of three ways: a local `file` path (copied into `.data/jexplain/media/<docKey>/` — the document keeps working after the source is moved), inline `base64` / `dataUrl` (for bytes you hold; `name` picks the stored filename and its extension the type), or an already-served `src` when republishing. Optional `title`, `caption` (markdown), `alt`, `width` (px), `framed` (default true). png/jpg/gif/webp/svg/avif, max 12MB inline.

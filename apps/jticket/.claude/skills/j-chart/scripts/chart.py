@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Push a Mermaid diagram into the jChart app and open it for editing/annotation.
+"""Push a Mermaid diagram into jTicket's chart editor and open it for editing/annotation.
 
 Usage:
     chart.py <diagram.mmd> [--title "My Diagram"] [--replace] [--key slug] [--no-open]
@@ -7,8 +7,8 @@ Usage:
 
 The diagram is stored as a chart in <.data root>/jchart/<key>.json — the root is
 $JSUITE_DATA_DIR when set, else the .data/ of the jSuite checkout
-(found from this script's location, or `jsuite root`). jChart
-lays it out as editable Excalidraw shapes on first open; the user can then
+(found from this script's location, or `jsuite root`). jTicket's
+editor (/charts/<key>) lays it out as editable Excalidraw shapes on first open; the user can then
 redraw it freely and pin notes to individual shapes.
 
 Prints the chart URL, plus the data file paths to read the user's notes back
@@ -23,10 +23,14 @@ import sys
 import urllib.error
 import urllib.request
 
-# The jSuite edge (https) is the address the user sees; the bare dev port is the
-# fallback for when Caddy/Docker is down but the Nuxt app itself is up.
-EDGE_BASE = "https://jchart.local"
-DIRECT_BASE = "http://localhost:43003"
+# Charts live in jTicket (its /api/charts serves the shared pool and /charts/<key>
+# edits one). The jSuite edge (https) is the address the user sees; the bare dev
+# port is the fallback for when Caddy/Docker is down but jTicket itself is up.
+# $JTICKET_URL (set for sessions a `jsuite sandbox` starts, and honoured by `jt`)
+# overrides both, so a sandbox session pushes into the sandbox.
+EDGE_BASE = "https://jticket.local"
+DIRECT_BASE = "http://localhost:43000"
+OVERRIDE_BASE = (os.environ.get("JTICKET_URL") or "").rstrip("/") or None
 
 def jsuite_root():
     """The jSuite checkout: $JSUITE_ROOT, else the checkout this script lives in
@@ -47,7 +51,8 @@ def jsuite_root():
 DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.join(jsuite_root() or "jsuite-not-found", ".data")
 DATA_DIR = os.path.join(DATA_ROOT, "jchart")
 
-# Preferred browser (macOS app name). Override with --browser or $JCHART_BROWSER.
+# Preferred browser (macOS app name). Override with --browser or $JTICKET_BROWSER
+# ($JCHART_BROWSER still works).
 DEFAULT_BROWSER = "Arc"
 
 
@@ -67,8 +72,8 @@ def api(base, path, method="GET", payload=None, timeout=6):
 
 
 def pick_base():
-    """Return the first reachable base URL, preferring the edge."""
-    for base in (EDGE_BASE, DIRECT_BASE):
+    """Return the first reachable base URL: $JTICKET_URL alone when set, else the edge, else the port."""
+    for base in ((OVERRIDE_BASE,) if OVERRIDE_BASE else (EDGE_BASE, DIRECT_BASE)):
         try:
             api(base, "/api/charts", timeout=4)
             return base
@@ -79,7 +84,7 @@ def pick_base():
 
 def not_running():
     print(
-        "error: jChart isn't reachable.\n"
+        f"error: jTicket isn't reachable at {OVERRIDE_BASE or EDGE_BASE}.\n"
         "  Start the suite with:  jsuite status, then jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
@@ -88,7 +93,7 @@ def not_running():
 
 
 def open_in_browser(url, browser=None):
-    browser = browser or os.environ.get("JCHART_BROWSER") or DEFAULT_BROWSER
+    browser = browser or os.environ.get("JTICKET_BROWSER") or os.environ.get("JCHART_BROWSER") or DEFAULT_BROWSER
     if sys.platform == "darwin":
         subprocess.run(["open", "-a", browser, url] if browser else ["open", url], check=False)
     elif sys.platform.startswith("linux"):
@@ -115,14 +120,14 @@ def cmd_list(base):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("source", nargs="?", help="path to a .mmd file containing the Mermaid source")
-    ap.add_argument("--title", default=None, help="chart title shown in jChart")
+    ap.add_argument("--title", default=None, help="chart title shown in the editor")
     ap.add_argument("--key", default=None, help="explicit chart key (defaults to a slug of the title)")
     ap.add_argument("--replace", action="store_true",
                     help="overwrite the chart with this key instead of creating a new one — keeps its notes")
     ap.add_argument("--list", action="store_true", help="list existing charts and exit")
     ap.add_argument("--no-open", action="store_true", help="create the chart but do not open a browser")
     ap.add_argument("--browser", default=None,
-                    help="browser app to open in (e.g. 'Google Chrome'); falls back to $JCHART_BROWSER")
+                    help="browser app to open in (e.g. 'Google Chrome'); falls back to $JTICKET_BROWSER")
     args = ap.parse_args()
 
     base = pick_base()
@@ -153,7 +158,7 @@ def main():
     except urllib.error.URLError:
         return not_running()
 
-    url = f"{EDGE_BASE}{res['path']}" if base == EDGE_BASE else f"{base}{res['path']}"
+    url = f"{base}{res.get('path') or '/charts/' + res['key']}"
     if not args.no_open:
         open_in_browser(url, args.browser)
 

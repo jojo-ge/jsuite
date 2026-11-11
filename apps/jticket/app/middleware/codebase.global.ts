@@ -10,6 +10,9 @@ export default defineNuxtRouteMiddleware((to) => {
   // pool, which belongs to no codebase — and /e/<key> is the link explain.py
   // prints, reviewers' reports carry and old jexplain.local URLs redirect to.
   if (to.path === '/e' || to.path.startsWith('/e/')) return
+  // Same for the chart pool (/charts, /charts/<key>, and /c/<key> — the old
+  // jchart.local path): chart.py and embedded charts link there.
+  if (to.path === '/charts' || to.path.startsWith('/charts/') || to.path.startsWith('/c/')) return
   const selected = useCookie<string | null>('jticket-codebase')
   if (!selected.value) return navigateTo('/codebases')
 })

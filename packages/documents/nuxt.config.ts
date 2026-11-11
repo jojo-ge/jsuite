@@ -19,6 +19,13 @@ import { fileURLToPath } from 'node:url'
 //   @source "../../../../../packages/documents/app";
 export default defineNuxtConfig({
   extends: ['@jsuite/charting'],
+  // Where an embedded chart's "Open editor" button goes: jTicket's chart
+  // editor. jTicket itself overrides it to '' (same origin).
+  runtimeConfig: {
+    public: {
+      chartEditorBase: 'https://jticket.local',
+    },
+  },
   css: [fileURLToPath(new URL('./app/assets/css/documents.css', import.meta.url))],
   vite: {
     optimizeDeps: {

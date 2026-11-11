@@ -115,7 +115,7 @@ const blockTypes = [
   { s: 'callout', d: 'Tone-coded aside: insight · warning · success · aside' },
   { s: 'code', d: 'Syntax-highlighted, line highlights + margin annotations' },
   { s: 'diff', d: 'Unified diff with per-line annotations and commentary' },
-  { s: 'chart', d: 'Live Excalidraw canvas — shared with jChart (mermaid in)' },
+  { s: 'chart', d: 'Live Excalidraw canvas — the same chart /charts/<key> edits (mermaid in)' },
   { s: 'image', d: 'A screenshot — { file } local path or { base64 | dataUrl, name } inline; stored as doc media' },
   { s: 'steps', d: 'Numbered walkthrough' },
   { s: 'compare', d: 'Options table with markdown cells' },

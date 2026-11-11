@@ -1,23 +1,26 @@
 ---
 name: j-chart
-description: Draw a diagram in jChart as an editable canvas, then read back your redraw and per-shape notes.
+description: Draw a diagram in jTicket's chart editor as an editable canvas, then read back your redraw and per-shape notes.
 disable-model-invocation: true
 ---
 
 # j-chart — an editable, annotatable diagram
 
-jChart (`https://jchart.local`, port 43003) turns Mermaid into an **editable**
-Excalidraw canvas. Unlike a static image the user can redraw it — move, add,
-delete, relabel shapes — and pin notes to individual shapes. Both come back
-to you. The chart pool (`.data/jchart/`) is shared with jExplain, jTicket and
-jGrilling: a chart made here can be embedded in any of their documents by key.
+jTicket's chart editor (`https://jticket.local/charts/<key>`, port 43000)
+turns Mermaid into an **editable** Excalidraw canvas. Unlike a static image the
+user can redraw it — move, add, delete, relabel shapes — and pin notes to
+individual shapes. Both come back to you. The chart pool (`.data/jchart/`) is
+the one documents embed from: a chart made here can go in any document as
+`{ "type": "chart", "chartKey": "<key>" }`, and the same chart opens in both.
 
 Standing rules:
 - Mermaid is only the *starting layout*. Once imported the canvas is the
   source of truth; a re-import discards hand edits (notes survive).
 - Read the data files rather than waiting for a paste.
 - Script: `~/.claude/skills/j-chart/scripts/chart.py` (installed by
-  `./jsuite setup`; source at `$(jsuite root)/apps/jchart/.claude/skills/j-chart/scripts/chart.py`).
+  `./jsuite setup`; source at `$(jsuite root)/apps/jticket/.claude/skills/j-chart/scripts/chart.py`).
+  It talks to `https://jticket.local` (else `http://localhost:43000`);
+  `$JTICKET_URL` overrides both, so a sandbox session pushes into the sandbox.
 
 ## Workflow
 
@@ -32,7 +35,7 @@ Standing rules:
    file paths. The key is a slug of the title (or `--key slug`). Re-running
    with the same key and **no** `--replace` creates a new chart with a `-2`
    suffix; `--replace` overwrites the chart in place and keeps its notes.
-   If jChart isn't reachable the script says so: `jsuite
+   If jTicket isn't reachable the script says so: `jsuite
    status`, then `jsuite start`.
 
 3. **Tell the user how to use it.** In the browser they can:
@@ -43,6 +46,7 @@ Standing rules:
    - type overall feedback in **General notes**;
    - open **Mermaid** in the header to see/edit the source and re-import
      (rebuilds the layout, discards hand edits, keeps notes);
+   - delete the chart from the header (its notes go with it);
    - press the copy button when done — **Copy chart for Claude** when there
      are no notes yet, **Copy notes for Claude** once there are.
 
@@ -62,12 +66,13 @@ Standing rules:
 
 ## Notes
 
-- `chart.py --list` shows existing charts with shape and note counts; the
-  home page <https://jchart.local> is the same list.
+- `chart.py --list` shows existing charts with shape and note counts; jTicket's
+  **Charts** page <https://jticket.local/charts> is the same list (with a New
+  chart form). `/c/<key>`, jChart's old path, is an alias of the editor.
 - API: `POST /api/charts {title, mermaid?, key?, replace?}`, `GET|PUT
   /api/charts/:key`, `GET /api/charts`. The script wraps the POST.
 - Mermaid that fails to parse shows the parser error in a toast and leaves the
   canvas empty — fix the source and re-run. Diagram kinds Mermaid can't lay
   out fall back to a best-effort conversion; the user can redraw.
 - Opens in Arc by default. Override with `--browser "Google Chrome"` or
-  `$JCHART_BROWSER` (`DEFAULT_BROWSER` at the top of `chart.py`).
+  `$JTICKET_BROWSER` (`DEFAULT_BROWSER` at the top of `chart.py`).

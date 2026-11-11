@@ -53,6 +53,8 @@ const links = computed<NavLink[]>(() => [
   { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },
   // Every document in the shared pool (reports, explainers, docs), read at /e/<key>.
   { label: 'All documents', icon: 'i-lucide-book-open-text', to: '/e' },
+  // Every chart in the shared pool — the diagrams chart.py pushes and documents embed.
+  { label: 'Charts', icon: 'i-lucide-shapes', to: '/charts' },
   // How projects perform: close times, spend, verification and concurrency across every project.
   { label: 'Analytics', icon: 'i-lucide-chart-no-axes-column', to: '/analytics' },
 ])

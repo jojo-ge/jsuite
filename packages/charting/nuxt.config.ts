@@ -4,6 +4,8 @@
 //
 // Consumers add `extends: ['@jsuite/charting']` (plus the workspace dep) and get:
 //   <ExcalidrawCanvas>  — the Excalidraw editor as a Vue component
+//   <ChartNotesPanel>   — general + per-shape notes beside a canvas, "Copy notes for Claude"
+//   chartNotesMarkdown() / newChartNote() — the notes helpers ('@jsuite/charting/notes')
 //   mermaidToScene()    — Mermaid source → Excalidraw scene (browser-only)
 //   scene utils         — trimAppState, liveElements, labelForElement, isAnnotatable
 //   /api/charts/**      — CRUD + notes over .data/jchart/<key>.json (via @jsuite/data)

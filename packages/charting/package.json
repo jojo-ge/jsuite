@@ -8,6 +8,7 @@
   "exports": {
     ".": "./nuxt.config.ts",
     "./scene": "./app/utils/scene.ts",
+    "./notes": "./app/utils/chartNotes.ts",
     "./package.json": "./package.json",
     "./store": "./server/utils/store.ts"
   },

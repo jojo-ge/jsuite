@@ -1,7 +1,8 @@
 import { blankChart, keyFromTitle, uniqueKey, writeChart } from '../../utils/store'
 
 /**
- * Create a chart. Body: { title, mermaid?, key?, replace? }
+ * Create a chart. Body: { title, mermaid?, key?, replace? }. Answers the
+ * editor's path, `/charts/<key>` — jTicket's chart editor.
  *
  * The Mermaid source is stored as-is and converted to Excalidraw shapes by the
  * editor on first open — the conversion needs a DOM, so it can't run here.
@@ -23,5 +24,5 @@ export default defineEventHandler(async (event) => {
   })
   await writeChart(key, chart)
 
-  return { key, title, path: `/c/${key}` }
+  return { key, title, path: `/charts/${key}` }
 })

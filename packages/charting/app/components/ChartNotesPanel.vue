@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { SceneElement } from '@jsuite/charting/scene'
-
-export interface ChartNote {
-  id: string
-  elementId: string
-  label: string
-  text: string
-}
+/**
+ * The shape-notes panel: general notes, "Selected on canvas" → pin a note to a
+ * shape, the list of shape notes (click a title to re-select and zoom to it),
+ * and the "Copy notes for Claude" button. The parent owns the notes and the
+ * canvas; this panel only edits the lists and emits focus/copy.
+ */
+import type { SceneElement } from '../utils/scene'
+import { newChartNote, type ChartNote } from '../utils/chartNotes'
 
 const props = defineProps<{
   general: string
@@ -44,12 +44,7 @@ const noteByElement = computed(() => {
 const pendingSelection = computed(() => selectable.value.filter((el) => !noteByElement.value.has(el.id)))
 
 function addNoteFor(el: SceneElement) {
-  const note: ChartNote = {
-    id: `n${Math.random().toString(36).slice(2, 10)}`,
-    elementId: el.id,
-    label: labelForElement(el, props.elements),
-    text: '',
-  }
+  const note = newChartNote(el, props.elements)
   emit('update:notes', [...props.notes, note])
   nextTick(() => focusTextarea(note.id))
 }

@@ -153,7 +153,7 @@ function buildMarkdown(): string {
     out += '### Charts\n'
     for (const c of charts) {
       if (c.type === 'chart')
-        out += `- \`${c.chartKey}\` — shared with jChart; scene + shape notes in \`$(jsuite root)/.data/jchart/${c.chartKey}.json\` / \`.notes.json\`\n`
+        out += `- \`${c.chartKey}\` — edit at /charts/${c.chartKey}; scene + shape notes in \`$(jsuite root)/.data/jchart/${c.chartKey}.json\` / \`.notes.json\`\n`
     }
   }
   return out
