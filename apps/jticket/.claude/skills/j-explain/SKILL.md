@@ -1,19 +1,19 @@
 ---
 name: j-explain
-description: Explain something as a blog-style article in jExplain — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc / to-jspec / j-grilling / jcode payloads.
+description: Explain something as a blog-style article in jTicket's document reader (formerly jExplain) — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc / to-jspec / j-grilling / jcode payloads.
 ---
 
 # j-explain
 
-Explain a concept, a PR, a system, or a decision as a **blog-style article** in the jExplain app — rich typed blocks instead of a wall of text, with **live editable charts** (shared with jChart) and per-block notes that come back to you.
+Explain a concept, a PR, a system, or a decision as a **blog-style article** in jTicket's document reader (`/e/<key>`, the page jExplain used to serve) — rich typed blocks instead of a wall of text, with **live editable charts** (shared with jChart) and per-block notes that come back to you.
 
-The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving jExplain articles and jTicket docs. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/docs` when a document belongs on the board.
+The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving articles like these and jTicket docs, all read in jTicket. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/docs` when a document belongs on the board.
 
 Use this when the user asks you to *explain* something and deserves better than terminal markdown: a PR walkthrough, an architecture tour, a "how does X actually work", a post-mortem, a comparison of options.
 
 **You can make diagrams from right here.** A `chart` block takes inline Mermaid and the server turns it into a real, live Excalidraw canvas embedded in the article — no separate jChart round-trip, no image files. Reach for one whenever the explanation has a *shape*: a request path, a state machine, a before/after architecture, who-calls-what. See the **chart** block below.
 
-Standing rules: always set a stable `key` so `--replace` keeps the URL; read notes back from the files, not a paste; a `chart` block with neither `mermaid` nor `chartKey` is **silently dropped**, so give every chart one or the other. Script: `~/.claude/skills/j-explain/scripts/explain.py` (installed by `./jsuite setup`; source at `$(jsuite root)/apps/jexplain/.claude/skills/j-explain/scripts/explain.py`).
+Standing rules: always set a stable `key` so `--replace` keeps the URL; read notes back from the files, not a paste; a `chart` block with neither `mermaid` nor `chartKey` is **silently dropped**, so give every chart one or the other. Script: `~/.claude/skills/j-explain/scripts/explain.py` (installed by `./jsuite setup`; source at `$(jsuite root)/apps/jticket/.claude/skills/j-explain/scripts/explain.py`).
 
 ## Workflow
 
@@ -23,7 +23,7 @@ Standing rules: always set a stable `key` so `--replace` keeps the URL; read not
    ```
    python3 ~/.claude/skills/j-explain/scripts/explain.py <payload.json>
    ```
-   This creates the explainer, opens it in the browser, and prints the URL plus data file paths. Re-publish a revision with `--replace` (keep the same `key` in the payload): notes survive, and charts whose mermaid didn't change keep the user's hand edits.
+   This creates the document, opens it in jTicket's reader (`https://jticket.local/e/<key>`), and prints that URL plus data file paths. Re-publish a revision with `--replace` (keep the same `key` in the payload): notes survive, and charts whose mermaid didn't change keep the user's hand edits.
 
 3. **Tell the user how to use it.** In the browser they can:
    - Read it as an article — glossary terms show definitions on hover.
@@ -101,7 +101,7 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
   "caption": "The step that loses **12%** of carts." }
 ```
 - On `--replace`, media the new blocks no longer reference is pruned — send existing image blocks back with their `src` (read them from `.data/jexplain/<key>.json`) rather than re-copying the file each time.
-- Don't put `/attachments/…` links (jTicket's ticket-markdown store) in a document: jExplain can't serve that path. Image blocks are served at `/api/media/<docKey>/<file>` by both apps.
+- Don't put `/attachments/…` links (jTicket's ticket-markdown store) in a document: the document renderer doesn't resolve that path. Image blocks are served at `/api/media/<docKey>/<file>`.
 
 **steps** — numbered walkthrough: `{ "type": "steps", "title": "…", "items": [{ "title": "…", "md": "…" }] }`
 
@@ -121,8 +121,8 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 
 ## Notes
 
-- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a jTicket doc also renders at `/e/<documentKey>` here). The same pool is served by jGrilling (:43005, debriefs) and jCode (kata briefs). The app's home page is <https://jexplain.local>.
-- The app is jExplain in the jSuite (`$(jsuite root)/apps/jexplain`, port 43004). If publishing fails: `jsuite status`, then `jsuite start`.
-- Charts live in the shared chart pool — deleting an explainer never deletes its charts.
+- `explain.py --list` shows everything in the shared pool — including docs authored via jTicket (they're the same objects; a DOC-n's content also renders at `/e/<documentKey>`). The whole pool is listed in jTicket's **All documents** library at <https://jticket.local/e>.
+- Publishing goes to jTicket (port 43000; `$JTICKET_URL` overrides, so a `jsuite sandbox` session publishes into the sandbox). If publishing fails: `jsuite status`, then `jsuite start`.
+- Charts live in the shared chart pool — deleting a document never deletes its charts.
 - Publishing goes to `POST /api/documents` (explain.py handles this). For a document that should sit on the jTicket board with project/status/labels, use `/to-jdoc` instead — same format, plus a tracker record.
-- Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JEXPLAIN_BROWSER`.
+- Opens in Arc by default. Override with `--browser "Google Chrome"` or `$JTICKET_BROWSER`.

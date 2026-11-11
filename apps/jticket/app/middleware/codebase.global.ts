@@ -6,6 +6,10 @@ export default defineNuxtRouteMiddleware((to) => {
   // browser too, and the imported project belongs to no codebase until the
   // human attaches a repo.
   if (to.path === '/codebases' || to.path === '/import') return
+  // The document reader and library (/e, /e/<key>) cover the whole shared
+  // pool, which belongs to no codebase — and /e/<key> is the link explain.py
+  // prints, reviewers' reports carry and old jexplain.local URLs redirect to.
+  if (to.path === '/e' || to.path.startsWith('/e/')) return
   const selected = useCookie<string | null>('jticket-codebase')
   if (!selected.value) return navigateTo('/codebases')
 })

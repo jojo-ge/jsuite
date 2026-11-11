@@ -139,7 +139,7 @@ async function startReview() {
 }
 
 async function removeReview(r: ReviewMeta) {
-  if (!window.confirm(`Forget review "${r.title}"? Its reports stay in jExplain${r.projectKey ? ` and ${r.projectKey} stays in jTicket` : ''}.`)) return
+  if (!window.confirm(`Forget review "${r.title}"? Its reports stay in jTicket's document library${r.projectKey ? ` and ${r.projectKey} stays in jTicket` : ''}.`)) return
   await $fetch(`/api/reviews/${r.key}`, { method: 'DELETE' })
   refresh()
 }

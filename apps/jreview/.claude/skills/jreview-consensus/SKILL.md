@@ -142,7 +142,7 @@ nothing else:
 - Reviewer 2: <their claim, one line>
 
 ---
-Agreed by every reviewer in jReview [<title>](https://jreview.local/r/<key>) — reports: [reviewer 1](https://jexplain.local/e/<docKey1>) · [reviewer 2](https://jexplain.local/e/<docKey2>).
+Agreed by every reviewer in jReview [<title>](https://jreview.local/r/<key>) — reports: [reviewer 1](https://jticket.local/e/<docKey1>) · [reviewer 2](https://jticket.local/e/<docKey2>).
 ```
 
 No agreed findings → skip this step entirely.

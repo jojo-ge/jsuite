@@ -104,7 +104,8 @@ export default defineEventHandler(async (event) => {
 })
 
 const reviewUrl = (r: Review) => `https://jreview.local/r/${r.key}`
-const docUrl = (docKey: string) => `https://jexplain.local/e/${docKey}`
+// Reports are pool documents, read in jTicket's reader (jExplain retired).
+const docUrl = (docKey: string) => `https://jticket.local/e/${docKey}`
 
 function projectDescription(r: Review, count: number): string {
   const reports = r.reviewers

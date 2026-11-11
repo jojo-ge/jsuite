@@ -7,10 +7,10 @@ description: Draft a document into the local jTicket app over its HTTP API, with
 
 jTicket (a lean local Nuxt app) has a **docs** section: draft pages stored as
 **block documents** in the shared jSuite document system — the same format and
-pool as jExplain articles (`@jsuite/documents`, files in `.data/jexplain/`).
+pool as `j-explain` articles (`@jsuite/documents`, files in `.data/jexplain/`).
 Nothing is ever posted to Confluence — a doc exists so you can author it
 locally, the user reviews it rendered (at `/docs/DOC-n` in jTicket, and it
-also appears in jExplain's list), and *they* copy it elsewhere by hand if they
+also appears in the **All documents** library at `/e`), and *they* copy it elsewhere by hand if they
 want it there.
 
 A jTicket doc = a tracker record (`DOC-n`: project, labels, status) wrapping a
@@ -84,15 +84,15 @@ Fields:
   from a doc — that store is jTicket-only (ticket markdown). The user can also
   add one from the doc page: **Add image**, or paste / drop onto the page.
 - `documentKey` — link an existing shared document instead of authoring one
-  (e.g. promote a jExplain article to a tracked doc). 400 on unknown keys.
+  (e.g. promote a `j-explain` article to a tracked doc). 400 on unknown keys.
 - `project` — optional parent project, referenced by **title, key, or id**
   (`projectId` also accepted). Omit for a standalone doc.
 - `labels` — optional string array; `status` — `draft` (default) or `ready`.
 
 The response returns the generated `key` (e.g. `DOC-3`) and `documentKey`. The
 doc is then visible at `https://jticket.local/docs/DOC-3`, on the board,
-on its project page — and in jExplain (same document, same notes) at
-`https://jexplain.local/e/<documentKey>`.
+on its project page — and in jTicket's document reader (same document, same notes) at
+`https://jticket.local/e/<documentKey>`.
 
 ## Revise: `PATCH /api/docs/:id`
 
@@ -115,7 +115,7 @@ jt patch /api/docs/DOC-3 @revised-blocks.json     # {"blocks": [...]}
 | --- | --- | --- |
 | GET | `/api/docs` | List doc records (`?projectId=` `?status=` `?label=`) |
 | GET/DELETE | `/api/docs/:id` | Read / delete the record (delete keeps the shared document in the pool) |
-| GET | `/api/documents` | The shared pool itself (also served by jExplain) |
+| GET | `/api/documents` | The shared pool itself (every document, read at `/e/<key>`) |
 | GET | `/api/documents/:key/notes` | The user's review notes for a document |
 
 ## Reading feedback back

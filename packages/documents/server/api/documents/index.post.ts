@@ -9,7 +9,7 @@ import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
  * jChart store and stored as { chartKey } references. `replace: true`
  * overwrites the named doc in place (keeping createdAt and its notes sidecar)
  * so a skill can re-publish a revision at the same URL. The returned `path`
- * is the jExplain reader route — the pool's canonical reading surface.
+ * is the reader route (jTicket's /e/<key>) — the pool's canonical reading surface.
  */
 export default defineEventHandler(async (event) => {
   const body = (await readBody(event)) ?? {}

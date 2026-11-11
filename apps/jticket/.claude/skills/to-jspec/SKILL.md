@@ -16,8 +16,8 @@ call that publishes a spec.
 A jTicket doc is explicitly a **local draft**. Nothing is connected to Confluence — the
 user reviews and edits locally, then hand-copies if needed. Since the document-system
 unification, a doc's content is a **block document** — the jExplain format, one shared
-system (`@jsuite/documents`) serving jTicket and jExplain from one pool. A spec published
-here also shows up in jExplain's article list; that is by design.
+system (`@jsuite/documents`), one pool. A spec published here also shows up in jTicket's
+**All documents** library (`/e`) beside reports and articles; that is by design.
 
 ## Process
 
@@ -31,7 +31,7 @@ here also shows up in jExplain's article list; that is by design.
    user's review notes pin to them.
 3. **Publish** as `status: "draft"` (see [Publish](#publish)).
 4. **Report** the key, title and both links (`http://localhost:43000/docs/DOC-n`,
-   `https://jexplain.local/e/<documentKey>`), and say plainly that it is a local
+   `https://jticket.local/e/<documentKey>`), and say plainly that it is a local
    draft — nothing has been posted to Confluence.
 
 Every call goes through `jt` (on PATH after `./jsuite setup`, else `bin/jt` in the jSuite checkout),

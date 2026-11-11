@@ -89,8 +89,8 @@ then tickets from that spec. Ask if it is genuinely a coin flip.
   - GET responses also carry derived `blocked` / `claimed` / `frontier` booleans (never persisted)
 - **Doc** `DOC-n` — `{ key, title, documentKey, projectId, labels[], status }`. The
   content is a **block document** in the shared jSuite document system (`documentKey`
-  points into the pool jExplain also reads); `status` is `draft` or `ready`. Docs render
-  at `/docs/DOC-n` — and in jExplain.
+  points into the shared pool); `status` is `draft` or `ready`. Docs render
+  at `/docs/DOC-n` — and the bare document at `/e/<documentKey>`.
 
 Keys are global and sequential across the whole store — `TICK-7` is the seventh ticket
 ever created, not the seventh in its project.

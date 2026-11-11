@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Publish a j-explain document into the jExplain app and open it for reading.
+"""Publish a j-explain document into jTicket's document pool and open it in jTicket's reader.
 
 Usage:
     explain.py <doc.json> [--replace] [--no-open] [--browser "Google Chrome"]
     explain.py --list
 
 The doc is a j-explain JSON authoring payload (title, blocks, glossary — see the
-skill's SKILL.md for the block vocabulary). It's stored as an explainer at
+skill's SKILL.md for the block vocabulary). It's stored as a document at
 <.data root>/jexplain/<key>.json (the root is $JSUITE_DATA_DIR when set, else
 the jSuite checkout's .data/); chart blocks with inline mermaid are materialised into the
 shared jChart store (<.data root>/jchart/), where the user
 can also open them in the full jChart workbench.
 
-Prints the explainer URL plus the data file paths to read the user's notes back
+Prints the reading URL (jTicket's /e/<key> reader) plus the data file paths to read the user's notes back
 from without waiting for a paste.
 """
 import argparse
@@ -23,10 +23,14 @@ import sys
 import urllib.error
 import urllib.request
 
-# The jSuite edge (https) is the address the user sees; the bare dev port is the
-# fallback for when Caddy/Docker is down but the Nuxt app itself is up.
-EDGE_BASE = "https://jexplain.local"
-DIRECT_BASE = "http://localhost:43004"
+# Documents live in jTicket (its /api/documents serves the shared pool and /e/<key>
+# reads one). The jSuite edge (https) is the address the user sees; the bare dev
+# port is the fallback for when Caddy/Docker is down but jTicket itself is up.
+# $JTICKET_URL (set for sessions a `jsuite sandbox` starts, and honoured by `jt`)
+# overrides both, so a sandbox session publishes into the sandbox.
+EDGE_BASE = "https://jticket.local"
+DIRECT_BASE = "http://localhost:43000"
+OVERRIDE_BASE = (os.environ.get("JTICKET_URL") or "").rstrip("/") or None
 
 def jsuite_root():
     """The jSuite checkout: $JSUITE_ROOT, else the checkout this script lives in
@@ -48,7 +52,8 @@ DATA_ROOT = os.environ.get("JSUITE_DATA_DIR") or os.path.join(jsuite_root() or "
 DATA_DIR = os.path.join(DATA_ROOT, "jexplain")
 CHART_DATA_DIR = os.path.join(DATA_ROOT, "jchart")
 
-# Preferred browser (macOS app name). Override with --browser or $JEXPLAIN_BROWSER.
+# Preferred browser (macOS app name). Override with --browser or $JTICKET_BROWSER
+# ($JEXPLAIN_BROWSER still works).
 DEFAULT_BROWSER = "Arc"
 
 
@@ -68,8 +73,8 @@ def api(base, path, method="GET", payload=None, timeout=10):
 
 
 def pick_base():
-    """Return the first reachable base URL, preferring the edge."""
-    for base in (EDGE_BASE, DIRECT_BASE):
+    """Return the first reachable base URL: $JTICKET_URL alone when set, else the edge, else the port."""
+    for base in ((OVERRIDE_BASE,) if OVERRIDE_BASE else (EDGE_BASE, DIRECT_BASE)):
         try:
             api(base, "/api/documents", timeout=4)
             return base
@@ -80,7 +85,7 @@ def pick_base():
 
 def not_running():
     print(
-        "error: jExplain isn't reachable.\n"
+        f"error: jTicket isn't reachable at {OVERRIDE_BASE or EDGE_BASE}.\n"
         "  Start the suite with:  jsuite status, then jsuite start\n"
         f"  Then it serves at:     {EDGE_BASE}",
         file=sys.stderr,
@@ -89,7 +94,7 @@ def not_running():
 
 
 def open_in_browser(url, browser=None):
-    browser = browser or os.environ.get("JEXPLAIN_BROWSER") or DEFAULT_BROWSER
+    browser = browser or os.environ.get("JTICKET_BROWSER") or os.environ.get("JEXPLAIN_BROWSER") or DEFAULT_BROWSER
     if sys.platform == "darwin":
         subprocess.run(["open", "-a", browser, url] if browser else ["open", url], check=False)
     elif sys.platform.startswith("linux"):
@@ -101,7 +106,7 @@ def open_in_browser(url, browser=None):
 def cmd_list(base):
     docs = api(base, "/api/documents") or []
     if not docs:
-        print("no explainers yet")
+        print("no documents yet")
         return 0
     for d in docs:
         extras = []
@@ -118,12 +123,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("source", nargs="?", help="path to the j-explain JSON payload")
     ap.add_argument("--replace", action="store_true",
-                    help="overwrite the explainer with this key in place — keeps its notes, "
+                    help="overwrite the document with this key in place — keeps its notes, "
                          "and unchanged charts keep the user's hand edits")
-    ap.add_argument("--list", action="store_true", help="list existing explainers and exit")
+    ap.add_argument("--list", action="store_true", help="list every document in the pool and exit")
     ap.add_argument("--no-open", action="store_true", help="publish but do not open a browser")
     ap.add_argument("--browser", default=None,
-                    help="browser app to open in (e.g. 'Google Chrome'); falls back to $JEXPLAIN_BROWSER")
+                    help="browser app to open in (e.g. 'Google Chrome'); falls back to $JTICKET_BROWSER")
     args = ap.parse_args()
 
     base = pick_base()
@@ -157,14 +162,14 @@ def main():
     except urllib.error.URLError:
         return not_running()
 
-    url = f"{EDGE_BASE}{res['path']}" if base == EDGE_BASE else f"{base}{res['path']}"
+    url = f"{base}{res['path']}"
     if not args.no_open:
         open_in_browser(url, args.browser)
 
     print(url)
-    print(f"explainer: {os.path.join(DATA_DIR, res['key'] + '.json')}")
+    print(f"document:  {os.path.join(DATA_DIR, res['key'] + '.json')}")
     print(f"notes:     {os.path.join(DATA_DIR, res['key'] + '.notes.json')}")
-    print(f"charts:    {CHART_DATA_DIR}/<chartKey>.json (keys in the explainer's chart blocks)")
+    print(f"charts:    {CHART_DATA_DIR}/<chartKey>.json (keys in the document's chart blocks)")
     return 0
 
 
