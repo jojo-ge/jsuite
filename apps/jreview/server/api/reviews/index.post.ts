@@ -11,11 +11,24 @@ import {
   type ReviewContext,
   type ReviewEffort,
   type ReviewPass,
+  type ReviewAgreement,
+  type PullRequest,
 } from '../../../app/utils/reviewTypes'
 
 /**
  * Start a review. Body: { repoPath, branch?, base?, title?, reviewers?, consensus?, project?,
- *                         pass?, model?, effort?, context? }
+ *                         pass?, model?, effort?, context?, pr?, agreement?, verify? }
+ *
+ * - `pr` — a PR number: the review records that PR (via `gh pr view`, open or
+ *   not) instead of looking one up by branch name, and the target defaults to
+ *   its base. A PR review project's branch is a local copy of the PR head
+ *   (`jreview/pr-<n>`), which no PR names.
+ * - `agreement` — { loop? }: an agreement review (needs `project`): only what
+ *   every reviewer raised survives, handed back as findings with an
+ *   approvability assessment — never filed as tickets. `verify: true` asks the
+ *   consensus session to have every agreed finding adversarially verified
+ *   first. `context.brief` (DOC-n) and `context.checks` ([TICK-n]) are what
+ *   the reviewers read before the diff.
  *
  * - `pass` — a consensus review's kind: 'consensus' (default) or 'architecture'
  *   (one architectural & technical reviewer; its architectural findings are
@@ -53,7 +66,9 @@ export default defineEventHandler(async (event) => {
 
   const checkedOut = await currentBranch(repoPath)
   const branch = await requireRef(repoPath, String(body.branch ?? '').trim() || checkedOut || 'HEAD', 'branch')
-  const pr = await prForBranch(repoPath, branch)
+  const prNumber = body.pr === undefined || body.pr === null || body.pr === '' ? 0 : Number(body.pr)
+  if (prNumber && !(Number.isInteger(prNumber) && prNumber > 0)) throw createError({ statusCode: 400, message: 'pr must be a PR number' })
+  const pr: PullRequest | null = prNumber ? await prByNumber(repoPath, prNumber) : await prForBranch(repoPath, branch)
 
   let base = String(body.base ?? '').trim()
   if (base) {
@@ -90,6 +105,16 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let agreement: ReviewAgreement | undefined
+  if (body.agreement !== undefined && body.agreement !== null) {
+    if (!project) throw createError({ statusCode: 400, message: 'an agreement review hands its findings to a jTicket project — send `project` too' })
+    if (consensus) throw createError({ statusCode: 400, message: 'agreement and consensus are two different reviews — send one' })
+    if (count < 2) throw createError({ statusCode: 400, message: 'an agreement review needs at least 2 reviewers' })
+    const loop = Number(body.agreement?.loop)
+    agreement = Number.isInteger(loop) && loop > 0 ? { loop } : {}
+  }
+  const verify = body.verify === true && !!(consensus || agreement)
+
   let pass: ReviewPass | undefined
   if (body.pass !== undefined && body.pass !== null && body.pass !== '') {
     if (body.pass !== 'consensus' && body.pass !== 'architecture') throw createError({ statusCode: 400, message: 'pass must be consensus or architecture' })
@@ -107,7 +132,16 @@ export default defineEventHandler(async (event) => {
   if (body.context && typeof body.context === 'object') {
     const docs = Array.isArray(body.context.docs) ? body.context.docs.filter((d: unknown): d is string => typeof d === 'string' && /^[A-Za-z]+-\d+$/.test(d)) : []
     const prior = typeof body.context.review === 'string' ? body.context.review.trim() : ''
-    if (docs.length || prior) context = { ...(docs.length ? { docs } : {}), ...(prior ? { review: prior } : {}) }
+    const brief = typeof body.context.brief === 'string' && /^[A-Za-z]+-\d+$/.test(body.context.brief.trim()) ? body.context.brief.trim() : ''
+    const checks = Array.isArray(body.context.checks) ? body.context.checks.filter((d: unknown): d is string => typeof d === 'string' && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(d)).slice(0, 20) : []
+    if (docs.length || prior || brief || checks.length) {
+      context = {
+        ...(docs.length ? { docs } : {}),
+        ...(prior ? { review: prior } : {}),
+        ...(brief ? { brief } : {}),
+        ...(checks.length ? { checks } : {}),
+      }
+    }
   }
 
   const repoName = basename(repoPath)
@@ -118,6 +152,7 @@ export default defineEventHandler(async (event) => {
   const guide = inPlace ? null : await codebaseWorktreeGuide(await mainCheckout(repoPath))
   const workdir = inPlace ? repoPath : await addReviewWorktree(repoPath, key, branch, guide?.root)
 
+  const headSha = await commitOf(repoPath, branch)
   const now = new Date().toISOString()
   const review: Review = {
     format: 'j-review',
@@ -141,6 +176,9 @@ export default defineEventHandler(async (event) => {
     findings: [],
     tickets: null,
     ...(consensus ? { consensus } : {}),
+    ...(agreement ? { agreement } : {}),
+    ...(verify ? { verify } : {}),
+    ...(headSha ? { headSha } : {}),
     ...(pass ? { pass } : {}),
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),

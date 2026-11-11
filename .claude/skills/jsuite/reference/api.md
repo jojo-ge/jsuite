@@ -239,12 +239,32 @@ own-agent ticket as a session frees), PUTs the plan until `problems` is `[]`,
 and reports back via `POST …/run-plan/built`. `project.runPlanBuild` marks it
 in progress; the tab is read-only meanwhile.
 
+## PR review projects (jTicket :43000)
+
+Mode `prreview` — one GitHub PR, reviewed, never changed (`app/utils/reviewPlan.ts`).
+`POST /api/projects/pr-review {repo, pr, assess?, autoStart?}` get-or-creates
+it (PR head fetched to the never-pushed `jreview/pr-<n>`). `POST
+/api/projects/:id/pr-review/assess {autoStart?}` / `DELETE` — the Fable 5.2
+`/jreview-assess` (prompt kind `prreview:assess`); it reports back with `POST
+…/pr-review/assessed {reviewers, focus, briefDoc, rationale, risk}`. `PUT
+/api/projects/:id/review-plan {steps: [{kind: checks|gate|review, …}]}` →
+`{plan, problems}` (one review step, last; checks are `pr:check` tickets, run
+as `/jpr-check`, kind `prcheck`). `POST /api/projects/:id/review-run {action:
+start|rerun|stop|continue|retry}`. Runner `server/utils/reviewRun.ts`, ticked
+by `server/plugins/reviewRun.ts` — separate from auto mode. State
+`project.prReview` (`pr`, `assessment`, `assessing`, `plan`, `run`, `runs`).
+`POST /api/projects/:id/reviews/:key/pr-comments` proxies jReview's Post to PR.
+
 ## jReview (:43008)
 
 `GET/POST /api/reviews` — POST body: codebase, branch, target (defaults to the
 PR's base), optional `project: KEY`, `reviewers` (4 by default; 2 for
 consensus), `consensus: {projectKey, loop}`, `pass: 'architecture'`,
-`context.review`. `GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE),
+`context.review` — or, from a PR review project, `pr: N`, `agreement: {loop}`
++ `project`, `verify: true`, `context: {brief: DOC-n, checks: [TICK-n]}`
+(an agreement review: findings + `assessment` come back to `POST …/findings`,
+never tickets). `POST …/pr-comments {findingIds, body}` — the human's Post to
+PR: one GitHub review via `gh api`, event `COMMENT` always. `GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE),
 `POST …/reviewers/:n/dispatch` / `skip`, `POST …/triage/dispatch`,
 `POST …/findings` (the triager's hand-back), `POST …/consensus` (the
 consensus session's ticket keys), `POST …/tickets` (the human's split into a

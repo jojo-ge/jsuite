@@ -12,10 +12,10 @@ Block vocabulary: the "Block vocabulary" section of
 
 ## The dump
 
-Header lines `BASE:`, `SKILL:`, `SOURCES:`, `VERDICT:`, then zero or more
+Header lines `BASE:`, `SKILL:`, `SOURCES:`, `VERDICT:` (and `APPROVAL:` on a PR review), then zero or more
 `FINDING` sections (`severity`, `claim`, `where`, `category`, optional
-`scope` — only when the review prompt asked for it, i.e. a consensus review
-that isn't an architecture pass — `scenario`, `fix`, optional `quote`), then
+`scope` — only when the review prompt asked for it: a consensus review
+that isn't an architecture pass, or a PR review — `scenario`, `fix`, optional `quote`), then
 `TAKEAWAYS`. Findings are already in order, most
 severe first. Keep that order.
 
@@ -52,9 +52,13 @@ Blocks, in order:
    range). For `diff <path>`, use a `diff` block with just the hunks of
    `git diff <BASE>...HEAD -- <path>` that contain the `where` line. Give each
    one the id `f<k>-quote`.
-3. If there are no findings, add a single `callout` (tone `success`, id `f0`,
+3. When the dump has an `APPROVAL:` line, a `callout` with id `approval`
+   (tone `success` for approve / approve-with-nits, `warning` otherwise),
+   title `Approval: <verdict>`, md = the line's reason. It goes after the
+   findings — the consensus session reads it by that id.
+4. If there are no findings, add a single `callout` (tone `success`, id `f0`,
    title `No findings`) saying the review found nothing to report.
-4. `takeaway`: the TAKEAWAYS bullets.
+5. `takeaway`: the TAKEAWAYS bullets.
 
 ## Publish
 

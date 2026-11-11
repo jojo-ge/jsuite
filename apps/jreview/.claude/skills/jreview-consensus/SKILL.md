@@ -1,6 +1,6 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run — file the findings every reviewer agreed on as jTicket tickets.
+description: Close a consensus jReview run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review plan), verify them adversarially, judge approvability and hand them back as findings.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---
@@ -25,6 +25,12 @@ APIs: jReview `http://localhost:43008` (curl); jTicket through the `jt` CLI
 **Write no triage document and POST no findings to jReview.** The tickets are
 the output; jReview only records their keys.
 
+**An agreement review is different** — read §1, then follow §A instead of
+§2a–§4. It is a PR review project's run: the code is someone else's pull
+request, so **nothing is filed and nothing is fixed**; the agreed findings
+go back to jReview as findings, with your approvability assessment, and the
+human decides what to post to the PR.
+
 ## 1. Read the run
 
 ```sh
@@ -32,7 +38,9 @@ curl -s http://localhost:43008/api/reviews/<key>
 ```
 
 Gives `repoPath`, `base`, `branch`, `reviewers[]` (`n`, `docKey`, `status`),
-`consensus` (`projectKey`, `loop`) and `pass` — `consensus` (or unset) for
+`consensus` (`projectKey`, `loop`) — or, instead, `agreement` (`loop`) with
+`project`, `pr`, `verify`, `context` (`brief`, `checks`) and
+`triage.docKey`: an agreement review, §A — and `pass` — `consensus` (or unset) for
 the regular run, or `architecture`: ONE reviewer ran the `/jarch-review`
 skill and the rules in §2a apply instead of §2. Every reviewer is `done` —
 read each report:
@@ -179,3 +187,123 @@ Then reply with one line — "N considered → M agreed → tickets … (K to <f
 plus the jReview URL (`https://jreview.local/r/<key>`) — and stop. Don't implement
 anything; the auto loop dispatches the tickets. jReview closes this pane (and
 the reviewers') once you've gone idle.
+
+## A. An agreement review — verify, assess, hand back
+
+Everything here replaces §2a–§4: **no tickets, no follow-ups project, no
+/consensus POST, and never anything on GitHub** (no `gh pr review`, no
+`gh pr comment`, no approval — that is the human's, always).
+
+### A1. Match
+
+§2's matching rules exactly: keep a finding only when **every** reviewer's
+report has a match; the highest severity the code justifies; drop one only
+when the code shows it plainly wrong. Scope: an agreed finding is `in` when
+any reviewer marked it in or it sits in code the PR adds or changes,
+otherwise `out` (pre-existing) — keep both, marked. Count `considered` (the
+distinct findings you weighed).
+
+**Checks.** Read each ticket in `context.checks` (`jt show <key>` — the
+resolution opens with `**Verdict:** pass | fail | concern | inconclusive`). A
+`fail` (or a `concern` with concrete evidence) is a finding in its own right,
+needing no reviewer's agreement — category `check`, `reviewers: []`, its
+evidence from the resolution. Don't duplicate one a reviewer already raised:
+merge into it.
+
+### A2. Verify — only when `verify` is true
+
+Every agreed finding faces a skeptic before it reaches the human. Launch one
+subagent per finding — Agent tool, `model: "opus"`, `subagent_type:
+"general-purpose"`, several at once (at most 4 in flight) — with this prompt,
+filled in:
+
+> You are an adversarial verifier. A code review of `git diff <base>...HEAD`
+> in `<absolute cwd>` claims: **[<severity>] <title>** at `<file:line>` —
+> <summary> Failure scenario: <scenario>. Your job is to REFUTE it: read the
+> code and its callers, look for the guard, test or invariant that makes the
+> scenario impossible; if a quick throwaway check (a test you run and then
+> delete, a REPL call) settles it, run it — never commit, never leave files
+> behind, never touch GitHub. Reply with exactly one line:
+> `CONFIRMED: <evidence>` (you tried and it holds), `PLAUSIBLE: <why it
+> could not be settled>`, or `REFUTED: <the evidence that kills it>`.
+
+Drop every `REFUTED` finding (list them, with the evidence, in the document
+and your final reply). Keep the rest with `verdict: confirmed | plausible`
+and the evidence as `verification`. A `plausible` critical/high keeps its
+severity — doubt is not a downgrade.
+
+Without `verify`, skip this and send no `verdict`.
+
+### A3. Assess approvability
+
+Read each report's `approval` callout (`Approval: <verdict>` — the reviewer's
+call) and decide the PR's:
+
+| verdict | when |
+| --- | --- |
+| `request-changes` | any surviving in-scope `critical`/`high` finding, or a failing check |
+| `needs-discussion` | the reviewers split on the approach itself, or a finding questions the design rather than a line |
+| `approve-with-nits` | only `medium`/`low` in-scope findings (or only out-of-scope ones) |
+| `approve` | nothing in scope survived |
+
+`summary`: a short paragraph addressed to the PR's author — what the PR does
+well, what holds it back; the human edits it before posting. `blockers`: one
+line per thing that must change before it merges ([] for the approve
+verdicts). `reviewerVerdicts`: each reviewer's own call. **This is a
+recommendation the human reads — never act on it.**
+
+### A4. Publish the summary document
+
+j-explain payload (block vocabulary in the `j-explain` skill), key =
+`triage.docKey`, published with `python3
+~/.claude/skills/j-explain/scripts/explain.py <payload.json> --replace
+--no-open`:
+
+- kicker `jReview · consensus`; title `PR #<n> — <verdict>`; subtitle
+  "<considered> raised → <kept> agreed<, R refuted>".
+- `callout` id `assessment` (tone `success` for the approve verdicts,
+  `warning` otherwise): the summary and blockers.
+- One `callout` per kept finding, ids `f1`… in POST order, titled
+  `[severity] title`, with Where / Category / Scope / Raised by /
+  Verification / scenario / fix.
+- `prose` **Dropped**: refuted and code-disproved findings, with the
+  evidence (or "none").
+
+### A5. Hand back — last
+
+Write the JSON to a file and POST it — this flips the review to *triaged*,
+which is what the review plan waits on:
+
+```json
+{
+  "findings": [
+    {
+      "title": "Retry loop never backs off after a 429",
+      "severity": "high",
+      "category": "correctness",
+      "file": "src/client/retry.ts",
+      "line": 42,
+      "summary": "One sentence stating the defect.",
+      "detail": "Markdown: the failure scenario, why it happens, the suggested fix — written to the PR author, it may be posted as a review comment.",
+      "reviewers": [1, 2, 3],
+      "scope": "in",
+      "verdict": "confirmed",
+      "verification": "Ran the client against a stub returning 429 three times: four requests in 40ms."
+    }
+  ],
+  "assessment": { "verdict": "request-changes", "summary": "…", "blockers": ["…"], "reviewerVerdicts": [{ "n": 1, "verdict": "request-changes" }] },
+  "considered": 9,
+  "kept": 3
+}
+```
+
+```sh
+curl -s -X POST http://localhost:43008/api/reviews/<key>/findings \
+  -H 'content-type: application/json' -d @findings.json
+```
+
+Most severe first; `file`/`line` must be the PR's new-side path and line (they
+become inline comments when the human posts). Zero survivors is normal —
+POST `"findings": []` with the assessment. Then reply with one line —
+"N raised → M agreed → K verified (R refuted) · <verdict>" plus the jReview URL — and
+stop. The POST opens the project's Review tab; jReview closes this pane.

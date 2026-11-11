@@ -38,6 +38,16 @@ const severityColor = (s: JreviewFinding['severity']) =>
             raised by {{ finding.reviewers.map((n) => `R${n}`).join(' · ') }}
             <template v-if="finding.reviewers.length > 1">(merged)</template>
           </span>
+          <UTooltip v-if="finding.verdict" :text="finding.verification || 'Survived an adversarial check against the code'">
+            <span class="flex items-center gap-1" :class="finding.verdict === 'confirmed' ? 'text-success' : 'text-warning'">
+              <UIcon :name="finding.verdict === 'confirmed' ? 'i-lucide-shield-check' : 'i-lucide-shield-question'" class="size-3.5" />
+              {{ finding.verdict }}
+            </span>
+          </UTooltip>
+          <span v-if="finding.scope === 'out'" class="italic">pre-existing — not from this PR</span>
+          <span v-if="finding.postedAt" class="flex items-center gap-1 text-info">
+            <UIcon name="i-lucide-message-square-share" class="size-3.5" /> posted to the PR
+          </span>
           <NuxtLink
             v-if="finding.ticketKey"
             :to="`/tickets/${finding.ticketKey}`"

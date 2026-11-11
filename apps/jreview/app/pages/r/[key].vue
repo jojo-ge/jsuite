@@ -233,7 +233,7 @@ const statusColor = computed(() => {
                     @click="redispatchReviewer(r)"
                   />
                   <UButton
-                    v-if="!review.consensus"
+                    v-if="!review.consensus && !review.agreement"
                     icon="i-lucide-skip-forward"
                     size="xs"
                     color="neutral"

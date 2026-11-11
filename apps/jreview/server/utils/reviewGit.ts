@@ -196,3 +196,56 @@ export async function removeReviewWorktree(repo: string, dir: string): Promise<v
   await git(repo, ['worktree', 'remove', '--force', dir]).catch(() => {})
   if (!existsSync(dir)) await git(repo, ['worktree', 'prune']).catch(() => {})
 }
+
+// ── Pull requests by number ──────────────────────────────────────────────────
+
+/**
+ * PR `number` of the repo's GitHub remote, as `gh pr view` reports it —
+ * open or not (a PR review project may rerun after the PR merged). Throws a
+ * 400 with gh's own message when gh can't answer.
+ */
+export async function prByNumber(repo: string, number: number): Promise<PullRequest> {
+  try {
+    const { stdout } = await exec(
+      'gh',
+      ['pr', 'view', String(number), '--json', 'number,title,url,headRefName,baseRefName,isDraft'],
+      { cwd: repo, timeout: 20_000 },
+    )
+    return JSON.parse(stdout) as PullRequest
+  } catch (err: any) {
+    const why = String(err?.stderr || err?.message || err).trim().split('\n')[0]!.slice(0, 200)
+    throw createError({ statusCode: 400, message: `gh could not read PR #${number} in ${repo}: ${why}` })
+  }
+}
+
+/** The commit `ref` points at ('' when it doesn't resolve). */
+export async function commitOf(repo: string, ref: string): Promise<string> {
+  if (!REF_SHAPE.test(ref)) return ''
+  return git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).catch(() => '')
+}
+
+/**
+ * The lines `head` adds or changes relative to the merge base with `base`,
+ * per file, as new-file line numbers — where GitHub accepts an inline review
+ * comment on the RIGHT side. Context lines are left out on purpose: they are
+ * only commentable inside a hunk GitHub shows, and its hunks can differ.
+ */
+export async function changedLines(repo: string, base: string, head: string): Promise<Map<string, Set<number>>> {
+  const out = new Map<string, Set<number>>()
+  if (!REF_SHAPE.test(base) || !REF_SHAPE.test(head)) return out
+  const diff = await git(repo, ['diff', '--unified=0', '--no-color', '--no-ext-diff', `${base}...${head}`], 60_000).catch(() => '')
+  let file = ''
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++ ')) {
+      file = line.startsWith('+++ b/') ? line.slice(6) : ''
+      continue
+    }
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line)
+    if (!m || !file) continue
+    const start = Number(m[1])
+    const count = m[2] === undefined ? 1 : Number(m[2])
+    if (!out.has(file)) out.set(file, new Set())
+    for (let i = 0; i < count; i++) out.get(file)!.add(start + i)
+  }
+  return out
+}

@@ -17,6 +17,18 @@
 // reviewer is in, a consensus session keeps only the findings every reviewer
 // raised and files each straight into the caller's jTicket project as a ticket.
 // jReview records just the ticket keys — no triage document, no findings.
+//
+// An AGREEMENT review (a PR review project's run plan) filters the same way —
+// only what every reviewer raised survives — but hands the agreed findings
+// back here as findings, with an approvability assessment, instead of filing
+// tickets: the code under review is someone else's pull request, so nothing
+// is fixed. The human reads them in jTicket's Review tab and decides what to
+// post to the PR (always as a COMMENT review — jReview never approves).
+//
+// Any consensus or agreement review may ask for ADVERSARIAL VERIFICATION
+// (`verify`): before anything is filed or handed back, the consensus session
+// sends one skeptic per agreed finding to try to refute it against the code;
+// refuted findings are dropped, the rest carry the verdict.
 
 export const MAX_REVIEWERS = 4
 /** The reviewer count when the caller doesn't ask for one. */
@@ -41,6 +53,46 @@ export interface ReviewContext {
   docs?: string[]
   /** An earlier review of the same diff (the architectural pass): its reports are handed over, its findings already fixed. */
   review?: string
+  /** The review brief (a jTicket DOC-n) every reviewer reads first — the same brief for all of them (a PR review's assessor writes it). */
+  brief?: string
+  /** jTicket check tickets (TICK-n) run against this code before the review — their resolutions say what was run and what failed. */
+  checks?: string[]
+}
+
+/**
+ * Set on an agreement review (see the header): findings every reviewer raised
+ * are handed back as findings, never filed as tickets. `considered`/`kept`
+ * are the consensus session's counts.
+ */
+export interface ReviewAgreement {
+  /** The run-plan run that asked, for titles. */
+  loop?: number
+  considered?: number
+  kept?: number
+}
+
+/** What the consensus session says about merging the code under review. A recommendation only — nothing acts on it. */
+export type ApprovalVerdict = 'approve' | 'approve-with-nits' | 'request-changes' | 'needs-discussion'
+export const APPROVAL_VERDICTS: ApprovalVerdict[] = ['approve', 'approve-with-nits', 'request-changes', 'needs-discussion']
+
+export interface ReviewAssessment {
+  verdict: ApprovalVerdict
+  /** Markdown, a short paragraph: why. */
+  summary: string
+  /** What stands between the PR and approval (empty when it's approvable). */
+  blockers: string[]
+  /** Each reviewer's own verdict, by slot. */
+  reviewerVerdicts?: Array<{ n: number; verdict: ApprovalVerdict }>
+}
+
+/** One "Post to PR" press — a COMMENT review on GitHub, posted with the human's gh auth. */
+export interface ReviewPrPost {
+  at: string
+  /** The GitHub review's html_url. */
+  url: string
+  findingIds: string[]
+  /** How many went as inline comments (the rest are in the review body). */
+  inline: number
 }
 
 export type ReviewStatus =
@@ -112,6 +164,14 @@ export interface Finding {
   reviewers: number[]
   /** The jTicket ticket this finding became, once the human added it. */
   ticketKey?: string
+  /** Agreement review: whether the PR introduced it ('in') or it was there before ('out'). */
+  scope?: 'in' | 'out'
+  /** Adversarial verification's verdict (refuted findings never reach here). */
+  verdict?: 'confirmed' | 'plausible'
+  /** One line: the evidence the verifier found. */
+  verification?: string
+  /** When it was posted to the PR. */
+  postedAt?: string
 }
 
 export interface ReviewTickets {
@@ -186,6 +246,18 @@ export interface Review {
   findings: Finding[]
   tickets: ReviewTickets | null
   consensus?: ReviewConsensus
+  /** An agreement review — see ReviewAgreement. Always carries `project`. */
+  agreement?: ReviewAgreement
+  /** Adversarial verification of every agreed finding before it's filed or handed back. */
+  verify?: boolean
+  /** The review skill the reviewers ran when it was the codebase's own (agreement reviews), e.g. 'code-review' from <repo>/.claude/skills. Unset = the global /code-review. */
+  reviewSkill?: string
+  /** The commit HEAD was when the review started — what PR comments anchor to. */
+  headSha?: string
+  /** The consensus session's approvability assessment (agreement reviews). */
+  assessment?: ReviewAssessment
+  /** Every Post to PR press, oldest first. */
+  prPosts?: ReviewPrPost[]
   /** Which pass this is — see ReviewPass. Unset = consensus. */
   pass?: ReviewPass
   /** The claude model id the reviewers run on (default REVIEW_MODEL) and their effort (default the CLI's). */
@@ -219,6 +291,10 @@ export interface ReviewMeta {
   /** The jTicket project the review belongs to (`Review.project`). */
   project?: string
   consensus?: boolean
+  /** An agreement review (a PR review project's run plan). */
+  agreement?: boolean
+  /** The approvability verdict, once the consensus session handed it back. */
+  verdict?: ApprovalVerdict
   /** The auto-loop iteration that asked, for a consensus review. */
   loop?: number
   createdAt: string
@@ -246,9 +322,18 @@ export const reviewerSettled = (r: Reviewer) => r.status === 'done' || r.status 
  * start. A consensus needs every reviewer's report — a skipped reviewer can't
  * agree with anything — so there a skip holds it up.
  */
-export function readyForTriage(review: Pick<Review, 'reviewers' | 'consensus'>): boolean {
-  if (review.consensus) return review.reviewers.every((r) => r.status === 'done')
+export function readyForTriage(review: Pick<Review, 'reviewers' | 'consensus' | 'agreement'>): boolean {
+  if (review.consensus || review.agreement) return review.reviewers.every((r) => r.status === 'done')
   return review.reviewers.every(reviewerSettled) && review.reviewers.some((r) => r.status === 'done')
+}
+
+/** Whether the consensus session (not the triager) closes this review: a consensus or an agreement review. */
+export const votes = (review: Pick<Review, 'consensus' | 'agreement'>) => !!(review.consensus || review.agreement)
+
+/** The PR's owner/repo and number off its URL (https://github.com/o/r/pull/n) — null when it isn't a GitHub PR URL. */
+export function prCoordinates(url: string): { owner: string; repo: string; number: number } | null {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(url)
+  return m ? { owner: m[1]!, repo: m[2]!, number: Number(m[3]) } : null
 }
 
 /**

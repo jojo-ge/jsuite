@@ -43,6 +43,7 @@ Always include the scheme: `https://<app>.local`. Bare host ports
 | be grilled about a plan | `grilling` in the terminal — `j-grilling` only when the operator asks for ONE question in the browser; jGrilling's **Up next** strip lists the HITL grilling frontier from jTicket and starts a ticket in herdr |
 | build a feature and hand-code its core ("with jcode") | `jcode` — ship as usual, then publish the core as a kata; the page's Mark-it dispatches `jcode-mark` |
 | map a codebase / architecture map of a repo | `j-map` (front door) — a jMap-mode jTicket project whose tickets run `jmap-scope` / `jmap-domain` / `jmap-synthesize` |
+| review someone's GitHub PR, reviewers sized to it, findings → post to the PR | skill `make-jreview-project N` in the repo → a jTicket **PR review project** (mode `prreview`): Fable 5.2 `/jreview-assess` picks 2–4 reviewers + one shared brief + optional `/jpr-check` checks into the project's own **review plan** (Review setup tab — not Run setup); a jReview agreement review (consensus + adversarial verification + approvability) hands findings back to the Review tab, whose **Post to PR** sends a COMMENT review under your gh auth (never an approval) and **Rerun review** re-runs on the new head |
 | a thorough multi-reviewer review of a branch, findings → tickets | jReview New review (4 Opus 5.5 reviewers on the global `/code-review`; `jreview-report`, `jreview-triage`); from a jTicket project's **Review** tab the findings join that project |
 | a few small tasks/decision tickets in ONE session ("run these together") | jTicket board: tick 2+ frontier cards → **One session** — one claude session, tickets in key order, each on its own hand-off; prompt kind `batch` (overridable per project/codebase/global); no claims, budget or subagents; HITL asks in that pane; 409 under auto mode unless every ticket is HITL (`POST /api/projects/:id/herdr-batch`) |
 | where a project's integration branch stands vs origin — push, fast-forward pull, roll-up PR | the project's **Branches** tab (`GET …/branch-status?fetch=1`, `POST …/sync` pushes, `POST …/branch-pull` fast-forwards — never merges) |
@@ -221,8 +222,15 @@ started from its Review tab). A **consensus review** (`reviewers: 2`,
 `consensus: {projectKey, loop}`) skips triage: a Sonnet 5 `/jreview-consensus`
 session files only agreed findings (in-scope → the project; out-of-scope →
 `<PROJ-key> follow ups`). `pass: 'architecture'` runs one reviewer on
-`/jarch-review`. State `.data/jreview/`. Skills: `jreview-report`,
-`jreview-triage`, `jreview-consensus`, `jarch-review`.
+`/jarch-review`. An **agreement review** (`agreement: {loop}` + `project` +
+`pr`, from a PR review project's review plan) keeps what every reviewer
+raised too, but adversarially verifies each (`verify`), judges approvability
+and hands findings + `assessment` back instead of filing tickets; its
+reviewers use the codebase's own review skill when it has one. Post to PR
+(`POST /api/reviews/:key/pr-comments`, human-only) is one COMMENT review —
+never an approval. State `.data/jreview/`. Skills: `jreview-report`,
+`jreview-triage`, `jreview-consensus`, `jarch-review`, `make-jreview-project`,
+`jreview-assess`, `jpr-check`.
 
 ## How they relate
 

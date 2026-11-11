@@ -47,6 +47,15 @@ A review can also start from a jTicket project's **Review** tab
 findings are added to that project (*Add to <KEY>*, here or in jTicket), and
 when triage lands the browser opens on the jTicket tab instead of this room.
 
+A **PR review project** in jTicket (skill `make-jreview-project`) asks for an
+**agreement review** of one GitHub PR: its Fable assessor picks 2–4
+reviewers and writes the one brief they all read (`context.brief`), its
+checks' tickets ride along (`context.checks`), the reviewers run the
+codebase's own review skill when it has one, and `/jreview-consensus` keeps
+what every reviewer raised, sends a skeptic at each finding (`verify`), judges
+approvability and hands the findings back. The human posts what they want to
+the PR as a comment review — jReview never approves.
+
 The room (`/r/<key>`) shows the pipeline live over SSE and renders every
 report inline (Findings · Triage report · Reviewer 1–4).
 
@@ -58,13 +67,14 @@ report inline (Findings · Triage report · Reviewer 1–4).
 | `/api/repos` | GET / DELETE | remembered codebases (+ jTicket's); `DELETE ?path=` forgets one |
 | `/api/repos/pick` | GET | native macOS folder picker |
 | `/api/branches?repo=` | GET | branches, current, default target, open PR per branch |
-| `/api/reviews` | POST | `{ repoPath, branch?, base?, title?, reviewers?, project? }` → `{ key, path }`; dispatches reviewers in the background |
+| `/api/reviews` | POST | `{ repoPath, branch?, base?, title?, reviewers?, project?, pr?, agreement?, verify?, context? }` → `{ key, path }`; dispatches reviewers in the background. `pr` = a PR number (looked up with `gh pr view`); `agreement: {loop?}` + `project` = an agreement review (findings every reviewer raised, adversarially verified when `verify`, handed back with an approvability `assessment` — never tickets) |
 | `/api/reviews/:key` | GET / DELETE | the review record; delete keeps docs and tickets |
 | `/api/reviews/:key/watch` | GET | SSE mirror of the review file |
 | `/api/reviews/:key/reviewers/:n/dispatch` | POST | retry / restart one reviewer |
 | `/api/reviews/:key/reviewers/:n/skip` | POST | give up on one reviewer so triage can proceed |
 | `/api/reviews/:key/triage/dispatch` | POST | retry / restart the triager |
 | `/api/reviews/:key/findings` | POST | the triager's hand-back `{ findings }` → `triaged` |
+| `/api/reviews/:key/pr-comments` | POST | the human's Post to PR `{ findingIds, body }` → one GitHub review with the human's `gh` auth, event `COMMENT` always (never approve / request changes); findings on a changed line go inline, the rest in the body; records `postedAt` + `prPosts` |
 | `/api/reviews/:key/tickets` | POST | the human's split `{ findingIds?, projectKey? }` → tickets in `projectKey`, the project the first batch went to, `review.project`, or a new project; skips findings already ticketed |
 
 Plus `/api/documents/**` and `/api/charts/**` from the shared layers.

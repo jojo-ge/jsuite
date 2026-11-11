@@ -40,6 +40,7 @@ const ROLE_LABEL: Record<string, string> = {
   'slice-report': 'slice report',
   'outcome-report': 'outcome report',
   'runplan-build': 'run plan build',
+  'pr-assess': 'PR assessment',
   worktree: 'worktree',
   other: 'other',
 }

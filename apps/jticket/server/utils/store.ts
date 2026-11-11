@@ -14,6 +14,7 @@ import type { TicketType } from './ticketTypes'
 import type { WorktreeGuide, WorktreeLink } from './worktrees'
 import { coerceAutoLoop, type AutoLoop } from '../../app/utils/autoLoop'
 import { coerceRunPlan, coerceRunPlanBuild, type RunPlan, type RunPlanBuild } from '../../app/utils/runPlan'
+import { coercePrReview, type PrReview } from '../../app/utils/reviewPlan'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
@@ -53,9 +54,14 @@ export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
 // /jreproduce, which reproduces the bug in a throwaway worktree, records the
 // failing test and the verdict on the ticket, and never implements the fix (no
 // branches, no PRs — the worktree is torn down when it finishes).
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy'
+// In 'prreview' mode the project reviews one GitHub pull request
+// (`prReview.pr`) and never changes it: its integration branch is a local,
+// never-pushed copy of the PR head (jreview/pr-<n>), its tickets are checks run
+// against that head (/jpr-check), and its own review plan — not a run plan —
+// runs the checks and a jReview agreement review (app/utils/reviewPlan.ts).
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy' | 'prreview'
 
-const PROJECT_MODES: ProjectMode[] = ['wayfinder', 'jmap', 'todo', 'architect', 'predeploy']
+const PROJECT_MODES: ProjectMode[] = ['wayfinder', 'jmap', 'todo', 'architect', 'predeploy', 'prreview']
 
 export function coerceProjectMode(mode: unknown): ProjectMode {
   return PROJECT_MODES.includes(mode as ProjectMode) ? (mode as ProjectMode) : 'standard'
@@ -107,6 +113,10 @@ export interface Project {
   // button): set on dispatch, cleared when it reports back or is cancelled.
   // While set, the tab is read-only. Machine-local.
   runPlanBuild?: RunPlanBuild | null
+  // A PR review project's pull request, its assessment, its review plan and
+  // the plan's runs (app/utils/reviewPlan.ts). Absent/null on every other
+  // mode. Machine-local.
+  prReview?: PrReview | null
   createdAt: string
   updatedAt: string
 }
@@ -345,6 +355,7 @@ export function loadStore(): Store {
         auto: coerceAutoLoop(p.auto),
         runPlan: coerceRunPlan(p.runPlan),
         runPlanBuild: coerceRunPlanBuild(p.runPlanBuild),
+        prReview: coercePrReview(p.prReview),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —

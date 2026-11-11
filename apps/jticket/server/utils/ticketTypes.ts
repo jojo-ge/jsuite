@@ -48,6 +48,7 @@ export function defaultTicketType(labels: readonly string[], projectMode?: strin
   if (labels.includes('review:finding')) return 'bug'
   if (projectMode === 'jmap') return 'docs'
   if (projectMode === 'predeploy') return 'bug'
+  if (projectMode === 'prreview') return 'verification'
   return 'task'
 }
 

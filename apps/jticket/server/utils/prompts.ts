@@ -56,6 +56,8 @@ export const PROMPT_KINDS = [
   'worktree:kickoff',
   'worktree:connect',
   'runplan:build',
+  'prcheck',
+  'prreview:assess',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 

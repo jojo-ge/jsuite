@@ -1,7 +1,13 @@
-import { SEVERITIES, type Finding, type Severity } from '../../../../app/utils/reviewTypes'
+import { APPROVAL_VERDICTS, SEVERITIES, type Finding, type ReviewAssessment, type Severity } from '../../../../app/utils/reviewTypes'
 
 /**
- * The triage session's hand-back. Body: { findings: Finding[] }
+ * The triage session's hand-back. Body: { findings: Finding[] } — or, from an
+ * agreement review's consensus session, { findings, assessment, considered,
+ * kept }: each finding may carry `scope` ('in' | 'out'), `verdict`
+ * ('confirmed' | 'plausible' — refuted ones are never sent) and
+ * `verification` (one line of evidence); `assessment` is { verdict, summary,
+ * blockers[], reviewerVerdicts? } — a recommendation the human reads. Nothing
+ * acts on it: jReview never approves a PR.
  *
  * The only writer of `review.findings`, and the only thing that flips a
  * review to `triaged`. Validates wholesale: findings without a title are
@@ -47,14 +53,45 @@ export default defineEventHandler(async (event) => {
       summary: str(raw?.summary, 1000),
       detail: str(raw?.detail, 20_000),
       reviewers,
+      ...(raw?.scope === 'in' || raw?.scope === 'out' ? { scope: raw.scope } : {}),
+      ...(raw?.verdict === 'confirmed' || raw?.verdict === 'plausible' ? { verdict: raw.verdict } : {}),
+      ...(str(raw?.verification, 500) ? { verification: str(raw?.verification, 500) } : {}),
     })
   }
+
+  let assessment: ReviewAssessment | undefined
+  const a = body.assessment
+  if (current.agreement && a && typeof a === 'object' && APPROVAL_VERDICTS.includes(a.verdict)) {
+    assessment = {
+      verdict: a.verdict,
+      summary: str(a.summary, 4000),
+      blockers: (Array.isArray(a.blockers) ? a.blockers : []).map((b: unknown) => str(b, 300)).filter(Boolean).slice(0, 20),
+      ...(Array.isArray(a.reviewerVerdicts)
+        ? {
+            reviewerVerdicts: a.reviewerVerdicts
+              .filter((v: any) => Number.isInteger(Number(v?.n)) && Number(v.n) >= 1 && Number(v.n) <= slots && APPROVAL_VERDICTS.includes(v?.verdict))
+              .map((v: any) => ({ n: Number(v.n), verdict: v.verdict })),
+          }
+        : {}),
+    }
+  }
+  const count = (v: unknown) => (Number.isInteger(Number(v)) && Number(v) >= 0 ? Number(v) : undefined)
 
   const review = await updateReview(key, (r) => {
     if (r.status === 'ticketed') {
       throw createError({ statusCode: 409, message: `review ${key} was already split into ${r.tickets?.projectKey}` })
     }
-    r.findings = findings
+    // Re-POSTing replaces the set, but keeps what the human already did with a finding.
+    const before = new Map(r.findings.map((f) => [f.title, f]))
+    r.findings = findings.map((f) => {
+      const was = before.get(f.title)
+      return was ? { ...f, ...(was.ticketKey ? { ticketKey: was.ticketKey } : {}), ...(was.postedAt ? { postedAt: was.postedAt } : {}) } : f
+    })
+    if (r.agreement) {
+      if (assessment) r.assessment = assessment
+      r.agreement.considered = count(body.considered)
+      r.agreement.kept = count(body.kept) ?? findings.length
+    }
     r.status = 'triaged'
     r.triage.status = 'done'
     r.triage.error = undefined

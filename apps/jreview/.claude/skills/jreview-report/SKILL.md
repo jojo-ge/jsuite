@@ -45,6 +45,7 @@ BASE: <the fixed point>
 SKILL: <which review skill ran — normally the global /code-review>
 SOURCES: <spec/standards documents the review used, or "none found">
 VERDICT: <one sentence — the overall verdict>
+APPROVAL: approve | approve-with-nits | request-changes | needs-discussion — <one line why>   <only when the review prompt asked for an approvability verdict (a PR review)>
 
 FINDING
 severity: critical | high | medium | low
@@ -64,6 +65,13 @@ TAKEAWAYS
 ```
 
 List findings most severe first.
+
+`APPROVAL` (PR reviews only) is your call on merging the PR as it stands:
+`approve` — nothing worth holding it for; `approve-with-nits` — only
+low/medium findings the author can take or leave; `request-changes` — a
+finding (or a failing check) that must be fixed first; `needs-discussion` —
+the approach itself is in question. It's a recommendation the human reads;
+never approve, comment on or touch the PR on GitHub yourself.
 
 ## 2. Hand it to Sonnet
 

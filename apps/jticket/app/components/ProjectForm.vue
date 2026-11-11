@@ -26,6 +26,8 @@ const isTodoProject = computed(() => props.project?.mode === 'todo')
 // button (POST /api/projects/architect) — same deal: render the value when
 // editing one, never offer it as a choice.
 const isArchitectProject = computed(() => props.project?.mode === 'architect')
+// A PR review project is made by POST /api/projects/pr-review (make-jreview-project) — its mode is fixed.
+const isPrReviewProject = computed(() => props.project?.mode === 'prreview')
 
 const form = reactive({ title: '', description: '', mode: 'standard' as ProjectMode, repo: '', integrationBranch: '' })
 const saving = ref(false)
@@ -116,6 +118,7 @@ const modeOptions = computed(() => [
   ...(isTodoProject.value ? [{ label: "TODO — the codebase's todo list (one per codebase, auto-created)", value: 'todo' }] : []),
   // Same: only so an architect project's select can render its own value.
   ...(isArchitectProject.value ? [{ label: 'Architect — one architecture scan; tickets are graded deepening candidates', value: 'architect' }] : []),
+  ...(isPrReviewProject.value ? [{ label: 'PR review — reviews one GitHub pull request; tickets are checks run with /jpr-check', value: 'prreview' }] : []),
 ])
 
 function reset() {
@@ -163,7 +166,7 @@ defineExpose({ save, reset, saving, canSave })
         ? 'The TODO project is auto-created, one per codebase — its mode is fixed.'
         : 'Wayfinder projects treat the description as a map and surface a takeable frontier of tickets.'"
     >
-      <USelect v-model="form.mode" :items="modeOptions" :disabled="isTodoProject" class="w-full" />
+      <USelect v-model="form.mode" :items="modeOptions" :disabled="isTodoProject || isPrReviewProject" class="w-full" />
     </UFormField>
 
     <!-- GitHub link. Optional: with a repo the project view lists the project's

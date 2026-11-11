@@ -33,6 +33,23 @@ Rules that matter here:
   titles, which could hit an older same-named project). Each finding records
   its `ticketKey`, so already-ticketed findings are skipped and the rest can
   follow later — into the same project only.
+- **An agreement review hands back findings, never tickets.** A PR review
+  project's review plan asks for `agreement: {loop}` + `project` + `pr` (+
+  `verify`, `context.brief`/`checks`): `/jreview-consensus` keeps what every
+  reviewer raised, adversarially verifies each (`verify`), judges
+  approvability and POSTs `{findings, assessment}` to `/findings` — it is not
+  a `consensus` review, so `/consensus` refuses it and the human's ticket
+  split still works. Its reviewers run the codebase's own review skill when
+  the checkout carries one (`codebaseReviewSkill`, recorded as
+  `reviewSkill`), else the global `/code-review`; consensus and arch reviews
+  keep the global skills.
+- **Posting to GitHub is human-only, and never an approval.** `POST
+  /api/reviews/:key/pr-comments` (the room's / jTicket Review tab's Post to PR
+  button) sends ONE pull-request review through `gh api` with the human's
+  auth; the event is hard-coded `COMMENT` in `server/utils/reviewGithub.ts`
+  and is not a parameter. No skill or session may call it, and no session
+  may `gh pr review`/`comment` itself. `assessment.verdict` is a
+  recommendation only.
 - **Every write goes through `updateReview`** — dispatch, the watcher and the
   findings POST touch the same file seconds apart. `writeReview` is
   temp-file + rename so `/watch` never reads a torn file.

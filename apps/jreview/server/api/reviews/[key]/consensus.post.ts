@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const review = await updateReview(key, (r) => {
     if (!r.consensus) {
-      throw createError({ statusCode: 409, message: `review ${key} is not a consensus review — POST /findings instead` })
+      throw createError({ statusCode: 409, message: `review ${key} is not a consensus review — POST /findings instead${r.agreement ? ' (an agreement review hands back findings, never tickets)' : ''}` })
     }
     if (r.status === 'reviewing') {
       throw createError({ statusCode: 409, message: `review ${key} is still waiting on its reviewers` })

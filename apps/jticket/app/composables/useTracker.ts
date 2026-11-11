@@ -1,6 +1,7 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
 import type { AutoLoop } from '~/utils/autoLoop'
 import type { RunPlan, RunPlanBuild } from '~/utils/runPlan'
+import type { PrReview } from '~/utils/reviewPlan'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
@@ -10,7 +11,7 @@ export type TicketTag = AgencyTag | 'prototype' | 'paused'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy'
+export type ProjectMode = 'standard' | 'wayfinder' | 'jmap' | 'todo' | 'architect' | 'predeploy' | 'prreview'
 export type ShareSide = 'creator' | 'importer'
 
 // Two-party sync (see server/utils/ownership.ts): which side this machine is
@@ -51,6 +52,8 @@ export interface Project {
   runPlan?: RunPlan | null
   // A /jrunplan session building it (the tab's Build button) — the tab is read-only while set.
   runPlanBuild?: RunPlanBuild | null
+  // A PR review project's PR, assessment, review plan and runs — see ~/utils/reviewPlan.ts.
+  prReview?: PrReview | null
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,

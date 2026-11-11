@@ -37,6 +37,8 @@ export const PROMPT_KINDS = [
   'worktree:kickoff',
   'worktree:connect',
   'runplan:build',
+  'prcheck',
+  'prreview:assess',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 export type PromptOverrides = Partial<Record<PromptKind, string>>
@@ -309,10 +311,33 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       "Don't ask questions — nobody is watching this pane.",
     ].join(' '),
   },
+  prcheck: {
+    label: 'PR check',
+    hint: "Every ticket in a PR review project — one check run against the PR head in a throwaway worktree: verdict recorded on the ticket, nothing committed or pushed.",
+    group: 'PR review',
+    level: 'ticket',
+    command: '/jpr-check',
+    vars: TICKET_VARS,
+    template: '/jpr-check {key}',
+  },
+  'prreview:assess': {
+    label: 'Assess the PR',
+    hint: "The Review setup tab's Assess button — one Fable 5.2 session reads the PR, writes the reviewers' shared brief, adds check tickets when the PR needs them, and saves the review plan. A codebase override is where to say \"always run the e2e suite\" or \"never more than 3 reviewers\".",
+    group: 'PR review',
+    level: 'project',
+    command: 'Assess PR',
+    vars: BUILD_PLAN_VARS,
+    template: [
+      '/jreview-assess {projectKey} — assess the pull request {projectKey} ({projectTitle}) reviews, and build its review plan.',
+      'Read the project and its PR (GET http://localhost:43000/api/projects/{projectKey} — prReview.pr), then the PR itself with gh and the code in {repo} at {integrationBranch} (the PR head; worktree guide {worktreeGuide}).',
+      'Decide how many reviewers it needs (2–4) and what they focus on, publish the brief every reviewer will read, add check tickets only where running something proves more than reading does, and save the plan with PUT http://localhost:43000/api/projects/{projectKey}/review-plan until it reports no problems; then POST http://localhost:43000/api/projects/{projectKey}/pr-review/assessed.',
+      "Never commit, push or comment on GitHub. Don't ask questions — nobody is watching this pane.",
+    ].join(' '),
+  },
 }
 
 /** The editor's sections, in the order they render. */
-export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees', 'Run setup'] as const
+export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'jMap', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees', 'Run setup', 'PR review'] as const
 export function promptKindsInGroup(group: string): PromptKind[] {
   return PROMPT_KINDS.filter((k) => PROMPT_KIND_META[k].group === group)
 }
@@ -394,6 +419,7 @@ export function promptKindFor(
   if (mode === 'todo') return 'todo'
   if (mode === 'architect') return ticket.labels.includes('arch:scan') ? 'architect:scan' : 'architect:grill'
   if (mode === 'predeploy') return 'predeploy'
+  if (mode === 'prreview') return 'prcheck'
   return `standard:${target}` as PromptKind
 }
 
@@ -495,6 +521,16 @@ export function resolveBuildPlanPrompt(
   codebase?: CodebasePrompts,
 ): string {
   const { template } = promptTemplateFor('runplan:build', project, defaults, codebase)
+  return renderPrompt(template, projectLevelVars(project, project.repo))
+}
+
+/** The Review setup tab's Assess button — layers 2–5, like the run plan's Build (a project-level hand-off). */
+export function resolveAssessPrompt(
+  project: ProjectForPrompt,
+  defaults: PromptOverrides,
+  codebase?: CodebasePrompts,
+): string {
+  const { template } = promptTemplateFor('prreview:assess', project, defaults, codebase)
   return renderPrompt(template, projectLevelVars(project, project.repo))
 }
 

@@ -172,6 +172,79 @@ async function addTickets() {
   }
 }
 
+// ── A PR review project: rerun from here, the run lives in Review setup ──
+const isPrReview = computed(() => props.project.mode === 'prreview' && !!props.project.prReview)
+const prRun = computed(() => props.project.prReview?.run ?? null)
+const prRunLive = computed(() => prRun.value?.status === 'running' || prRun.value?.status === 'paused')
+const rerunning = ref(false)
+async function rerunReview() {
+  rerunning.value = true
+  try {
+    const ran = !!props.project.prReview?.runs.length
+    await $fetch(`/api/projects/${props.project.id}/review-run`, { method: 'POST', body: { action: ran ? 'rerun' : 'start' } })
+    toast.add({ title: ran ? 'Rerunning the review' : 'Review started', description: 'Against the PR head as it is now — checks first, then the reviewers.', color: 'success', icon: 'i-lucide-refresh-cw' })
+  } catch (err: any) {
+    toast.add({ title: 'Could not run the review', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    rerunning.value = false
+  }
+}
+
+// ── Approvability — a recommendation; nobody but you approves on GitHub ──
+const APPROVAL = {
+  approve: { label: 'Recommends approval', color: 'success', icon: 'i-lucide-circle-check', text: 'text-success' },
+  'approve-with-nits': { label: 'Approvable with nits', color: 'success', icon: 'i-lucide-circle-check', text: 'text-success' },
+  'request-changes': { label: 'Changes needed', color: 'error', icon: 'i-lucide-circle-x', text: 'text-error' },
+  'needs-discussion': { label: 'Needs discussion', color: 'warning', icon: 'i-lucide-messages-square', text: 'text-warning' },
+} as const
+
+// ── Post to PR — one COMMENT review, under your gh auth, never an approval ──
+const postOpen = ref(false)
+const postBody = ref('')
+const postPicked = ref(new Set<string>())
+const posting = ref(false)
+const canPost = computed(() => !!review.value?.pr && (review.value.status === 'triaged' || review.value.status === 'ticketed'))
+function defaultPostBody(): string {
+  const a = review.value?.assessment
+  if (!a) return ''
+  return [a.summary.trim(), a.blockers.length ? `**Before this can merge:**\n${a.blockers.map((b) => `- ${b}`).join('\n')}` : ''].filter(Boolean).join('\n\n')
+}
+function openPost() {
+  // In-scope findings not yet posted start ticked.
+  postPicked.value = new Set((review.value?.findings ?? []).filter((f) => f.scope !== 'out' && !f.postedAt).map((f) => f.id))
+  postBody.value = defaultPostBody()
+  postOpen.value = true
+}
+function togglePost(id: string, on: boolean) {
+  const next = new Set(postPicked.value)
+  if (on) next.add(id)
+  else next.delete(id)
+  postPicked.value = next
+}
+async function postToPr() {
+  if (!review.value) return
+  posting.value = true
+  try {
+    const res = await $fetch<{ url: string; inline: number; posted: number }>(
+      `/api/projects/${props.project.id}/reviews/${review.value.key}/pr-comments`,
+      { method: 'POST', body: { findingIds: [...postPicked.value], body: postBody.value } },
+    )
+    postOpen.value = false
+    toast.add({
+      title: `Posted to PR #${review.value.pr!.number}`,
+      description: `${res.posted} finding${res.posted === 1 ? '' : 's'} (${res.inline} inline) as a comment review.`,
+      color: 'success',
+      icon: 'i-lucide-message-square-share',
+      actions: [{ label: 'Open on GitHub', onClick: () => { window.open(res.url, '_blank') } }],
+    })
+    await refreshReview()
+  } catch (err: any) {
+    toast.add({ title: 'GitHub post failed', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    posting.value = false
+  }
+}
+
 // ── Reports, opened inline ──
 const reportOpen = ref(false)
 const reportTitle = ref('')
@@ -207,8 +280,9 @@ const REVIEWER_BADGE = {
 } as const
 function listLine(r: JreviewMeta): string {
   if (r.status === 'reviewing') return `${r.reviewersDone}/${r.reviewerCount} reported`
-  if (r.status === 'triaging') return r.consensus ? 'matching reports' : 'merging findings'
+  if (r.status === 'triaging') return r.consensus || r.agreement ? 'matching reports' : 'merging findings'
   if (r.consensus) return `loop ${r.loop ?? '?'} consensus`
+  if (r.agreement && r.verdict) return `${APPROVAL[r.verdict].label.toLowerCase()} · ${r.findingCount} finding${r.findingCount === 1 ? '' : 's'}`
   const left = r.findingCount - r.ticketedCount
   return `${r.findingCount} finding${r.findingCount === 1 ? '' : 's'}${left && r.ticketedCount ? ` · ${left} not added` : ''}`
 }
@@ -235,8 +309,33 @@ const severityCounts = computed(() => {
     </div>
 
     <template v-else>
+      <!-- A PR review project: its reviews come from its review plan -->
+      <div v-if="isPrReview" class="flex flex-wrap items-center gap-3 rounded-lg border border-default px-3 py-3">
+        <UIcon name="i-lucide-git-pull-request" class="size-5 shrink-0 text-muted" />
+        <div class="min-w-0 flex-1">
+          <a :href="project.prReview!.pr.url" target="_blank" class="truncate text-sm font-medium hover:underline">
+            #{{ project.prReview!.pr.number }} {{ project.prReview!.pr.title }}
+          </a>
+          <p class="text-xs text-muted">
+            <template v-if="prRunLive">Run {{ prRun!.n }} is {{ prRun!.status }} — follow it in Review setup.</template>
+            <template v-else-if="!project.prReview!.plan">Not assessed yet — Assess it in Review setup first.</template>
+            <template v-else>Reviews run from the review plan in Review setup. Rerun re-fetches the PR head and runs the plan again.</template>
+          </p>
+        </div>
+        <UButton :to="{ query: { tab: 'review-setup' } }" icon="i-lucide-list-checks" size="sm" color="neutral" variant="ghost">Review setup</UButton>
+        <UButton
+          icon="i-lucide-refresh-cw"
+          size="sm"
+          :loading="rerunning"
+          :disabled="prRunLive || !project.prReview!.plan || !!project.prReview!.assessing || !herdrUp"
+          @click="rerunReview"
+        >
+          {{ project.prReview!.runs.length ? 'Rerun review' : 'Start review' }}
+        </UButton>
+      </div>
+
       <!-- Start a review -->
-      <div class="rounded-lg border border-default px-3 py-3">
+      <div v-else class="rounded-lg border border-default px-3 py-3">
         <div class="flex flex-wrap items-end gap-2">
           <UFormField label="Branch" class="min-w-64 flex-1">
             <USelectMenu
@@ -357,6 +456,45 @@ const severityCounts = computed(() => {
               </UButton>
             </div>
 
+            <!-- Approvability: a recommendation, never an action -->
+            <div
+              v-if="review.assessment"
+              class="rounded-lg border px-3 py-2.5"
+              :class="{
+                'border-success/40 bg-success/5': APPROVAL[review.assessment.verdict].color === 'success',
+                'border-error/40 bg-error/5': APPROVAL[review.assessment.verdict].color === 'error',
+                'border-warning/40 bg-warning/5': APPROVAL[review.assessment.verdict].color === 'warning',
+              }"
+            >
+              <p class="flex flex-wrap items-center gap-2">
+                <UIcon :name="APPROVAL[review.assessment.verdict].icon" class="size-4" :class="APPROVAL[review.assessment.verdict].text" />
+                <span class="text-sm font-semibold">{{ APPROVAL[review.assessment.verdict].label }}</span>
+                <span v-if="review.assessment.reviewerVerdicts?.length" class="text-xs text-muted">
+                  · {{ review.assessment.reviewerVerdicts.map((v) => `R${v.n} ${v.verdict}`).join(' · ') }}
+                </span>
+                <UButton
+                  v-if="review.pr"
+                  :to="`${review.pr.url}/files`"
+                  target="_blank"
+                  external
+                  icon="i-lucide-external-link"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  class="ml-auto"
+                >
+                  Review on GitHub
+                </UButton>
+              </p>
+              <p class="mt-1 whitespace-pre-line text-sm text-muted">{{ review.assessment.summary }}</p>
+              <ul v-if="review.assessment.blockers.length" class="mt-1.5 space-y-0.5 text-sm">
+                <li v-for="b in review.assessment.blockers" :key="b" class="flex gap-1.5"><span class="text-error">·</span>{{ b }}</li>
+              </ul>
+              <p class="mt-1.5 text-xs text-dimmed">
+                A recommendation only — jReview never approves or requests changes. That click is yours, on GitHub.
+              </p>
+            </div>
+
             <!-- Pipeline: reviewers → triage -->
             <div class="rounded-lg border border-default">
               <div
@@ -389,7 +527,7 @@ const severityCounts = computed(() => {
                       @click="act('retry-reviewer', r.n)"
                     />
                   </UTooltip>
-                  <UTooltip v-if="!review.consensus" text="Skip — triage goes ahead without it">
+                  <UTooltip v-if="!review.consensus && !review.agreement" text="Skip — triage goes ahead without it">
                     <UButton
                       icon="i-lucide-skip-forward"
                       size="xs"
@@ -419,15 +557,19 @@ const severityCounts = computed(() => {
                   class="size-4 shrink-0"
                   :class="review.triage.status === 'done' ? 'text-success' : review.triage.status === 'failed' ? 'text-error' : review.status === 'triaging' ? 'animate-spin text-primary' : 'text-muted'"
                 />
-                <span class="font-medium">{{ review.consensus ? 'Consensus' : 'Triage' }}</span>
+                <span class="font-medium">{{ review.consensus || review.agreement ? 'Consensus' : 'Triage' }}</span>
+                <UBadge v-if="review.verify" color="neutral" variant="outline" size="sm" icon="i-lucide-shield-check">verified</UBadge>
+                <UBadge v-if="review.reviewSkill" color="neutral" variant="outline" size="sm" icon="i-lucide-book-check">
+                  repo's /{{ review.reviewSkill }}
+                </UBadge>
                 <span class="truncate text-xs text-muted">
                   <template v-if="review.triage.status === 'failed'"><span class="text-error">{{ review.triage.error }}</span></template>
                   <template v-else-if="review.status === 'reviewing'">starts when every reviewer has reported</template>
                   <template v-else-if="review.status === 'triaging'">
-                    {{ review.consensus ? 'keeping what every reviewer raised' : 'merging duplicate findings' }}<template v-if="review.triage.agent"> · herdr · <span class="font-mono">{{ review.triage.agent }}</span></template>
+                    {{ review.consensus ? 'keeping what every reviewer raised' : review.agreement ? `keeping what every reviewer raised${review.verify ? ', verifying each finding' : ''}, judging approvability` : 'merging duplicate findings' }}<template v-if="review.triage.agent"> · herdr · <span class="font-mono">{{ review.triage.agent }}</span></template>
                   </template>
                   <template v-else-if="review.consensus">{{ review.consensus.kept ?? review.tickets?.ticketKeys.length ?? 0 }} agreed<template v-if="review.consensus.considered !== undefined"> of {{ review.consensus.considered }}</template></template>
-                  <template v-else>{{ review.findings.length }} distinct finding{{ review.findings.length === 1 ? '' : 's' }}<template v-if="severityCounts"> · {{ severityCounts }}</template></template>
+                  <template v-else>{{ review.findings.length }} {{ review.agreement ? 'agreed' : 'distinct' }} finding{{ review.findings.length === 1 ? '' : 's' }}<template v-if="review.agreement?.considered !== undefined"> of {{ review.agreement.considered }}</template><template v-if="severityCounts"> · {{ severityCounts }}</template></template>
                 </span>
                 <UButton
                   v-if="review.status === 'triaging'"
@@ -483,6 +625,11 @@ const severityCounts = computed(() => {
                 </template>
                 <template v-else-if="review.status === 'triaging'">Triaging — the merged findings land here.</template>
                 <template v-else>The reviewers found nothing worth a ticket.</template>
+                <div v-if="canPost && review.findings.length === 0" class="mt-3">
+                  <UButton icon="i-lucide-message-square-share" size="sm" color="neutral" variant="soft" @click="openPost">
+                    Post the summary to PR #{{ review.pr!.number }}
+                  </UButton>
+                </div>
               </div>
 
               <template v-else>
@@ -498,17 +645,28 @@ const severityCounts = computed(() => {
                       · {{ review.findings.length - openFindings.length }} added to {{ review.tickets?.projectKey ?? project.key }}</template>
                   </span>
                   <UButton
+                    v-if="canPost"
+                    icon="i-lucide-message-square-share"
+                    size="sm"
+                    color="neutral"
+                    variant="soft"
+                    class="ml-auto"
+                    @click="openPost"
+                  >
+                    Post to PR #{{ review.pr!.number }}
+                  </UButton>
+                  <UButton
                     v-if="canAdd && openFindings.length"
                     icon="i-lucide-ticket-plus"
                     size="sm"
-                    class="ml-auto"
+                    :class="canPost ? '' : 'ml-auto'"
                     :disabled="!picked.length"
                     :loading="adding"
                     @click="addTickets"
                   >
                     Add {{ picked.length }} to {{ project.key }}
                   </UButton>
-                  <span v-else-if="canAdd" class="ml-auto flex items-center gap-1 text-xs text-success">
+                  <span v-else-if="canAdd" class="flex items-center gap-1 text-xs text-success" :class="canPost ? '' : 'ml-auto'">
                     <UIcon name="i-lucide-check" class="size-3.5" /> every finding is a ticket
                   </span>
                 </div>
@@ -529,6 +687,60 @@ const severityCounts = computed(() => {
         </div>
       </div>
     </template>
+
+    <!-- Post to PR: you choose what goes, you edit the words, it goes as YOUR comment review -->
+    <UModal v-model:open="postOpen" :title="review?.pr ? `Post to PR #${review.pr.number}` : 'Post to PR'" :ui="{ content: 'sm:max-w-3xl' }">
+      <template #body>
+        <div v-if="review" class="space-y-3">
+          <p class="text-xs text-muted">
+            One GitHub review, posted with your <span class="font-mono">gh</span> login, as a <b>comment</b> — never an approval and
+            never a change request. Findings on a line the PR changes go inline; the rest go into the body.
+          </p>
+          <UFormField label="Summary" hint="markdown — edit freely">
+            <UTextarea v-model="postBody" :rows="6" autoresize class="w-full font-mono text-xs" placeholder="What you want the author to read first" />
+          </UFormField>
+          <div v-if="review.findings.length" class="space-y-1">
+            <p class="text-xs font-semibold text-muted">Findings · {{ postPicked.size }} of {{ review.findings.length }}</p>
+            <label
+              v-for="f in review.findings"
+              :key="f.id"
+              class="flex cursor-pointer items-start gap-2 rounded-md border border-default px-2.5 py-1.5 text-sm"
+              :class="postPicked.has(f.id) ? '' : 'opacity-60'"
+            >
+              <UCheckbox :model-value="postPicked.has(f.id)" class="mt-0.5" @update:model-value="togglePost(f.id, !!$event)" />
+              <span class="min-w-0 flex-1">
+                <span class="font-medium">[{{ f.severity }}] {{ f.title }}</span>
+                <span class="block text-xs text-dimmed">
+                  <template v-if="f.file && f.line"><span class="font-mono">{{ f.file }}:{{ f.line }}</span> · inline if the PR changes that line</template>
+                  <template v-else>in the body</template>
+                  <template v-if="f.scope === 'out'"> · pre-existing</template>
+                  <template v-if="f.postedAt"> · already posted {{ agoLabel(f.postedAt, now) }}</template>
+                </span>
+              </span>
+            </label>
+          </div>
+          <p v-if="review.prPosts?.length" class="text-xs text-muted">
+            Posted before:
+            <template v-for="(p, i) in review.prPosts" :key="p.at">
+              <a :href="p.url" target="_blank" class="hover:underline">{{ agoLabel(p.at, now) }}</a><template v-if="i < review.prPosts.length - 1"> · </template>
+            </template>
+          </p>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="postOpen = false">Cancel</UButton>
+          <UButton
+            icon="i-lucide-message-square-share"
+            :loading="posting"
+            :disabled="!postPicked.size && !postBody.trim()"
+            @click="postToPr"
+          >
+            Post as comment
+          </UButton>
+        </div>
+      </template>
+    </UModal>
 
     <!-- A reviewer's or the triager's report — a jExplain document in the shared pool -->
     <UModal v-model:open="reportOpen" :title="reportTitle" :ui="{ content: 'sm:max-w-4xl' }">

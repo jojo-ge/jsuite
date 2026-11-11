@@ -25,6 +25,7 @@ export type SessionRole =
   | 'slice-report'
   | 'outcome-report'
   | 'runplan-build'
+  | 'pr-assess' // a PR review project's /jreview-assess
   | 'worktree' // the codebase's worktree kickoff / connect
   | 'other'
 

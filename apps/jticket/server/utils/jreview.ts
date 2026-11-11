@@ -46,6 +46,20 @@ export interface JreviewFinding {
   reviewers: number[]
   /** The ticket it became, once added. */
   ticketKey?: string
+  scope?: 'in' | 'out'
+  verdict?: 'confirmed' | 'plausible'
+  verification?: string
+  postedAt?: string
+}
+
+export type JreviewApproval = 'approve' | 'approve-with-nits' | 'request-changes' | 'needs-discussion'
+
+/** An agreement review's approvability assessment — a recommendation; nothing acts on it. */
+export interface JreviewAssessment {
+  verdict: JreviewApproval
+  summary: string
+  blockers: string[]
+  reviewerVerdicts?: Array<{ n: number; verdict: JreviewApproval }>
 }
 
 /** The whole review, as the Review tab renders it. */
@@ -58,6 +72,12 @@ export interface JreviewFull extends JreviewReview {
   worktree: boolean
   project?: string
   consensus?: { projectKey: string; loop?: number; considered?: number; kept?: number }
+  agreement?: { loop?: number; considered?: number; kept?: number }
+  verify?: boolean
+  reviewSkill?: string
+  headSha?: string
+  assessment?: JreviewAssessment
+  prPosts?: Array<{ at: string; url: string; findingIds: string[]; inline: number }>
   reviewers: { n: number; docKey: string; status: 'queued' | 'running' | 'done' | 'failed' | 'skipped'; agent?: string; error?: string }[]
   triage: { docKey: string; status: 'waiting' | 'running' | 'done' | 'failed'; agent?: string; error?: string }
   findings: JreviewFinding[]

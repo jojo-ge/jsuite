@@ -1,4 +1,5 @@
 import { basename, join } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import {
@@ -11,7 +12,7 @@ import {
   invalidateHerdrState,
 } from '@jsuite/herdr'
 import { suiteRoot } from '@jsuite/data'
-import { isReviewTab, type Review } from '../../app/utils/reviewTypes'
+import { isReviewTab, votes, type Review } from '../../app/utils/reviewTypes'
 
 // The publish step reviewers read by path (jreview-report is typed-only, so it cannot be invoked mid-task).
 const REPORT_SKILL = join(suiteRoot(), 'apps/jreview/.claude/skills/jreview-report/SKILL.md')
@@ -39,6 +40,10 @@ const pExecFile = promisify(execFile)
 //     A consensus review gets `/jreview-consensus <key>` on CONSENSUS_MODEL in
 //     that tab instead: it files the findings every reviewer raised into the
 //     caller's jTicket project and POSTs the ticket keys to /consensus.
+//     An agreement review (a PR review plan) gets `/jreview-consensus <key>`
+//     too, on REVIEW_MODEL: it keeps what every reviewer raised, has each
+//     finding adversarially verified when `verify` is set, judges
+//     approvability, and POSTs findings + assessment to /findings.
 //
 // Once that hand-back lands the watcher closes the review's panes (every pane
 // in its 'review K' / 'triage K' tabs — never one whose agent is still working
@@ -56,11 +61,40 @@ export const REVIEW_MODEL = process.env.JREVIEW_MODEL?.trim() || 'claude-opus-5-
  */
 export const CONSENSUS_MODEL = process.env.JREVIEW_CONSENSUS_MODEL?.trim() || 'claude-sonnet-5'
 
+/** A review skill the reviewed codebase carries in its own .claude/skills. */
+export interface CodebaseSkill {
+  name: string
+  /** Its SKILL.md, absolute. */
+  path: string
+}
+
+/**
+ * The codebase's own code-review skill, when it carries one: `code-review`
+ * first, else the first skill whose name says review (jSuite's own jreview-*
+ * / jarch-review skills excepted — a jSuite checkout carries those). Read
+ * from the review's checkout, so it is the PR's version of the skill.
+ */
+export function codebaseReviewSkill(workdir: string): CodebaseSkill | null {
+  const dir = join(workdir, '.claude/skills')
+  let names: string[] = []
+  try {
+    names = readdirSync(dir).filter((d) => existsSync(join(dir, d, 'SKILL.md')))
+  } catch {
+    return null
+  }
+  const ours = (d: string) => d.startsWith('jreview-') || d === 'jarch-review' || d === 'jdiff-review'
+  const pick = names.includes('code-review') ? 'code-review' : names.sort().find((d) => /review/i.test(d) && !ours(d))
+  return pick && /^[A-Za-z0-9._-]{1,60}$/.test(pick) ? { name: pick, path: join(dir, pick, 'SKILL.md') } : null
+}
+
 /**
  * The reviewer's hand-off. `priorDocs` are the reports of the earlier review
  * named in `context.review` (the architectural pass), resolved by the caller.
+ * `own` is the codebase's own review skill (codebaseReviewSkill): an
+ * agreement review (a PR review plan) runs it in place of the global
+ * /code-review when there is one — the codebase knows its own standards.
  */
-export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = []): string {
+export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = [], own: CodebaseSkill | null = null): string {
   const r = review.reviewers.find((x) => x.n === n)!
   const arch = review.pass === 'architecture'
   // One line: herdr submits the prompt as typed input, and a newline would
@@ -70,7 +104,9 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
   return [
     arch
       ? '/jarch-review the architectural & technical review of this diff. Use the GLOBAL skill (~/.claude/skills/jarch-review) — not /code-review, and not any review skill this repo carries in its own .claude/skills.'
-      : '/code-review the diff below. Use the GLOBAL skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
+      : review.agreement && own
+        ? `/${own.name} the diff below. Use THIS CODEBASE's own review skill — read ${own.path} and follow it (not a global skill of the same name); where it asks for something only a human can give, carry on without it.`
+        : '/code-review the diff below. Use the GLOBAL skill (~/.claude/skills/code-review) — not any code-review skill this repo carries in its own .claude/skills.',
     `HEAD in this checkout is ${review.branch}${review.pr ? ` (PR #${review.pr.number}, "${review.pr.title.replace(/[\r\n]+/g, ' ')}")` : ''}.`,
     ...(projectKey ? [`The jTicket project is ${projectKey} (GET http://localhost:43000/api/projects/${projectKey}).`] : []),
     `The fixed point is ${review.base} — review \`git diff ${review.base}...HEAD\`.`,
@@ -81,6 +117,25 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
       ? [
           `An architectural review of this same diff ran before you — its report${priorDocs.length > 1 ? 's' : ''}: ${priorDocs.join(', ')} (GET http://localhost:43008/api/documents/<key>). ` +
             'Its architectural findings have already been fixed in what you are reading: do not raise them again, but do check the fixes.',
+        ]
+      : []),
+    ...(review.context?.brief
+      ? [
+          `Read the review brief first: jTicket doc ${review.context.brief} (GET http://localhost:43000/api/docs/${review.context.brief} gives its documentKey; the content is GET http://localhost:43000/api/documents/<documentKey>). ` +
+            'Every reviewer of this review gets the same brief: its focus areas are where to look hardest, not the only places to look.',
+        ]
+      : []),
+    ...(review.context?.checks?.length
+      ? [
+          `Checks already ran against this code: jTicket ticket${review.context.checks.length > 1 ? 's' : ''} ${review.context.checks.join(', ')} (GET http://localhost:43000/api/tickets/<key> — the resolution says what was run, the outcome and the verdict). ` +
+            'Use what they found — a failing check is evidence, not a finding to rediscover — and do not re-run their work unless you doubt it.',
+        ]
+      : []),
+    ...(review.agreement
+      ? [
+          `This is a review of ${review.pr ? `pull request #${review.pr.number}` : 'a branch'} that someone else may have written: report only — never commit, push, open a PR or comment on GitHub. ` +
+            'Mark every finding `scope: in` (the PR introduced or changed it) or `scope: out` (it was there before). ' +
+            'End with an approvability verdict — approve, approve-with-nits, request-changes or needs-discussion — in the dump\'s APPROVAL line (the report skill says how).',
         ]
       : []),
     ...(review.worktree && review.worktreeGuide
@@ -98,7 +153,7 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
 }
 
 export const triagePrompt = (review: Review) =>
-  review.consensus ? `/jreview-consensus ${review.key}` : `/jreview-triage ${review.key}`
+  votes(review) ? `/jreview-consensus ${review.key}` : `/jreview-triage ${review.key}`
 
 async function workspaceFor(review: Review) {
   return ensureHerdrWorkspace(`jreview · ${basename(review.repoPath)}`, review.workdir)
@@ -120,11 +175,13 @@ export async function dispatchReviewer(key: string, n: number): Promise<void> {
     const prior = review.context?.review ? await readReview(review.context.review).catch(() => null) : null
     const priorDocs = prior ? prior.reviewers.filter((x) => x.status === 'done').map((x) => x.docKey) : []
     // Slot first, so the 28-char agent-name cap trims the key, not the slot.
-    const agent = await startClaudeIn(paneId, `jr${n}-${review.key}`, reviewerPrompt(review, n, priorDocs), {
+    const own = review.agreement ? codebaseReviewSkill(review.workdir) : null
+    const agent = await startClaudeIn(paneId, `jr${n}-${review.key}`, reviewerPrompt(review, n, priorDocs, own), {
       args: ['--model', review.model || REVIEW_MODEL, ...(review.effort ? ['--effort', review.effort] : [])],
     })
     await updateReview(key, (fresh) => {
       fresh.workspaceId = workspaceId
+      if (own) fresh.reviewSkill = own.name
       const r = fresh.reviewers.find((x) => x.n === n)!
       // The document may already be in (a re-dispatch after it landed).
       if (r.status === 'done' || r.status === 'skipped') return
@@ -171,9 +228,12 @@ export async function dispatchTriage(key: string): Promise<void> {
     } else {
       ;({ tabId, paneId } = await createJobTab(workspaceId, tabLabel, review.workdir))
     }
-    await renamePane(paneId, `${review.consensus ? 'consensus' : 'triage'} · ${review.title}`)
+    await renamePane(paneId, `${votes(review) ? 'consensus' : 'triage'} · ${review.title}`)
+    // An agreement review's consensus session also judges approvability and,
+    // with `verify`, runs the adversarial verifiers — Opus work, not matching.
+    const model = review.agreement ? REVIEW_MODEL : review.consensus ? CONSENSUS_MODEL : REVIEW_MODEL
     const agent = await startClaudeIn(paneId, `jrt-${review.key}`, triagePrompt(review), {
-      args: ['--model', review.consensus ? CONSENSUS_MODEL : REVIEW_MODEL],
+      args: ['--model', model],
     })
     await updateReview(key, (fresh) => {
       if (fresh.triage.status === 'done') return
@@ -217,7 +277,7 @@ export async function closeReviewPanes(key: string): Promise<boolean> {
  * Review tab when it belongs to one, else its page here. Best-effort;
  * JREVIEW_OPEN_BROWSER=0 turns it off.
  */
-export async function openReviewInBrowser(review: Pick<Review, 'key' | 'project'>): Promise<void> {
+export async function openReviewInBrowser(review: Pick<Review, 'key' | 'project' | 'agreement'>): Promise<void> {
   if (process.env.JREVIEW_OPEN_BROWSER?.trim() === '0') return
   const { key, project } = review
   const url = project

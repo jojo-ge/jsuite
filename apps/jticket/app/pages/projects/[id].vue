@@ -47,8 +47,8 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'run' | 'overview' | 'docs' | 'branches' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
-const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'overview', 'docs', 'branches', 'prs', 'review', 'agents', 'loops', 'analytics']
+type ProjectTab = 'board' | 'run' | 'review-setup' | 'overview' | 'docs' | 'branches' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'review-setup', 'overview', 'docs', 'branches', 'prs', 'review', 'agents', 'loops', 'analytics']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
@@ -74,10 +74,19 @@ const tabItems = computed(() => [
   ...(project.value?.mode === 'standard'
     ? [{ label: 'Run setup', value: 'run', icon: 'i-lucide-list-ordered', badge: project.value.runPlan?.steps.length || undefined }]
     : []),
+  // Review setup — a PR review project's own run setup (its review plan; never the Run setup tab).
+  ...(project.value?.mode === 'prreview'
+    ? [{ label: 'Review setup', value: 'review-setup', icon: 'i-lucide-list-checks', badge: project.value.prReview?.plan?.steps.length || undefined }]
+    : []),
   { label: 'Overview', value: 'overview', icon: 'i-lucide-align-left' },
   { label: 'Docs', value: 'docs', icon: 'i-lucide-file-text', badge: projectDocs.value.length || undefined },
-  { label: 'Branches', value: 'branches', icon: 'i-lucide-git-branch' },
-  { label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined },
+  // A PR review project's branch is a mirror of someone's PR head — nothing to push, sync or roll up.
+  ...(project.value?.mode === 'prreview'
+    ? []
+    : [
+        { label: 'Branches', value: 'branches', icon: 'i-lucide-git-branch' },
+        { label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined },
+      ]),
   { label: 'Review', value: 'review', icon: 'i-lucide-scan-search' },
   { label: 'Agents', value: 'agents', icon: 'i-lucide-message-square-code' },
   ...(loopCount.value ? [{ label: 'Loops', value: 'loops', icon: 'i-lucide-repeat', badge: loopCount.value }] : []),
@@ -226,6 +235,15 @@ async function removeProject() {
                   icon="i-lucide-bug"
                 >
                   Predeploy
+                </UBadge>
+                <UBadge
+                  v-else-if="project.mode === 'prreview'"
+                  color="primary"
+                  variant="subtle"
+                  size="sm"
+                  icon="i-lucide-git-pull-request"
+                >
+                  PR review
                 </UBadge>
                 <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
                 <span class="text-xs text-muted">{{ stats.done }}/{{ stats.tickets }} tickets done</span>
@@ -415,6 +433,14 @@ async function removeProject() {
         <AutoLoopHistory v-else-if="tab === 'loops'" :project="project" />
 
         <ProjectAnalytics v-else-if="tab === 'analytics'" :project="project" />
+
+        <!-- Review setup — a PR review project's review plan and its runs -->
+        <PrReviewSetup
+          v-else-if="tab === 'review-setup' && project.mode === 'prreview' && project.prReview"
+          :project="project"
+          :tickets="projectTickets"
+          @open-review="(key: string) => router.replace({ query: { ...route.query, tab: 'review', review: key } })"
+        />
 
         <!-- Run setup — the human's own run plan for auto mode -->
         <RunSetup v-else-if="tab === 'run' && project.mode === 'standard'" :project="project" :tickets="projectTickets" :all-tickets="tickets" />

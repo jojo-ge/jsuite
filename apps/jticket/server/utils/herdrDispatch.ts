@@ -9,6 +9,7 @@
 // errors; callers that must not throw catch them.
 import type { Store, Ticket, Project } from './store'
 import {
+  resolveAssessPrompt,
   resolveBuildPlanPrompt,
   resolveMergePrompt,
   resolveTicketPrompt,
@@ -39,6 +40,7 @@ function roleForJob(job: string): SessionRole {
   if (job === 'outcome report') return 'outcome-report'
   if (job === 'slice report') return 'slice-report'
   if (job === 'run plan') return 'runplan-build'
+  if (job === 'pr assess') return 'pr-assess'
   if (job === 'worktree') return 'worktree'
   if (job.startsWith('batch')) return 'batch'
   if (job.startsWith('orchestrate')) return 'orchestrate'
@@ -339,6 +341,26 @@ export function localPrPrompt(store: Store, project: Project, ticket: Ticket): s
     defaults: store.promptDefaults,
     codebase: codebasePromptsFor(store, project),
   }).text
+}
+
+/**
+ * A ticket's hand-off for its own project mode (a PR review project's check →
+ * `prcheck`), every layer applied — what the review plan's runner fires.
+ */
+export function modeTicketPrompt(store: Store, project: Project, ticket: Ticket): string {
+  return resolveTicketPrompt({
+    ticket,
+    project: { ...project, repoPath: projectRepoPath(project) },
+    mode: project.mode,
+    target: 'integration',
+    defaults: store.promptDefaults,
+    codebase: codebasePromptsFor(store, project),
+  }).text
+}
+
+/** A PR review project's Assess hand-off (`prreview:assess`), layers 2–5 applied. */
+export function assessPrompt(store: Store, project: Project): string {
+  return resolveAssessPrompt({ ...project, repoPath: projectRepoPath(project) }, store.promptDefaults, codebasePromptsFor(store, project))
 }
 
 /** The Run setup tab's Build hand-off (`runplan:build`), layers 2–5 applied. */
