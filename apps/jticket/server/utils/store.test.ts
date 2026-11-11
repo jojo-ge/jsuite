@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectShare } from './ownership'
-import { shareForTicket, ticketIsFrontier, withDerived, type Ticket } from './store'
+import { shareForTicket, ticketIsFrontier, ticketIsRecordOnly, withDerived, type Ticket } from './store'
 
 // The frontier is what an agent takes off `?frontier=true`, so everything it
 // excludes is a ticket that would bounce the moment the agent touched it —
@@ -104,5 +104,28 @@ describe('shareForTicket', () => {
     expect(shareForTicket(store, ticket({ projectId: 'p2' }))).toBe(null)
     expect(shareForTicket(store, ticket({ projectId: 'gone' }))).toBe(null)
     expect(shareForTicket(store, ticket({ projectId: null }))).toBe(null)
+  })
+})
+
+describe('record-only finding tickets', () => {
+  // TICK-944: a PR review project's finding ticket records what a review found
+  // in someone else's pull request — the API's frontier never offers it.
+  const projects = [
+    { id: 'p1', mode: 'prreview' as const },
+    { id: 'p2', mode: 'standard' as const },
+  ]
+  const record = ticket({ labels: ['hitl', 'review:finding'], finding: { review: 'run-1', id: 'f1', severity: 'high', category: 'correctness' } })
+
+  it('is a finding ticket of a PR review project, and nothing else', () => {
+    expect(ticketIsRecordOnly({ projects }, record)).toBe(true)
+    expect(ticketIsRecordOnly({ projects }, ticket({ labels: ['afk', 'pr:check'] }))).toBe(false)
+    expect(ticketIsRecordOnly({ projects }, { ...record, projectId: 'p2' })).toBe(false)
+    expect(ticketIsRecordOnly({ projects }, { ...record, projectId: null })).toBe(false)
+  })
+
+  it('is left off the derived frontier while staying a plain todo', () => {
+    expect(ticketIsFrontier(record, [record], null)).toBe(true)
+    expect(withDerived(record, [record], null, ticketIsRecordOnly({ projects }, record)).frontier).toBe(false)
+    expect(withDerived(record, [record], null).frontier).toBe(true)
   })
 })

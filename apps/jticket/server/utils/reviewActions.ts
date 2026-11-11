@@ -17,7 +17,6 @@ import {
   REVIEW_EFFORTS,
   reviewPath,
   unticketedFindings,
-  type Finding,
   type PullRequest,
   type Review,
   type ReviewAgreement,
@@ -26,6 +25,7 @@ import {
   type ReviewEffort,
   type ReviewPass,
 } from '../../app/utils/reviewTypes'
+import { findingsForTickets, reviewProjectProblem } from '../../app/utils/reviewFindings'
 import { readReview, uniqueReviewKey, updateReview, writeReview } from './reviewStore'
 import {
   addReviewWorktree,
@@ -41,8 +41,9 @@ import {
 } from './reviewGit'
 import { dispatchQueuedReviewers, dispatchReviewer, dispatchTriage } from './reviewHerdr'
 import { postPrReview } from './reviewGithub'
+import { fileAgreementFindings, fileTriageFindings, stampPosted, type AgreementFiling } from './reviewTickets'
 import { JTICKET_PUBLIC } from './sandbox'
-import { findKnownRepo, loadStore } from './store'
+import { findKnownRepo, loadStore, saveStore } from './store'
 // The guide's URL as every prompt names it; sessionPrompt points it at a sandbox.
 import { worktreeGuideUrl } from '../../app/utils/prompts'
 
@@ -85,9 +86,15 @@ export interface CreateReviewInput {
  *   not) instead of looking one up by branch name, and the target defaults to
  *   its base. A PR review project's branch is a local copy of the PR head
  *   (`jreview/pr-<n>`), which no PR names.
+ * Every review belongs to a jTicket project — `project`, or a consensus
+ * review's `consensus.projectKey` — and that project has to exist: there are
+ * no standalone reviews (400 without one). Its findings become tickets on
+ * that project's board.
+ *
  * - `agreement` — { loop? }: an agreement review (needs `project`): only what
  *   every reviewer raised survives, handed back as findings with an
- *   approvability assessment — never filed as tickets. `verify: true` asks the
+ *   approvability assessment — and filed on the project as record-only
+ *   tickets as they land (fileAgreementTickets). `verify: true` asks the
  *   consensus session to have every agreed finding adversarially verified
  *   first. `context.brief` (DOC-n) and `context.checks` ([TICK-n]) are what
  *   the reviewers read before the diff.
@@ -106,7 +113,7 @@ export interface CreateReviewInput {
  * - `base` — the target / fixed point (default: the branch's open PR's base —
  *   the parent branch, for a stacked PR — else origin's default branch).
  * - `project` — the jTicket project the review belongs to (its Review tab):
- *   findings are later added to it as tickets instead of a new project.
+ *   its findings are added to it as tickets.
  *
  * Records the review with its queued reviewers — each with a pre-assigned
  * document key in the shared pool — then hands them to herdr in the
@@ -114,6 +121,10 @@ export interface CreateReviewInput {
  * there. Throws a 400 for a body it can't run.
  */
 export async function createReview(body: CreateReviewInput): Promise<{ key: string; path: string }> {
+  // No standalone reviews: the project comes first, before any git or gh work.
+  const orphan = reviewProjectProblem(body, (key) => loadStore().projects.some((p) => p.key === key))
+  if (orphan) throw createError({ statusCode: 400, message: orphan })
+
   const rawRepo = String(body.repoPath ?? '').trim()
   if (!rawRepo) throw createError({ statusCode: 400, message: 'missing `repoPath` — nothing to review' })
 
@@ -310,41 +321,27 @@ export async function retryTriage(key: string): Promise<Review | null> {
   return readReview(key)
 }
 
-/**
- * jTicket's own API, called in-process (Nitro's $fetch with a relative path
- * never leaves the server): the ticket split reuses project creation and
- * /api/import rather than re-implementing them.
- */
-async function jticketLocal<T>(path: string, opts: Record<string, unknown>): Promise<T> {
-  try {
-    return (await $fetch(path, opts as any)) as T
-  } catch (err: any) {
-    const status = err?.statusCode ?? err?.response?.status ?? 500
-    throw createError({
-      statusCode: status,
-      message: `${path} said ${status}: ${String(err?.data?.statusMessage ?? err?.data?.message ?? err?.message ?? '').slice(0, 300)}`,
-    })
-  }
-}
-
 const ticketsInFlight = new Set<string>()
 
 /**
- * The human's button: turn triaged findings into jTicket tickets. Body:
- * { findingIds?: string[], projectKey?: string } — the findings to ticket
- * (default: all of them) and the project to add them to.
+ * The human's button for a TRIAGE review: turn triaged findings into jTicket
+ * tickets on the review's own project. Body: { findingIds?: string[],
+ * projectKey?: string } — the findings to ticket (default: all of them).
  *
- * The target is `projectKey`, else the project the findings already went to,
- * else the project the review belongs to (`review.project` — jTicket's Review
- * tab), else a NEW project (repo = the reviewed repo's main checkout — a
- * review started from a worktree still lands in the codebase's own project
- * list — so the tickets are dispatchable from jTicket like any other).
- * One AFK bug ticket per finding is imported into it by key — never by title,
- * which could match an older project of the same name.
+ * The target is never a new project: it is the project the findings already
+ * went to, else the project the review belongs to (`review.project`). Only a
+ * review that predates the every-review-has-a-project rule has neither — for
+ * that one `projectKey` names an existing project to file into. A
+ * `projectKey` that disagrees with where the review belongs is refused.
  *
- * Findings that already became tickets are skipped, so the button can be
- * pressed again for the ones left over — but only into the same project.
- * Each finding records its `ticketKey`; the review flips to `ticketed`.
+ * One AFK bug ticket per finding, each carrying its finding record. Findings
+ * that already became tickets are skipped, so the button can be pressed again
+ * for the ones left over. Each finding records its `ticketKey`; the review
+ * flips to `ticketed`.
+ *
+ * Refused for a consensus review (its session files its own tickets) and for
+ * an agreement review (its findings are filed as they are handed back —
+ * fileAgreementTickets — so there is nothing to add by hand).
  */
 export async function fileReviewTickets(
   key: string,
@@ -355,6 +352,9 @@ export async function fileReviewTickets(
   if (review.consensus) {
     throw createError({ statusCode: 409, message: `review ${key} is a consensus review — its session files its own tickets` })
   }
+  if (review.agreement) {
+    throw createError({ statusCode: 409, message: `review ${key} is an agreement review — its findings are filed on ${review.project} as they are handed back; there is nothing to add by hand` })
+  }
   if (review.status !== 'triaged' && review.status !== 'ticketed') {
     throw createError({ statusCode: 409, message: `review is still ${review.status} — tickets come after triage` })
   }
@@ -363,11 +363,19 @@ export async function fileReviewTickets(
   if (asked && !PROJECT_KEY_SHAPE.test(asked)) {
     throw createError({ statusCode: 400, message: 'projectKey must be a jTicket project key (PROJ-n)' })
   }
-  const filedInto = review.tickets?.projectKey
-  if (asked && filedInto && asked !== filedInto) {
-    throw createError({ statusCode: 409, message: `this review's findings already went to ${filedInto} — add the rest there` })
+  const home = review.tickets?.projectKey || review.project || ''
+  if (asked && home && asked !== home) {
+    throw createError({
+      statusCode: 409,
+      message: review.tickets?.projectKey
+        ? `this review's findings already went to ${home} — add the rest there`
+        : `this review belongs to ${home} — its findings are tickets there`,
+    })
   }
-  const target = asked || filedInto || review.project || ''
+  const projectKey = home || asked
+  if (!projectKey) {
+    throw createError({ statusCode: 409, message: `review ${key} predates projects and belongs to none — send projectKey to file its findings into an existing project` })
+  }
 
   const wanted = Array.isArray(body.findingIds) ? new Set(body.findingIds.map(String)) : null
   const findings = unticketedFindings(review).filter((f) => !wanted || wanted.has(f.id))
@@ -378,123 +386,108 @@ export async function fileReviewTickets(
   if (ticketsInFlight.has(key)) throw createError({ statusCode: 409, message: 'already creating tickets for this review' })
   ticketsInFlight.add(key)
   try {
-    let projectKey = target
-    if (projectKey) {
-      if (!loadStore().projects.some((p) => p.key === projectKey)) {
-        throw createError({ statusCode: 404, message: `project ${projectKey} not found` })
-      }
-    } else {
-      const project = await jticketLocal<{ key: string }>('/api/projects', {
-        method: 'POST',
-        body: {
-          title: `Review: ${review.title}`,
-          repo: await mainCheckout(review.repoPath),
-          description: projectDescription(review, findings.length),
-        },
-      })
-      projectKey = project.key
-    }
-    const imported = await jticketLocal<{ tickets: { key: string }[] }>('/api/import', {
-      method: 'POST',
-      body: {
-        tickets: findings.map((f) => ({
-          title: f.title,
-          description: ticketDescription(review, f),
-          type: 'bug',
-          project: projectKey,
-          labels: ['afk', 'jreview', 'review:finding', `severity:${f.severity}`, `category:${f.category}`],
-          acceptanceCriteria: ['The failure scenario described above no longer occurs, and a test covers it'],
-        })),
-      },
-    })
-    // Import answers in the order it was sent — finding i became ticket i.
-    const byFinding = new Map(findings.map((f, i) => [f.id, imported.tickets[i]?.key]))
+    const store = loadStore()
+    const project = store.projects.find((p) => p.key === projectKey)
+    if (!project) throw createError({ statusCode: 404, message: `project ${projectKey} not found` })
+    const at = new Date().toISOString()
+    const byFinding = fileTriageFindings(store, project, review, findings, at, JTICKET_PUBLIC)
+    saveStore(store)
+
+    const added = [...byFinding.values()]
     const updated = await updateReview(key, (r) => {
       for (const f of r.findings) {
         const ticketKey = byFinding.get(f.id)
         if (ticketKey) f.ticketKey = ticketKey
       }
-      const added = [...byFinding.values()].filter((k): k is string => !!k)
       r.tickets = {
         projectKey,
         ticketKeys: [...(r.tickets?.ticketKeys ?? []), ...added],
-        createdAt: r.tickets?.createdAt ?? new Date().toISOString(),
+        createdAt: r.tickets?.createdAt ?? at,
       }
       r.status = 'ticketed'
     })
-    return {
-      ...updated.tickets!,
-      added: imported.tickets.map((t) => t.key),
-      url: `${JTICKET_PUBLIC}/projects/${projectKey}`,
-    }
+    return { ...updated.tickets!, added, url: `${JTICKET_PUBLIC}/projects/${projectKey}` }
   } finally {
     ticketsInFlight.delete(key)
   }
 }
 
-const reviewUrl = (r: Review) => `${JTICKET_PUBLIC}${reviewPath(r.key)}`
-// Reports are pool documents, read in jTicket's reader (jExplain retired).
-const docUrl = (docKey: string) => `${JTICKET_PUBLIC}/e/${docKey}`
-
-function projectDescription(r: Review, count: number): string {
-  const reports = r.reviewers
-    .filter((x) => x.status === 'done')
-    .map((x) => `[reviewer ${x.n}](${docUrl(x.docKey)})`)
-    .join(' · ')
-  return [
-    `${count} finding${count === 1 ? '' : 's'} from the jReview run [${r.title}](${reviewUrl(r)}) over \`${r.repoPath}\` (\`${r.base}...${r.branch}\`${r.pr ? `, [PR #${r.pr.number}](${r.pr.url})` : ''}).`,
-    '',
-    `Deduplicated in the [triage report](${docUrl(r.triage.docKey)}). Raw reports: ${reports || 'none'}.`,
-    '',
-    'One ticket per finding, labelled `severity:*` and `category:*`.',
-  ].join('\n')
-}
-
-function ticketDescription(r: Review, f: Finding): string {
-  const where = f.file ? `\`${f.file}${f.line ? `:${f.line}` : ''}\`` : 'not pinned to a file'
-  const by = f.reviewers.length
-    ? `reviewer${f.reviewers.length === 1 ? '' : 's'} ${f.reviewers.join(', ')}`
-    : 'the triager'
-  return [
-    `**Severity:** ${f.severity} · **Category:** ${f.category} · **Where:** ${where}`,
-    '',
-    f.summary,
-    '',
-    f.detail,
-    '',
-    '---',
-    `Raised by ${by} in jReview [${r.title}](${reviewUrl(r)}) — see the [triage report](${docUrl(r.triage.docKey)}).`,
-  ].join('\n')
+/**
+ * An agreement review's hand-back: file `review.findings` on its project as
+ * record-only tickets — or match the project's open finding tickets (a rerun,
+ * a re-POST) rather than filing duplicates — and write each ticket's key (and
+ * its posted stamp, when an earlier run posted it) onto its finding. Called
+ * inside the hand-back's updateReview, so it mutates `review` in place.
+ *
+ * A project that has since been deleted files nothing: the findings stay on
+ * the review. Returns what it filed, or null.
+ */
+export function fileAgreementTickets(review: Review): AgreementFiling | null {
+  if (!review.agreement || !review.project) return null
+  const store = loadStore()
+  const project = store.projects.find((p) => p.key === review.project)
+  if (!project) {
+    console.error(`[jticket] review ${review.key}: project ${review.project} is gone — its findings were not filed as tickets`)
+    return null
+  }
+  const at = new Date().toISOString()
+  const filing = fileAgreementFindings(store, project, review, review.findings, at, JTICKET_PUBLIC)
+  saveStore(store)
+  const tickets = new Map(store.tickets.map((t) => [t.key, t]))
+  for (const f of review.findings) {
+    const ticketKey = filing.byFinding.get(f.id)
+    if (!ticketKey) continue
+    f.ticketKey = ticketKey
+    const postedAt = tickets.get(ticketKey)?.finding?.postedAt
+    if (postedAt) f.postedAt = postedAt
+    else delete f.postedAt
+  }
+  review.tickets = {
+    projectKey: project.key,
+    ticketKeys: [...new Set(filing.byFinding.values())],
+    createdAt: review.tickets?.createdAt ?? at,
+  }
+  return filing
 }
 
 const postsInFlight = new Set<string>()
 
 /**
- * The human's "Post to PR" button. Body: { findingIds?: string[], body?: string }
- * — the findings to post (default: none) and the review's summary text, which
- * the human edits before pressing.
+ * The human's "Post to PR" button. Body: { ticketKeys?: string[], body?: string }
+ * — the FINDING TICKETS to post (default: none) and the review's summary
+ * text, which the human edits before pressing. A finding is posted through
+ * its ticket: one that is not a ticket yet cannot be picked.
  *
  * Posts ONE GitHub pull-request review with the human's gh auth — event
  * COMMENT, always (reviewGithub.ts hard-codes it; there is no way to approve
- * or request changes through here). Findings on a line the PR changes go
- * inline, the rest into the body. Each posted finding records `postedAt`, and
- * the press is logged on `review.prPosts`; a finding can be posted again (a
- * rerun's comments, a second push) — the page says it was.
+ * or request changes through here). Each picked ticket's finding goes inline
+ * when its file and line are a line the PR changes, else into the body.
+ * "Posted" is stamped on the ticket (`finding.postedAt`, the `pr:posted`
+ * label) and mirrored on the review's finding; the press is logged on
+ * `review.prPosts`. A ticket can be posted again (a rerun, a second push) —
+ * the page says it was.
  *
  * Human-only, like the ticket split: no skill or session may call it.
  */
 export async function postReviewToPr(
   key: string,
-  body: { findingIds?: unknown; body?: unknown },
-): Promise<{ url: string; inline: number; posted: number; review: Review }> {
+  body: { ticketKeys?: unknown; findingIds?: unknown; body?: unknown },
+): Promise<{ url: string; inline: number; posted: number; ticketKeys: string[]; review: Review }> {
   const review = await readReview(key)
   if (!review) throw createError({ statusCode: 404, message: `No such review: ${key}` })
   if (review.status !== 'triaged' && review.status !== 'ticketed') {
     throw createError({ statusCode: 409, message: `review is still ${review.status} — findings come first` })
   }
-  const ids = Array.isArray(body.findingIds) ? new Set(body.findingIds.map(String)) : new Set<string>()
-  const findings = review.findings.filter((f) => ids.has(f.id))
-  if (ids.size && findings.length !== ids.size) throw createError({ statusCode: 400, message: 'some of those findings are not in this review' })
+  // The body this took before findings were posted by ticket: refuse it, or
+  // its picks would be dropped and a summary-only review posted in their place.
+  if (Array.isArray(body.findingIds) && body.findingIds.length) {
+    throw createError({ statusCode: 400, message: 'findings are posted through their tickets — send `ticketKeys` (each finding\'s `ticketKey`), not `findingIds`' })
+  }
+  const asked = Array.isArray(body.ticketKeys) ? [...new Set(body.ticketKeys.map((k) => String(k).trim()).filter(Boolean))] : []
+  const { findings, missing } = findingsForTickets(review, asked)
+  if (missing.length) {
+    throw createError({ statusCode: 400, message: `not finding tickets of this review: ${missing.join(', ')} — a finding is posted through its ticket` })
+  }
   const summary = typeof body.body === 'string' ? body.body.slice(0, 60_000) : ''
 
   if (postsInFlight.has(key)) throw createError({ statusCode: 409, message: 'already posting this review to GitHub' })
@@ -502,11 +495,15 @@ export async function postReviewToPr(
   try {
     const { url, inline } = await postPrReview(review, findings, summary)
     const at = new Date().toISOString()
+    const store = loadStore()
+    const ticketKeys = stampPosted(store, review.key, findings, at, url)
+    if (ticketKeys.length) saveStore(store)
+    const ids = new Set(findings.map((f) => f.id))
     const updated = await updateReview(key, (r) => {
       for (const f of r.findings) if (ids.has(f.id)) f.postedAt = at
-      r.prPosts = [...(r.prPosts ?? []), { at, url, findingIds: findings.map((f) => f.id), inline }]
+      r.prPosts = [...(r.prPosts ?? []), { at, url, findingIds: [...ids], ticketKeys: findings.map((f) => f.ticketKey!), inline }]
     })
-    return { url, inline, posted: findings.length, review: updated }
+    return { url, inline, posted: findings.length, ticketKeys, review: updated }
   } finally {
     postsInFlight.delete(key)
   }

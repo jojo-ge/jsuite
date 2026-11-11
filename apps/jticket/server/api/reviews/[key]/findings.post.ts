@@ -9,11 +9,20 @@ import { APPROVAL_VERDICTS, SEVERITIES, reviewPath, type Finding, type ReviewAss
  * blockers[], reviewerVerdicts? } — a recommendation the human reads. Nothing
  * acts on it: jReview never approves a PR.
  *
+ * An agreement review's findings are FILED HERE, by the server, as
+ * record-only tickets on the review's project (fileAgreementTickets) — the
+ * session files nothing itself. A rerun's findings match the project's open
+ * finding tickets instead of duplicating them; a finding may name the ticket
+ * it is (`ticketKey`, one of the project's open finding tickets) when the
+ * session matched it by reading them. The response lists the tickets.
+ *
  * The only writer of `review.findings`, and the only thing that flips a
  * review to `triaged`. Validates wholesale: findings without a title are
  * dropped, severities coerced, reviewer slots clamped, ids reassigned f1…fn
  * in the order sent (the triager sends them most-severe first). Re-POSTing
- * replaces the set — until the human has split them into tickets.
+ * replaces the set — for a triage review, until the human has split them into
+ * tickets; for an agreement review any time (tickets it filed for findings
+ * the new set drops are closed as withdrawn).
  *
  * The first POST opens the review in the browser — its jTicket project's
  * Review tab when it belongs to one, else its page here. The triage session's
@@ -56,6 +65,8 @@ export default defineEventHandler(async (event) => {
       ...(raw?.scope === 'in' || raw?.scope === 'out' ? { scope: raw.scope } : {}),
       ...(raw?.verdict === 'confirmed' || raw?.verdict === 'plausible' ? { verdict: raw.verdict } : {}),
       ...(str(raw?.verification, 500) ? { verification: str(raw?.verification, 500) } : {}),
+      // An agreement review's own match to an open finding ticket — a hint the filing checks.
+      ...(current.agreement && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(str(raw?.ticketKey, 40)) ? { ticketKey: str(raw?.ticketKey, 40) } : {}),
     })
   }
 
@@ -77,20 +88,29 @@ export default defineEventHandler(async (event) => {
   }
   const count = (v: unknown) => (Number.isInteger(Number(v)) && Number(v) >= 0 ? Number(v) : undefined)
 
+  const filed: { tickets: ReturnType<typeof fileAgreementTickets> } = { tickets: null }
   const review = await updateReview(key, (r) => {
     if (r.status === 'ticketed') {
       throw createError({ statusCode: 409, message: `review ${key} was already split into ${r.tickets?.projectKey}` })
     }
-    // Re-POSTing replaces the set, but keeps what the human already did with a finding.
-    const before = new Map(r.findings.map((f) => [f.title, f]))
-    r.findings = findings.map((f) => {
-      const was = before.get(f.title)
-      return was ? { ...f, ...(was.ticketKey ? { ticketKey: was.ticketKey } : {}), ...(was.postedAt ? { postedAt: was.postedAt } : {}) } : f
-    })
     if (r.agreement) {
+      // The findings become tickets on the project now — matched to its open
+      // finding tickets, which is also what carries a re-POST's ticket keys
+      // and posted stamps over.
+      r.findings = findings
+      filed.tickets = fileAgreementTickets(r)
+      // Unfiled (the project is gone): a session's ticket hint is not a ticket.
+      if (!filed.tickets) for (const f of r.findings) delete f.ticketKey
       if (assessment) r.assessment = assessment
       r.agreement.considered = count(body.considered)
       r.agreement.kept = count(body.kept) ?? findings.length
+    } else {
+      // Re-POSTing replaces the set, but keeps what the human already did with a finding.
+      const before = new Map(r.findings.map((f) => [f.title, f]))
+      r.findings = findings.map((f) => {
+        const was = before.get(f.title)
+        return was ? { ...f, ...(was.ticketKey ? { ticketKey: was.ticketKey } : {}), ...(was.postedAt ? { postedAt: was.postedAt } : {}) } : f
+      })
     }
     r.status = 'triaged'
     r.triage.status = 'done'
@@ -98,5 +118,11 @@ export default defineEventHandler(async (event) => {
     r.triage.doneAt = new Date().toISOString()
   })
   if (current.status !== 'triaged') void openReviewInBrowser(current)
-  return { key: review.key, findings: review.findings.length, path: reviewPath(review.key) }
+  const { tickets } = filed
+  return {
+    key: review.key,
+    findings: review.findings.length,
+    path: reviewPath(review.key),
+    ...(tickets ? { projectKey: review.project, tickets: { created: tickets.created, matched: tickets.matched, withdrawn: tickets.withdrawn } } : {}),
+  }
 })

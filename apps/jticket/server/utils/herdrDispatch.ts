@@ -15,6 +15,7 @@ import {
   resolveTicketPrompt,
   type PromptOverrides,
 } from '../../app/utils/prompts'
+import { recordOnlyError } from '../../app/utils/reviewFindings'
 import { newSessionId, recordSession, sessionRow, type SessionRecord, type SessionRole } from './sessions'
 
 export interface TicketDispatch {
@@ -94,6 +95,11 @@ export async function dispatchTicketSession(
 ): Promise<TicketDispatch> {
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
+  // A PR review project's finding ticket is a record, not work: this is the
+  // one door every ticket dispatch goes through (the card's button, Run all,
+  // the review plan's /jpr-check runner), so the rule is enforced here.
+  const record = recordOnlyError(ticket, project)
+  if (record) throw createError({ statusCode: 409, statusMessage: record })
 
   // Hard invariant (spec DOC-30): no remote-originated content ever reaches a
   // dispatch endpoint. A peer-owned ticket is refused here at the API — if its
@@ -259,6 +265,8 @@ export async function dispatchBatchSession(
     if (frozen) throw createError({ statusCode: 409, statusMessage: frozen })
     const refused = peerDispatchError(ticket, project.share)
     if (refused) throw createError({ statusCode: 403, statusMessage: refused })
+    const record = recordOnlyError(ticket, project)
+    if (record) throw createError({ statusCode: 409, statusMessage: record })
   }
 
   // One appendix for the whole batch: the peer docs linked from any of its

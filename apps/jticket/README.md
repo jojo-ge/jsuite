@@ -281,8 +281,11 @@ GitHub** (the read-only `gh pr list` view, usually just the roll-up).
 
 ### Review tab (jReview)
 
-The project page's **Review** tab runs [jReview](../jreview/README.md) over the
-project's branches and turns what it finds into tickets **in this project**.
+The project page's **Review** tab runs the review engine over the project's
+branches and turns what it finds into tickets **in this project**. The rule
+(`app/utils/reviewFindings.ts`): every review belongs to a project — starting
+one without a project is refused, and nothing is ever split into a new
+project — and its findings are always tickets on that project's board.
 
 - **Start review** — `POST /api/projects/:id/reviews { branch?, base?, reviewers? }`
   proxies jReview's `POST /api/reviews` with `project: <KEY>`. The branch
@@ -304,6 +307,27 @@ project's branches and turns what it finds into tickets **in this project**.
   `severity:*`, `category:*`) into this project. jReview records each finding's
   ticket key, so a finding is never added twice and the rest can be added
   later. A review belongs to one project, and every route checks it.
+- **A PR review project's findings file themselves** — its agreement reviews
+  have no Add button: when the consensus session hands the verified findings
+  back (`POST /api/reviews/:key/findings`), the server files each one on the
+  project as a **record-only** ticket (HITL `bug`, labels `review:finding`,
+  `severity:*`, `category:*`, `scope:*`, `verdict:*`; `ticket.finding` keeps
+  the review, file, line, scope and verdict). A rerun matches the project's
+  open finding tickets — the ticket the session named, else the same title on
+  the same file, else a reworded title on the same file in the same category —
+  and updates them instead of filing duplicates (conservative on purpose: a
+  wrong match rewrites another defect's ticket). Record-only means no hand-off: the board lists them under
+  *Review findings* with no copy/herdr buttons, the ticket form shows no
+  hand-off prompt, they are never frontier (board, `?frontier=true`), Run all
+  and One session leave them out, a review plan refuses one as a check, and
+  every dispatch path answers 409 (`isRecordOnly`). Starting a triage review
+  on a PR review project is refused too — its reviews run from the plan.
+- **Post to PR picks finding tickets** —
+  `POST /api/projects/:id/reviews/:key/pr-comments { ticketKeys, body }` posts
+  one COMMENT review under your `gh` login: a ticket whose file and line are a
+  line the PR changes goes inline, the rest in the body, and each posted
+  ticket is stamped (`finding.postedAt`, label `pr:posted`). A finding that
+  isn't a ticket yet can't be posted.
 
 ### Herdr dispatch
 

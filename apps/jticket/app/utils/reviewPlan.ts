@@ -16,7 +16,10 @@
 //            wrote), then a consensus session keeps what every reviewer
 //            raised, has each finding adversarially verified, judges
 //            approvability, and hands the findings back to the Review tab —
-//            never as tickets, never to GitHub. The last step, always
+//            never to GitHub. As they land the server files each one on this
+//            project as a record-only ticket (app/utils/reviewFindings.ts): a
+//            rerun matches the open ones instead of duplicating them, and
+//            nothing ever dispatches one. The last step, always
 //
 // The plan is written by one Fable 5.2 session (`/jreview-assess`, the
 // `prreview:assess` hand-off) that reads the PR and decides how many
@@ -28,6 +31,7 @@
 // asks reviewRunStep below what to do next. Pure: no Nuxt, no I/O —
 // tests/reviewPlan.test.ts.
 import { coercePlanModel, coerceEffort, type Effort, type PlanModel } from './runPlan'
+import { isFindingTicket } from './reviewFindings'
 
 // ── The PR ──────────────────────────────────────────────────────────────────
 
@@ -190,6 +194,7 @@ export function reviewPlanProblems(plan: ReviewPlan, tickets: ReviewPlanTicket[]
     for (const k of s.tickets) {
       const t = byKey.get(k)
       if (!t) problems.push({ stepId: s.id, message: `${k} is not one of this project's tickets.` })
+      else if (isFindingTicket(t)) problems.push({ stepId: s.id, message: `${k} is a review finding — a record-only ticket, never run as a check.` })
       else if (!t.labels.includes(CHECK_LABEL)) problems.push({ stepId: s.id, message: `${k} is not a check ticket (label \`${CHECK_LABEL}\`).` })
       if (placed.has(k)) problems.push({ stepId: s.id, message: `${k} is in the plan twice — a check runs once.` })
       placed.add(k)

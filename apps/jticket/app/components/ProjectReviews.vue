@@ -10,6 +10,12 @@
 // added later and nothing is added twice. The auto loop's consensus reviews
 // show here too, read-only — their tickets were filed by the loop.
 //
+// A PR review project's agreement reviews need no press: every verified
+// finding is already a record-only ticket on this project when it lands
+// (a rerun matches the open ones), so there is no Add button. Post to PR
+// picks finding TICKETS — a finding is posted through its ticket, and the
+// ticket is what gets stamped "posted".
+//
 // Reports (triage + each reviewer's) are jExplain documents in the shared
 // pool, which jTicket serves too — they open inline.
 import type { Project } from '~/composables/useTracker'
@@ -132,7 +138,8 @@ async function act(action: 'retry-reviewer' | 'skip-reviewer' | 'retry-triage', 
 // Every open finding starts ticked; untick what you don't want.
 const deselected = ref(new Set<string>())
 watch(selectedKey, () => { deselected.value = new Set() })
-const canAdd = computed(() => !!review.value && !review.value.consensus && (review.value.status === 'triaged' || review.value.status === 'ticketed'))
+// Manual filing is a triage review's: an agreement review's findings are filed for it.
+const canAdd = computed(() => !!review.value && !review.value.consensus && !review.value.agreement && (review.value.status === 'triaged' || review.value.status === 'ticketed'))
 const openFindings = computed(() => (review.value?.findings ?? []).filter((f) => !f.ticketKey))
 const picked = computed(() => openFindings.value.filter((f) => !deselected.value.has(f.id)))
 function setPicked(id: string, on: boolean) {
@@ -198,26 +205,42 @@ const APPROVAL = {
 } as const
 
 // ── Post to PR — one COMMENT review, under your gh auth, never an approval ──
+// What you pick are finding tickets: each row is a finding of this review
+// that is a ticket, keyed by the ticket. Findings that aren't tickets yet (a
+// triage review's, before Add) can't be posted.
 const postOpen = ref(false)
 const postBody = ref('')
 const postPicked = ref(new Set<string>())
 const posting = ref(false)
 const canPost = computed(() => !!review.value?.pr && (review.value.status === 'triaged' || review.value.status === 'ticketed'))
+const postRows = computed(() =>
+  (review.value?.findings ?? [])
+    .filter((f) => !!f.ticketKey)
+    .map((f) => {
+      const ticket = ticketByKey.value.get(f.ticketKey!)
+      return { finding: f, ticketKey: f.ticketKey!, ticket, postedAt: ticket?.finding?.postedAt ?? f.postedAt ?? '' }
+    }),
+)
+const unticketedCount = computed(() => (review.value?.findings.length ?? 0) - postRows.value.length)
 function defaultPostBody(): string {
   const a = review.value?.assessment
   if (!a) return ''
   return [a.summary.trim(), a.blockers.length ? `**Before this can merge:**\n${a.blockers.map((b) => `- ${b}`).join('\n')}` : ''].filter(Boolean).join('\n\n')
 }
 function openPost() {
-  // In-scope findings not yet posted start ticked.
-  postPicked.value = new Set((review.value?.findings ?? []).filter((f) => f.scope !== 'out' && !f.postedAt).map((f) => f.id))
+  // In-scope, still-open finding tickets not yet posted start ticked.
+  postPicked.value = new Set(
+    postRows.value
+      .filter((r) => r.finding.scope !== 'out' && !r.postedAt && !(r.ticket && isFinished(r.ticket.status)))
+      .map((r) => r.ticketKey),
+  )
   postBody.value = defaultPostBody()
   postOpen.value = true
 }
-function togglePost(id: string, on: boolean) {
+function togglePost(ticketKey: string, on: boolean) {
   const next = new Set(postPicked.value)
-  if (on) next.add(id)
-  else next.delete(id)
+  if (on) next.add(ticketKey)
+  else next.delete(ticketKey)
   postPicked.value = next
 }
 async function postToPr() {
@@ -226,12 +249,12 @@ async function postToPr() {
   try {
     const res = await $fetch<{ url: string; inline: number; posted: number }>(
       `/api/projects/${props.project.id}/reviews/${review.value.key}/pr-comments`,
-      { method: 'POST', body: { findingIds: [...postPicked.value], body: postBody.value } },
+      { method: 'POST', body: { ticketKeys: [...postPicked.value], body: postBody.value } },
     )
     postOpen.value = false
     toast.add({
       title: `Posted to PR #${review.value.pr!.number}`,
-      description: `${res.posted} finding${res.posted === 1 ? '' : 's'} (${res.inline} inline) as a comment review.`,
+      description: `${res.posted} finding ticket${res.posted === 1 ? '' : 's'} (${res.inline} inline) as a comment review.`,
       color: 'success',
       icon: 'i-lucide-message-square-share',
       actions: [{ label: 'Open on GitHub', onClick: () => { window.open(res.url, '_blank') } }],
@@ -621,6 +644,7 @@ const severityCounts = computed(() => {
                   Reviewing — the merged findings land here once every reviewer has reported.
                 </template>
                 <template v-else-if="review.status === 'triaging'">Triaging — the merged findings land here.</template>
+                <template v-else-if="review.agreement">Nothing every reviewer raised survived — no finding tickets.</template>
                 <template v-else>The reviewers found nothing worth a ticket.</template>
                 <div v-if="canPost && review.findings.length === 0" class="mt-3">
                   <UButton icon="i-lucide-message-square-share" size="sm" color="neutral" variant="soft" @click="openPost">
@@ -638,7 +662,8 @@ const severityCounts = computed(() => {
                   />
                   <span class="text-sm font-semibold">Findings</span>
                   <span class="text-xs text-muted">
-                    {{ review.findings.length }}<template v-if="review.findings.length - openFindings.length">
+                    {{ review.findings.length }}<template v-if="review.agreement">
+                      · each one a record-only ticket on {{ review.tickets?.projectKey ?? project.key }}</template><template v-else-if="review.findings.length - openFindings.length">
                       · {{ review.findings.length - openFindings.length }} added to {{ review.tickets?.projectKey ?? project.key }}</template>
                   </span>
                   <UButton
@@ -691,31 +716,43 @@ const severityCounts = computed(() => {
         <div v-if="review" class="space-y-3">
           <p class="text-xs text-muted">
             One GitHub review, posted with your <span class="font-mono">gh</span> login, as a <b>comment</b> — never an approval and
-            never a change request. Findings on a line the PR changes go inline; the rest go into the body.
+            never a change request. You pick finding tickets: one on a line the PR changes goes inline, the rest go into the
+            body, and each posted ticket is stamped.
           </p>
           <UFormField label="Summary" hint="markdown — edit freely">
             <UTextarea v-model="postBody" :rows="6" autoresize class="w-full font-mono text-xs" placeholder="What you want the author to read first" />
           </UFormField>
-          <div v-if="review.findings.length" class="space-y-1">
-            <p class="text-xs font-semibold text-muted">Findings · {{ postPicked.size }} of {{ review.findings.length }}</p>
+          <div v-if="postRows.length" class="space-y-1">
+            <p class="text-xs font-semibold text-muted">Finding tickets · {{ postPicked.size }} of {{ postRows.length }}</p>
             <label
-              v-for="f in review.findings"
-              :key="f.id"
+              v-for="r in postRows"
+              :key="r.ticketKey"
               class="flex cursor-pointer items-start gap-2 rounded-md border border-default px-2.5 py-1.5 text-sm"
-              :class="postPicked.has(f.id) ? '' : 'opacity-60'"
+              :class="postPicked.has(r.ticketKey) ? '' : 'opacity-60'"
             >
-              <UCheckbox :model-value="postPicked.has(f.id)" class="mt-0.5" @update:model-value="togglePost(f.id, !!$event)" />
+              <UCheckbox :model-value="postPicked.has(r.ticketKey)" class="mt-0.5" @update:model-value="togglePost(r.ticketKey, !!$event)" />
               <span class="min-w-0 flex-1">
-                <span class="font-medium">[{{ f.severity }}] {{ f.title }}</span>
+                <span class="flex items-center gap-2">
+                  <span class="shrink-0 font-mono text-xs text-muted">{{ r.ticketKey }}</span>
+                  <span class="min-w-0 flex-1 font-medium">[{{ r.finding.severity }}] {{ r.finding.title }}</span>
+                  <UBadge v-if="r.ticket" :color="STATUS_META[r.ticket.status].color" variant="subtle" size="sm" class="shrink-0">
+                    {{ STATUS_META[r.ticket.status].label }}
+                  </UBadge>
+                </span>
                 <span class="block text-xs text-dimmed">
-                  <template v-if="f.file && f.line"><span class="font-mono">{{ f.file }}:{{ f.line }}</span> · inline if the PR changes that line</template>
+                  <template v-if="r.finding.file && r.finding.line"><span class="font-mono">{{ r.finding.file }}:{{ r.finding.line }}</span> · inline if the PR changes that line</template>
                   <template v-else>in the body</template>
-                  <template v-if="f.scope === 'out'"> · pre-existing</template>
-                  <template v-if="f.postedAt"> · already posted {{ agoLabel(f.postedAt, now) }}</template>
+                  <template v-if="r.finding.scope === 'out'"> · pre-existing</template>
+                  <template v-if="r.postedAt"> · already posted {{ agoLabel(r.postedAt, now) }}</template>
                 </span>
               </span>
             </label>
           </div>
+          <p v-if="unticketedCount" class="text-xs text-muted">
+            {{ unticketedCount }} finding{{ unticketedCount === 1 ? ' isn’t a ticket' : 's aren’t tickets' }} yet —
+            <template v-if="review.agreement">this review ran before findings were filed as tickets; rerun it to file and post {{ unticketedCount === 1 ? 'it' : 'them' }}.</template>
+            <template v-else>add {{ unticketedCount === 1 ? 'it' : 'them' }} to {{ project.key }} first to post {{ unticketedCount === 1 ? 'it' : 'them' }}.</template>
+          </p>
           <p v-if="review.prPosts?.length" class="text-xs text-muted">
             Posted before:
             <template v-for="(p, i) in review.prPosts" :key="p.at">

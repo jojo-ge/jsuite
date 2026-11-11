@@ -81,18 +81,20 @@ const deselected = ref(new Set<string>())
 const openFindings = computed(() => (review.value ? unticketedFindings(review.value) : []))
 const selectedCount = computed(() => openFindings.value.filter((f) => !deselected.value.has(f.id)).length)
 // Where the button files them: wherever the first batch went, else the
-// project the review belongs to, else a new project.
+// project the review belongs to. Never a new project — a review that predates
+// projects (it has neither) gets no button here.
 const ticketTarget = computed(() => review.value?.tickets?.projectKey ?? review.value?.project ?? null)
 function setSelected(id: string, on: boolean) {
   const next = new Set(deselected.value)
   on ? next.delete(id) : next.add(id)
   deselected.value = next
 }
-// An agreement review's findings go to the PR from the project's Review tab,
-// never into tickets from here.
+// A triage review's button only: a consensus review's session files its own
+// tickets, and an agreement review's findings are filed on its project as
+// they land (and go to the PR from the project's Review tab).
 const canTicket = computed(() => {
   const r = review.value
-  return !!r && !r.consensus && !r.agreement && (r.status === 'triaged' || (r.status === 'ticketed' && openFindings.value.length > 0))
+  return !!r && !!ticketTarget.value && !r.consensus && !r.agreement && (r.status === 'triaged' || (r.status === 'ticketed' && openFindings.value.length > 0))
 })
 
 // ── Actions ──────────────────────────────────────────────────────────────────
@@ -139,11 +141,11 @@ async function splitIntoTickets() {
   const ids = openFindings.value.filter((f) => !deselected.value.has(f.id)).map((f) => f.id)
   const n = `${ids.length} ticket${ids.length === 1 ? '' : 's'}`
   const target = ticketTarget.value
-  if (!window.confirm(target ? `Add ${n} to ${target}?` : `Create a new project with ${n}?`)) return
+  if (!target || !window.confirm(`Add ${n} to ${target}?`)) return
   busy.value = 'tickets'
   try {
     const res = await $fetch<{ projectKey: string }>(api('/tickets'), { method: 'POST', body: { findingIds: ids } })
-    toast.add({ title: target ? `Added to ${res.projectKey}` : `${res.projectKey} created`, description: n, icon: 'i-lucide-ticket', color: 'success' })
+    toast.add({ title: `Added to ${res.projectKey}`, description: n, icon: 'i-lucide-ticket', color: 'success' })
   } catch (err) {
     fail('Could not create tickets', err)
   } finally {
@@ -176,7 +178,7 @@ const statusColor = computed(() => {
   return s === 'ticketed' ? 'success' : s === 'triaged' ? 'warning' : 'primary'
 })
 // Back to where the review belongs: its project's Review tab.
-const projectKey = computed(() => review.value?.project ?? review.value?.consensus?.projectKey ?? null)
+const projectKey = computed(() => (review.value ? reviewProjectKey(review.value) : '') || null)
 const projectLink = computed(() =>
   projectKey.value ? `/projects/${encodeURIComponent(projectKey.value)}?tab=review&review=${encodeURIComponent(key.value)}` : null,
 )
@@ -324,6 +326,10 @@ const projectLink = computed(() =>
                 <p v-if="review.consensus" class="mt-1 text-xs text-muted">
                   Filed by the consensus session for {{ review.consensus.loop ? `auto loop ${review.consensus.loop}` : 'the project' }}.
                 </p>
+                <p v-else-if="review.agreement" class="mt-1 text-xs text-muted">
+                  Filed as the findings landed — record-only tickets, never dispatched. Post them to the PR from
+                  <NuxtLink v-if="projectLink" :to="projectLink" class="text-primary hover:underline">{{ projectKey }}'s Review tab</NuxtLink><template v-else>the project's Review tab</template>.
+                </p>
               </template>
               <template v-if="canTicket">
                 <p class="mb-2 text-muted" :class="review.tickets && 'mt-2'">
@@ -331,7 +337,7 @@ const projectLink = computed(() =>
                 </p>
                 <UButton
                   icon="i-lucide-ticket"
-                  :label="ticketTarget ? `Add to ${ticketTarget}` : 'Split into a new project'"
+                  :label="`Add to ${ticketTarget}`"
                   :disabled="!selectedCount"
                   :loading="busy === 'tickets'"
                   block
@@ -341,12 +347,16 @@ const projectLink = computed(() =>
               <p v-else-if="review.consensus && !review.tickets" class="text-muted">
                 Filed straight into {{ review.consensus.projectKey }} — one ticket per finding every reviewer raised.
               </p>
-              <p v-else-if="review.agreement" class="text-muted">
-                An agreement review files no tickets here: post its findings to the PR from
-                <NuxtLink v-if="projectLink" :to="projectLink" class="text-primary hover:underline">{{ projectKey }}'s Review tab</NuxtLink><template v-else>the project's Review tab</template>.
+              <p v-else-if="review.agreement && !review.tickets" class="text-muted">
+                Every finding the reviewers agree on is filed on {{ projectKey ?? 'the project' }} as a record-only ticket when the
+                consensus session hands it back.
+              </p>
+              <p v-else-if="!review.tickets && ticketTarget" class="text-muted">
+                Yours to press once triage is in — one ticket per finding, added to {{ ticketTarget }}.
               </p>
               <p v-else-if="!review.tickets" class="text-muted">
-                Yours to press once triage is in — one ticket per finding, {{ review.project ? `added to ${review.project}` : 'in a new project' }}.
+                This review predates projects and belongs to none, so its findings have no board to land on. New reviews always
+                start from a project.
               </p>
             </div>
           </section>

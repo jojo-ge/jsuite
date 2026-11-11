@@ -9,8 +9,9 @@ disable-model-invocation: true
 
 jReview ran several independent reviewer sessions over the same diff. Each
 published its report as a jExplain document. Your job is to **dedupe**: turn
-N overlapping reports into one clean list of findings the human can split
-into tickets. You run in the reviewed repo (cwd), so you can check the code.
+N overlapping reports into one clean list of findings the human can add to
+the review's project as tickets. You run in the reviewed repo (cwd), so you
+can check the code.
 
 Argument: the review key.
 
@@ -107,8 +108,8 @@ tickets (your findings would be discarded — stop).
 
 Then reply with one line — "N reported → M distinct" plus the review's URL
 (`https://jticket.local/reviews/<key>`) — and stop. **Don't create tickets.** The
-human decides that on the review's page. Don't open the page or close this
-pane either: the first POST opens the review in the browser — its jTicket
-project's Review tab when `review.project` is set, else its review page (a
-re-POST doesn't) — and the review engine closes this pane (and the reviewers')
-once you've gone idle.
+human picks which findings become tickets on the review's project
+(`review.project` — every review belongs to one), in that project's Review
+tab. Don't open the page or close this pane either: the first POST opens the
+review in the browser on that Review tab (a re-POST doesn't), and the review
+engine closes this pane (and the reviewers') once you've gone idle.

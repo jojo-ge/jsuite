@@ -1,20 +1,17 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review plan), verify them adversarially, judge approvability and hand them back as findings.
+description: Close a consensus jReview run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review plan), verify them adversarially, judge approvability and hand them back as findings, which jTicket files on the PR review project as record-only tickets.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---
 
 # jreview-consensus
 
-jTicket's auto loop asked jReview for a **consensus review**: several reviewers
-ran independently over the same diff (this loop's changes) and each published a
-jExplain report. Your job is to find the findings **every** reviewer raised and
-turn each one into a jTicket ticket — one the loop implements next, or, when
-it's outside the project's goal, one the human decides on. Anything only
-some reviewers raised is dropped — agreement is the filter. You run in the
-reviewed checkout (cwd), so you can read the code. jReview runs this session
-on Sonnet 5: match and file, don't re-review.
+Several reviewers ran independently over the same diff and each published a
+jExplain report. Your job is to find the findings **every** reviewer raised.
+Anything only some reviewers raised is dropped — agreement is the filter. You
+run in the reviewed checkout (cwd), so you can read the code. Don't add
+findings of your own.
 
 Argument: the review key.
 
@@ -22,14 +19,18 @@ API: jTicket — the review engine included — through the `jt` CLI
 (`jt project KEY`, `jt projects --json`, `jt post PATH JSON|@file|-`, `jt new`,
 `jt set` — `jt` alone prints the verbs). Never hand-build curl against :43000.
 
-**Write no triage document and POST no findings to jReview.** The tickets are
-the output; jReview only records their keys.
+The run is one of two kinds, and §1 tells you which. Every review belongs to
+a jTicket project and its findings always end up as tickets there — the two
+kinds differ in who files them and what the tickets are for:
 
-**An agreement review is different** — read §1, then follow §A instead of
-§2a–§4. It is a PR review project's run: the code is someone else's pull
-request, so **nothing is filed and nothing is fixed**; the agreed findings
-go back to jReview as findings, with your approvability assessment, and the
-human decides what to post to the PR.
+| | **Consensus review** (`consensus` is set) | **Agreement review** (`agreement` is set) |
+| --- | --- | --- |
+| Who asked | jTicket's auto loop or a run plan — the diff is this loop's own changes | a PR review project's review plan — the diff is someone else's pull request |
+| You run on | Sonnet 5 — match and file, don't re-review | Opus 5.5 — you also verify each finding and judge approvability |
+| Follow | §2 (or §2a) → §3 → §4 | §A, in place of §2a–§4 |
+| Tickets | **you** file one per agreed finding (§3) — work the loop implements next, or the human decides on | **jTicket** files one per finding you hand back (§A5) — record-only, never dispatched, nothing is fixed. You file none |
+| You write | no document | the consensus document (§A4) |
+| You POST | the ticket keys to `/consensus` (§4) — never `/findings` | the findings + assessment to `/findings` (§A5) — never `/consensus` |
 
 ## 1. Read the run
 
@@ -188,9 +189,11 @@ the reviewers') once you've gone idle.
 
 ## A. An agreement review — verify, assess, hand back
 
-Everything here replaces §2a–§4: **no tickets, no follow-ups project, no
-/consensus POST, and never anything on GitHub** (no `gh pr review`, no
-`gh pr comment`, no approval — that is the human's, always).
+Everything here replaces §2a–§4: **you file no tickets** (no `/api/import`, no
+`jt new` — jTicket files each finding you hand back in §A5 as a record-only
+ticket on `project`), **no follow-ups project, no /consensus POST, and never
+anything on GitHub** (no `gh pr review`, no `gh pr comment`, no approval —
+that is the human's, always).
 
 ### A1. Match
 
@@ -200,6 +203,22 @@ when the code shows it plainly wrong. Scope: an agreed finding is `in` when
 any reviewer marked it in or it sits in code the PR adds or changes,
 otherwise `out` (pre-existing) — keep both, marked. Count `considered` (the
 distinct findings you weighed).
+
+**A rerun.** The project may already hold finding tickets from an earlier
+run of this PR's review. Read the open ones:
+
+```sh
+jt ls projectId=<project> --json \
+  | jq '[.[] | select((.labels | index("review:finding")) and (.status == "todo" or .status == "in_progress")) | {key, title, where: .finding.file, line: .finding.line}]'
+```
+
+When an agreed finding is the same defect as one of them — same root cause
+at the same place, however the title is worded now — send that ticket's key
+as the finding's `ticketKey` in §A5, and jTicket updates that ticket instead
+of filing a duplicate. No match → leave `ticketKey` out. (jTicket also
+matches by title and file on its own; your `ticketKey` is for the ones only
+a reader can tell are the same.) Never close, edit or comment on those
+tickets yourself.
 
 **Checks.** Read each ticket in `context.checks` (`jt show <key>` — the
 resolution opens with `**Verdict:** pass | fail | concern | inconclusive`). A
@@ -286,7 +305,8 @@ which is what the review plan waits on:
       "reviewers": [1, 2, 3],
       "scope": "in",
       "verdict": "confirmed",
-      "verification": "Ran the client against a stub returning 429 three times: four requests in 40ms."
+      "verification": "Ran the client against a stub returning 429 three times: four requests in 40ms.",
+      "ticketKey": "TICK-41"
     }
   ],
   "assessment": { "verdict": "request-changes", "summary": "…", "blockers": ["…"], "reviewerVerdicts": [{ "n": 1, "verdict": "request-changes" }] },
@@ -300,7 +320,19 @@ jt post /api/reviews/<key>/findings @findings.json
 ```
 
 Most severe first; `file`/`line` must be the PR's new-side path and line (they
-become inline comments when the human posts). Zero survivors is normal —
-POST `"findings": []` with the assessment. Then reply with one line —
-"N raised → M agreed → K verified (R refuted) · <verdict>" plus the review's URL — and
-stop. The POST opens the project's Review tab; jReview closes this pane.
+become inline comments when the human posts). `ticketKey` only for a finding
+you matched to an open finding ticket in §A1 — omit it otherwise. Zero
+survivors is normal — POST `"findings": []` with the assessment.
+
+The POST is also what files the tickets: jTicket turns each finding into a
+record-only ticket on `project` carrying its scope, verdict, file and line
+(or updates the open ticket it matched), and answers with
+`tickets: { created, matched, withdrawn }`. Those tickets are records of what
+was found in someone else's PR — nothing dispatches them and nobody fixes
+them here; the human picks which to post to the PR. A re-POST replaces the
+set, and closes the tickets it filed for findings you dropped.
+
+Then reply with one line —
+"N raised → M agreed → K verified (R refuted) · <verdict> · tickets …" plus the
+review's URL — and stop. The POST opens the project's Review tab; jReview
+closes this pane.

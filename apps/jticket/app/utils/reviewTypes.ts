@@ -8,12 +8,15 @@
 // jExplain document at a pre-assigned key in the shared pool. jReview watches
 // those keys; when every reviewer's document has landed it dispatches one
 // triage session, which dedupes the findings, publishes a triage document and
-// POSTs the merged findings back here. Turning findings into jTicket tickets
-// is the human's button — no agent does it.
+// POSTs the merged findings back here.
 //
-// A PROJECT review (jTicket's Review tab) runs the same pipeline but belongs to
-// one jTicket project: the human adds findings to THAT project as tickets —
-// a few at a time if they like — instead of splitting them into a new one.
+// EVERY review belongs to one jTicket project, and its findings are tickets on
+// that project's board — there are no standalone reviews, and nothing is ever
+// split into a new project (app/utils/reviewFindings.ts has the rules). The
+// three kinds differ in who files them:
+//
+// A TRIAGE review (jTicket's Review tab) — the human adds findings to the
+// project as tickets, a few at a time if they like. No agent does it.
 //
 // A CONSENSUS review (jTicket's auto loop) skips all of that: once every
 // reviewer is in, a consensus session keeps only the findings every reviewer
@@ -22,10 +25,13 @@
 //
 // An AGREEMENT review (a PR review project's run plan) filters the same way —
 // only what every reviewer raised survives — but hands the agreed findings
-// back here as findings, with an approvability assessment, instead of filing
-// tickets: the code under review is someone else's pull request, so nothing
-// is fixed. The human reads them in jTicket's Review tab and decides what to
-// post to the PR (always as a COMMENT review — jReview never approves).
+// back here as findings, with an approvability assessment. The server files
+// each one on the project as a RECORD-ONLY ticket as it lands (a rerun
+// matches the project's open finding tickets rather than duplicating them):
+// the code under review is someone else's pull request, so nothing is fixed
+// and those tickets are never dispatched. The human reads them in jTicket's
+// Review tab and picks which finding tickets to post to the PR (always as a
+// COMMENT review — jReview never approves).
 //
 // Any consensus or agreement review may ask for ADVERSARIAL VERIFICATION
 // (`verify`): before anything is filed or handed back, the consensus session
@@ -63,8 +69,8 @@ export interface ReviewContext {
 
 /**
  * Set on an agreement review (see the header): findings every reviewer raised
- * are handed back as findings, never filed as tickets. `considered`/`kept`
- * are the consensus session's counts.
+ * are handed back as findings and filed on the project as record-only
+ * tickets. `considered`/`kept` are the consensus session's counts.
  */
 export interface ReviewAgreement {
   /** The run-plan run that asked, for titles. */
@@ -93,6 +99,8 @@ export interface ReviewPrPost {
   /** The GitHub review's html_url. */
   url: string
   findingIds: string[]
+  /** The finding tickets that were picked (posts from before findings were posted by ticket have none). */
+  ticketKeys?: string[]
   /** How many went as inline comments (the rest are in the review body). */
   inline: number
 }
@@ -102,9 +110,9 @@ export type ReviewStatus =
   | 'reviewing'
   /** Every reviewer is finished; the triage (or consensus) session is running. */
   | 'triaging'
-  /** Merged findings are in; waiting on the human's to-jTicket button. */
+  /** Merged findings are in: a triage review waits on the human's Add button; an agreement review's are already tickets. */
   | 'triaged'
-  /** Findings were split into a jTicket project (or, for a consensus review, filed into the caller's). */
+  /** A triage review's findings were added to its project (or, for a consensus review, filed into the caller's). */
   | 'ticketed'
 
 export type ReviewerStatus =
@@ -164,7 +172,7 @@ export interface Finding {
   detail: string
   /** Reviewer slots that raised it — more than one means it was a duplicate. */
   reviewers: number[]
-  /** The jTicket ticket this finding became, once the human added it. */
+  /** The jTicket ticket this finding is — added by the human (triage), or filed as it landed (agreement). */
   ticketKey?: string
   /** Agreement review: whether the PR introduced it ('in') or it was there before ('out'). */
   scope?: 'in' | 'out'
@@ -172,7 +180,7 @@ export interface Finding {
   verdict?: 'confirmed' | 'plausible'
   /** One line: the evidence the verifier found. */
   verification?: string
-  /** When it was posted to the PR. */
+  /** When it was posted to the PR — a mirror of its ticket's stamp (`ticket.finding.postedAt`). */
   postedAt?: string
 }
 
@@ -267,9 +275,10 @@ export interface Review {
   effort?: ReviewEffort
   context?: ReviewContext
   /**
-   * The jTicket project this review belongs to, when jTicket's Review tab
-   * started it: findings are added to it as tickets rather than a new project,
-   * and the finished review opens there instead of here.
+   * The jTicket project this review belongs to — every review has one (a
+   * consensus review's is `consensus.projectKey`; only records from before
+   * that rule have neither). Its findings are tickets there, and the finished
+   * review opens on that project's Review tab.
    */
   project?: string
   createdAt: string
@@ -307,7 +316,7 @@ export interface ReviewMeta {
 export const PROJECT_KEY_SHAPE = /^[A-Za-z][A-Za-z0-9]*-\d+$/
 
 /**
- * Findings that can still become tickets. A review split before findings
+ * A triage review's findings that can still become tickets. A review split before findings
  * carried `ticketKey` recorded only the ticket keys, not which findings were
  * picked — treat it as fully split, or a second press would duplicate them.
  */

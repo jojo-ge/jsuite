@@ -14,6 +14,12 @@ export default defineEventHandler(async (event) => {
   const store = loadStore()
   const project = store.projects.find((p) => p.id === id || p.key === id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
+  // A PR review project's reviews are its review plan's agreement reviews: a
+  // triage review here would file work tickets on a board whose finding
+  // tickets are record-only.
+  if (project.mode === 'prreview') {
+    throw createError({ statusCode: 409, statusMessage: `${project.key} is a PR review project — its reviews run from the review plan (Review setup), not from here` })
+  }
 
   const path = resolveRepoDir(project.repo)
   const branch = (body.branch ?? '').trim() || project.integrationBranch.trim()

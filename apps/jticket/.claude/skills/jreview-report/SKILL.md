@@ -25,10 +25,12 @@ Sonnet subagent builds and publishes the document.
 ## Rules
 
 - Report only. Don't fix code, don't commit, don't create tickets. Tickets
-  come later and are not yours: a consensus review's consensus session files
-  the agreed findings; a plain review is triaged, then the human splits the
-  findings into tickets from the review's page in jTicket (or from the
-  project's Review tab, when the review belongs to a project).
+  come later and are not yours: every review belongs to a jTicket project and
+  its findings become tickets there — a consensus review's consensus session
+  files the agreed findings; an agreement review's (a PR review project's)
+  are filed by jTicket as record-only tickets when they are handed back; a
+  plain review is triaged, then the human adds findings to the project from
+  its Review tab.
 - If the review found nothing, still dump it (no FINDING sections) — the
   document must still land, or triage waits on you forever.
 - Never publish a draft or a placeholder yourself — a partial document ends

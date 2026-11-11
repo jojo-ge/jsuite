@@ -3,6 +3,8 @@ import type { AutoLoop } from '~/utils/autoLoop'
 import type { RunPlan, RunPlanBuild } from '~/utils/runPlan'
 import type { PrReview } from '~/utils/reviewPlan'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
+// Relative, like diffTarget below: vitest runs this file without Nuxt's `~` alias.
+import { isRecordOnly, type TicketFinding } from '../utils/reviewFindings'
 import { diffTabUrl, ticketDiffTarget } from '../utils/diffTarget'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
@@ -109,6 +111,9 @@ export interface Ticket {
   // marker awaiting the transferor's next pull. transferAt stamps the offer.
   transfer: '' | 'pending' | 'declined'
   transferAt: string
+  // Set on a ticket a review finding became — see ~/utils/reviewFindings.ts.
+  // In a PR review project such a ticket is record-only: no hand-off.
+  finding?: TicketFinding
   createdAt: string
   updatedAt: string
   // Derived flags the GET endpoints attach (never persisted). Optional so a
@@ -385,13 +390,20 @@ export function isOpenWork(ticket: Ticket, all: Ticket[]): boolean {
 // take whatever `?frontier=true` serves, and TICK-312 is what the drift cost.
 // The project is required and nullable, like every other ownership guard, so a
 // new call site cannot quietly drop it and reopen the gap.
+//
+// A PR review project's finding ticket is never frontier either (isRecordOnly,
+// ~/utils/reviewFindings.ts): it records what a review found in someone else's
+// pull request, and nothing takes or dispatches it. The server's GET routes
+// say the same (ticketIsRecordOnly).
+export type FlowProject = Pick<Project, 'share'> & { mode?: ProjectMode }
 export function isFrontier(
   ticket: Ticket,
   all: Ticket[],
-  project: Pick<Project, 'share'> | null | undefined,
+  project: FlowProject | null | undefined,
 ): boolean {
   if (peerNameOf(ticket, project)) return false
   if (ticket.transfer) return false
+  if (isRecordOnly(ticket, project?.mode)) return false
   return isOpenWork(ticket, all)
 }
 
@@ -402,7 +414,9 @@ export function isFrontier(
 // the graph calls something else is the bug TICK-312 was.
 //
 // `notTakeable` is real, ready work that only the other side can start: the
-// peer's half of a shared project, or a ticket frozen mid-ownership-transfer.
+// peer's half of a shared project, or a ticket frozen mid-ownership-transfer —
+// and a PR review project's open finding tickets, which are records nobody
+// starts (the board pulls those into a group of their own).
 // It sits between frontier and claimed because it is neither — calling it
 // takeable offers a hand-off the API refuses, and calling it in progress says
 // someone is working it when nobody is. On a local-only project it is always
@@ -412,7 +426,7 @@ export type TicketBucket = 'frontier' | 'claimed' | 'notTakeable' | 'blocked' | 
 export function bucketOf(
   ticket: Ticket,
   all: Ticket[],
-  project: Pick<Project, 'share'> | null | undefined,
+  project: FlowProject | null | undefined,
 ): TicketBucket {
   if (isFinished(ticket.status)) return 'done'
   if (isBlocked(ticket, all)) return 'blocked'
@@ -434,7 +448,7 @@ export function bucketOf(
 export function isNextFrontier(
   ticket: Ticket,
   all: Ticket[],
-  project: Pick<Project, 'share'> | null | undefined,
+  project: FlowProject | null | undefined,
 ): boolean {
   if (bucketOf(ticket, all, project) !== 'blocked') return false
   const open = ticket.blockedBy
@@ -449,7 +463,7 @@ export function isNextFrontier(
 export function blockerTone(
   blocker: Ticket,
   all: Ticket[],
-  project: Pick<Project, 'share'> | null | undefined,
+  project: FlowProject | null | undefined,
 ): 'success' | 'info' | 'error' {
   if (isFinished(blocker.status)) return 'success'
   return bucketOf(blocker, all, project) === 'claimed' ? 'info' : 'error'
@@ -463,7 +477,7 @@ export function blockerTone(
 export function bucketCountsOf(
   tickets: Ticket[],
   all: Ticket[],
-  project: Pick<Project, 'share'> | null | undefined,
+  project: FlowProject | null | undefined,
 ): Record<TicketBucket, number> {
   const counts: Record<TicketBucket, number> = { frontier: 0, claimed: 0, notTakeable: 0, blocked: 0, done: 0 }
   for (const t of tickets) counts[bucketOf(t, all, project)]++

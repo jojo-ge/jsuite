@@ -61,10 +61,15 @@ type BucketKey = TicketBucket
 // waiting on work nobody has started, and keeps the folded Blocked rows.
 // Everywhere else (digest, graph, project bars) a next-frontier ticket is still
 // just blocked; see isNextFrontier.
-type GroupKey = BucketKey | 'next'
+// `records` is the board's own group, not a flow state: a PR review project's
+// open finding tickets (isRecordOnly). They record what a review found in
+// someone else's pull request — nothing to take, run or hand off — so they are
+// kept out of the frontier and every run control, and shown as cards of their
+// own with no hand-off.
+type GroupKey = BucketKey | 'next' | 'records'
 const BUCKET_ORDER: BucketKey[] = ['frontier', 'claimed', 'notTakeable', 'blocked', 'done']
-const GROUP_ORDER: GroupKey[] = ['frontier', 'claimed', 'notTakeable', 'next', 'blocked', 'done']
-const CARD_GROUPS: GroupKey[] = ['frontier', 'claimed', 'next']
+const GROUP_ORDER: GroupKey[] = ['frontier', 'claimed', 'records', 'notTakeable', 'next', 'blocked', 'done']
+const CARD_GROUPS: GroupKey[] = ['frontier', 'claimed', 'records', 'next']
 const BUCKET_META: Record<GroupKey, { label: string; icon: string; dot: string; text: string; hint: string }> = {
   frontier: { label: 'Frontier', icon: 'i-lucide-flag', dot: 'bg-primary', text: 'text-primary', hint: 'takeable now' },
   claimed: { label: 'In progress', icon: 'i-lucide-loader', dot: 'bg-info', text: 'text-info', hint: 'claimed' },
@@ -72,14 +77,18 @@ const BUCKET_META: Record<GroupKey, { label: string; icon: string; dot: string; 
   // anything frozen mid-transfer. Muted like Blocked: it is not yours to act
   // on, and the card underneath already says whose it is.
   notTakeable: { label: 'Not takeable here', icon: 'i-lucide-user-lock', dot: 'bg-warning', text: 'text-warning', hint: 'the peer’s, or frozen mid-transfer' },
+  records: { label: 'Review findings', icon: 'i-lucide-scan-search', dot: 'bg-warning', text: 'text-warning', hint: 'records of what the review found — nothing to run; post them to the PR from the Review tab' },
   next: { label: 'Next frontier', icon: 'i-lucide-flag-triangle-right', dot: 'bg-secondary', text: 'text-secondary', hint: 'unblocked by what’s running' },
   blocked: { label: 'Blocked', icon: 'i-lucide-lock', dot: 'bg-error', text: 'text-error', hint: 'waiting on a blocker' },
   done: { label: 'Resolved', icon: 'i-lucide-check', dot: 'bg-success', text: 'text-success', hint: 'decided' },
 }
 
+// An open finding ticket of a PR review project — a record, never work.
+const isRecord = (t: Ticket) => isRecordOnly(t, props.project?.mode) && !isFinished(t.status)
+const records = computed(() => props.tickets.filter(isRecord).sort(byKey))
 const bucketed = computed(() => {
   const groups: Record<BucketKey, Ticket[]> = { frontier: [], claimed: [], notTakeable: [], blocked: [], done: [] }
-  for (const t of props.tickets) groups[bucketOf(t, props.allTickets, props.project)].push(t)
+  for (const t of props.tickets) if (!isRecord(t)) groups[bucketOf(t, props.allTickets, props.project)].push(t)
   for (const g of Object.values(groups)) g.sort(byKey)
   return groups
 })
@@ -94,12 +103,14 @@ const stillBlocked = computed(() =>
 )
 const grouped = computed<Record<GroupKey, Ticket[]>>(() => ({
   ...bucketed.value,
+  records: records.value,
   next: nextFrontier.value,
   blocked: stillBlocked.value,
 }))
 const counts = computed(() => ({
   frontier: bucketed.value.frontier.length,
   claimed: bucketed.value.claimed.length,
+  records: records.value.length,
   notTakeable: bucketed.value.notTakeable.length,
   next: nextFrontier.value.length,
   blocked: stillBlocked.value.length,
@@ -110,7 +121,11 @@ const boardGroups = computed(() =>
     .map((key) => ({ key, ...BUCKET_META[key], tickets: grouped.value[key] }))
     .filter((g) => g.tickets.length),
 )
-const digestRows = computed(() => BUCKET_ORDER.flatMap((key) => bucketed.value[key]))
+const digestRows = computed(() => [
+  ...BUCKET_ORDER.filter((key) => key !== 'done').flatMap((key) => bucketed.value[key]),
+  ...records.value,
+  ...bucketed.value.done,
+])
 
 // The Blocked rows, split by the jButton's flow (utils/autoForecast.ts): which
 // loop's frontier each one joins, and what no loop reaches. Standard projects
@@ -165,8 +180,8 @@ function archOf(t: Ticket) {
 function regrillable(t: Ticket) {
   return mode.value === 'architect' && isArchCandidate(t) && !!props.project && herdrUp.value
 }
-function stateOf(t: Ticket): BucketKey {
-  return bucketOf(t, props.allTickets, props.project)
+function stateOf(t: Ticket): GroupKey {
+  return isRecord(t) ? 'records' : bucketOf(t, props.allTickets, props.project)
 }
 
 // ── Hand-off + herdr, via useHerdrDispatch ──
@@ -318,6 +333,10 @@ function dispatchFor(t: Ticket) {
         <span class="text-muted">·</span>
         <span :class="counts.claimed ? 'text-info' : 'text-muted'">{{ counts.claimed }} in progress</span>
         <span class="text-muted">·</span>
+        <template v-if="counts.records">
+          <span class="text-warning">{{ counts.records }} review {{ counts.records === 1 ? 'finding' : 'findings' }}</span>
+          <span class="text-muted">·</span>
+        </template>
         <template v-if="counts.notTakeable">
           <span class="text-warning">{{ counts.notTakeable }} not takeable here</span>
           <span class="text-muted">·</span>
@@ -498,7 +517,7 @@ function dispatchFor(t: Ticket) {
               :ticket="t"
               :tickets="allTickets"
               :architect="mode === 'architect'"
-              :dispatch="g.key !== 'next' && project ? dispatchFor(t) : null"
+              :dispatch="g.key !== 'next' && g.key !== 'records' && project ? dispatchFor(t) : null"
               :selectable="g.key === 'frontier' && !!project && herdrUp"
               :selected="picked.has(t.id)"
               @edit="emit('edit-ticket', $event)"

@@ -59,9 +59,10 @@ One short message:
 - PR `#<n> <title>` by `@<author>`, `<head> → <base>`
 - whether the assessor is running (herdr agent name) and whether the review
   starts by itself when it lands
-- that findings arrive in the project's **Review** tab, where the human can
-  post the ones they want to the PR as a comment review — and that nothing
-  ever approves the PR for them
+- that findings arrive in the project's **Review** tab and on its board as
+  record-only tickets (never dispatched, nothing is fixed), where the human
+  picks the finding tickets they want posted to the PR as a comment review —
+  and that nothing ever approves the PR for them
 
 Then stop. The assessor, the checks and the reviewers run in herdr; jTicket
 drives them.

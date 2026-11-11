@@ -1,10 +1,13 @@
 <script setup lang="ts">
 // One triaged jReview finding on the Review tab. Pickable until it's added to
 // the project; after that it shows the ticket it became, live from the tracker.
+// "Posted to the PR" is the ticket's stamp (finding.postedAt) — the finding's
+// own mirror of it covers a ticket the tracker hasn't loaded.
 import type { Ticket } from '~/composables/useTracker'
 import type { Finding } from '~/utils/reviewTypes'
 
-defineProps<{ finding: Finding; selectable: boolean; ticket?: Ticket | null }>()
+const props = defineProps<{ finding: Finding; selectable: boolean; ticket?: Ticket | null }>()
+const posted = computed(() => !!(props.ticket?.finding?.postedAt ?? props.finding.postedAt))
 const selected = defineModel<boolean>('selected', { default: true })
 
 const { render } = useMarkdown()
@@ -45,9 +48,16 @@ const severityColor = (s: Finding['severity']) =>
             </span>
           </UTooltip>
           <span v-if="finding.scope === 'out'" class="italic">pre-existing — not from this PR</span>
-          <span v-if="finding.postedAt" class="flex items-center gap-1 text-info">
+          <component
+            :is="ticket?.finding?.postedUrl ? 'a' : 'span'"
+            v-if="posted"
+            :href="ticket?.finding?.postedUrl"
+            target="_blank"
+            class="flex items-center gap-1 text-info"
+            :class="ticket?.finding?.postedUrl ? 'hover:underline' : ''"
+          >
             <UIcon name="i-lucide-message-square-share" class="size-3.5" /> posted to the PR
-          </span>
+          </component>
           <NuxtLink
             v-if="finding.ticketKey"
             :to="`/tickets/${finding.ticketKey}`"

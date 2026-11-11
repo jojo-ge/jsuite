@@ -252,3 +252,24 @@ describe('bucketCountsOf', () => {
     })
   })
 })
+
+describe('record-only finding tickets', () => {
+  // TICK-944 — the twin of server/utils/store.test.ts's suite: a PR review
+  // project's finding ticket records what a review found in someone else's
+  // pull request, so no view rings it, counts it takeable or offers to run it.
+  const prReview = { share: null, mode: 'prreview' as const }
+  const record = ticket({ labels: ['hitl', 'jreview', 'review:finding'], finding: { review: 'run-1', id: 'f1', severity: 'high', category: 'correctness' } })
+  const check = ticket({ id: 't2', key: 'CART-2', labels: ['afk', 'pr:check'] })
+
+  it('is never frontier in a PR review project', () => {
+    expect(isFrontier(record, [record], prReview)).toBe(false)
+    expect(bucketOf(record, [record], prReview)).toBe('notTakeable')
+    expect(bucketCountsOf([record, check], [record, check], prReview)).toMatchObject({ frontier: 1, notTakeable: 1 })
+  })
+
+  it('leaves the project\'s check tickets, and finding tickets of any other project, takeable', () => {
+    expect(isFrontier(check, [check], prReview)).toBe(true)
+    expect(isFrontier(record, [record], { share: null, mode: 'standard' })).toBe(true)
+    expect(isFrontier(record, [record], local)).toBe(true)
+  })
+})

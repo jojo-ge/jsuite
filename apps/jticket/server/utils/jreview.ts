@@ -3,7 +3,9 @@
 // in-process: the auto loop asks it for a consensus review of each loop's
 // changes and reads it until the consensus session has filed its tickets, and
 // the project page's Review tab starts reviews that belong to the project,
-// follows them, and adds their findings to it as tickets.
+// follows them, and adds their findings to it as tickets. Every review belongs
+// to a project (app/utils/reviewFindings.ts) — these are how a project's
+// routes reach only its own.
 import type { Review } from '../../app/utils/reviewTypes'
 import { readReview, sanitizeReviewKey } from './reviewStore'
 

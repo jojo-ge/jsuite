@@ -44,7 +44,7 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | GET / POST | `/api/projects/:id/reviews` | The project's jReview reviews / start one `{branch?, base?, reviewers?}` |
 | GET | `/api/projects/:id/reviews/:key` | One review, whole (polled while reviewers work) |
 | POST | `/api/projects/:id/reviews/:key/action` | `{action: 'retry-reviewer' \| 'skip-reviewer', n}` or `{action: 'retry-triage'}` |
-| POST | `/api/projects/:id/reviews/:key/tickets` | File triaged findings `{findingIds}` into this project as tickets |
+| POST | `/api/projects/:id/reviews/:key/tickets` | File a triage review's findings `{findingIds}` into this project as tickets (a PR review project's agreement findings are filed as record-only tickets when they land — no call) |
 | GET / PATCH | `/api/prompts` | Suite-wide hand-off prompt overrides `{prompts: {kind: text}}` (`''` drops one back to the built-in) |
 | GET | `/api/graphs`, `/api/graphs/:id` | Project graphs (projects linked by cross-project blockers); `:id` is `G-KEY` or any member project key |
 | GET | `/api/today/github?repo=` | My open PRs with CI rolled up + PRs waiting on my review, via `gh` |

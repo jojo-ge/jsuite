@@ -150,6 +150,8 @@ const projectMode = computed<ProjectMode>(() => promptProject.value?.mode ?? 'st
 const promptKind = computed(() =>
   promptKindFor(projectMode.value, { labels: live.value?.labels ?? [] }, promptTarget.value),
 )
+// A PR review project's finding ticket is a record: it has no hand-off to show or override.
+const recordOnly = computed(() => !!live.value && isRecordOnly(live.value, projectMode.value))
 // What the project resolves to before this ticket has its say — the reference
 // text above the box, and what 'append' appends to.
 const projectPrompt = computed(() =>
@@ -334,7 +336,12 @@ defineExpose({ save, reset, saving, canSave })
 
     <!-- The ticket's own prompt — folded away unless it has one. Overrides are
          machine-local: they change what this jTicket dispatches, not the work. -->
-    <div class="rounded-lg border border-default">
+    <p v-if="recordOnly" class="flex items-start gap-2 rounded-lg border border-default px-3 py-2 text-xs text-muted">
+      <UIcon name="i-lucide-scan-search" class="mt-0.5 size-4 shrink-0 text-warning" />
+      A review finding — a record of what the review found in the pull request. It has no hand-off and is never dispatched:
+      post it to the PR from the project's Review tab, or close it when it no longer stands.
+    </p>
+    <div v-else class="rounded-lg border border-default">
       <button
         type="button"
         class="flex w-full items-center gap-2 px-3 py-2 text-left"

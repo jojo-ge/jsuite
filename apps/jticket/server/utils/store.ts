@@ -15,6 +15,7 @@ import type { WorktreeGuide, WorktreeLink } from './worktrees'
 import { coerceAutoLoop, type AutoLoop } from '../../app/utils/autoLoop'
 import { coerceRunPlan, coerceRunPlanBuild, type RunPlan, type RunPlanBuild } from '../../app/utils/runPlan'
 import { coercePrReview, type PrReview } from '../../app/utils/reviewPlan'
+import { isRecordOnly, type TicketFinding } from '../../app/utils/reviewFindings'
 
 export type { ProjectShare, ShareSide } from './ownership'
 
@@ -183,6 +184,11 @@ export interface Ticket {
   // the offer: a decline names it, so a stale decline can't kill a re-offer.
   transfer: TicketTransfer
   transferAt: string
+  // Set on a ticket a review finding became (app/utils/reviewFindings.ts): the
+  // review and finding it records, where it sits in the code, its scope and
+  // verification verdict, and when it was posted to the PR. In a PR review
+  // project such a ticket is record-only — never dispatched.
+  finding?: TicketFinding
   createdAt: string
   updatedAt: string
 }
@@ -608,6 +614,18 @@ export function shareForTicket(
   return store.projects.find((p) => p.id === ticket.projectId)?.share ?? null
 }
 
+// A PR review project's finding ticket: a record of what a review found in
+// someone else's pull request, never takeable work (isRecordOnly). The API's
+// frontier leaves these out — an agent asking for ?frontier=true must not be
+// handed one — though as a flow state (ticketIsFrontier) they are plain todo.
+export function ticketIsRecordOnly(
+  store: { projects: Array<Pick<Project, 'id' | 'mode'>> },
+  ticket: Pick<Ticket, 'projectId' | 'labels' | 'finding'>,
+): boolean {
+  if (!ticket.projectId) return false
+  return isRecordOnly(ticket, store.projects.find((p) => p.id === ticket.projectId)?.mode)
+}
+
 export interface TicketDerived {
   blocked: boolean
   claimed: boolean
@@ -616,16 +634,18 @@ export interface TicketDerived {
 
 // GET responses augment each ticket with derived flags so callers (agents)
 // never have to recompute the frontier. Never persisted — computed per request.
+// `recordOnly` (ticketIsRecordOnly) keeps a finding record off the frontier.
 export function withDerived(
   ticket: Ticket,
   all: Ticket[],
   share: ProjectShare | null | undefined,
+  recordOnly = false,
 ): Ticket & TicketDerived {
   return {
     ...ticket,
     blocked: ticketIsBlocked(ticket, all),
     claimed: !!ticket.assignee,
-    frontier: ticketIsFrontier(ticket, all, share),
+    frontier: !recordOnly && ticketIsFrontier(ticket, all, share),
   }
 }
 

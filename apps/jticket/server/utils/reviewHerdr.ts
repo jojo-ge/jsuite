@@ -47,7 +47,8 @@ const pExecFile = promisify(execFile)
 //     An agreement review (a PR review plan) gets `/jreview-consensus <key>`
 //     too, on REVIEW_MODEL: it keeps what every reviewer raised, has each
 //     finding adversarially verified when `verify` is set, judges
-//     approvability, and POSTs findings + assessment to /findings.
+//     approvability, and POSTs findings + assessment to /findings — where
+//     the server files each finding on the project as a record-only ticket.
 //
 // Once that hand-back lands the watcher closes the review's panes (every pane
 // in its 'review K' / 'triage K' tabs — never one whose agent is still working
