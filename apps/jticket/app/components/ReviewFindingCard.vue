@@ -2,15 +2,15 @@
 // One triaged jReview finding on the Review tab. Pickable until it's added to
 // the project; after that it shows the ticket it became, live from the tracker.
 import type { Ticket } from '~/composables/useTracker'
-import type { JreviewFinding } from '~/utils/jreview'
+import type { Finding } from '~/utils/reviewTypes'
 
-defineProps<{ finding: JreviewFinding; selectable: boolean; ticket?: Ticket | null }>()
+defineProps<{ finding: Finding; selectable: boolean; ticket?: Ticket | null }>()
 const selected = defineModel<boolean>('selected', { default: true })
 
 const { render } = useMarkdown()
 const open = ref(false)
 
-const severityColor = (s: JreviewFinding['severity']) =>
+const severityColor = (s: Finding['severity']) =>
   s === 'critical' ? 'error' : s === 'high' ? 'warning' : s === 'medium' ? 'primary' : 'neutral'
 </script>
 

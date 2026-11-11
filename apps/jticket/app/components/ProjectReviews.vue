@@ -14,7 +14,7 @@
 // pool, which jTicket serves too — they open inline.
 import type { Project } from '~/composables/useTracker'
 import type { Explainer } from '@jsuite/documents/types'
-import type { JreviewRun, JreviewMeta, JreviewStatus } from '~/utils/jreview'
+import type { Review, ReviewMeta, ReviewStatus } from '~/utils/reviewTypes'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ configure: [] }>()
@@ -27,12 +27,12 @@ const { available: herdrUp } = useHerdr()
 const errorText = branchErrorText
 const JREVIEW = 'https://jreview.local'
 
-const active = (s: JreviewStatus) => s === 'reviewing' || s === 'triaging'
+const active = (s: ReviewStatus) => s === 'reviewing' || s === 'triaging'
 
 // ── The list ──
 const { data: listData, pending: listPending, refresh: refreshList } = useFetch<{
   available: boolean
-  reviews: JreviewMeta[]
+  reviews: ReviewMeta[]
   error?: string
 }>(() => `/api/projects/${props.project.id}/reviews`, { lazy: true, server: false })
 const reviews = computed(() => listData.value?.reviews ?? [])
@@ -44,7 +44,7 @@ function select(key: string) {
   router.replace({ query: { ...route.query, review: key } })
 }
 
-const { data: review, error: reviewError, refresh: refreshReview } = useFetch<JreviewRun>(
+const { data: review, error: reviewError, refresh: refreshReview } = useFetch<Review>(
   () => `/api/projects/${props.project.id}/reviews/${selectedKey.value}`,
   { lazy: true, server: false, immediate: false, watch: false },
 )
@@ -117,7 +117,7 @@ async function act(action: 'retry-reviewer' | 'skip-reviewer' | 'retry-triage', 
   if (action === 'skip-reviewer' && !window.confirm(`Skip reviewer ${n}? Triage goes ahead without its report.`)) return
   busy.value = `${action}:${n ?? ''}`
   try {
-    review.value = await $fetch<JreviewRun>(`/api/projects/${props.project.id}/reviews/${selectedKey.value}/action`, {
+    review.value = await $fetch<Review>(`/api/projects/${props.project.id}/reviews/${selectedKey.value}/action`, {
       method: 'POST',
       body: { action, n },
     })
@@ -265,7 +265,7 @@ async function openReport(title: string, docKey: string) {
 }
 
 // ── Presentation ──
-const STATUS_BADGE: Record<JreviewStatus, { label: string; color: 'primary' | 'warning' | 'success' | 'info' }> = {
+const STATUS_BADGE: Record<ReviewStatus, { label: string; color: 'primary' | 'warning' | 'success' | 'info' }> = {
   reviewing: { label: 'reviewing', color: 'primary' },
   triaging: { label: 'triaging', color: 'info' },
   triaged: { label: 'findings in', color: 'warning' },
@@ -278,7 +278,7 @@ const REVIEWER_BADGE = {
   failed: { icon: 'i-lucide-circle-alert', class: 'text-error', label: 'dispatch failed' },
   skipped: { icon: 'i-lucide-circle-slash', class: 'text-muted', label: 'skipped' },
 } as const
-function listLine(r: JreviewMeta): string {
+function listLine(r: ReviewMeta): string {
   if (r.status === 'reviewing') return `${r.reviewersDone}/${r.reviewerCount} reported`
   if (r.status === 'triaging') return r.consensus || r.agreement ? 'matching reports' : 'merging findings'
   if (r.consensus) return `loop ${r.loop ?? '?'} consensus`
