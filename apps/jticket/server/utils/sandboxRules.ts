@@ -94,10 +94,23 @@ export function parseSandboxRepos(raw: string | undefined): string[] {
     .filter((p) => p.startsWith('/'))
 }
 
-/** Whether `cwd` is one of the writable repos or inside one. */
-export function inWritableRepo(cwd: string, repos: readonly string[]): boolean {
-  const dir = cwd.replace(/\/+$/, '')
-  return repos.some((r) => dir === r || dir.startsWith(`${r}/`))
+/**
+ * Whether `cwd` is one of the writable repos or inside one — or, given the
+ * git common dir `cwd` resolves to (`git rev-parse --git-common-dir`), a
+ * linked worktree of one, wherever it lives: a review's detached worktree sits
+ * under .data/jreview/worktrees/ or the codebase's worktree root, never inside
+ * the repo itself. The common dir is `<repo>/.git`, or the repo itself when
+ * it is bare.
+ */
+export function inWritableRepo(cwd: string, repos: readonly string[], commonDir?: string | null): boolean {
+  const inside = (path: string) => {
+    const dir = path.replace(/\/+$/, '')
+    return repos.some((r) => dir === r || dir.startsWith(`${r}/`))
+  }
+  if (inside(cwd)) return true
+  const common = commonDir?.replace(/\/+$/, '')
+  if (!common) return false
+  return repos.some((r) => common === r || common === `${r}/.git`)
 }
 
 /**

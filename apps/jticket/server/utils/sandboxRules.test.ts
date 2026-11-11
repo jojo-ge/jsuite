@@ -83,6 +83,24 @@ describe('writable repos', () => {
     expect(inWritableRepo('/Users/me/code/kraken', repos)).toBe(false)
     expect(inWritableRepo('/tmp/fixture', [])).toBe(false)
   })
+
+  it("takes a linked worktree of a writable repo wherever it lives, by the repo's git common dir", () => {
+    const repos = ['/tmp/fixture', '/tmp/bare.git']
+    const reviewTree = '/Users/me/code/jsuite/.sandbox/data/jreview/worktrees/proj-1-review'
+    expect(inWritableRepo(reviewTree, repos, '/tmp/fixture/.git')).toBe(true)
+    expect(inWritableRepo(reviewTree, repos, '/tmp/fixture/.git/')).toBe(true)
+    expect(inWritableRepo(reviewTree, repos, '/tmp/bare.git')).toBe(true)
+  })
+
+  it('still refuses a worktree of any other repo, or a cwd with no repo', () => {
+    const repos = ['/tmp/fixture']
+    const tree = '/Users/me/code/jsuite-worktrees/x'
+    expect(inWritableRepo(tree, repos, '/Users/me/code/jsuite/.git')).toBe(false)
+    expect(inWritableRepo(tree, repos, '/tmp/fixture-2/.git')).toBe(false)
+    expect(inWritableRepo(tree, repos, '/tmp/fixture/.git/worktrees')).toBe(false)
+    expect(inWritableRepo(tree, repos, null)).toBe(false)
+    expect(inWritableRepo(tree, repos)).toBe(false)
+  })
 })
 
 describe('sandboxPromptFor', () => {

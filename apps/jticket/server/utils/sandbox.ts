@@ -12,7 +12,8 @@
 //
 // Outside a sandbox every function here is a no-op, so the live jTicket
 // behaves exactly as before.
-import { writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { realpathSync, writeFileSync } from 'node:fs'
 import { appDataFile } from '@jsuite/data'
 import { inWritableRepo, isReadOnlyCommand, LIVE_BASE, parseSandboxRepos, sandboxPromptFor } from './sandboxRules'
 
@@ -21,7 +22,43 @@ export const IN_SANDBOX = process.env.JTICKET_SANDBOX === '1'
 export const JTICKET_BASE = (process.env.JTICKET_URL?.trim() || LIVE_BASE).replace(/\/+$/, '')
 /** Where the human reads this jTicket in a browser — a sandbox's own base, never the live one. */
 export const JTICKET_PUBLIC = IN_SANDBOX ? JTICKET_BASE : 'https://jticket.local'
-const WRITABLE_REPOS = parseSandboxRepos(process.env.JTICKET_SANDBOX_REPOS)
+const WRITABLE_REPOS = withRealPaths(parseSandboxRepos(process.env.JTICKET_SANDBOX_REPOS))
+
+/** Each repo as given and as its real path (/tmp is /private/tmp on macOS), so git's answers match either. */
+function withRealPaths(repos: string[]): string[] {
+  const real = repos.map((r) => {
+    try {
+      return realpathSync(r)
+    } catch {
+      return r
+    }
+  })
+  return [...new Set([...repos, ...real])]
+}
+
+/** The git common dir `cwd` belongs to, or null when it isn't in a repo. */
+function gitCommonDir(cwd: string): string | null {
+  if (!cwd) return null
+  try {
+    return execFileSync('git', ['-C', cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      encoding: 'utf8',
+      timeout: 5_000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim() || null
+  } catch {
+    return null
+  }
+}
+
+/** Whether `cwd` is a writable repo, inside one, or a linked worktree of one (sandboxRules.inWritableRepo). */
+function writable(cwd: string): boolean {
+  if (inWritableRepo(cwd, WRITABLE_REPOS)) return true
+  let real = cwd
+  try {
+    real = realpathSync(cwd)
+  } catch { /* not there (yet) */ }
+  return inWritableRepo(real, WRITABLE_REPOS, gitCommonDir(cwd))
+}
 
 /** Whether the background engines (auto loop, review runner, share sync) run here. */
 export function enginesEnabled(): boolean {
@@ -30,18 +67,18 @@ export function enginesEnabled(): boolean {
   return !IN_SANDBOX
 }
 
-/** In a sandbox, refuse a git/gh command that would write outside the writable repos (403). */
+/** In a sandbox, refuse a git/gh command that would write outside the writable repos and their worktrees (403). */
 export function assertCommandAllowed(cmd: string, args: readonly string[], cwd: string): void {
-  if (!IN_SANDBOX || isReadOnlyCommand(cmd, args) || inWritableRepo(cwd, WRITABLE_REPOS)) return
+  if (!IN_SANDBOX || isReadOnlyCommand(cmd, args) || writable(cwd)) return
   throw createError({
     statusCode: 403,
     statusMessage: `sandbox: refused \`${cmd} ${args.slice(0, 3).join(' ')}\` in ${cwd || '(no cwd)'} — a sandbox only writes to the repos in JTICKET_SANDBOX_REPOS`,
   })
 }
 
-/** In a sandbox, refuse to start a herdr session outside the writable repos (403). */
+/** In a sandbox, refuse to start a herdr session outside the writable repos and their worktrees (403). */
 export function assertDispatchAllowed(cwd: string): void {
-  if (!IN_SANDBOX || inWritableRepo(cwd, WRITABLE_REPOS)) return
+  if (!IN_SANDBOX || writable(cwd)) return
   throw createError({
     statusCode: 403,
     statusMessage: `sandbox: refused to start a session in ${cwd || '(no cwd)'} — a sandbox only dispatches into the repos in JTICKET_SANDBOX_REPOS`,
