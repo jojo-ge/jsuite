@@ -21,13 +21,13 @@ sessions are your readers); `from=` and `to=` the integration branch
 commits the slice spans; `previous=` the last slice report, if any.
 
 ```bash
-JREVIEW="${JREVIEW_URL:-http://localhost:43008}"
 P=PROJ-2
 ```
 
-Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
-`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`. Other apps
-(jReview) stay `curl`.
+Every call goes through `jt` (on PATH after `./jsuite setup`; else
+`bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl` —
+reviews and their reports included: the review engine runs inside jTicket,
+so they are jTicket routes too.
 
 ## The contract
 
@@ -62,8 +62,8 @@ Each ticket's `resolution` is where its implementer recorded what it did
 and decided — read every one. For each review the hand-off names:
 
 ```bash
-curl -s "$JREVIEW/api/reviews/<key>" | jq '{pass, reviewers: [.reviewers[] | {n, docKey, status}], tickets}'
-curl -s "$JREVIEW/api/documents/<docKey>"     # each reviewer's report
+jt get /api/reviews/<key> | jq '{pass, reviewers: [.reviewers[] | {n, docKey, status}], tickets}'
+jt get /api/documents/<docKey>     # each reviewer's report
 ```
 
 A review's findings that became tickets are in the slice; what was raised
