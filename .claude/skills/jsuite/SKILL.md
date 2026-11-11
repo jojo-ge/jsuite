@@ -223,7 +223,10 @@ Skills (all in `apps/jticket/.claude/skills`): `to-jticket`, `to-jspec`,
   sessions — panes packed 2×2 per tab, model/effort via agent args — for
   everything jTicket runs: ticket work, loops, batches, merges, worktree
   prompts, slice/outcome reports, reviewers, triage and consensus, PR-review
-  assessors and checks, tours. Nothing runs a headless claude.
+  assessors and checks, tours. Nothing runs a headless claude. Every pane
+  lives in the herdr session `jticket` (never herdr's default session;
+  `HERDR_SESSION` overrides, the sandbox uses `jsuite-sandbox`) — watch it
+  with `herdr session attach jticket`.
 - **Notes loop**: documents and charts keep human feedback in
   `<key>.notes.json` sidecars — annotate in the browser, Claude reads it back.
 - **Skills are jTicket's** in `apps/jticket/.claude/skills` (plus this one at

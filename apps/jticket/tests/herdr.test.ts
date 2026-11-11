@@ -16,6 +16,9 @@ process.env.HERDR_BIN = FAKE
 process.env.FAKE_HERDR_STATE = STATE
 process.env.FAKE_HERDR_LOG = LOG
 process.env.JSUITE_HERDR_LOCK = join(dir, 'dispatch.lock')
+const SESSIONS = join(dir, 'sessions.log')
+process.env.FAKE_HERDR_SESSIONS = SESSIONS
+delete process.env.HERDR_SESSION
 
 let herdr: typeof import('@jsuite/herdr')
 beforeAll(async () => {
@@ -182,5 +185,41 @@ describe('withHerdrLock', () => {
   it('takes over a lock left by a process that died', async () => {
     writeFileSync(process.env.JSUITE_HERDR_LOCK!, JSON.stringify({ pid: 2 ** 22 + 12345, at: Date.now() }))
     expect(await herdr.withHerdrLock(async () => 'ok')).toBe('ok')
+  })
+})
+
+describe('herdr session', () => {
+  const sessions = () => (existsSync(SESSIONS) ? readFileSync(SESSIONS, 'utf8').trim().split('\n').filter(Boolean) : [])
+
+  it('runs every call in the `jticket` session, never herdr\'s default', async () => {
+    scenario({})
+    writeFileSync(SESSIONS, '')
+    await herdr.herdrJson(['agent', 'list'])
+    await herdr.herdrJson(['agent', 'get', 'pj-1'])
+    expect(herdr.HERDR_SESSION_DEFAULT).toBe('jticket')
+    expect(herdr.herdrSessionName()).toBe('jticket')
+    expect(sessions()).toEqual(['jticket', 'jticket'])
+  })
+
+  it('HERDR_SESSION overrides it (a sandbox uses jsuite-sandbox)', async () => {
+    scenario({})
+    writeFileSync(SESSIONS, '')
+    process.env.HERDR_SESSION = 'jsuite-sandbox'
+    try {
+      await herdr.herdrJson(['agent', 'list'])
+      expect(herdr.herdrSessionName()).toBe('jsuite-sandbox')
+    } finally {
+      delete process.env.HERDR_SESSION
+    }
+    expect(sessions()).toEqual(['jsuite-sandbox'])
+  })
+
+  it("brings forward only a client attached to jTicket's session", () => {
+    expect(herdr.isHerdrClientFor('herdr session attach jticket', 'jticket')).toBe(true)
+    expect(herdr.isHerdrClientFor('/Users/me/.local/bin/herdr --session jticket', 'jticket')).toBe(true)
+    expect(herdr.isHerdrClientFor('herdr', 'jticket')).toBe(false)
+    expect(herdr.isHerdrClientFor('herdr session attach jsuite-sandbox', 'jticket')).toBe(false)
+    expect(herdr.isHerdrClientFor('herdr session attach jticket-2', 'jticket')).toBe(false)
+    expect(herdr.isHerdrClientFor('/Users/me/.local/bin/herdr server', 'jticket')).toBe(false)
   })
 })

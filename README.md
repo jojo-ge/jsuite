@@ -204,6 +204,14 @@ reports, reviewers and their triage/consensus sessions, PR-review assessors
 and checks, and Diff-tab tours — via `apps/jticket/server/utils/herdr.ts`,
 which adds the sandbox guards.
 
+Every call runs in the herdr session **`jticket`** (`herdrSessionName()`;
+`HERDR_SESSION` overrides it, and `./jsuite sandbox` sets `jsuite-sandbox`),
+never herdr's default session, so the herdr you keep attached for your own
+work stays clear of automated panes. Start or watch it with
+`herdr session attach jticket`; detaching leaves it running. Until it runs,
+`herdrState()` says unavailable and dispatch buttons hide. The "go to herdr"
+buttons bring forward the terminal attached to that session.
+
 ## @jsuite/relay — jTicket project sync
 
 `packages/relay` is the setup half of **jTicket sync**: two people, each

@@ -45,6 +45,13 @@ export function herdrJson<T = any>(args: string[], opts?: { timeoutMs?: number }
  */
 export function withHerdrLock<T>(fn: () => Promise<T>): Promise<T>
 
+/** The herdr session jTicket's panes live in when HERDR_SESSION is unset: `jticket`. */
+export const HERDR_SESSION_DEFAULT: 'jticket'
+/** The herdr session this process dispatches into — HERDR_SESSION, else `jticket`. Every herdr call passes it. */
+export function herdrSessionName(): string
+/** Whether a `ps` command line is a herdr client attached to `session` (`herdr session attach <session>` / `herdr --session <session>`). */
+export function isHerdrClientFor(command: string, session: string): boolean
+
 /** Workspaces + tabs, cached ~5s (the reads are one CLI call per workspace). */
 export function herdrState(force?: boolean): Promise<HerdrState>
 export function invalidateHerdrState(): void

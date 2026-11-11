@@ -6,7 +6,14 @@
 // start/prompt path uses are implemented.
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 
-const [cmd, sub, ...rest] = process.argv.slice(2)
+let argv = process.argv.slice(2)
+// `--session <name>` leads every call; it goes to its own log, so the call log
+// stays the command itself.
+if (argv[0] === '--session') {
+  if (process.env.FAKE_HERDR_SESSIONS) appendFileSync(process.env.FAKE_HERDR_SESSIONS, `${argv[1]}\n`)
+  argv = argv.slice(2)
+}
+const [cmd, sub, ...rest] = argv
 const statePath = process.env.FAKE_HERDR_STATE
 const s = JSON.parse(readFileSync(statePath, 'utf8'))
 appendFileSync(process.env.FAKE_HERDR_LOG, JSON.stringify([cmd, sub, ...rest]) + '\n')

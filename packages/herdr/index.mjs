@@ -57,16 +57,24 @@ async function herdrBin() {
 }
 
 /**
- * HERDR_SESSION names a herdr session other than the default — a jTicket
- * sandbox (`./jsuite sandbox`) dispatches into its own, so the live suite's
- * pane sweeps never see its panes and it never sees theirs. Unset = the
- * default session, as before. The session must be running (`herdr session
- * attach <name>` in a terminal); until it is, herdr reports
- * server_not_running and dispatch stays unavailable.
+ * The herdr session every jTicket pane lives in: `jticket`, never herdr's
+ * default session, so the human's own attached herdr isn't filled with
+ * automated panes. HERDR_SESSION overrides it — a jTicket sandbox
+ * (`./jsuite sandbox`) uses `jsuite-sandbox`, so the live jTicket's pane
+ * sweeps never see its panes and it never sees theirs. The session must be
+ * running (`herdr session attach jticket` in a terminal; detaching leaves it
+ * running); until it is, herdr reports server_not_running and dispatch stays
+ * unavailable.
  */
+export const HERDR_SESSION_DEFAULT = 'jticket'
+
+/** The herdr session this process dispatches into. */
+export function herdrSessionName() {
+  return process.env.HERDR_SESSION?.trim() || HERDR_SESSION_DEFAULT
+}
+
 function sessionArgs() {
-  const name = process.env.HERDR_SESSION?.trim()
-  return name ? ['--session', name] : []
+  return ['--session', herdrSessionName()]
 }
 
 /**
@@ -366,8 +374,10 @@ async function createJobTabLocked(workspaceId, baseLabel, cwd) {
 // ── Focusing the actual window ──────────────────────────────────────────────
 // Herdr's own focus commands move focus *inside* the session; they can't bring
 // the hosting terminal window to the front of macOS. For that: find the herdr
-// client process (command `herdr`, not `herdr server`), read which app hosts
-// it from its __CFBundleIdentifier, and ask that app to activate. Best-effort —
+// client attached to OUR session (`herdr session attach jticket`, not the bare
+// `herdr` of the default session and not `herdr server`), read which app
+// hosts it from its __CFBundleIdentifier, and ask that app to activate. With
+// no client attached to the session, no window moves. Best-effort —
 // any failure leaves the in-herdr focus done and the window where it was.
 let cachedBundleId
 
@@ -383,13 +393,24 @@ export async function focusHerdrWindow() {
   }
 }
 
+/**
+ * Whether a `ps` command line is a herdr client attached to `session`:
+ * `herdr session attach <session>` or `herdr --session <session>` — never
+ * the bare `herdr` of the default session, which shows other panes.
+ */
+export function isHerdrClientFor(command, session) {
+  const m = /^(?:\S*\/)?herdr (?:session attach|--session) (\S+)$/.exec(command.trim())
+  return !!m && m[1] === session
+}
+
 async function clientBundleId() {
   if (cachedBundleId !== undefined) return cachedBundleId
   const { stdout } = await pExecFile('ps', ['ax', '-o', 'pid=,command='])
+  const session = herdrSessionName()
   const client = stdout
     .split('\n')
     .map((l) => l.trim())
-    .find((l) => /^\d+ (\S*\/)?herdr$/.test(l))
+    .find((l) => /^\d+ /.test(l) && isHerdrClientFor(l.replace(/^\d+ /, ''), session))
   if (!client) { cachedBundleId = null; return null }
   const pid = client.split(' ')[0]
   const { stdout: env } = await pExecFile('ps', ['eww', pid])
