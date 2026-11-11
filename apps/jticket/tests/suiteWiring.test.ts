@@ -77,6 +77,13 @@ describe('the suite is wired as one app', () => {
     expect(site('jchart.local')).toMatch(/handle_path \/c\/\* \{\s*redir https:\/\/jticket\.local\/charts\{uri\}/)
   })
 
+  it('the shared packages describe one app, not the retired processes', () => {
+    const charting = read('packages/charting/nuxt.config.ts')
+    expect(charting).not.toMatch(/layered apps|jexplain\/jchart/)
+    const herdr = read('packages/herdr/index.mjs')
+    expect(herdr).not.toMatch(/jSuite apps|several processes|jReview's watcher|\bjDiff\b/)
+  })
+
   it('no root script starts a retired app', () => {
     const scripts = Object.keys(JSON.parse(read('package.json')).scripts)
     expect(scripts.filter((s) => s.startsWith('dev:'))).toEqual([])

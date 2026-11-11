@@ -1,4 +1,4 @@
-// Driving Herdr (the terminal workspace manager) from jSuite apps.
+// Driving Herdr (the terminal workspace manager) from jTicket.
 //
 // Extracted from jTicket, which grew the pattern: one WORKSPACE per unit of
 // work (project / map), agents as PANES packed up to four per tab, one-off
@@ -107,10 +107,11 @@ export async function herdrJson(args, opts = {}) {
 // ── One dispatch at a time ──────────────────────────────────────────────────
 // Every list-then-act step here (find-or-create a workspace, pick a pane to
 // split, pick a free agent name, start + prompt claude) races any other
-// dispatcher doing the same — and the dispatchers are several processes
-// (jTicket's auto loop and buttons, jReview's watcher, jDiff) on
-// one herdr server. So they all queue on one lock: in-process callers on a
-// promise chain, processes on a lock file in .data/herdr/. Re-entrant within
+// dispatcher doing the same — and jTicket has many (its auto loop and run
+// plans, the review runner and watcher, the UI's buttons), all on one herdr
+// server. So they all queue on one lock: in-process callers on a promise
+// chain, and on a lock file in .data/herdr/ in case a second process shares
+// that .data (an old server still draining during a restart). Re-entrant within
 // one async call chain, so a caller can hold it across a whole
 // workspace → pane → claude sequence while the steps also take it themselves.
 const lockContext = new AsyncLocalStorage()
