@@ -26,7 +26,7 @@ Write it to `/tmp/jreview/<review>/reviewer-<n>.json`:
 ```json
 {
   "key": "<doc>",
-  "kicker": "jReview · reviewer <n>",
+  "kicker": "Review · reviewer <n>",
   "title": "<repo dir name> — <BASE>...HEAD",
   "subtitle": "<VERDICT>, plus the finding count by severity (e.g. \"1 high · 3 medium · 2 low\").",
   "blocks": [ ... ]

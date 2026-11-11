@@ -1,6 +1,6 @@
 ---
 name: jarch-review
-description: The architectural & technical review of a diff — structure, boundaries, abstractions, data flow, coupling and technical debt — as the review engine's one reviewer on an architecture pass, whose `architecture` findings the auto loop fixes without a vote and whose `technical` findings are filed as advisory. Dispatched by jReview into a herdr pane; publishes through `/jreview-report`. Not for general use.
+description: The architectural & technical review of a diff — structure, boundaries, abstractions, data flow, coupling and technical debt — as the review engine's one reviewer on an architecture pass, whose `architecture` findings the auto loop fixes without a vote and whose `technical` findings are filed as advisory. Dispatched by jTicket's review engine into a herdr pane; publishes through `/jreview-report`. Not for general use.
 argument-hint: "[review context]"
 disable-model-invocation: true
 ---

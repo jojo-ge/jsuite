@@ -7,7 +7,7 @@ import { assertCommandAllowed } from './sandbox'
 //
 // It goes out as ONE pull-request review through `gh api`, so it is posted
 // with the human's own gh auth, as them. The review event is always COMMENT:
-// it is hard-coded here and no caller can change it. jReview may RECOMMEND
+// it is hard-coded here and no caller can change it. the review engine may RECOMMEND
 // approval (review.assessment) but never approves — or requests changes —
 // on anyone's behalf; that click stays the human's, on GitHub.
 //
@@ -17,7 +17,7 @@ import { assertCommandAllowed } from './sandbox'
 // can differ from ours — so a refusal is retried once with everything in the
 // body.
 
-/** The only review event jReview ever sends. Not a parameter, on purpose. */
+/** The only review event the review engine ever sends. Not a parameter, on purpose. */
 const REVIEW_EVENT = 'COMMENT' as const
 
 function gh(args: string[], input: string, cwd: string): Promise<string> {

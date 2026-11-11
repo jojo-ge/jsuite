@@ -70,7 +70,7 @@ export function triageTicketDescription(r: ReviewForTicket, f: Finding, base: st
     f.detail,
     '',
     '---',
-    `Raised by ${raisedBy(f)} in jReview [${r.title}](${base}${reviewPath(r.key)}) — see the [triage report](${base}/e/${r.triage.docKey}).`,
+    `Raised by ${raisedBy(f)} in review [${r.title}](${base}${reviewPath(r.key)}) — see the [triage report](${base}/e/${r.triage.docKey}).`,
   ].join('\n')
 }
 

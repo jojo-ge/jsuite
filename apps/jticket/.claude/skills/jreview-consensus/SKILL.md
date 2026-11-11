@@ -276,7 +276,7 @@ j-explain payload (block vocabulary in the `j-explain` skill), key =
 ~/.claude/skills/j-explain/scripts/explain.py <payload.json> --replace
 --no-open`:
 
-- kicker `jReview · consensus`; title `PR #<n> — <verdict>`; subtitle
+- kicker `Review · consensus`; title `PR #<n> — <verdict>`; subtitle
   "<considered> raised → <kept> agreed<, R refuted>".
 - `callout` id `assessment` (tone `success` for the approve verdicts,
   `warning` otherwise): the summary and blockers.

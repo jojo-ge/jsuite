@@ -164,6 +164,15 @@ describe('fileTriageFindings', () => {
     expect(t.finding).toMatchObject({ review: 'branch-review', id: 'f1', file: 'src/retry.ts', line: 42 })
     expect(isRecordOnly(t, p.mode)).toBe(false)
   })
+
+  it('credits the review by its jTicket name, never the retired jReview app', () => {
+    const p = project({ mode: 'standard' })
+    const s = store(p)
+    fileTriageFindings(s, p, { ...review('branch-review', 0), agreement: undefined }, [finding('f1', 'A', { scope: undefined, verdict: undefined })], T1, BASE)
+    const d = s.tickets[0]!.description
+    expect(d).toMatch(/Raised by .* in review \[/)
+    expect(d).not.toMatch(/jReview/)
+  })
 })
 
 describe('stampPosted', () => {

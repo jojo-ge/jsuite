@@ -1,6 +1,6 @@
 ---
 name: jreview-triage
-description: Triage a review run — read every reviewer's report document, merge duplicate findings, publish a triage document, and POST the deduplicated findings back to jTicket's review engine. Invoked as `/jreview-triage [key]` by the session jReview dispatches once all its reviewers have reported. Not for general use.
+description: Triage a review run — read every reviewer's report document, merge duplicate findings, publish a triage document, and POST the deduplicated findings back to jTicket's review engine. Invoked as `/jreview-triage [key]` by the session jTicket's review engine dispatches once all its reviewers have reported. Not for general use.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---
@@ -55,7 +55,7 @@ Findings are the callout blocks (ids `f1`, `f2`, … titled
 j-explain payload (block vocabulary in the `j-explain` skill), key =
 `triage.docKey`:
 
-- kicker `jReview · triage`; title `Triage — <repo> <base>...HEAD`; subtitle
+- kicker `Review · triage`; title `Triage — <repo> <base>...HEAD`; subtitle
   with the before/after counts ("23 reported → 11 distinct").
 - `compare` block: findings by severity, with the reviewers that raised each.
 - One `callout` per merged finding, ids `f1`… in the order you will POST them,

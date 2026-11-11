@@ -341,10 +341,10 @@ export function reviewRunStep(run: ReviewRun, world: ReviewRunWorld): ReviewRunS
       if (!run.reviewKey) {
         // The request is in flight (jReview cuts a worktree first) — give it a minute.
         return world.now - Date.parse(run.reviewRequestedAt) > 2 * 60_000
-          ? { kind: 'pause', detail: 'jReview was asked for the review but its key never came back — Retry asks again' }
-          : { kind: 'wait', note: 'asking jReview for the review' }
+          ? { kind: 'pause', detail: 'the review was asked for but its key never came back — Retry asks again' }
+          : { kind: 'wait', note: 'asking for the review' }
       }
-      if (world.review === 'missing' || !world.review) return { kind: 'pause', detail: `jReview no longer has review ${run.reviewKey} — Retry starts a new one` }
+      if (world.review === 'missing' || !world.review) return { kind: 'pause', detail: `review ${run.reviewKey} no longer exists — Retry starts a new one` }
       if (world.review.status === 'triaged' || world.review.status === 'ticketed') return { kind: 'finish', verdict: world.review.verdict }
       if (age > REVIEW_RUN_STALL_MS) return { kind: 'pause', detail: `review ${run.reviewKey} has had no hand-back for ${mins} — look at its panes, then Retry starts a new one` }
       return { kind: 'wait', note: world.review.status === 'reviewing' ? `review ${run.reviewKey}: reviewers at work` : `review ${run.reviewKey}: consensus and verification` }

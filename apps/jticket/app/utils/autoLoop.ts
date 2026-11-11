@@ -895,10 +895,10 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
         return { kind: 'startReview' }
       }
       if (!state.reviewKey) {
-        return { kind: 'pause', reason: 'review-failed', detail: 'jReview was asked for a review but its key was never recorded — Retry step asks again' }
+        return { kind: 'pause', reason: 'review-failed', detail: 'a review was asked for but its key was never recorded — Retry step asks again' }
       }
       if (world.review === 'missing' || !world.review) {
-        return { kind: 'pause', reason: 'review-failed', detail: `jReview no longer has review ${state.reviewKey} — Retry step starts a new one` }
+        return { kind: 'pause', reason: 'review-failed', detail: `review ${state.reviewKey} no longer exists — Retry step starts a new one` }
       }
       if (world.review.status !== 'ticketed') return { kind: 'wait', pending: [state.reviewKey] }
       const fixes = [...world.review.ticketKeys].sort(byKey)
@@ -952,7 +952,7 @@ export function phaseStall(state: AutoLoop, now: number): AutoStep | null {
     case 'reviewing':
     case 'arch-reviewing':
       return state.reviewRequestedAt && age > REVIEW_STALL_MS
-        ? pause(`${state.reviewKey ? `review ${state.reviewKey}` : 'the review'} was asked for ${mins} ago and has no verdict yet — Retry step asks jReview again`)
+        ? pause(`${state.reviewKey ? `review ${state.reviewKey}` : 'the review'} was asked for ${mins} ago and has no verdict yet — Retry step asks again`)
         : null
     case 'slice-reporting':
       return state.sliceDispatchedAt && !state.slicedAt && age > JOB_STALL_MS

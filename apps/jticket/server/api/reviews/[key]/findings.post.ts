@@ -7,7 +7,7 @@ import { APPROVAL_VERDICTS, SEVERITIES, reviewPath, type Finding, type ReviewAss
  * ('confirmed' | 'plausible' — refuted ones are never sent) and
  * `verification` (one line of evidence); `assessment` is { verdict, summary,
  * blockers[], reviewerVerdicts? } — a recommendation the human reads. Nothing
- * acts on it: jReview never approves a PR.
+ * acts on it: the review engine never approves a PR.
  *
  * An agreement review's findings are FILED HERE, by the server, as
  * record-only tickets on the review's project (fileAgreementTickets) — the

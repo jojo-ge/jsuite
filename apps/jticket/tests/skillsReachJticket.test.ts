@@ -31,6 +31,19 @@ describe('jTicket-owned skills reach reviews through jTicket', () => {
     expect(offenders).toEqual([])
   })
 
+  it('no skill names jReview as the app that dispatches it or brands its reports', () => {
+    // TICK-951: no doc, skill or page names a retired app as a running product.
+    const RUNNING = [/^description:.*\bjReview\b/, /kicker\W+jReview\b/, /\bDispatched by jReview\b/, /\bsession jReview dispatches\b/]
+    const offenders = markdownFiles(SKILLS_DIR).flatMap((file) =>
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .map((line, i) => ({ line, at: `${relative(SKILLS_DIR, file)}:${i + 1}` }))
+        .filter(({ line }) => RUNNING.some((re) => re.test(line)))
+        .map(({ at, line }) => `${at}: ${line.trim()}`),
+    )
+    expect(offenders).toEqual([])
+  })
+
   it('jslice-report reads a review and its reports with jt', () => {
     const skill = readFileSync(join(SKILLS_DIR, 'jslice-report', 'SKILL.md'), 'utf8')
     expect(skill).toMatch(/jt get \/api\/reviews\/<key>/)
