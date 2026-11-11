@@ -1,15 +1,15 @@
 # jSuite edge — one container: Caddy as the front door for the suite.
 #
-#   https://jsuite.local  -> static index (./www)
-#   https://jticket.local -> host :43000
-#   https://jdiff.local   -> host :43002
+#   https://jsuite.local   -> static index (./www)
+#   https://jticket.local  -> host :43000
+#   https://jexplain.local, jreview.local, jchart.local -> redirects into jTicket
 #   (see Caddyfile for the full map)
 #
 # OrbStack does the heavy lifting: the dev.orbstack.domains label below makes
 # OrbStack resolve the .local names to this container's IP, terminate HTTPS
 # with its auto-trusted local CA, and forward plain HTTP to Caddy on :80.
-# No published ports, no certs, no /etc/hosts. The apps run natively on the
-# host (started by ./jsuite), so they keep full filesystem + gh/git/claude
+# No published ports, no certs, no /etc/hosts. jTicket runs natively on the
+# host (started by ./jsuite), so it keeps full filesystem + gh/git/claude
 # access. This container only routes by Host header.
 #
 # Don't run this by hand — `./jsuite start` brings it up together with the apps.
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
     labels:
       # Every name here must have a matching site block in the Caddyfile.
-      dev.orbstack.domains: jsuite.local,jticket.local,jdiff.local,jchart.local,jexplain.local,jreview.local
+      dev.orbstack.domains: jsuite.local,jticket.local,jexplain.local,jreview.local,jchart.local
       # Skip OrbStack's port auto-detection — Caddy listens on 80.
       dev.orbstack.http-port: "80"
     volumes:

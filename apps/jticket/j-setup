@@ -13,8 +13,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_DIR="$REPO_DIR/.claude/skills"
 DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
 
-# The skills this repo owns. Everything else under .claude/skills comes from
-# mattpocock/skills and is installed by the `skills` CLI instead.
+# The skills this repo owns — the apps/jticket row of SKILLS_MANIFEST in the
+# suite's ./jsuite; keep the two in step. Everything else under .claude/skills
+# comes from mattpocock/skills and is installed by the `skills` CLI instead.
 JSKILLS=(
   jimplement
   jorchestrate
@@ -27,6 +28,16 @@ JSKILLS=(
   jreproduce
   jslice-report
   jrunplan
+  j-explain
+  j-chart
+  jdiff-tour
+  jreview-report
+  jreview-triage
+  jreview-consensus
+  jarch-review
+  make-jreview-project
+  jreview-assess
+  jpr-check
 )
 
 POCOCK_SOURCE="mattpocock/skills"
@@ -75,6 +86,15 @@ if $DO_SKILLS; then
 
     run ln -s "$src" "$dest"
     say "  linked $skill"
+  done
+
+  # Prune links that point nowhere (a retired app's skills, a deleted skill, a
+  # removed checkout), as ./jsuite setup does. Only dangling symlinks go.
+  for link in "$DEST_DIR"/*; do
+    [ -L "$link" ] && [ ! -e "$link" ] || continue
+    target="$(readlink "$link")"
+    run rm -f "$link"
+    say "  pruned ${link##*/} (pointed at $target)"
   done
 fi
 

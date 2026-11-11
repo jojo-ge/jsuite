@@ -11,16 +11,17 @@
 	admin off
 }
 
-# reverse_proxy to a host port. The original Host (e.g. jticket.local) is
-# passed through unchanged so Vite's dev-server host check accepts it — each
-# app allowlists its .local name in nuxt.config. Streaming (jDiff SSE) and
-# websockets (Nuxt HMR) pass through.
+# reverse_proxy to a host port. The original Host (jticket.local) is passed
+# through unchanged so Vite's dev-server host check accepts it — jTicket
+# allowlists its .local name in nuxt.config. Streaming (SSE) and websockets
+# (Nuxt HMR) pass through.
 (app) {
 	reverse_proxy {args[0]}
 }
 
-# The upstream ports must match the APPS table in ./jsuite, and every name
-# here must appear in the dev.orbstack.domains label in docker-compose.yml.
+# The upstream port must match the APPS table in ./jsuite, and every name here
+# must appear in the dev.orbstack.domains label in docker-compose.yml (and in
+# DOMAINS in ./jsuite).
 
 # Static index — just links to the apps. No process behind it.
 http://jsuite.local:80 {
@@ -32,18 +33,33 @@ http://jticket.local:80 {
 	import app host.docker.internal:43000
 }
 
-http://jdiff.local:80 {
-	import app host.docker.internal:43002
-}
+# Redirect-only hosts. jExplain, jReview and jChart are jTicket features now,
+# but stored tickets, docs and review reports still link to their old names.
+# Each maps its old page path onto jTicket's (the query string is kept), and
+# anything else lands on that feature's index. No process behind them.
 
-http://jchart.local:80 {
-	import app host.docker.internal:43003
-}
-
+# jExplain: /e/<key> is the same path in jTicket; the library is /e.
 http://jexplain.local:80 {
-	import app host.docker.internal:43004
+	redir /e/* https://jticket.local{uri}
+	redir https://jticket.local/e
 }
 
+# jReview: the room /r/<key> is /reviews/<key>.
 http://jreview.local:80 {
-	import app host.docker.internal:43008
+	handle_path /r/* {
+		redir https://jticket.local/reviews{uri}
+	}
+	handle {
+		redir https://jticket.local/reviews
+	}
+}
+
+# jChart: the editor /c/<key> is /charts/<key>.
+http://jchart.local:80 {
+	handle_path /c/* {
+		redir https://jticket.local/charts{uri}
+	}
+	handle {
+		redir https://jticket.local/charts
+	}
 }
