@@ -260,9 +260,11 @@ export interface GhPr {
   additions?: number
   deletions?: number
   reviewDecision?: string | null
+  /** Users (login) and teams (slug/name) asked to review. */
+  reviewRequests?: { login?: string; slug?: string; name?: string }[]
 }
 
-const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,additions,deletions,reviewDecision,url'
+const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,additions,deletions,reviewDecision,reviewRequests,url'
 
 // `gh pr list` is a network round-trip and the project page refetches on every
 // live tracker change, so hold the answer briefly per repo. ?force=1 busts it.
@@ -276,6 +278,22 @@ export async function listOpenPrs(path: string, force = false): Promise<GhPr[]> 
   const prs = JSON.parse(out) as GhPr[]
   prCache.set(path, { at: Date.now(), prs })
   return prs
+}
+
+// The gh login, per repo dir — the same for every repo on one gh auth, but
+// asked in the repo so a host-specific auth answers. Cached for the process.
+const viewerCache = new Map<string, string>()
+
+/** Who gh is signed in as ('' when it can't tell). */
+export async function ghViewer(path: string): Promise<string> {
+  const hit = viewerCache.get(path)
+  if (hit !== undefined) return hit
+  let login = ''
+  try {
+    login = (await run('gh', ['api', 'user', '--jq', '.login'], path)).trim()
+  } catch {}
+  if (login) viewerCache.set(path, login)
+  return login
 }
 
 // ── Matching PRs to a project ───────────────────────────────────────────────

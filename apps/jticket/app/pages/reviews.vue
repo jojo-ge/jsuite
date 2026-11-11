@@ -3,8 +3,11 @@
 // pull request. They live here, not on the projects board, the home board,
 // Today or Graphs. A row is done when its PR is merged or closed, or its last
 // run finished — never from ticket counts (prReviewDone in ~/utils/reviewPlan).
+// Below them, Open PRs lists the codebase's GitHub PRs (OpenPrList), each
+// with Review this PR.
 import type { Project } from '~/composables/useTracker'
 import { prReviewDone, prReviewRunState, prReviewVerdict, type PrReviewRunState } from '~/utils/reviewPlan'
+import { verdictBadge } from '~/utils/prList'
 
 useHead({ title: 'Reviews' })
 
@@ -31,16 +34,7 @@ const RUN_STATE: Record<PrReviewRunState, { label: string; color: 'info' | 'prim
 const runState = (p: Project) => RUN_STATE[prReviewRunState(p.prReview)]
 const runCount = (p: Project) => p.prReview?.runs.length ?? 0
 
-const VERDICT: Record<string, { label: string; color: 'success' | 'warning' | 'error' }> = {
-  approve: { label: 'recommends approval', color: 'success' },
-  'approve-with-nits': { label: 'approvable with nits', color: 'success' },
-  'request-changes': { label: 'changes needed', color: 'error' },
-  'needs-discussion': { label: 'needs discussion', color: 'warning' },
-}
-const verdict = (p: Project) => {
-  const v = prReviewVerdict(p.prReview)
-  return v ? (VERDICT[v] ?? { label: v, color: 'warning' as const }) : null
-}
+const verdict = (p: Project) => verdictBadge(prReviewVerdict(p.prReview))
 </script>
 
 <template>
@@ -59,7 +53,7 @@ const verdict = (p: Project) => {
         <UIcon name="i-lucide-git-pull-request" class="size-8 text-muted" />
         <p class="font-medium">No PR reviews yet</p>
         <p class="max-w-md text-sm text-muted">
-          Run <code>/make-jreview-project &lt;PR number&gt;</code> in this codebase to set one up.
+          Press <strong>Review this PR</strong> on one of the open PRs below, or run <code>/make-jreview-project &lt;PR number&gt;</code> in this codebase.
         </p>
       </div>
 
@@ -110,6 +104,8 @@ const verdict = (p: Project) => {
           </ul>
         </template>
       </template>
+
+      <OpenPrList v-if="selectedPath" :key="selectedPath" :repo="selectedPath" :projects="reviewProjects" class="mt-10" />
     </UContainer>
   </div>
 </template>
