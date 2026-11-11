@@ -31,3 +31,6 @@ export function modelIdFor(model: PlanModel): string {
 /** The Run setup tab's Build button — one Fable 5.2 session at high effort reads the project and writes its run plan. */
 export const RUNPLAN_MODEL = process.env.JTICKET_RUNPLAN_MODEL?.trim() || 'claude-fable-5-2'
 export const RUNPLAN_EFFORT = process.env.JTICKET_RUNPLAN_EFFORT?.trim() || 'high'
+
+/** The Diff tab's Build tour — the latest Opus: it reads the whole change and writes 20–40 notes on its logic. */
+export const TOUR_MODEL = process.env.JTICKET_TOUR_MODEL?.trim() || 'claude-opus-5-5'

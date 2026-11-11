@@ -3,9 +3,12 @@
 // (server/utils/diffBuild.ts — already highlighted, both themes), with the
 // hidden context between hunks expandable in place and a full-file view.
 // Both read the head version through GET /api/projects/:id/diff/file.
-// Ported from jDiff's DiffFile, without its comments, asks and tour marks.
-import type { DiffFile } from '~/utils/diffRows'
-import { diffGaps, expandGap as nextExpansion, gapTotal, gapViews as buildGapViews, EXPAND_STEP, type GapExpansion } from '~/utils/diffGaps'
+// Ported from jDiff's DiffFile, with its guided-tour marks but without its
+// comments and asks: the active tour stop's lines get a wash, and revealLine()
+// makes a stop on hidden context visible before the walk scrolls to it.
+import type { DiffCell, DiffFile } from '~/utils/diffRows'
+import type { TourStop } from '~/utils/tour'
+import { diffGaps, expandGap as nextExpansion, gapForLine, gapTotal, gapViews as buildGapViews, EXPAND_STEP, type GapExpansion, type GapRow } from '~/utils/diffGaps'
 
 const props = defineProps<{
   file: DiffFile
@@ -14,7 +17,11 @@ const props = defineProps<{
   projectId: string
   /** The head commit the rows were built from — what the gaps and full view read. */
   headOid: string
+  /** The active tour stop, when it is in this file. */
+  tourStop?: TourStop | null
 }>()
+
+const root = ref<HTMLElement | null>(null)
 
 const collapsed = ref(false)
 const mode = ref<'diff' | 'full'>('diff')
@@ -80,11 +87,70 @@ const canStep = (remaining: number | null) => remaining == null || remaining > E
 const hiddenLabel = (remaining: number | null) =>
   remaining == null ? 'Expand to end of file' : `Expand ${remaining} hidden line${remaining === 1 ? '' : 's'}`
 
+// ── Guided tour ──
+// Rows inside the active stop's range get the `tour` wash; the stop's first
+// rendered line carries data-tour-start, which the walk scrolls to. The exact
+// first line may sit in unexpanded context, so the lowest rendered match wins.
+const inStop = (n: number | null | undefined) => {
+  const t = props.tourStop
+  return !!t && n != null && n >= t.line && n <= t.endLine
+}
+const tourCell = (row: { left: DiffCell; right: DiffCell }) => (props.tourStop?.side === 'LEFT' ? row.left : row.right)
+const rowInStop = (row: { left: DiffCell; right: DiffCell }) => {
+  const c = tourCell(row)
+  return c.type !== 'empty' && inStop(c.num)
+}
+const gapNum = (r: GapRow) => (props.tourStop?.side === 'LEFT' ? r.leftNum : r.rightNum)
+const gapInStop = (r: GapRow) => inStop(gapNum(r))
+// The full view renders the head version only, so it marks RIGHT stops.
+const fullInStop = (n: number) => props.tourStop?.side === 'RIGHT' && inStop(n)
+
+const tourStartLine = computed<number | null>(() => {
+  const t = props.tourStop
+  if (!t) return null
+  if (mode.value === 'full') return t.side === 'RIGHT' && fullLines.value && t.line <= fullLines.value.length ? t.line : null
+  let best: number | null = null
+  const consider = (n: number | null) => {
+    if (inStop(n) && (best == null || n! < best)) best = n
+  }
+  for (const h of props.file.hunks) for (const r of h.rows) if (tourCell(r).type !== 'empty') consider(tourCell(r).num)
+  for (const v of views.value) if (v) for (const r of [...v.topRows, ...v.bottomRows]) consider(gapNum(r))
+  return best
+})
+const rowStarts = (row: { left: DiffCell; right: DiffCell }) => tourStartLine.value != null && rowInStop(row) && tourCell(row).num === tourStartLine.value
+const gapStarts = (r: GapRow) => tourStartLine.value != null && gapInStop(r) && gapNum(r) === tourStartLine.value
+
+/**
+ * Make a stop's line visible and return what to scroll to: a hunk line needs
+ * nothing; hidden context expands its gap; a line no gap places falls back to
+ * the full-file view. LEFT lines live only in hunks (gaps and the full view
+ * show the head version), so an off-hunk LEFT stop lands on the file header.
+ */
+async function revealLine(side: TourStop['side'], line: number): Promise<HTMLElement | null> {
+  collapsed.value = false
+  const inHunk = props.file.hunks.some((h) => h.rows.some((r) => {
+    const c = side === 'LEFT' ? r.left : r.right
+    return c.num === line && c.type !== 'empty'
+  }))
+  if (!inHunk && side === 'RIGHT' && !props.file.binary) {
+    if (mode.value === 'diff') {
+      const gi = gapForLine(gaps.value, line, fullLines.value?.length ?? null)
+      if (gi != null) await expand(gi, 'all')
+      else mode.value = 'full'
+    }
+    if (mode.value === 'full') await ensureFullLines()
+  }
+  await nextTick()
+  return root.value?.querySelector<HTMLElement>('[data-tour-start]') ?? root.value
+}
+
+defineExpose({ revealLine })
+
 const STATUS_COLOR = { added: 'success', deleted: 'error', renamed: 'info', modified: 'neutral' } as const
 </script>
 
 <template>
-  <section :id="anchor" class="diff-file overflow-hidden rounded-lg border border-default bg-default">
+  <section :id="anchor" ref="root" class="diff-file overflow-hidden rounded-lg border border-default bg-default">
     <header
       class="diff-file-header sticky top-0 z-[2] flex cursor-pointer items-center gap-2 border-b border-default bg-elevated px-3 py-1.5 select-none"
       @click="collapsed = !collapsed"
@@ -123,8 +189,8 @@ const STATUS_COLOR = { added: 'success', deleted: 'error', renamed: 'info', modi
         <p v-if="!fullLines" class="p-4 font-mono text-xs text-muted">Loading the full file…</p>
         <div v-else class="full-grid">
           <template v-for="(html, i) in fullLines" :key="i">
-            <div class="num" :class="addedLines.has(i + 1) ? 'add' : 'ctx'">{{ i + 1 }}</div>
-            <div class="code" :class="addedLines.has(i + 1) ? 'add' : 'ctx'" v-html="html" />
+            <div class="num" :data-tour-start="tourStartLine === i + 1 || undefined" :class="[addedLines.has(i + 1) ? 'add' : 'ctx', { tour: fullInStop(i + 1), 'tour-edge': fullInStop(i + 1) }]">{{ i + 1 }}</div>
+            <div class="code" :class="[addedLines.has(i + 1) ? 'add' : 'ctx', { tour: fullInStop(i + 1) }]" v-html="html" />
           </template>
         </div>
       </template>
@@ -132,10 +198,10 @@ const STATUS_COLOR = { added: 'success', deleted: 'error', renamed: 'info', modi
         <template v-for="(hunk, hi) in file.hunks" :key="hi">
           <template v-if="views[hi]">
             <template v-for="r in views[hi]!.topRows" :key="'t' + r.rightNum">
-              <div class="num ctx">{{ r.leftNum }}</div>
-              <div class="code ctx" v-html="r.html" />
-              <div class="num ctx">{{ r.rightNum }}</div>
-              <div class="code ctx" v-html="r.html" />
+              <div class="num ctx" :data-tour-start="gapStarts(r) || undefined" :class="{ tour: gapInStop(r), 'tour-edge': gapInStop(r) }">{{ r.leftNum }}</div>
+              <div class="code ctx" :class="{ tour: gapInStop(r) }" v-html="r.html" />
+              <div class="num ctx" :class="{ tour: gapInStop(r) }">{{ r.rightNum }}</div>
+              <div class="code ctx" :class="{ tour: gapInStop(r) }" v-html="r.html" />
             </template>
             <div v-if="views[hi]!.remaining !== 0" class="expander">
               <button v-if="!views[hi]!.first && canStep(views[hi]!.remaining)" class="exp" title="Show 20 more lines below the hunk above" @click="expand(hi, 'down')">↓ 20</button>
@@ -143,27 +209,27 @@ const STATUS_COLOR = { added: 'success', deleted: 'error', renamed: 'info', modi
               <button v-if="canStep(views[hi]!.remaining)" class="exp" title="Show 20 more lines above the hunk below" @click="expand(hi, 'up')">↑ 20</button>
             </div>
             <template v-for="r in views[hi]!.bottomRows" :key="'b' + r.rightNum">
-              <div class="num ctx">{{ r.leftNum }}</div>
-              <div class="code ctx" v-html="r.html" />
-              <div class="num ctx">{{ r.rightNum }}</div>
-              <div class="code ctx" v-html="r.html" />
+              <div class="num ctx" :data-tour-start="gapStarts(r) || undefined" :class="{ tour: gapInStop(r), 'tour-edge': gapInStop(r) }">{{ r.leftNum }}</div>
+              <div class="code ctx" :class="{ tour: gapInStop(r) }" v-html="r.html" />
+              <div class="num ctx" :class="{ tour: gapInStop(r) }">{{ r.rightNum }}</div>
+              <div class="code ctx" :class="{ tour: gapInStop(r) }" v-html="r.html" />
             </template>
           </template>
           <div class="hunk-header">{{ hunk.header }}</div>
           <template v-for="(row, ri) in hunk.rows" :key="ri">
-            <div class="num" :class="row.left.type">{{ row.left.num }}</div>
-            <div class="code" :class="row.left.type" v-html="row.left.html" />
-            <div class="num" :class="row.right.type">{{ row.right.num }}</div>
-            <div class="code" :class="row.right.type" v-html="row.right.html" />
+            <div class="num" :data-tour-start="rowStarts(row) || undefined" :class="[row.left.type, { tour: rowInStop(row), 'tour-edge': rowInStop(row) }]">{{ row.left.num }}</div>
+            <div class="code" :class="[row.left.type, { tour: rowInStop(row) }]" v-html="row.left.html" />
+            <div class="num" :class="[row.right.type, { tour: rowInStop(row) }]">{{ row.right.num }}</div>
+            <div class="code" :class="[row.right.type, { tour: rowInStop(row) }]" v-html="row.right.html" />
           </template>
         </template>
 
         <template v-if="views[trailingIndex]">
           <template v-for="r in views[trailingIndex]!.topRows" :key="'e' + r.rightNum">
-            <div class="num ctx">{{ r.leftNum }}</div>
-            <div class="code ctx" v-html="r.html" />
-            <div class="num ctx">{{ r.rightNum }}</div>
-            <div class="code ctx" v-html="r.html" />
+            <div class="num ctx" :data-tour-start="gapStarts(r) || undefined" :class="{ tour: gapInStop(r), 'tour-edge': gapInStop(r) }">{{ r.leftNum }}</div>
+            <div class="code ctx" :class="{ tour: gapInStop(r) }" v-html="r.html" />
+            <div class="num ctx" :class="{ tour: gapInStop(r) }">{{ r.rightNum }}</div>
+            <div class="code ctx" :class="{ tour: gapInStop(r) }" v-html="r.html" />
           </template>
           <div v-if="views[trailingIndex]!.remaining !== 0" class="expander">
             <button v-if="canStep(views[trailingIndex]!.remaining)" class="exp" title="Show 20 more lines" @click="expand(trailingIndex, 'down')">↓ 20</button>
@@ -183,6 +249,7 @@ const STATUS_COLOR = { added: 'success', deleted: 'error', renamed: 'info', modi
   --diff-del-num: rgb(239 68 68 / 0.2);
   --diff-empty: var(--ui-bg-elevated);
   --diff-band: rgb(99 102 241 / 0.07);
+  --diff-tour: rgb(59 130 246 / 0.14);
 }
 .hunks,
 .full-grid {
@@ -212,6 +279,11 @@ const STATUS_COLOR = { added: 'success', deleted: 'error', renamed: 'info', modi
 .code.del { background: var(--diff-del-bg); }
 .num.empty,
 .code.empty { background: var(--diff-empty); }
+/* The active tour stop: a wash over whatever tint the cell has (a background
+   image stacks on the colour, so add/del stay visible) and a bar in the gutter. */
+.num.tour,
+.code.tour { background-image: linear-gradient(var(--diff-tour), var(--diff-tour)); }
+.num.tour-edge { box-shadow: inset 3px 0 0 var(--ui-primary); }
 .hunk-header,
 .expander {
   grid-column: 1 / -1;

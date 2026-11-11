@@ -27,6 +27,7 @@ export type SessionRole =
   | 'runplan-build'
   | 'pr-assess' // a PR review project's /jreview-assess
   | 'worktree' // the codebase's worktree kickoff / connect
+  | 'tour' // the Diff tab's Build tour (/jdiff-tour)
   | 'other'
 
 export interface SessionRecord {
@@ -78,7 +79,7 @@ export function saveSessions(sessions: SessionRecord[]): void {
   writeFileSync(SESSIONS_FILE, JSON.stringify({ sessions }, null, 2) + '\n', 'utf8')
 }
 
-const ROLES: SessionRole[] = ['implement', 'batch', 'orchestrate', 'merge', 'slice-report', 'outcome-report', 'runplan-build', 'worktree', 'other']
+const ROLES: SessionRole[] = ['implement', 'batch', 'orchestrate', 'merge', 'slice-report', 'outcome-report', 'runplan-build', 'pr-assess', 'worktree', 'tour', 'other']
 
 function coerceSession(raw: any): SessionRecord | null {
   if (!raw || typeof raw.id !== 'string' || !raw.id) return null

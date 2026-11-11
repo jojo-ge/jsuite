@@ -42,6 +42,7 @@ const ROLE_LABEL: Record<string, string> = {
   'runplan-build': 'run plan build',
   'pr-assess': 'PR assessment',
   worktree: 'worktree',
+  tour: 'tour build',
   other: 'other',
 }
 </script>

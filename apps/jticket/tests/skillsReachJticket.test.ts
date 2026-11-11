@@ -53,4 +53,11 @@ describe('jTicket-owned skills reach reviews through jTicket', () => {
       expect(existsSync(join(SKILLS_DIR, name, 'SKILL.md')), name).toBe(true)
     }
   })
+
+  it('jdiff-tour hands its tour to jTicket with jt, never to jDiff', () => {
+    const skill = readFileSync(join(SKILLS_DIR, 'jdiff-tour', 'SKILL.md'), 'utf8')
+    expect(skill).toMatch(/jt post \/api\/projects\/<project>\/diff\/tour\/artifact/)
+    expect(skill).toMatch(/jt post \/api\/projects\/<project>\/diff\/tour\/complete/)
+    expect(skill).not.toMatch(/:43002\b|jdiff\.local|JDIFF_URL|curl\s/)
+  })
 })

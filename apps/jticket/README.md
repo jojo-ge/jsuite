@@ -220,6 +220,23 @@ built in `server/utils/diffBuild.ts` (parse-diff) and highlighted in both
 themes by `server/utils/diffHighlight.ts` (the same shiki the documents package
 uses). The PR-list fields `diffUrl` carry these links as jTicket paths.
 
+**Guided tours.** A target can carry a tour: an overview plus 20–40 ordered
+stops at the lines that matter, for the human reading the diff (nothing hands
+tours to reviewers). **Build tour** dispatches one Opus `/jdiff-tour` session
+into the project's herdr workspace, in its own `PROJ-n · tour …` tab and
+without taking focus; it reads the target's exact commits and POSTs the tour
+back. The floating tour bar walks it: ← → (or n / p) and esc, a resume point
+per browser, and `?stop=i` links (the overview's stop list uses them); a stop
+on unchanged code expands its gap, or opens the full file, to show itself.
+Tours live in jDiff's store, `.data/jdiff/tours.json`, keyed by jDiff's target
+keys (a GitHub PR's number, `branch/<name>`; jTicket adds `PR-n`), so the
+tours jDiff saved still walk: a target's detail tour, else the overview tour
+jDiff's analyze run left. Logic: `server/utils/tours.ts`, `tourStore.ts`,
+`tourJobs.ts` (the run in flight, and why the last one failed);
+`app/composables/useTourWalk.ts`. Endpoints, each taking the target's params:
+`GET|POST|DELETE /api/projects/:id/diff/tour` (read / build / cancel), and the
+session's `POST …/diff/tour/artifact` and `POST …/diff/tour/complete`.
+
 ### Local pull requests
 
 GitHub for your local: single-ticket review happens entirely on the machine, and

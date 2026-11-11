@@ -97,3 +97,22 @@ export function expandGap(total: number, current: GapExpansion | undefined, dir:
   else st.bottom = Math.min(st.bottom + EXPAND_STEP, total - st.top)
   return st
 }
+
+/**
+ * Which gap hides a head-version (RIGHT) line, or null when it sits in a hunk
+ * or past the end. The trailing gap's size is unknown until the file is
+ * fetched, so before then anything past the last hunk lands in it. A guided
+ * tour's stop on unchanged code expands that gap to show itself.
+ */
+export function gapForLine(gaps: DiffGap[], line: number, fileLines: number | null): number | null {
+  for (let gi = 0; gi < gaps.length; gi++) {
+    const g = gaps[gi]!
+    const total = gapTotal(g, fileLines)
+    if (total == null) {
+      if (line > g.rightEnd) return gi
+      continue
+    }
+    if (line > g.rightEnd && line <= g.rightEnd + total) return gi
+  }
+  return null
+}

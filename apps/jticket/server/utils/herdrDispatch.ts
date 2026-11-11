@@ -42,6 +42,7 @@ function roleForJob(job: string): SessionRole {
   if (job === 'run plan') return 'runplan-build'
   if (job === 'pr assess') return 'pr-assess'
   if (job === 'worktree') return 'worktree'
+  if (job.startsWith('tour')) return 'tour'
   if (job.startsWith('batch')) return 'batch'
   if (job.startsWith('orchestrate')) return 'orchestrate'
   return 'other'

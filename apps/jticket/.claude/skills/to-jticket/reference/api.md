@@ -29,6 +29,8 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | GET | `/api/projects/:id/github` | The project's GitHub side: repo, integration-branch state, its open PRs with Diff tab (`diffUrl`) + github.com links |
 | GET | `/api/projects/:id/diff` | The Diff tab's rows for a target: none = the project's branch, `?pr=PR-n`, `?gh=<n>`, or `?head=&base=` → `{ target, files }` |
 | GET | `/api/projects/:id/diff/file` | One file at a commit, highlighted (`?oid=<headOid>&path=`) → `{ lines }` |
+| GET / POST / DELETE | `/api/projects/:id/diff/tour` | A target's guided tour (same target params; POST body = the target) — read `{ key, tour, variant, createdAt, job, failure }`, Build tour (one Opus `/jdiff-tour` session, no focus), cancel |
+| POST | `/api/projects/:id/diff/tour/artifact` · `…/complete` | The `/jdiff-tour` session hands back `{ ...target, artifact: { overview, stops } }`, then signs off `{ ...target, failures? }` |
 | POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` (the only remote write) |
 | POST | `/api/projects/:id/auto` | The jButton: `{enabled, once?, tickets?, plan?, continue?, stopRequested?, retry?}` — auto mode / run plan on or off |
 | GET | `/api/projects/:id/auto/queue?orchestrator=n` | An orchestrated loop's phase as the orchestrator sees it (409 unless orchestrated) |

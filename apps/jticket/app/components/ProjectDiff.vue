@@ -9,8 +9,13 @@
 // The server builds and highlights the rows (GET /api/projects/:id/diff);
 // this lays them out with a file list. Client-only: the rows are large, and
 // nothing here is worth server-rendering.
+//
+// A target can carry a guided tour (GET /api/projects/:id/diff/tour): Build
+// tour dispatches one /jdiff-tour session, and the tour is walked here with
+// the floating tour bar (useTourWalk — keys, resume, `?stop=` links).
 import type { Project } from '~/composables/useTracker'
 import type { DiffFile } from '~/utils/diffRows'
+import type { TourStop, TourView } from '~/utils/tour'
 import { diffTargetParams, localPrRefs, parseDiffTarget, sameDiffTarget, type DiffTargetQuery } from '~/utils/diffTarget'
 
 const props = defineProps<{ project: Project }>()
@@ -79,10 +84,8 @@ const { data, pending, error, refresh } = useFetch<DiffResponse>(
   () => `/api/projects/${props.project.id}/diff`,
   { query, server: false, lazy: true, watch: [query] },
 )
-const errorText = computed(() => {
-  const e: any = error.value
-  return e ? String(e.data?.statusMessage ?? e.data?.message ?? e.statusMessage ?? e.message ?? e) : ''
-})
+const errMessage = (e: any) => String(e?.data?.statusMessage ?? e?.data?.message ?? e?.statusMessage ?? e?.message ?? e)
+const errorText = computed(() => (error.value ? errMessage(error.value) : ''))
 
 const files = computed(() => data.value?.files ?? [])
 const totals = computed(() => files.value.reduce(
@@ -113,6 +116,74 @@ const STATUS_ICON = {
   modified: 'i-lucide-file-diff',
 } as const
 const shortOid = (oid: string) => oid.slice(0, 8)
+
+// ── Guided tour ──
+const { available: herdrUp } = useHerdr()
+const tourUrl = computed(() => `/api/projects/${props.project.id}/diff/tour`)
+const { data: tourView, refresh: refreshTour } = useFetch<TourView>(tourUrl, { query, server: false, lazy: true, watch: [query] })
+const tourBusy = ref(false)
+const tourDispatchError = ref('')
+watch(query, () => (tourDispatchError.value = ''))
+
+// While a build runs, poll until its tour (or its failure) lands.
+let tourPoll: ReturnType<typeof setInterval> | null = null
+watch(() => !!tourView.value?.job, (building) => {
+  if (tourPoll) clearInterval(tourPoll)
+  tourPoll = building ? setInterval(() => refreshTour(), 4_000) : null
+}, { immediate: true })
+onBeforeUnmount(() => tourPoll && clearInterval(tourPoll))
+
+async function buildTour() {
+  tourBusy.value = true
+  tourDispatchError.value = ''
+  try {
+    await $fetch(tourUrl.value, { method: 'POST', body: query.value })
+  } catch (e) {
+    tourDispatchError.value = errMessage(e)
+  } finally {
+    tourBusy.value = false
+    await refreshTour()
+  }
+}
+
+async function cancelTour() {
+  tourBusy.value = true
+  try {
+    await $fetch(tourUrl.value, { method: 'DELETE', query: query.value })
+  } catch { /* the run may have just finished */ } finally {
+    tourBusy.value = false
+    await refreshTour()
+  }
+}
+
+const fileRefs = new Map<string, { revealLine: (side: TourStop['side'], line: number) => Promise<HTMLElement | null> }>()
+function setFileRef(path: string, el: unknown) {
+  if (el) fileRefs.set(path, el as any)
+  else fileRefs.delete(path)
+}
+const toast = useToast()
+async function revealStop(stop: TourStop): Promise<HTMLElement | null> {
+  const file = fileRefs.get(stop.path)
+  if (!file) {
+    toast.add({ title: 'Not in this diff', description: `${stop.path} has no changes in this target.`, color: 'warning', icon: 'i-lucide-file-question' })
+    return null
+  }
+  return file.revealLine(stop.side, stop.line)
+}
+
+const tour = computed(() => tourView.value?.tour ?? null)
+const { tourIndex, currentStop, resumeIndex, jumpToStop, nextStop, prevStop, endTour, clearProgress } = useTourWalk({
+  repo: computed(() => props.project.repo),
+  tourKey: computed(() => tourView.value?.key ?? ''),
+  tour,
+  tourAt: computed(() => tourView.value?.createdAt ?? ''),
+  reveal: revealStop,
+  ready: computed(() => !!data.value?.files.length),
+})
+function restartTour() {
+  clearProgress()
+  jumpToStop(0)
+}
 </script>
 
 <template>
@@ -146,6 +217,20 @@ const shortOid = (oid: string) => oid.slice(0, 8)
       </div>
 
       <ClientOnly>
+        <DiffTourPanel
+          v-if="data && files.length && tourView"
+          class="mb-4"
+          :view="tourView"
+          :resume-index="resumeIndex"
+          :touring="tourIndex != null"
+          :herdr-up="herdrUp"
+          :busy="tourBusy"
+          :dispatch-error="tourDispatchError"
+          @build="buildTour"
+          @cancel="cancelTour"
+          @start="jumpToStop"
+          @restart="restartTour"
+        />
         <UAlert v-if="error" color="error" variant="subtle" icon="i-lucide-triangle-alert" title="Could not build the diff" :description="errorText" />
         <div v-else-if="pending && !data" class="flex items-center gap-2 py-12 text-sm text-muted">
           <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" /> Building the diff…
@@ -154,7 +239,7 @@ const shortOid = (oid: string) => oid.slice(0, 8)
           <UIcon name="i-lucide-git-compare" class="size-8" />
           <p><span class="font-mono">{{ data.target.head }}</span> has no changes against <span class="font-mono">{{ data.target.base }}</span>.</p>
         </div>
-        <div v-else-if="data" class="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        <div v-else-if="data" class="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]" :class="{ 'pb-64': currentStop }">
           <!-- File list -->
           <aside class="lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto">
             <p class="mb-2 text-xs text-muted">
@@ -193,13 +278,25 @@ const shortOid = (oid: string) => oid.slice(0, 8)
             <DiffFileView
               v-for="(file, i) in files"
               :key="`${data.target.headOid}:${file.path}`"
+              :ref="(el) => setFileRef(file.path, el)"
               :file="file"
               :anchor="anchorFor(i)"
               :project-id="project.id"
               :head-oid="data.target.headOid"
+              :tour-stop="currentStop?.path === file.path ? currentStop : null"
             />
           </div>
         </div>
+        <DiffTourBar
+          v-if="currentStop && tour && tourIndex != null"
+          :stop="currentStop"
+          :index="tourIndex"
+          :count="tour.stops.length"
+          :variant="tourView?.variant ?? 'detail'"
+          @prev="prevStop"
+          @next="nextStop"
+          @end="endTour"
+        />
       </ClientOnly>
     </template>
   </section>
