@@ -4,7 +4,8 @@ useHead({ title: 'Board' })
 // The raw ticket array still backs blocked/frontier arithmetic (blockedBy can
 // cross scopes); everything rendered comes from the codebase-scoped views.
 const { tickets } = useTracker()
-const { scopedProjects: projects, scopedTickets, scopedDocs: docs, todoProject, todoTickets } = useCodebase()
+// PR review projects (and their check tickets) live on /reviews, not here.
+const { boardProjects: projects, boardTickets: scopedTickets, scopedDocs: docs, todoProject, todoTickets } = useCodebase()
 const {
   openNewTicket,
   openEditTicket,

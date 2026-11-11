@@ -6,7 +6,8 @@ useHead({ title: 'Projects' })
 
 // Codebase-scoped, like every list page — the raw arrays stay in useTracker.
 const { refresh, updateProject, reorderProjects } = useTracker()
-const { scopedProjects: projects, scopedTickets: tickets, selectedPath } = useCodebase()
+// PR review projects have their own board (/reviews) and never list here.
+const { boardProjects: projects, boardTickets: tickets, selectedPath } = useCodebase()
 const { openNewProject, openEditProject, onDeleteProject } = useTrackerModals()
 const { herdrUp, dispatchTicket } = useHerdrDispatch()
 

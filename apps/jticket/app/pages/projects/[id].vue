@@ -162,7 +162,7 @@ async function removeProject() {
   if (!project.value) return
   await onDeleteProject(project.value)
   // onDeleteProject only mutates on confirm; navigate away if it's gone.
-  if (!projects.value.some((p) => p.id === project.value?.id)) navigateTo('/projects')
+  if (!projects.value.some((p) => p.id === project.value?.id)) navigateTo(project.value.mode === 'prreview' ? '/reviews' : '/projects')
 }
 </script>
 
@@ -182,8 +182,16 @@ async function removeProject() {
       </div>
 
       <template v-else>
-        <UButton icon="i-lucide-arrow-left" size="sm" color="neutral" variant="ghost" to="/projects" class="mb-4">
-          All projects
+        <!-- A PR review project's home is the Reviews board, not the projects board. -->
+        <UButton
+          icon="i-lucide-arrow-left"
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          :to="project.mode === 'prreview' ? '/reviews' : '/projects'"
+          class="mb-4"
+        >
+          {{ project.mode === 'prreview' ? 'All reviews' : 'All projects' }}
         </UButton>
 
         <!-- Project header — identity, progress, and the few actions used

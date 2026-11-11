@@ -7,7 +7,8 @@ import type { Ticket } from '~/composables/useTracker'
 
 useHead({ title: 'Today' })
 
-const { scopedProjects, scopedTickets, todoProject, todoTickets, selectedPath } = useCodebase()
+// PR review projects' checks and runs are the Reviews board's, not Today's.
+const { boardProjects: scopedProjects, boardTickets: scopedTickets, todoProject, todoTickets, selectedPath } = useCodebase()
 const { openEditTicket } = useTrackerModals()
 
 interface Pr { number: number; title: string; url: string; isDraft: boolean; author?: string; reviewDecision?: string; ci?: { state: string; failed: number; pending: number; total: number } }

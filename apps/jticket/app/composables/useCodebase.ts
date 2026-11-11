@@ -12,6 +12,7 @@
 // repoPath — the same rule the server's ?repo= filters apply.
 import type { Project, Ticket } from '~/composables/useTracker'
 import type { PromptOverrides } from '~/utils/prompts'
+import { isReviewProject } from '~/utils/reviewPlan'
 
 // A codebase's worktree guide and links — see server/utils/worktrees.ts.
 export interface WorktreeGuide {
@@ -129,6 +130,15 @@ export function useCodebase() {
   const scopedDocs = computed(() => docs.value.filter((d) => !d.projectId || scopedProjectIds.value.has(d.projectId)))
   const scopedPrs = computed(() => prs.value.filter((pr) => scopedProjectIds.value.has(pr.projectId)))
 
+  // PR review projects have their own board (/reviews). The home board, the
+  // projects index and Today render these instead, so a review never shows
+  // up as a project to work. Ticket modals, the project page and search keep
+  // the full scoped views.
+  const reviewProjects = computed(() => scopedProjects.value.filter(isReviewProject))
+  const boardProjects = computed(() => scopedProjects.value.filter((p) => !isReviewProject(p)))
+  const reviewProjectIds = computed(() => new Set(reviewProjects.value.map((p) => p.id)))
+  const boardTickets = computed(() => scopedTickets.value.filter((t) => !t.projectId || !reviewProjectIds.value.has(t.projectId)))
+
   // The codebase's TODO list (see POST /api/projects/todo — one per codebase).
   const todoProject = computed<Project | null>(() => scopedProjects.value.find((p) => p.mode === 'todo') ?? null)
   const todoTickets = computed<Ticket[]>(() =>
@@ -157,6 +167,9 @@ export function useCodebase() {
     scopedTickets,
     scopedDocs,
     scopedPrs,
+    reviewProjects,
+    boardProjects,
+    boardTickets,
     todoProject,
     todoTickets,
     unattachedProjects,

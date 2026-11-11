@@ -47,6 +47,8 @@ type NavLink = { label: string; icon: string; to: string; badge?: string | numbe
 const links = computed<NavLink[]>(() => [
   { label: 'Today', icon: 'i-lucide-sun', to: '/today' },
   { label: 'Projects', icon: 'i-lucide-folder-tree', to: '/projects' },
+  // PR review projects — kept off the projects board, one row per pull request.
+  { label: 'Reviews', icon: 'i-lucide-git-pull-request', to: '/reviews' },
   // Linked projects (tickets blocking tickets across projects) and their outcome reports.
   { label: 'Graphs', icon: 'i-lucide-waypoints', to: '/graphs' },
   // How projects perform: close times, spend, verification and concurrency across every project.

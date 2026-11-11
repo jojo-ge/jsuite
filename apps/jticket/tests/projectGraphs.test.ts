@@ -10,6 +10,12 @@ const p = (id: string, title: string, day: number): GraphProject => ({
 const t = (id: string, projectId: string | null, blockedBy: string[] = []): GraphTicket => ({ id, key: id.toUpperCase(), projectId, blockedBy })
 
 describe('projectGraphs', () => {
+  it('leaves PR review projects out, links and all', () => {
+    const projects = [p('a', 'A', 1), { ...p('r', 'Review of PR 9', 2), mode: 'prreview' }, p('b', 'B', 3)]
+    const tickets = [t('a1', 'a'), t('r1', 'r', ['a1']), t('b1', 'b', ['r1'])]
+    expect(projectGraphs(projects, tickets)).toEqual([])
+  })
+
   it('links projects through cross-project blockers and names the chain start → end', () => {
     const projects = [p('a', 'Hollywood A', 1), p('b', 'Hollywood B', 2), p('c', 'Hollywood C', 3)]
     const tickets = [t('a1', 'a'), t('a2', 'a', ['a1']), t('b1', 'b', ['a2']), t('b2', 'b', ['a1']), t('c1', 'c', ['b1'])]

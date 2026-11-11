@@ -2,7 +2,8 @@
 // projects are linked when a ticket in one is blocked by a ticket in the
 // other (A → B: B's ticket waits on A's), and a graph is each connected group
 // of linked projects. Add or drop a cross-project blocker and the graphs
-// follow. Pure: no Nuxt, no I/O — tests/projectGraphs.test.ts.
+// follow. PR review projects (mode 'prreview') never join a graph: they live
+// on the Reviews board. Pure: no Nuxt, no I/O — tests/projectGraphs.test.ts.
 import { OUTCOME_LABEL } from './autoLoop'
 
 export interface GraphProject {
@@ -10,6 +11,8 @@ export interface GraphProject {
   key: string
   title: string
   createdAt: string
+  /** 'prreview' projects are left out of every graph. */
+  mode?: string
 }
 
 export interface GraphTicket {
@@ -50,7 +53,7 @@ export interface ProjectGraph {
 
 /** Every graph of linked projects, earliest-started first. Unlinked projects appear in none. */
 export function projectGraphs(projects: GraphProject[], tickets: GraphTicket[]): ProjectGraph[] {
-  const byProject = new Map(projects.map((p) => [p.id, p]))
+  const byProject = new Map(projects.filter((p) => p.mode !== 'prreview').map((p) => [p.id, p]))
   const projectOf = new Map(tickets.map((t) => [t.id, t.projectId]))
   const ticketKey = new Map(tickets.map((t) => [t.id, t.key]))
 

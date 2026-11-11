@@ -421,3 +421,38 @@ export function coercePrReview(raw: any): PrReview | null {
     runs: Array.isArray(raw.runs) ? raw.runs.filter((r: any) => r && typeof r === 'object').slice(-REVIEW_RUNS_CAP) : [],
   }
 }
+
+// ── The Reviews board ───────────────────────────────────────────────────────
+// PR review projects live on their own board (/reviews), not the projects
+// board, the home board, Today or Graphs. These are what it reads.
+
+/** A PR review project — the projects board, home board, Today and Graphs leave these out. */
+export const isReviewProject = (p: { mode?: string } | null | undefined) => p?.mode === 'prreview'
+
+export type PrReviewRunState = 'assessing' | 'running' | 'paused' | 'idle'
+
+/** What the project is doing right now: assessing, a run in flight (or paused), or nothing. */
+export function prReviewRunState(r: PrReview | null | undefined): PrReviewRunState {
+  if (r?.assessing) return 'assessing'
+  if (r?.run?.status === 'running') return 'running'
+  if (r?.run?.status === 'paused') return 'paused'
+  return 'idle'
+}
+
+/** The verdict of the last run that finished with one ('' = none yet). */
+export function prReviewVerdict(r: PrReview | null | undefined): string {
+  return [...(r?.runs ?? [])].reverse().find((x) => x.status === 'done' && x.verdict)?.verdict ?? ''
+}
+
+/**
+ * A review project is done when its PR is merged or closed, or its last run
+ * finished — never from ticket counts (its check tickets close long before the
+ * review does). Assessing or a run in flight (a Rerun) is never done.
+ */
+export function prReviewDone(r: PrReview | null | undefined): boolean {
+  if (!r) return false
+  const state = r.pr.state.toUpperCase()
+  if (state === 'MERGED' || state === 'CLOSED') return true
+  if (prReviewRunState(r) !== 'idle') return false
+  return r.runs.at(-1)?.status === 'done'
+}
