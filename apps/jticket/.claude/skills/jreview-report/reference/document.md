@@ -1,7 +1,7 @@
-# jReview reviewer report — the document
+# Reviewer report — the document
 
-You're turning a reviewer's plain-text dump into the jExplain document jReview
-is waiting for. The review itself is done. Your job is formatting: **don't add,
+You're turning a reviewer's plain-text dump into the document the review
+watcher is waiting for. The review itself is done. Your job is formatting: **don't add,
 drop, merge or re-grade findings**, and don't change their meaning. You work in
 the reviewed checkout, so read the code for `quote:` excerpts and run git
 yourself.
@@ -67,7 +67,7 @@ python3 ~/.claude/skills/j-explain/scripts/explain.py /tmp/jreview/<review>/revi
 ```
 
 - **Always** `--replace --no-open`. Without `--replace` the pool may suffix the
-  key (`-2`) and jReview never sees it. `--no-open` because four reviewers
+  key (`-2`) and the watcher never sees it. `--no-open` because four reviewers
   must not open four browser tabs.
 - Check the printed key is exactly `<doc>`. If explain.py rejects the payload,
   fix the JSON and re-run.

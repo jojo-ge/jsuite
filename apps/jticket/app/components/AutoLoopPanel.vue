@@ -131,7 +131,7 @@ const phaseText = computed(() => {
       case 'arch-reviewing':
         return a.reviewKey
           ? `${planStepNo.value}: the architectural & technical reviewer (${reviewStep.value?.review.arch ? runnerLabel(reviewStep.value.review.arch) : 'Opus 5.5 high'}) is reading the changes since this step's checkpoint; its architectural findings come back as tickets, then get fixed and merged before the regular reviewers run.`
-          : `${planStepNo.value}: asking jReview for the architectural review of the changes since this step's checkpoint.`
+          : `${planStepNo.value}: starting the architectural review of the changes since this step's checkpoint.`
       case 'arch-fixing':
         return `${planStepNo.value}: fixing ${a.fixTickets.length} architectural finding${a.fixTickets.length === 1 ? '' : 's'} — mandatory — before the regular reviewers run.`
       case 'arch-merging':
@@ -139,7 +139,7 @@ const phaseText = computed(() => {
       case 'reviewing':
         return a.reviewKey
           ? `${planStepNo.value}: ${reviewers.value} reviewers (${reviewStep.value ? runnerLabel({ model: reviewStep.value.review.model, effort: reviewStep.value.review.effort }) : 'Opus 5.5 medium'}) are reading the changes since this step's checkpoint${a.archReviewKey ? ', architectural fixes included' : ''}; findings they all raise come back as tickets, then get fixed and merged.`
-          : `${planStepNo.value}: asking jReview for a review of the changes since this step's checkpoint.`
+          : `${planStepNo.value}: starting a review of the changes since this step's checkpoint.`
       case 'gate': {
         const note = plan.value.steps[a.cursor]?.note
         return `${planStepNo.value}: gate — press Continue when you're ready.${note ? ` ${note}` : ''}`
@@ -156,7 +156,7 @@ const phaseText = computed(() => {
     case 'reviewing':
       return a.reviewKey
         ? 'Two Opus 5.5 reviewers are reading this loop\'s changes; agreed findings come back as tickets.'
-        : 'Asking jReview for a review of this loop\'s changes.'
+        : 'Starting a review of this loop\'s changes.'
     case 'fixing':
       return `Fixing ${a.fixTickets.length} finding${a.fixTickets.length === 1 ? '' : 's'} both reviewers agreed on.`
     case 'merging-fixes':

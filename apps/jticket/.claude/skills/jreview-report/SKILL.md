@@ -1,17 +1,17 @@
 ---
 name: jreview-report
-description: Publish a finished code review into jReview as this reviewer's report document.
+description: Publish a finished code review into jTicket's review engine as this reviewer's report document.
 argument-hint: "[review=KEY reviewer=N doc=DOCKEY]"
 disable-model-invocation: true
 ---
 
 # jreview-report
 
-You are one of several jReview reviewer sessions. You have just run a code
+You are one of several reviewer sessions in a jTicket review. You have just run a code
 review (the global `/code-review` skill, or `/jarch-review` on an architecture
 pass).
-This skill turns that review into a **jExplain document** at the exact key
-jReview is watching. jReview polls the shared document pool: **the moment a
+This skill turns that review into a **document** at the exact key the review
+watcher is waiting for. The watcher polls the shared document pool: **the moment a
 document exists at `doc=`, this reviewer counts as finished**, and when every
 reviewer is finished a triage session merges all the reports (or, for a
 consensus review, a consensus session files the agreed findings as tickets).
@@ -80,7 +80,7 @@ never approve, comment on or touch the PR on GitHub yourself.
 Call the Agent tool with `model: "sonnet"` and `subagent_type:
 "general-purpose"`, and this prompt with the placeholders filled in:
 
-> Build and publish a jReview reviewer report. Read
+> Build and publish a reviewer report. Read
 > `~/.claude/skills/jreview-report/reference/document.md` and follow it
 > exactly. The review dump is `/tmp/jreview/<review>/reviewer-<n>.txt`; the
 > reviewed checkout is `<absolute cwd>`. Arguments: review=<review>

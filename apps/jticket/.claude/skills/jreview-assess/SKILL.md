@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-hint: "[PROJ-n]"
 ---
 
-# jReview assess — size the review of one PR
+# jreview-assess — size the review of one PR
 
 A PR review project handed you a pull request. You decide **how it gets
 reviewed**: how many reviewers (2–4, every one on the same brief), what that

@@ -1,14 +1,14 @@
 ---
 name: jreview-triage
-description: Triage a jReview run — read every reviewer's jExplain report, merge duplicate findings, publish a triage document, and POST the deduplicated findings back to jReview. Invoked as `/jreview-triage [key]` by the session jReview dispatches once all its reviewers have reported. Not for general use.
+description: Triage a review run — read every reviewer's report document, merge duplicate findings, publish a triage document, and POST the deduplicated findings back to jTicket's review engine. Invoked as `/jreview-triage [key]` by the session jReview dispatches once all its reviewers have reported. Not for general use.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---
 
 # jreview-triage
 
-jReview ran several independent reviewer sessions over the same diff. Each
-published its report as a jExplain document. Your job is to **dedupe**: turn
+A review ran several independent reviewer sessions over the same diff. Each
+published its report as a document. Your job is to **dedupe**: turn
 N overlapping reports into one clean list of findings the human can add to
 the review's project as tickets. You run in the reviewed repo (cwd), so you
 can check the code.

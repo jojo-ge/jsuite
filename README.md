@@ -1,24 +1,48 @@
 # jSuite
 
-A pnpm-workspace monorepo of seven local dev apps behind one HTTPS edge — one
-command, stable names, so you can point LLMs (and bookmarks) at fixed URLs
-instead of juggling dev servers. OrbStack provides DNS + HTTPS for the `.local`
-names; a single Caddy container routes them to the native dev servers:
+A pnpm-workspace monorepo of one local dev app, **jTicket**, behind one HTTPS
+edge — one command, a stable name, so you can point LLMs (and bookmarks) at a
+fixed URL instead of juggling dev servers. jTicket plans work, runs it in
+terminal claude sessions, and holds what comes back: boards and local PRs,
+block documents, editable charts, multi-reviewer code review, and a diff viewer
+with guided tours. Documents, charts, reviews and diffs were once separate apps
+(jExplain, jChart, jReview, jDiff); they are jTicket features now. OrbStack
+provides DNS + HTTPS for the `.local` names; a single Caddy container routes
+them to the native dev server:
 
 ```sh
 git clone git@github.com:jojo-ge/jsuite.git && cd jsuite
 ./jsuite setup      # once (re-runnable) — see Setup below
-./jsuite start      # apps + edge
+./jsuite start      # jTicket + edge
 ```
 
-| URL                      | App                       | Host port |
-| ------------------------ | ------------------------- | --------- |
-| https://jsuite.local     | index (static links page) | —         |
-| https://jticket.local    | jTicket                   | 43000     |
-| https://jdiff.local      | jDiff                     | 43002     |
-| https://jchart.local     | jChart                    | 43003     |
-| https://jexplain.local   | jExplain                  | 43004     |
-| https://jreview.local    | jReview                   | 43008     |
+| URL                      | What                                   | Host port |
+| ------------------------ | -------------------------------------- | --------- |
+| https://jsuite.local     | index (static page in `www/`)          | —         |
+| https://jticket.local    | jTicket                                | 43000     |
+| https://jexplain.local   | redirect-only: `/e/K` → jTicket `/e/K`             | — |
+| https://jreview.local    | redirect-only: `/r/K` → jTicket `/reviews/K`       | — |
+| https://jchart.local     | redirect-only: `/c/K` → jTicket `/charts/K`        | — |
+
+The three redirect-only hosts exist because stored tickets, docs and review
+reports still link to them. They answer 302s (the query string is kept), and
+any other path lands on that feature's index (`/e`, `/reviews`, `/charts`).
+Nothing new should link through them.
+
+jTicket's features, by where they live:
+
+| Feature | Where | Drive it with |
+| --- | --- | --- |
+| Board, local PRs, Today, Graphs, Analytics | `/`, `/projects/KEY`, `/today`, `/graphs`, `/analytics` | `jt`, `to-jticket`, `jimplement`, `jwayfinder` |
+| Auto mode (the jButton) and run plans | a project's board and **Run setup** tab | `jorchestrate`, `jrunplan`, `jslice-report` |
+| Documents | `/e` (library), `/e/<key>` (reader); a project's **Docs** tab | `j-explain`, `to-jspec`, `to-jdoc` |
+| Charts | `/charts`, `/charts/<key>` (editor; `/c/<key>` is an alias) | `j-chart` |
+| Reviews of a project's branch | a project's **Review** tab; the room `/reviews/<key>` (`/r/<key>` alias) | `jreview-report`, `jreview-triage`, `jreview-consensus`, `jarch-review` |
+| PR review projects | the **Reviews** board (`/reviews`), with the codebase's open PRs | `make-jreview-project`, `jreview-assess`, `jpr-check` |
+| Diff and tours | a project's **Diff** tab | `jdiff-tour` |
+
+`apps/jticket/README.md` covers each feature in depth; the root `CLAUDE.md`
+routes requests to them.
 
 ## Setup
 
@@ -39,10 +63,12 @@ Then, from the repo root:
 which does, in order:
 
 1. verifies OrbStack is installed, running, and the active Docker context
-2. `pnpm install` — one lockfile at the root installs every app and package
+2. `pnpm install` — one lockfile at the root installs jTicket and every package
 3. installs every repo-owned jskill into `~/.claude/skills` (manifest:
-   `SKILLS_MANIFEST` in `./jsuite`), then — when run from a real terminal —
-   the interactive `mattpocock/skills` installer
+   `SKILLS_MANIFEST` in `./jsuite`) and prunes links there that point nowhere
+   (a retired app's skills), shims `jsuite` and `jt` into `~/.local/bin`, then
+   — when run from a real terminal — the interactive `mattpocock/skills`
+   installer
 4. runs the data migrations — each rewrites an older `.data` shape in place
    and is a no-op once applied (today: jTicket's ticket types —
    `AFK`/`HITL` types and `wayfinder:<sub-type>` labels become a main `type`
@@ -50,28 +76,25 @@ which does, in order:
 5. removes leftovers from the old mkcert-based edge (stale `/etc/hosts`
    pins, `./certs/`), which would otherwise shadow OrbStack's DNS
 
-It is safe to re-run at any time — after adding an app, adding a skill, or
-pulling dependency or data-shape changes. Finish with `./jsuite start`; on the first HTTPS
-visit OrbStack asks once to trust its local CA, and every app gets a green
-lock from then on.
+It is safe to re-run at any time — after adding a skill, or pulling dependency
+or data-shape changes. Finish with `./jsuite start`; on the first HTTPS visit
+OrbStack asks once to trust its local CA, and jTicket gets a green lock from
+then on.
 
 ## Layout
 
 ```
 jsuite/
-├── jsuite              # the launcher (start/stop/status/logs/open/setup)
+├── jsuite              # the launcher (start/stop/status/logs/open/setup/sandbox)
 ├── Caddyfile           # edge routing config (runs in Docker; OrbStack does TLS)
 ├── docker-compose.yml
-├── www/                # static ecosystem index page (https://jsuite.local)
+├── www/                # static index page (https://jsuite.local)
 ├── CLAUDE.md           # request-routing guide for agents working in this repo
-├── .claude/skills/     # suite-level skills (jsuite — the ecosystem map)
-├── .data/              # every app's state, gitignored (see @jsuite/data)
+├── .claude/skills/     # suite-level skills (jsuite — the map of jTicket)
+├── .data/              # all state, gitignored (see @jsuite/data)
+├── bin/jt              # the jTicket CLI
 ├── apps/
-│   ├── jticket/        # projects + tickets + docs (owns most jskills, has its own j-setup)
-│   ├── jdiff/          # diff / PR review workbench
-│   ├── jchart/         # diagram workbench (specialised chart app)
-│   ├── jexplain/       # blog-style explainers with live charts
-│   └── jreview/        # multi-reviewer code review — 4 herdr reviewers, a triager, findings → jTicket (+ 2-reviewer consensus reviews for jTicket's auto loop)
+│   └── jticket/        # the app: board, documents, charts, reviews, diff (owns every jskill but jsuite, has its own j-setup)
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
     ├── documents/      # @jsuite/documents — shared block-document system (Nuxt layer)
@@ -80,15 +103,16 @@ jsuite/
     └── data/           # @jsuite/data — shared .data resolver
 ```
 
-The workspace is a single git repo and a pnpm monorepo — apps do not carry
-their own `.git`. One lockfile at the root; `pnpm install` here installs
-everything.
+The workspace is a single git repo and a pnpm monorepo. One lockfile at the
+root; `pnpm install` here installs everything. jTicket is the only app:
+`apps/jticket/tests/suiteWiring.test.ts` fails if another appears in `apps/`,
+the `APPS` table or the lockfile.
 
 ## @jsuite/data
 
-Every app stores its state under `.data/<app>/` at the repo root, never inside
-its own directory. One gitignored `.data` is the whole suite's state — simple to
-back up, wipe, or point an LLM at — and it survives an app being reinstalled.
+All state lives under `.data/<area>/` at the repo root, never inside the app's
+directory. One gitignored `.data` is the whole suite's state — simple to back
+up, wipe, or point an LLM at — and it survives the app being reinstalled.
 
 ```ts
 import { appDataDir, appDataFile } from '@jsuite/data'
@@ -96,25 +120,27 @@ const DATA_DIR = appDataDir('jchart')                 // <root>/.data/jchart
 const FILE = appDataFile('jticket', 'jticket.json')   // parents created
 ```
 
-Add `"@jsuite/data": "workspace:*"` to the app's `dependencies`; that's all —
+Add `"@jsuite/data": "workspace:*"` to a package's `dependencies`; that's all —
 it's plain ESM, so Nitro consumes it with no transpile step and there's no layer
 to extend. The root is found by walking up to `pnpm-workspace.yaml`, so it works
-however an app is launched; `./jsuite` also exports `JSUITE_DATA_DIR`, which
+however the app is launched; `./jsuite` also exports `JSUITE_DATA_DIR`, which
 overrides the search when set.
 
-| app | state |
+The directories keep the names of the apps that once owned them:
+
+| directory | state |
 | --- | --- |
-| jticket | `.data/jticket/jticket.json` + `attachments/` |
-| jchart | `.data/jchart/<key>.json` (+ `.notes.json`) — shared: jexplain reads/writes the same pool |
-| jdiff | `.data/jdiff/` — ratings, tours, risks, asks, comments, caches |
-| jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
-| jreview | `.data/jreview/<key>.json` — one review run: reviewer/triage dispatch state, the triaged findings, the jTicket project they became; the reports themselves live in the shared document pool |
+| `.data/jticket/` | `jticket.json` (the store — API-only, never hand-edited) + `attachments/`, `sessions.json` (the analytics ledger), `sync.json` |
+| `.data/jexplain/` | the document pool: `<key>.json` (+ `.notes.json`) — every jTicket doc, review report and explainer |
+| `.data/jchart/` | the chart pool: `<key>.json` (+ `.notes.json`) — the chart editor and every document's chart blocks |
+| `.data/jreview/` | `<key>.json` per review: reviewer/triage dispatch state and the findings (the reports themselves are documents in the pool) |
+| `.data/jdiff/` | `tours.json` and `failures.json` — the Diff tab's tours |
 
 ## @jsuite/charting
 
 The Excalidraw canvas, Mermaid→scene conversion, and scene utilities live in
-`packages/charting` as a Nuxt layer so any app can embed charts. A consumer
-needs three things:
+`packages/charting` as a Nuxt layer. jTicket extends it (through
+`@jsuite/documents`); a consumer needs three things:
 
 1. `"@jsuite/charting": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/charting']` in `nuxt.config.ts`
@@ -124,19 +150,19 @@ needs three things:
 That provides `<ExcalidrawCanvas>`, `mermaidToScene()`, the scene utils
 (auto-imported), types via `'@jsuite/charting/scene'` / `'@jsuite/charting/store'` —
 **and the shared chart store**: the layer carries `server/api/charts/**` over
-`.data/jchart/`, so every consumer serves the same chart pool. A chart embedded
-in jExplain is the same object opened in jChart; edits and notes flow both ways.
-jChart stays the specialised workbench UI on top.
+`.data/jchart/`. A chart embedded in a document is the same object jTicket's
+chart editor (`/charts/<key>`) opens; edits and notes flow both ways.
 
 ## @jsuite/documents
 
-The block-based document system born in jExplain — the model (prose, callout,
+The block-based document system — the model (prose, callout,
 code, diff, chart, image, steps, compare, timeline, takeaway + glossary), the
 renderers (`Block*.vue`, `<NotesRail>`, `<DocumentArticle>` — the full reading
 experience with margin notes), `useMarkdown()`/`useShiki()`, and the
 `server/api/documents/**` routes over `.data/jexplain/` — lives in
-`packages/documents` as a Nuxt layer. It `extends` `@jsuite/charting` itself,
-so chart blocks and `/api/charts/**` ride in transitively. A consumer needs:
+`packages/documents` as a Nuxt layer, extended by jTicket. It `extends`
+`@jsuite/charting` itself, so chart blocks and `/api/charts/**` ride in
+transitively. A consumer needs:
 
 1. `"@jsuite/documents": "workspace:*"` in `dependencies`
 2. `extends: ['@jsuite/documents']` in `nuxt.config.ts`
@@ -146,11 +172,10 @@ so chart blocks and `/api/charts/**` ride in transitively. A consumer needs:
    classes are generated: `@source "../../../../../packages/documents/app";`
 
 Types come from `'@jsuite/documents/types'` (client-safe) and
-`'@jsuite/documents/store'` (server). **One document pool serves every
-consumer**: a jTicket doc (tracker record + `documentKey`) is the same object
-jExplain lists and renders; review notes and chart edits flow both ways.
-jExplain stays the canonical reading shell; jTicket wraps documents in
-project/status/label metadata.
+`'@jsuite/documents/store'` (server). **One document pool**: a jTicket doc
+(tracker record + `documentKey`) is the same object the reader at `/e/<key>`
+renders and the library at `/e` lists; review notes and chart edits flow both
+ways. jTicket wraps documents in project/status/label metadata.
 
 ## @jsuite/herdr
 
@@ -168,14 +193,16 @@ startup screen fails with the screen in the error), and submits with
 `agent prompt --wait` — on a stall it presses Enter on text left in claude's
 input, resubmits only when the prompt is nowhere on screen, and otherwise
 fails loudly (`submitPrompt` does the same for prompts to a live agent, e.g.
-the auto loop's nudges). Every dispatch queues on one suite-wide lock
-(`withHerdrLock`, lock file `.data/herdr/dispatch.lock`, re-entrant) so the
-apps' list-then-create steps never interleave; wrap a whole workspace → pane →
+the auto loop's nudges). Every dispatch queues on one lock
+(`withHerdrLock`, lock file `.data/herdr/dispatch.lock`, re-entrant) so
+list-then-create steps never interleave; wrap a whole workspace → pane →
 claude sequence in it to make the sequence atomic. Every CLI call has a
 timeout (30s default). Plain ESM, no layer; failures throw `HerdrError` with
 an HTTP-ish `statusCode` and herdr's error `code`.
-jTicket dispatches all ticket work through it, jDiff dispatches its review-guidance sessions (the
-`jdiff-review` / `jdiff-ask` skills, pinned to Opus 5).
+jTicket dispatches every session through it — ticket work, loops, merges,
+reports, reviewers and their triage/consensus sessions, PR-review assessors
+and checks, and Diff-tab tours — via `apps/jticket/server/utils/herdr.ts`,
+which adds the sandbox guards.
 
 ## @jsuite/relay — jTicket project sync
 
@@ -231,19 +258,21 @@ small WebSocket broadcast server with the same topic fan-out semantics, and
 
 ## jSkills
 
-Apps own their Claude skills in `<app>/.claude/skills` (the jTicket pattern:
-jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
-jdiff owns `jdiff-review` and `jdiff-ask`;
-jchart owns `j-chart`; jexplain owns `j-explain`;
-jreview owns `jreview-report`, `jreview-triage` and `jreview-consensus`).
-Suite-level skills live in
-`.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
-app does, how they relate, and which app/skill a request routes to.
+jTicket owns its Claude skills in `apps/jticket/.claude/skills`: the board's
+(`to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement`,
+`jorchestrate`, `jrunplan`, `jslice-report`, `jarchitect-scan`,
+`jarchitect-grill`, `jreproduce`), documents' and charts' (`j-explain`,
+`j-chart`), reviews' (`jreview-report`, `jreview-triage`, `jreview-consensus`,
+`jarch-review`, `make-jreview-project`, `jreview-assess`, `jpr-check`) and the
+Diff tab's (`jdiff-tour`). Suite-level skills live in `.claude/skills/` at the
+repo root: `jsuite` is the map — what each jTicket feature does and which
+feature/skill a request routes to.
 
 `./jsuite setup` installs them all globally (plus the interactive
 `mattpocock/skills` installer when run from a terminal). The `SKILLS_MANIFEST`
-table in `./jsuite` says which app owns what; keep `apps/jticket/j-setup`
-(jTicket's standalone app-local installer) in sync with its row.
+table in `./jsuite` lists them; keep `apps/jticket/j-setup` (jTicket's
+standalone installer, `JSKILLS`) in sync with its `apps/jticket` row —
+`suiteWiring.test.ts` checks both.
 
 ## Why OrbStack does TLS
 
@@ -260,55 +289,60 @@ Always include the scheme: `https://jticket.local`.
 ## Commands
 
 ```sh
-./jsuite start            # start every dev server + the Caddy edge
-./jsuite stop             # stop all of it (kills each app's whole process group)
+./jsuite start            # start jTicket's dev server + the Caddy edge
+./jsuite stop             # stop all of it (kills jTicket's whole process group)
 ./jsuite restart
-./jsuite status           # pid + live HTTPS status code per app
-./jsuite logs [app|edge]  # tail -F; no arg = every app
-./jsuite open [app]       # open in the browser (default: the index)
+./jsuite status           # pid + live HTTPS status code
+./jsuite logs [jticket|edge]  # tail -F; no arg = every log in logs/
+./jsuite open [jticket]   # open in the browser (default: the index)
 ./jsuite root             # print this checkout's path (skills use it to find .data/)
 ./jsuite setup            # onboarding: OrbStack check, pnpm install, skill links,
                           # .data migrations, cleanup of the old mkcert/hosts edge — re-runnable
+./jsuite sandbox [--port N] [--fresh] [--repos /abs/a:/abs/b] [--engines]
+                          # run THIS checkout's jTicket on a port from 43100, over a
+                          # copy of the live .data, engines off, git/gh writes and
+                          # herdr sessions refused outside --repos (for worktrees)
 ```
 
 State lives beside the script: `logs/<app>.log`, `run/<app>.pid`.
 
 ## Design
 
-The apps run **natively on the host**; only Caddy is containerised. That is
-deliberate — jDiff needs host `git`, `gh`, the `claude` CLI, the native folder
-picker and open-in-VSCode, none of which survive containerisation. OrbStack
-terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
+jTicket runs **natively on the host**; only Caddy is containerised. That is
+deliberate — jTicket needs host `git`, `gh`, `herdr`, the `claude` CLI, the
+native folder picker and open-in-VSCode, none of which survive
+containerisation. OrbStack terminates TLS; Caddy routes `jticket.local` to
+`host.docker.internal:43000`, serves `jsuite.local` from `www/`, and answers
+the redirect-only hosts itself.
 
 ```
-browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43008}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:43000 (jticket.local)
+                                                          ├─ /srv/www (jsuite.local)
+                                                          └─ 302 → jticket.local (jexplain/jreview/jchart.local)
                         │
                         └─ OrbStack local CA, auto-trusted on first visit
 ```
 
-`./jsuite start` refuses to start an app whose port is held by something it
+`./jsuite start` refuses to start jTicket when its port is held by something it
 didn't launch (a stale dev server), rather than letting Nuxt silently pick a
 different port and break the proxy.
 
-## Adding an app
+## Adding a hostname
 
-1. Create it under `apps/<id>` (it joins the workspace automatically via
-   `pnpm-workspace.yaml`), then `pnpm install` at the root.
-2. Add a row to `APPS` in `./jsuite` (id | dir under apps/ | port | dev command).
-3. Add a matching `https://<id>.local` block to the `Caddyfile`.
-4. Add the name to `DOMAINS` in `./jsuite` AND to the `dev.orbstack.domains`
-   label in `docker-compose.yml`, and allowlist it in the app's
-   `nuxt.config.ts` → `vite.server.allowedHosts`.
-5. `./jsuite restart` — the label and `Caddyfile` are only read when the
-   container is recreated.
-6. Give it an identity: `public/favicon.svg` (32×32, dark rounded square + the
-   app's accent from `www/site.css`), plus `app.head` in `nuxt.config.ts` with
-   the title, description and icon link, and a `titleTemplate` in `app.vue` so
-   pages set only their own name and tabs read `Page · jApp`.
+New product surface goes into jTicket, not a new app. If a name ever has to
+change on the edge:
+
+1. Add or change its block in the `Caddyfile`.
+2. Keep `DOMAINS` in `./jsuite` AND the `dev.orbstack.domains` label in
+   `docker-compose.yml` the same set (`suiteWiring.test.ts` checks the three
+   agree). A name jTicket itself answers also needs allowlisting in
+   `apps/jticket/nuxt.config.ts` → `vite.server.allowedHosts`.
+3. `./jsuite restart` from the main checkout — the label and `Caddyfile` are
+   only read when the container is recreated.
 
 ## Notes
 
-- Each app allowlists its `.local` name via `vite.server.allowedHosts` — Vite's
+- jTicket allowlists `jticket.local` via `vite.server.allowedHosts` — Vite's
   dev-server host check otherwise 403s through the proxy. The port in the `Host`
   header doesn't need listing; Vite compares hostnames.
 - `.local` names are resolved by OrbStack (custom domains via the
@@ -319,6 +353,6 @@ different port and break the proxy.
   Settings → Network (on by default).
 - Dev-log noise: `[Icon] failed to load icon lucide:*` warnings come from
   `@nuxt/icon`'s SSR-side fetch and are harmless — the browser loads icons via
-  each app's `/api/_nuxt_icon/*` endpoint, which works.
+  jTicket's `/api/_nuxt_icon/*` endpoint, which works.
 - The old `control-center/` dashboard (localhost:7777) is gone — `./jsuite`
   replaced it. `www/index.html` is a static links page with no process behind it.

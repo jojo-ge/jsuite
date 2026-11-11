@@ -128,7 +128,7 @@ async function act(action: 'retry-reviewer' | 'skip-reviewer' | 'retry-triage', 
     })
     refreshList()
   } catch (err: any) {
-    toast.add({ title: 'jReview refused', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+    toast.add({ title: 'Review refused', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
   } finally {
     busy.value = ''
   }
@@ -325,7 +325,7 @@ const severityCounts = computed(() => {
       <UIcon name="i-lucide-scan-search" class="size-7 text-muted" />
       <div>
         <p class="text-sm">This project isn't wired to a repo.</p>
-        <p class="text-xs text-muted">Point it at a local clone to review its branches with jReview.</p>
+        <p class="text-xs text-muted">Point it at a local clone to review its branches.</p>
       </div>
       <UButton icon="i-lucide-link" size="sm" variant="soft" @click="emit('configure')">Connect a repo</UButton>
     </div>
@@ -386,7 +386,7 @@ const severityCounts = computed(() => {
           </UButton>
         </div>
         <p class="mt-2 text-xs text-muted">
-          jReview runs each reviewer as an Opus session in herdr over
+          Each reviewer runs as an Opus session in herdr over
           <span class="font-mono">base...branch</span>, then a triager merges their findings. You pick which become
           {{ project.key }} tickets.
           <span v-if="!herdrUp" class="text-warning">herdr isn't running — start it first, or the reviewers can't be dispatched.</span>
@@ -398,7 +398,7 @@ const severityCounts = computed(() => {
         color="warning"
         variant="subtle"
         icon="i-lucide-cloud-off"
-        title="jReview isn't reachable"
+        title="Reviews aren't available"
         :description="listData.error"
       />
 
@@ -511,7 +511,7 @@ const severityCounts = computed(() => {
                 <li v-for="b in review.assessment.blockers" :key="b" class="flex gap-1.5"><span class="text-error">·</span>{{ b }}</li>
               </ul>
               <p class="mt-1.5 text-xs text-dimmed">
-                A recommendation only — jReview never approves or requests changes. That click is yours, on GitHub.
+                A recommendation only — jTicket never approves or requests changes. That click is yours, on GitHub.
               </p>
             </div>
 

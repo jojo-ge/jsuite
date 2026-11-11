@@ -75,7 +75,7 @@ function when(iso: string) {
                 <h2 class="text-sm font-semibold">Worktrees</h2>
                 <p class="text-xs text-muted">
                   How this codebase creates, sets up, runs and tears down worktrees — asked of the codebase
-                  itself. /jimplement, /jreproduce, jReview and integration branches all follow it.
+                  itself. /jimplement, /jreproduce, reviews and integration branches all follow it.
                 </p>
               </div>
               <UBadge :color="STATE_BADGE[state].color" variant="subtle">{{ STATE_BADGE[state].label }}</UBadge>

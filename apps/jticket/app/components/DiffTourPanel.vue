@@ -49,7 +49,7 @@ const stopLink = (i: number) => ({ query: { ...route.query, stop: String(i) } })
       <template v-if="tour">
         <span class="font-medium">Guided tour</span>
         <span class="text-xs text-muted">
-          {{ tour.stops.length }} stops<template v-if="legacy"> · jDiff overview tour</template><template v-if="builtAt"> · {{ builtAt }}</template>
+          {{ tour.stops.length }} stops<template v-if="legacy"> · overview tour (from before the move)</template><template v-if="builtAt"> · {{ builtAt }}</template>
         </span>
         <UButton v-if="!touring" size="xs" icon="i-lucide-play" @click="emit('start', resumeIndex ?? 0)">
           {{ resumeIndex ? `Resume ${resumeIndex + 1}/${tour.stops.length}` : 'Start tour' }}

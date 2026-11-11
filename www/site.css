@@ -168,7 +168,7 @@ code { font-family: var(--mono); font-size: 0.92em; }
 /* ---------- app strip (hero footer) ---------- */
 
 .app-strip {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
   background: var(--line); border-block: 1px solid var(--line);
 }
 .app-strip > div {
@@ -189,14 +189,12 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .app-strip .u a { color: var(--faint); }
 .app-strip .u a:hover { color: var(--fg); text-decoration: underline; }
 .app-strip .k::before { content: "● "; font-size: 0.6rem; vertical-align: 2px; }
-.app-strip [data-app="jticket"] .k::before { color: var(--ticket); }
-.app-strip [data-app="jdiff"] .k::before { color: var(--diff); }
-.app-strip [data-app="jchart"] .k::before { color: var(--chart); }
-.app-strip [data-app="jexplain"] .k::before { color: var(--explain); }
-.app-strip [data-app="jgrilling"] .k::before { color: var(--grill); }
-.app-strip [data-app="jcode"] .k::before { color: var(--code); }
-.app-strip [data-app="jmap"] .k::before { color: var(--map); }
-.app-strip [data-app="jreview"] .k::before { color: var(--review); }
+.app-strip [data-app="board"] .k::before { color: var(--ticket); }
+.app-strip [data-app="diff"] .k::before { color: var(--diff); }
+.app-strip [data-app="charts"] .k::before { color: var(--chart); }
+.app-strip [data-app="documents"] .k::before { color: var(--explain); }
+.app-strip [data-app="reviews"] .k::before { color: var(--review); }
+@media (max-width: 960px) { .app-strip { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 760px) { .app-strip { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- app folds ---------- */
@@ -227,12 +225,11 @@ code { font-family: var(--mono); font-size: 0.92em; }
 .fold.flip::before {
   background: radial-gradient(700px 420px at 15% 30%, var(--glow, transparent), transparent 70%);
 }
-.fold[data-app="jticket"] { --accent: var(--ticket); --glow: rgba(139, 155, 255, 0.09); }
-.fold[data-app="jdiff"] { --accent: var(--diff); --glow: rgba(74, 222, 128, 0.07); }
-.fold[data-app="jchart"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.07); }
-.fold[data-app="jexplain"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.08); }
-.fold[data-app="jgrilling"] { --accent: var(--grill); --glow: rgba(251, 146, 60, 0.08); }
-.fold[data-app="jcode"] { --accent: var(--code); --glow: rgba(244, 114, 182, 0.08); }
+.fold[data-app="board"] { --accent: var(--ticket); --glow: rgba(139, 155, 255, 0.09); }
+.fold[data-app="diff"] { --accent: var(--diff); --glow: rgba(74, 222, 128, 0.07); }
+.fold[data-app="charts"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.07); }
+.fold[data-app="documents"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.08); }
+.fold[data-app="reviews"] { --accent: var(--review); --glow: rgba(248, 113, 113, 0.08); }
 
 .fold-eyebrow {
   display: flex; align-items: center; gap: 0.6rem;
@@ -440,11 +437,11 @@ footer.site a:hover { color: var(--fg); }
   background: radial-gradient(700px 400px at 25% 0%, var(--glow, transparent), transparent 70%);
 }
 .learn-hero .wrap { position: relative; max-width: 800px; }
-.learn-hero[data-app="jticket"] { --accent: var(--ticket); --glow: rgba(139, 155, 255, 0.12); }
-.learn-hero[data-app="jdiff"] { --accent: var(--diff); --glow: rgba(74, 222, 128, 0.1); }
-.learn-hero[data-app="jchart"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.1); }
-.learn-hero[data-app="jexplain"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.11); }
-.learn-hero[data-app="jgrilling"] { --accent: var(--grill); --glow: rgba(251, 146, 60, 0.1); }
+.learn-hero[data-app="board"] { --accent: var(--ticket); --glow: rgba(139, 155, 255, 0.12); }
+.learn-hero[data-app="diff"] { --accent: var(--diff); --glow: rgba(74, 222, 128, 0.1); }
+.learn-hero[data-app="charts"] { --accent: var(--chart); --glow: rgba(251, 191, 36, 0.1); }
+.learn-hero[data-app="documents"] { --accent: var(--explain); --glow: rgba(56, 189, 248, 0.11); }
+.learn-hero[data-app="reviews"] { --accent: var(--review); --glow: rgba(248, 113, 113, 0.1); }
 .crumb { font-size: 0.82rem; color: var(--faint); margin-bottom: 1.6rem; }
 .crumb a { color: var(--muted); text-decoration: none; }
 .crumb a:hover { color: var(--fg); }
@@ -469,11 +466,11 @@ article.learn h2 {
   font-size: 1.45rem; letter-spacing: -0.02em; margin: 0 0 1rem; font-weight: 700;
 }
 article.learn h2::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 3px; background: var(--accent, var(--fg)); margin-right: 0.65rem; vertical-align: 1px; }
-article.learn[data-app="jticket"] { --accent: var(--ticket); }
-article.learn[data-app="jdiff"] { --accent: var(--diff); }
-article.learn[data-app="jchart"] { --accent: var(--chart); }
-article.learn[data-app="jexplain"] { --accent: var(--explain); }
-article.learn[data-app="jgrilling"] { --accent: var(--grill); }
+article.learn[data-app="board"] { --accent: var(--ticket); }
+article.learn[data-app="diff"] { --accent: var(--diff); }
+article.learn[data-app="charts"] { --accent: var(--chart); }
+article.learn[data-app="documents"] { --accent: var(--explain); }
+article.learn[data-app="reviews"] { --accent: var(--review); }
 article.learn p, article.learn li { color: var(--muted); }
 article.learn p b, article.learn li b { color: var(--fg); font-weight: 600; }
 article.learn code {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>jChart — diagram workbench · jSuite</title>
+<title>Charts — the diagram editor in jTicket · jSuite</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/site.css">
 </head>
@@ -14,38 +14,37 @@
     <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
     <nav class="nav-links">
       <a href="/learn/jticket.html">jTicket</a>
-      <a href="/learn/jdiff.html">jDiff</a>
-      <a href="/learn/jchart.html">jChart</a>
-      <a href="/learn/jexplain.html">jExplain</a>
-      <a class="nav-cta" href="https://jchart.local">Open jChart</a>
+      <a href="/learn/documents.html">Documents</a>
+      <a href="/learn/charts.html">Charts</a>
+      <a href="/learn/reviews.html">Reviews &amp; diffs</a>
+      <a class="nav-cta" href="https://jticket.local/charts">Open Charts</a>
     </nav>
   </div>
 </header>
 
-<section class="learn-hero" data-app="jchart">
+<section class="learn-hero" data-app="charts">
   <div class="wrap">
-    <p class="crumb"><a href="/">jSuite</a> / jChart</p>
-    <h1>jChart <span class="tag">— the diagram workbench</span></h1>
-    <p class="sub">Claude drafts a diagram in Mermaid; jChart turns it into an
+    <p class="crumb"><a href="/">jSuite</a> / Charts</p>
+    <h1>Charts <span class="tag">— the diagram editor</span></h1>
+    <p class="sub">Claude drafts a diagram in Mermaid; jTicket turns it into an
       <b>editable Excalidraw canvas</b>. You redraw it, pin notes to individual shapes,
       and Claude reads your edits and notes back off disk.</p>
     <div class="meta">
-      <span class="pill">https://jchart.local</span>
-      <span class="pill">port :43003</span>
+      <span class="pill">https://jticket.local/charts</span>
       <span class="pill">state: .data/jchart/</span>
       <span class="pill">shared chart pool</span>
     </div>
-    <a class="btn btn-app" href="https://jchart.local">Open jChart <span class="arrow">→</span></a>
+    <a class="btn btn-app" href="https://jticket.local/charts">Open Charts <span class="arrow">→</span></a>
   </div>
 </section>
 
-<article class="learn" data-app="jchart">
+<article class="learn" data-app="charts">
   <section>
     <h2>Why it exists</h2>
     <p>Mermaid is a great language for an LLM to <i>write</i> and a poor medium for a human
-      to <i>edit</i>. jChart uses each for what it's good at: Claude drafts the structure in
-      Mermaid, the app converts it to an Excalidraw scene, and from that point on
-      <b>the canvas — not the Mermaid — is the source of truth</b>. Drag boxes, reroute
+      to <i>edit</i>. The chart editor uses each for what it's good at: Claude drafts the
+      structure in Mermaid, jTicket converts it to an Excalidraw scene, and from then on
+      <b>the canvas, not the Mermaid, is the source of truth</b>. Drag boxes, reroute
       arrows, redraw parts freehand; nothing gets clobbered by a regenerate.</p>
     <p>Feedback is spatial too: instead of describing a shape in chat (“the second box
       from the left…”), you <b>pin a note directly to it</b>. Notes land in a
@@ -56,9 +55,9 @@
     <h2>The diagram loop</h2>
     <ol class="step-list">
       <li><b>Ask for a diagram.</b> The <code>j-chart</code> skill has Claude draft it in
-        Mermaid and import it as a scene.</li>
-      <li><b>Edit on the canvas.</b> Open it in jChart — move, restyle, redraw, delete.
-        It's a full Excalidraw editor.</li>
+        Mermaid and push it as a chart.</li>
+      <li><b>Edit on the canvas.</b> Open it at <code>/charts/&lt;key&gt;</code>: move, restyle,
+        redraw, delete. It's a full Excalidraw editor.</li>
       <li><b>Annotate shapes.</b> Pin notes to exactly the elements you mean.</li>
       <li><b>Claude revises.</b> It reads the scene and your notes from
         <code>.data/jchart/</code> and updates the diagram without discarding your edits.</li>
@@ -70,21 +69,19 @@
     <div class="skill-cards">
       <div class="skill-card">
         <h3>j-chart</h3>
-        <p>Turns a request into a diagram, opens it in jChart as an editable Excalidraw
-          canvas, and gets your edits and per-shape notes back. The whole loop —
-          draft, import, read-back — is this one skill.</p>
+        <p>Turns a request into a diagram, opens it in the chart editor as an editable
+          Excalidraw canvas, and gets your edits and per-shape notes back.</p>
       </div>
     </div>
   </section>
 
   <section>
     <h2>The shared chart pool</h2>
-    <p>jChart's scenes are not private to jChart. The <code>@jsuite/charting</code> package —
-      a Nuxt layer with the Excalidraw canvas, Mermaid→scene conversion, and a
-      <code>/api/charts</code> store over <code>.data/jchart/</code> — is extended by every
-      consumer app. That means <b>a chart embedded in a jExplain article is the very
-      same object jChart opens</b>: edits and notes flow both ways, and jChart stays
-      the specialised workbench UI on top of the pool.</p>
+    <p>The <code>@jsuite/charting</code> package is a Nuxt layer with the Excalidraw canvas,
+      Mermaid-to-scene conversion and a <code>/api/charts</code> store over
+      <code>.data/jchart/</code>. Documents extend it, so <b>a chart embedded in a document is
+      the very same object the editor opens</b>. Its <b>Open editor</b> button goes straight
+      to <code>/charts/&lt;key&gt;</code>.</p>
   </section>
 
   <section>
@@ -92,17 +89,16 @@
     <dl class="kv">
       <dt>State</dt><dd><code>.data/jchart/&lt;key&gt;.json</code> per scene, plus
         <code>&lt;key&gt;.notes.json</code> for your annotations.</dd>
-      <dt>Shared with</dt><dd>jExplain (and any future consumer of
-        <code>@jsuite/charting</code>) reads and writes the same pool.</dd>
-      <dt>Suite role</dt><dd>The visual end of the loop — architecture sketches for
-        specs in jTicket, figures for articles in jExplain.</dd>
+      <dt>Shared with</dt><dd>Every document's chart blocks read and write the same pool.</dd>
+      <dt>Old links</dt><dd><code>https://jchart.local/c/&lt;key&gt;</code> redirects to
+        <code>https://jticket.local/charts/&lt;key&gt;</code>.</dd>
     </dl>
   </section>
 
   <section>
-    <h2>Explore the rest of the suite</h2>
+    <h2>Explore the rest of jTicket</h2>
     <div class="next-links">
-      <a href="/learn/jexplain.html"><div class="k">jExplain →</div><div class="v">Embed these charts, live, inside explainer articles.</div></a>
+      <a href="/learn/documents.html"><div class="k">Documents →</div><div class="v">Embed these charts, live, inside articles and specs.</div></a>
       <a href="/learn/jticket.html"><div class="k">jTicket →</div><div class="v">Plan the system you just diagrammed.</div></a>
     </div>
   </section>
@@ -113,9 +109,9 @@
     <span><a href="/">← Back to jSuite</a></span>
     <nav>
       <a href="/learn/jticket.html">jTicket</a>
-      <a href="/learn/jdiff.html">jDiff</a>
-      <a href="/learn/jchart.html">jChart</a>
-      <a href="/learn/jexplain.html">jExplain</a>
+      <a href="/learn/documents.html">Documents</a>
+      <a href="/learn/charts.html">Charts</a>
+      <a href="/learn/reviews.html">Reviews &amp; diffs</a>
     </nav>
   </div>
 </footer>

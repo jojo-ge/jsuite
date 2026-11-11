@@ -97,7 +97,7 @@ const endpoints = [
   { m: 'GET', p: '/api/stream', d: 'SSE — one message per store revision; what makes the board live' },
   { m: 'GET', p: '/api/attachments', d: 'List uploaded attachments (images for ticket markdown)' },
   { m: 'POST', p: '/api/attachments', d: 'Upload { name, base64 | dataUrl } or { file, name? } → served at /attachments/:name, returns ready-made markdown' },
-  { m: 'GET', p: '/api/media/:key/:file', d: "A doc's image-block media (also served by jExplain)" },
+  { m: 'GET', p: '/api/media/:key/:file', d: "A doc's image-block media" },
 ]
 
 const docExample = `curl -s http://localhost:43000/api/docs \\
@@ -298,12 +298,12 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Docs — draft Confluence-style pages</h2>
         <p class="mb-3 text-sm text-muted">
-          A doc is a tracker record wrapping a <strong>shared block document</strong> (the jExplain
-          format): <code>title</code>, <code>blocks</code> (or <code>documentKey</code> to link an
+          A doc is a tracker record wrapping a <strong>shared block document</strong> (the
+          <code>j-explain</code> format): <code>title</code>, <code>blocks</code> (or <code>documentKey</code> to link an
           existing document), optional <code>project</code> (by title, key, or id), <code>labels</code>,
           and <code>status</code> (<code>draft</code> · <code>ready</code>). Nothing is ever posted
-          anywhere external — docs render at <code>/docs/DOC-n</code> (and in jExplain, which reads the
-          same pool). PATCH with <code>blocks</code> rewrites the content; notes survive.
+          anywhere external — docs render at <code>/docs/DOC-n</code> (and at <code>/e/&lt;documentKey&gt;</code>, the
+          reader over the same pool). PATCH with <code>blocks</code> rewrites the content; notes survive.
         </p>
         <pre class="overflow-x-auto rounded-lg bg-elevated p-4 text-xs leading-relaxed"><code>{{ docExample }}</code></pre>
       </section>
@@ -311,7 +311,7 @@ const methodColor: Record<string, string> = {
       <section>
         <h2 class="mb-2 text-base font-semibold">Document blocks</h2>
         <p class="mb-3 text-sm text-muted">
-          One shared block vocabulary serves jTicket docs and jExplain articles (the
+          One shared block vocabulary serves docs, specs, review reports and explainers (the
           <code>j-explain</code> format — see the to-jdoc / j-explain skills for payload shapes).
           Ticket / project descriptions and resolutions are plain GFM markdown:
         </p>
@@ -341,8 +341,8 @@ const methodColor: Record<string, string> = {
           ready to paste. <strong>Docs</strong> carry pictures as <code>image</code> blocks, whose
           bytes (<code>file</code> or <code>base64</code>) are copied into
           <code>.data/jexplain/media/&lt;documentKey&gt;/</code> and served at
-          <code>/api/media/…</code> by jTicket and jExplain alike — never link
-          <code>/attachments/</code> from a doc, jExplain can't serve it. Max 12MB either way.
+          <code>/api/media/…</code> — never link
+          <code>/attachments/</code> from a doc, the document reader can't serve it. Max 12MB either way.
           In the UI: paste or drop an image into any of those ticket fields (or click
           <em>Attach image</em>), and on a doc page use <em>Add image</em> or paste / drop onto the
           article to append an image block.

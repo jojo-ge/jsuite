@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reviews and diffs in jTicket · jSuite</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/documents.html">Documents</a>
+      <a href="/learn/charts.html">Charts</a>
+      <a href="/learn/reviews.html">Reviews &amp; diffs</a>
+      <a class="nav-cta" href="https://jticket.local/reviews">Open Reviews</a>
+    </nav>
+  </div>
+</header>
+
+<section class="learn-hero" data-app="reviews">
+  <div class="wrap">
+    <p class="crumb"><a href="/">jSuite</a> / Reviews &amp; diffs</p>
+    <h1>Reviews &amp; diffs <span class="tag">— several reviewers, one diff viewer</span></h1>
+    <p class="sub">A review sends several Claude reviewers at a branch and keeps only what
+      they agree on, as tickets on a project's board. The <b>Reviews</b> board does the same
+      for someone's GitHub PR. A project's <b>Diff</b> tab is where you read the change
+      yourself, with a guided tour if you want one.</p>
+    <div class="meta">
+      <span class="pill">https://jticket.local/reviews</span>
+      <span class="pill">Diff tab on every project</span>
+      <span class="pill">state: .data/jreview/</span>
+    </div>
+    <a class="btn btn-app" href="https://jticket.local/reviews">Open Reviews <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<article class="learn" data-app="reviews">
+  <section>
+    <h2>Why it exists</h2>
+    <p>One reviewer is noisy, and you have to weigh every finding yourself. jTicket runs two
+      to four reviewers side by side, each in its own herdr session, and a final session
+      keeps only the findings they agree on. Every review belongs to a project, and its
+      findings land as tickets on that project's board, so nothing gets lost in chat.</p>
+  </section>
+
+  <section>
+    <h2>Reviewing a GitHub PR</h2>
+    <ol class="step-list">
+      <li><b>Pick the PR.</b> The Reviews board lists the codebase's open PRs. Press
+        <b>Review this PR</b>, or run <code>/make-jreview-project 123</code> in the repo.</li>
+      <li><b>Size the review.</b> An assessor reads the PR, picks two to four reviewers, writes
+        one brief they all read, and adds checks only where running code beats reading it.</li>
+      <li><b>Agree and verify.</b> The reviewers report; a consensus session keeps what every
+        reviewer raised, verifies each finding adversarially, and judges whether the PR is
+        approvable. Each finding becomes a ticket on the review's project.</li>
+      <li><b>Post on your say-so.</b> <b>Post to PR</b> sends the finding tickets you pick as one
+        comment review under your own <code>gh</code> login. It never approves and never
+        requests changes. <b>Rerun review</b> runs again on the PR's new head.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The Diff tab and tours</h2>
+    <p>Every project has a <b>Diff</b> tab: a side-by-side diff of the integration branch, a
+      local PR, a GitHub PR or any two refs, computed locally by <code>git</code>, with
+      expandable context and a full-file view. <b>Build tour</b> dispatches a claude session
+      that walks the change stop by stop. Tours are for you; reviewers never see them.</p>
+  </section>
+
+  <section>
+    <h2>Skills that drive it</h2>
+    <div class="skill-cards">
+      <div class="skill-card">
+        <h3>make-jreview-project</h3>
+        <p>Sets up a review project for one GitHub PR and dispatches the assessor.</p>
+      </div>
+      <div class="skill-card">
+        <h3>jreview-assess</h3>
+        <p>Decides how many reviewers a PR needs, what they focus on, and which checks to run.</p>
+      </div>
+      <div class="skill-card">
+        <h3>jreview-consensus</h3>
+        <p>Keeps only the findings every reviewer raised and verifies each one.</p>
+      </div>
+      <div class="skill-card">
+        <h3>jdiff-tour</h3>
+        <p>Builds the guided tour of a change for the Diff tab.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>State &amp; integration</h2>
+    <dl class="kv">
+      <dt>State</dt><dd><code>.data/jreview/&lt;key&gt;.json</code> per review; the reports
+        themselves are documents in the shared pool. Tours are in <code>.data/jdiff/</code>.</dd>
+      <dt>Review room</dt><dd><code>/reviews/&lt;key&gt;</code> shows a review's reviewers,
+        findings and reports, live.</dd>
+      <dt>Old links</dt><dd><code>https://jreview.local/r/&lt;key&gt;</code> redirects to
+        <code>https://jticket.local/reviews/&lt;key&gt;</code>.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Explore the rest of jTicket</h2>
+    <div class="next-links">
+      <a href="/learn/jticket.html"><div class="k">jTicket →</div><div class="v">Fix the findings from the board.</div></a>
+      <a href="/learn/documents.html"><div class="k">Documents →</div><div class="v">Turn the reviewed work into a walkthrough or post-mortem.</div></a>
+    </div>
+  </section>
+</article>
+
+<footer class="site">
+  <div class="wrap">
+    <span><a href="/">← Back to jSuite</a></span>
+    <nav>
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/documents.html">Documents</a>
+      <a href="/learn/charts.html">Charts</a>
+      <a href="/learn/reviews.html">Reviews &amp; diffs</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

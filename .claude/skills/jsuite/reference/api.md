@@ -1,9 +1,11 @@
-# jSuite — API and engine reference
+# jTicket — API and engine reference
 
-Detail behind `SKILL.md`. Every path is verified against `apps/*/server/api/**`
-(route files) — a path not listed there does not exist. Base URLs:
-`https://<app>.local` or `http://localhost:<port>` (jTicket :43000, jDiff
-:43002, jChart :43003, jExplain :43004, jReview :43008).
+Detail behind `SKILL.md`. Every path is verified against
+`apps/jticket/server/api/**` and the layers' `packages/{documents,charting}/server/api/**`
+(route files) — a path not listed there does not exist. jTicket is the only
+app: base URL `https://jticket.local` or `http://localhost:43000`. Nothing
+answers on 43001–43008, and the old `jexplain`/`jreview`/`jchart.local` names
+only redirect into jTicket.
 
 ## jTicket — the `jt` CLI
 
@@ -43,17 +45,34 @@ DELETE; `[id]/herdr` POST dispatches the ticket into herdr; `[id]/transfer`
 **Local PRs**: `/api/prs` (GET/POST), `/api/prs/:id` (GET/PATCH/DELETE),
 `POST /api/prs/:id/merge` — squash-merges a ticket branch onto the project's
 integration branch; the response carries `headWorktree` (a worktree still
-holding the merged head branch) so the merge sweep can remove it;
-`POST /api/prs/:id/review` proxies to jDiff's dispatch with ticket/project
-context. Only the integration branch ever syncs to origin.
+holding the merged head branch) so the merge sweep can remove it. Only the
+integration branch ever reaches origin, through the roll-up PR.
 
-**Branches tab** (`server/utils/branchStatus.ts`):
-`GET /api/projects/:id/branch-status?fetch=1` — where the integration branch
-stands vs origin/default (to push / to pull / roll-up PR);
-`POST /api/projects/:id/sync` — plain push (`git push --set-upstream origin
-branch:branch`), one-way; `POST /api/projects/:id/branch-pull` — fast-forward
-only, never merges; `GET /api/projects/:id/branches`;
-`POST /api/projects/:id/integration-branch`; `POST …/integration-pr` (roll-up PR).
+**Integration branch** (the Overview tab's card, `ProjectIntegrationBranch.vue`,
+and the Pull requests tab): `POST /api/projects/:id/integration-branch` cuts or
+sets it; `GET /api/projects/:id/branches?q=&fetch=1` feeds the existing-branch
+picker; `POST /api/projects/:id/integration-pr` is the roll-up PR — pushes the
+branch, then opens or finds the integration → default PR via `gh`;
+`GET /api/projects/:id/github` is the Pull requests tab's GitHub side (the repo, the integration branch, the open PRs that belong to the project, each with a Diff tab link). There is no
+separate push, pull or ahead/behind status.
+
+**Diff tab** (`app/components/ProjectDiff.vue`, `server/utils/projectDiff.ts`):
+`GET /api/projects/:id/diff` → `{target, files}` — no params: the project's own
+branch (integration vs default; a PR review project's `jreview/pr-<n>` vs its
+base); `?pr=PR-n` a local PR (merged → its squash commit vs parent); `?gh=<n>`
+a GitHub PR (head fetched into `refs/remotes/jticket/pr-<n>`); `?head=&base=`
+any two refs. `GET …/diff/file` is one file's full view. Links are
+`/projects/KEY?tab=diff&…` (`diffTabUrl`, `app/utils/diffTarget.ts`); API
+fields that link here are named `diffUrl`.
+
+**Tours**: `GET /api/projects/:id/diff/tour` (same target query as `…/diff`;
+the target's tour, build state, last failure), `POST` with the target (`{pr}` | `{gh}` | `{head, base?}` | `{}`)
+dispatches one Opus `/jdiff-tour` session into its own `PROJ-n · tour …` tab
+(attaches to a live build), `DELETE` cancels; the session posts
+`POST …/diff/tour/artifact` then `POST …/diff/tour/complete`. Store
+`.data/jdiff/tours.json` (keys: GitHub PR number, `branch/<name>`, `PR-n`),
+failures in `.data/jdiff/failures.json`. Tours are for humans only — never
+handed to reviewers.
 
 **Today page** (`/today`, `app/pages/today.vue`) — what needs me (HITL tickets
 not finished and not blocked, PRs asking for my review), what's building
@@ -62,8 +81,7 @@ not finished and not blocked, PRs asking for my review), what's building
 `mine` (with `ci: {state, failed, pending, total}` rolled up from
 `statusCheckRollup`, `reviewDecision`) and `reviewRequested`; a `gh` failure
 returns `error`, not a 500. The TODO inbox is the codebase's todo-mode project
-(`POST /api/projects/todo {repo}` — 201 created / 200 existing; `/idea` and
-`/bug` land there; a todo's Grill button runs a herdr interview, no branches).
+(`POST /api/projects/todo {repo}` — 201 created / 200 existing; a todo's Grill button runs a herdr interview, no branches).
 
 **Graphs**: `GET /api/graphs`, `GET /api/graphs/G-KEY` (a member project key
 works too). Logic `app/utils/projectGraphs.ts`.
@@ -96,16 +114,16 @@ worktree guide; `POST /api/repos/worktree/herdr` dispatches the
 integration branch); `GET/POST/DELETE /api/projects/:id/worktree` records the
 link — POST re-checks the path against `git worktree list` (409 if not a
 worktree of the repo, or the repo's own checkout). Every worktree consumer
-(`/jimplement`, `/jreproduce`, jReview, the connect prompt, the merge sweep)
-GETs the guide first; agents take the guide's cheapest form that fits (slim /
-test-only) and tear down once the PR is open; the merge sweep removes any
-worktree still holding a merged head branch (`headWorktree`) and deletes the
-branch; jReview's watcher removes its reviewer checkouts once a review's panes
-close.
+(`/jimplement`, `/jreproduce`, the review engine, the connect prompt, the
+merge sweep) GETs the guide first; agents take the guide's cheapest form that
+fits (slim / test-only) and tear down once the PR is open; the merge sweep
+removes any worktree still holding a merged head branch (`headWorktree`) and
+deletes the branch; the review watcher removes its reviewer checkouts once a
+review's panes close.
 
 **Prompt kinds** (`app/utils/prompts.ts`; resolution ticket → project →
 codebase → global → built-in): hand-offs per ticket kind, `batch`,
-`worktree:kickoff`, `worktree:connect`, `runplan:build`. Codebase settings
+`worktree:kickoff`, `worktree:connect`, `runplan:build`, `prreview:assess`. Codebase settings
 (`/codebase`) hold a codebase's overrides.
 
 **One session (batch)**: `POST /api/projects/:id/herdr-batch {prompt, tickets}`
@@ -116,11 +134,15 @@ budget, no subagents; HITL tickets ask in that pane; 409 under auto mode unless
 every ticket is HITL. `POST …/herdr-merge` runs the merge sweep by hand;
 `POST …/herdr-cleanup` closes finished panes.
 
-**Reviews from a project**: `GET/POST /api/projects/:id/reviews` (POST → jReview
-with `project: KEY`), `GET …/reviews/:key`, `POST …/reviews/:key/action`,
-`POST …/reviews/:key/tickets` (adds the picked findings to THIS project; each
-finding records its ticket key), `GET …/review-status`, `POST …/review`
-(jDiff review of the integration branch).
+**Reviews from a project** (the Review tab): `GET/POST /api/projects/:id/reviews`
+(POST `{branch?, base?, reviewers?}` — branch defaults to the integration
+branch; starts a triage review with `project: KEY`; 409 on a PR review
+project, whose reviews run from its review plan), `GET …/reviews/:key`,
+`POST …/reviews/:key/action {action: retry-reviewer|skip-reviewer|retry-triage, n?}`,
+`POST …/reviews/:key/tickets` (files the picked findings as tickets in THIS
+project; each finding records its ticket key; 409 for an agreement review,
+whose findings are already tickets), `POST …/reviews/:key/pr-comments
+{ticketKeys, body}` (Post to PR).
 
 **Share / sync**: `/api/projects/:id/share` (GET/POST/DELETE), `/api/shares/validate`,
 `/api/shares/import`, `/api/sync/channel…`, `/api/sync/pulls` (+ `approve`/`deny`),
@@ -156,7 +178,7 @@ or, in **orchestrated** mode (`project.auto.orchestration`), one Fable 5.2
 in pooled worktrees — wait for every ticket (finished with no PR → look twice
 more, 20s apart, then skip the merge) → merge sweep on Sonnet 5, which reports
 back via `POST …/auto/merge-report` (a PR it couldn't land pauses the loop) →
-2-reviewer consensus review in jReview (`reviewers: 2, consensus: {projectKey,
+2-reviewer consensus review (`reviewers: 2, consensus: {projectKey,
 loop}`) → implement + merge the agreed findings → next loop. With no open
 ticket left, a last Opus 5.5 session writes the ≤500-word `outcome`-labelled
 doc and reports back via `POST …/auto/outcome-report {doc}`; then auto turns off.
@@ -175,8 +197,9 @@ itself and files the rest as an `auto-loop:carryover` ticket (`Finish KEY: …`)
 that inherits the ticket's blocks; a carryover closed the same way is filed
 HITL. A stalled or vanished orchestrator is replaced (its in-flight tickets
 are re-queued). After every phase-ending step `panesToClean` closes done
-tickets' panes, the loop's merge/report panes and past reviews' jReview tabs —
-never a working/blocked agent, an open ticket's pane, or an unlabelled pane.
+tickets' panes and the loop's merge/report panes — never a working/blocked
+agent, an open ticket's pane, or an unlabelled pane. A review's tabs (`review
+K`, `triage K`) are the review watcher's to close.
 
 State: `project.auto` — `enabled`, `phase`, `loop`, `orchestration`, `paused
 {reason, detail, at}`, `stopRequested`, `once`, `plan`, `cursor`, `planLog`,
@@ -201,11 +224,11 @@ Solo agents and orchestrators run side by side (`orchestratedKeys` /
 read). HITL tickets are waited on, never dispatched. **merge** sweeps the
 plan's open PRs. **review** from a checkpoint (plan start, the previous review,
 or any earlier step): optionally an architectural & technical pass first
-(`step.review.arch`; jReview `pass: 'architecture'`, one reviewer on the global
+(`step.review.arch`; review `pass: 'architecture'`, one reviewer on the global
 `/jarch-review` skill; its `architecture` findings become mandatory fix
 tickets, `technical` ones advisory HITL tickets) — phases `arch-reviewing` →
 `arch-fixing` → `arch-merging` — then the 2–4 reviewer consensus review
-(`step.review.model`/`effort`, Opus 5.5 medium by default; jReview gets
+(`step.review.model`/`effort`, Opus 5.5 medium by default; the review gets
 `context.review` = the arch review so its reviewers read it first), whose
 agreed findings are fixed and merged inside the step. **gate** waits for
 `{continue: true}`.
@@ -238,11 +261,15 @@ own-agent ticket as a session frees), PUTs the plan until `problems` is `[]`,
 and reports back via `POST …/run-plan/built`. `project.runPlanBuild` marks it
 in progress; the tab is read-only meanwhile.
 
-## PR review projects (jTicket :43000)
+## PR review projects and the Reviews board
 
 Mode `prreview` — one GitHub PR, reviewed, never changed (`app/utils/reviewPlan.ts`).
-`POST /api/projects/pr-review {repo, pr, assess?, autoStart?}` get-or-creates
-it (PR head fetched to the never-pushed `jreview/pr-<n>`). `POST
+They leave the projects board, Today and Graphs for the **Reviews** board
+(`/reviews`, `app/pages/reviews/index.vue`), whose **Open PRs** section reads
+`GET /api/repos/prs?repo=&force=1` → `{error, viewer, prs}` (a `gh` failure is
+`error`, not a 500) and whose **Review this PR** opens the PR's project or
+makes one. `POST /api/projects/pr-review {repo, pr, assess?, autoStart?}`
+get-or-creates it (PR head fetched to the never-pushed `jreview/pr-<n>`). `POST
 /api/projects/:id/pr-review/assess {autoStart?}` / `DELETE` — the Fable 5.2
 `/jreview-assess` (prompt kind `prreview:assess`); it reports back with `POST
 …/pr-review/assessed {reviewers, focus, briefDoc, rationale, risk}`. `PUT
@@ -252,52 +279,68 @@ as `/jpr-check`, kind `prcheck`). `POST /api/projects/:id/review-run {action:
 start|rerun|stop|continue|retry}`. Runner `server/utils/reviewRun.ts`, ticked
 by `server/plugins/reviewRun.ts` — separate from auto mode. State
 `project.prReview` (`pr`, `assessment`, `assessing`, `plan`, `run`, `runs`).
-`POST /api/projects/:id/reviews/:key/pr-comments` proxies jReview's Post to PR.
 
-## jReview (:43008)
+The review step is an **agreement review**: when its consensus session hands
+the verified findings back (`POST /api/reviews/:key/findings`), jTicket files
+each as a ticket on the project (`server/utils/reviewTickets.ts`) — a HITL
+`bug` labelled `jreview`, `review:finding`, `severity:*`, `category:*`,
+`scope:*`, `verdict:*`, with `ticket.finding` holding the structured copy.
+Finding tickets are **record-only**: never frontier, every dispatch path
+answers 409, a review plan refuses one as a check. A rerun updates the
+project's matching open finding ticket instead of filing a duplicate; a
+re-POST of the same review withdraws tickets for findings it dropped. **Post
+to PR** is `POST /api/projects/:id/reviews/:key/pr-comments {ticketKeys,
+body}` (human-only; the old `{findingIds}` body is refused): one GitHub review
+via `gh api`, event `COMMENT` always; "posted" is stamped on each ticket
+(`finding.postedAt`, label `pr:posted`).
 
+## Review engine (`/api/reviews`)
+
+Runs inside jTicket's server (`server/utils/reviewActions.ts`,
+`reviewStore.ts`, `reviewGit.ts`, `reviewGithub.ts`, `reviewHerdr.ts`). Every
+review belongs to a project: `createReview` refuses one without `project` (or a
+consensus review's `consensus.projectKey`) naming an existing project (400).
 `GET/POST /api/reviews` — POST body: codebase, branch, target (defaults to the
-PR's base), optional `project: KEY`, `reviewers` (4 by default; 2 for
-consensus), `consensus: {projectKey, loop}`, `pass: 'architecture'`,
-`context.review` — or, from a PR review project, `pr: N`, `agreement: {loop}`
-+ `project`, `verify: true`, `context: {brief: DOC-n, checks: [TICK-n]}`
-(an agreement review: findings + `assessment` come back to `POST …/findings`,
-never tickets). `POST …/pr-comments {findingIds, body}` — the human's Post to
-PR: one GitHub review via `gh api`, event `COMMENT` always. `GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE),
-`POST …/reviewers/:n/dispatch` / `skip`, `POST …/triage/dispatch`,
-`POST …/findings` (the triager's hand-back), `POST …/consensus` (the
-consensus session's ticket keys), `POST …/tickets` (the human's split into a
-new jTicket project). `GET /api/branches`, `/api/repos` (GET/DELETE, `pick`).
-Models: reviewers `claude-opus-5-5` (`JREVIEW_MODEL`), consensus
-`claude-sonnet-5` (`JREVIEW_CONSENSUS_MODEL`). Watcher
-`server/plugins/reviewWatcher.ts`: polls the document pool for the
-pre-assigned report keys, dispatches triage/consensus when every reviewer is
-in, closes the review's herdr panes once the hand-back lands (never a busy
-one), removes the review's worktree. Dispatch: `server/utils/reviewHerdr.ts`.
+PR's base; a branch not checked out is reviewed in a detached worktree),
+`project: KEY`, `reviewers` (4 by default; 2 for consensus), `consensus:
+{projectKey, loop}`, `pass: 'architecture'`, `context.review` — or, from a PR
+review project, `pr: N`, `agreement: {loop}`, `verify: true`, `context: {brief:
+DOC-n, checks: [TICK-n]}`. Returns `{key, path: "/reviews/<key>"}`.
+`GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE), `POST
+…/reviewers/:n/dispatch` / `skip`, `POST …/triage/dispatch`, `POST …/findings`
+(the triager's or agreement session's hand-back), `POST …/consensus` (the
+consensus session's ticket keys), `POST …/tickets {findingIds?, projectKey?}`
+(the human's filing of a triage review's findings onto its own project —
+`projectKey` only for a review that predates projects; never a new project),
+`POST …/pr-comments {ticketKeys, body}`. The room page is `/reviews/<key>`
+(`/r/<key>` alias). Models: reviewers and agreement consensus
+`claude-opus-5-5` (`JREVIEW_MODEL`), consensus `claude-sonnet-5`
+(`JREVIEW_CONSENSUS_MODEL`). Watcher `server/plugins/reviewWatcher.ts` (off in
+a sandbox without `--engines`): polls the document pool for the pre-assigned
+report keys, dispatches triage/consensus when every reviewer is in, closes the
+review's herdr panes once the hand-back lands (never a busy one), removes the
+review's worktree. State `.data/jreview/`.
 
-## jDiff (:43002)
+## Documents and charts
 
-Dispatch (all through `@jsuite/herdr`, model `claude-opus-5`,
-`server/utils/herdrReview.ts`): `POST /api/analyze-dispatch` (`/jdiff-review`;
-jTicket proxies here with `ticket=`/`project=`), `POST /api/ask-dispatch`
-(`/jdiff-ask`), `POST /api/tour-dispatch` (`mode: 'detail'` → `/jdiff-tour`;
-`mode: 'chains'` → `/jdiff-chains stage=scope`, fanned out per chain by
-`server/utils/chainFanout.ts`). Hand-backs: `POST /api/review-artifact`,
-`/api/review-complete`, `/api/ask-result`. Reads: `/api/prs`, `/api/pr`,
-`/api/branches`, `/api/diff`, `/api/file`, `/api/findings`, `/api/graph`,
-`/api/chains`, `/api/tour`, `/api/risk`, `/api/rating`, `/api/comments`,
-`/api/branch-comments`, `/api/notifications`, `/api/asks`, `/api/ai-jobs`.
-Writes: `/api/comment`, `/api/branch-comment(-delete)`, `/api/branch-create-pr`,
-`/api/open`, `/api/ai-job-cancel`. State `.data/jdiff/`.
+`/api/documents` (GET/POST; `:key` GET/DELETE, `:key/notes` GET/PUT,
+`:key/media` POST) and `/api/media/:key/:file` over `.data/jexplain/` — the
+`@jsuite/documents` layer. Pages: the reader `/e/<key>`, the library `/e`.
+Publish with `j-explain`'s `explain.py` (`$JTICKET_URL` overrides the target).
+`/api/charts` (GET/POST; `:key` GET/PUT/DELETE, `:key/notes` GET/PUT) over
+`.data/jchart/` — the `@jsuite/charting` layer; POST answers `path:
+/charts/<key>`. Pages: `/charts`, the editor `/charts/<key>` (`/c/<key>`
+alias). Push with `j-chart`'s `chart.py`.
 
 ## Shared packages
 
 - `@jsuite/charting` — Nuxt layer: Excalidraw canvas + `server/api/charts/**`
   over `.data/jchart/`.
 - `@jsuite/documents` — Nuxt layer (extends charting): block model,
-  `<DocumentArticle>`, `server/api/documents/**` over `.data/jexplain/`; in
-  jTicket and jExplain.
+  `<DocumentArticle>`, `server/api/documents/**` over `.data/jexplain/`;
+  extended by jTicket.
 - `@jsuite/data` — `appDataDir` / `appDataFile` resolve `.data/<app>/`.
 - `@jsuite/herdr` — `ensureHerdrWorkspace`, `acquirePackedPane`,
-  `startClaudeIn`; imported by jTicket, jDiff and jReview.
+  `startClaudeIn`; imported by jTicket (`server/utils/herdr.ts` adds the
+  sandbox guards).
 - `@jsuite/relay` — `wizard.sh` sync setup + local broadcast relay.

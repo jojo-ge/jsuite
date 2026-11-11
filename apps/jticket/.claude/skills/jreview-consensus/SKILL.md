@@ -1,6 +1,6 @@
 ---
 name: jreview-consensus
-description: Close a consensus jReview run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review plan), verify them adversarially, judge approvability and hand them back as findings, which jTicket files on the PR review project as record-only tickets.
+description: Close a consensus review run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review plan), verify them adversarially, judge approvability and hand them back as findings, which jTicket files on the PR review project as record-only tickets.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---
@@ -8,7 +8,7 @@ disable-model-invocation: true
 # jreview-consensus
 
 Several reviewers ran independently over the same diff and each published a
-jExplain report. Your job is to find the findings **every** reviewer raised.
+report document. Your job is to find the findings **every** reviewer raised.
 Anything only some reviewers raised is dropped — agreement is the filter. You
 run in the reviewed checkout (cwd), so you can read the code. Don't add
 findings of your own.
@@ -143,7 +143,7 @@ nothing else:
 - Reviewer 2: <their claim, one line>
 
 ---
-Agreed by every reviewer in jReview [<title>](https://jticket.local/reviews/<key>) — reports: [reviewer 1](https://jticket.local/e/<docKey1>) · [reviewer 2](https://jticket.local/e/<docKey2>).
+Agreed by every reviewer in review [<title>](https://jticket.local/reviews/<key>) — reports: [reviewer 1](https://jticket.local/e/<docKey1>) · [reviewer 2](https://jticket.local/e/<docKey2>).
 ```
 
 No agreed findings → skip this step entirely.
@@ -184,8 +184,8 @@ Zero agreed findings is a normal outcome — POST `{"ticketKeys": [],
 
 Then reply with one line — "N considered → M agreed → tickets … (K to <follow-ups key>)"
 plus the review's URL (`https://jticket.local/reviews/<key>`) — and stop. Don't implement
-anything; the auto loop dispatches the tickets. jReview closes this pane (and
-the reviewers') once you've gone idle.
+anything; the auto loop dispatches the tickets. The review watcher closes this
+pane (and the reviewers') once you've gone idle.
 
 ## A. An agreement review — verify, assess, hand back
 
@@ -334,5 +334,5 @@ set, and closes the tickets it filed for findings you dropped.
 
 Then reply with one line —
 "N raised → M agreed → K verified (R refuted) · <verdict> · tickets …" plus the
-review's URL — and stop. The POST opens the project's Review tab; jReview
-closes this pane.
+review's URL — and stop. The POST opens the project's Review tab; the review
+watcher closes this pane.

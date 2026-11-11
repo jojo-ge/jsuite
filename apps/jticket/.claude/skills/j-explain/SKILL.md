@@ -116,7 +116,7 @@ Every block may set `"id"` (a stable string) — do so when you expect to `--rep
 - Lead with the point, not the setup. Kicker + title + subtitle should let the user decide to read.
 - Prose-first: blocks punctuate the narrative, they don't replace it. Two rich blocks in a row is usually a missing paragraph.
 - One idea per chart; five boxes beat fifteen. The user will *edit* your chart — leave it clean enough to edit.
-- For PRs: `diff` blocks for the hunks that carry the idea, a `chart` for the shape of the change, links to jDiff/GitHub for the rest.
+- For PRs: `diff` blocks for the hunks that carry the idea, a `chart` for the shape of the change, links to the project's Diff tab (`/projects/KEY?tab=diff&pr=…`) or GitHub for the rest.
 - End with `takeaway` — it's what the user re-reads.
 
 ## Notes

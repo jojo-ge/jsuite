@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents — specs, docs and explainers in jTicket · jSuite</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="wordmark" href="/"><span class="dot"></span>jSuite</a>
+    <nav class="nav-links">
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/documents.html">Documents</a>
+      <a href="/learn/charts.html">Charts</a>
+      <a href="/learn/reviews.html">Reviews &amp; diffs</a>
+      <a class="nav-cta" href="https://jticket.local/e">All documents</a>
+    </nav>
+  </div>
+</header>
+
+<section class="learn-hero" data-app="documents">
+  <div class="wrap">
+    <p class="crumb"><a href="/">jSuite</a> / Documents</p>
+    <h1>Documents <span class="tag">— specs, docs and explainers</span></h1>
+    <p class="sub">Every project doc, spec, review report and explainer in jTicket is a
+      <b>block document</b>: prose, code, diffs, callouts, steps, timelines and a glossary,
+      with live charts. Read one at <code>/e/&lt;key&gt;</code>; the whole pool is at <code>/e</code>.</p>
+    <div class="meta">
+      <span class="pill">https://jticket.local/e</span>
+      <span class="pill">state: .data/jexplain/</span>
+      <span class="pill">live charts</span>
+    </div>
+    <a class="btn btn-app" href="https://jticket.local/e">All documents <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<article class="learn" data-app="documents">
+  <section>
+    <h2>Why it exists</h2>
+    <p>When you ask Claude to explain a system, a PR or a decision, the answer usually
+      arrives as chat: unstructured, unshareable, gone when the session ends. A document
+      publishes it as an <b>article</b>. Each part is a typed block, so code gets syntax
+      highlighting, diffs get proper diff rendering, key terms get a glossary, and
+      warnings get callouts.</p>
+    <p>Reading is only half the loop. <b>Pin a note to any block</b> (a question, a
+      correction, a “go deeper here”) and “Copy notes for Claude” bundles all your
+      feedback into one payload for the next revision.</p>
+  </section>
+
+  <section>
+    <h2>The explainer loop</h2>
+    <ol class="step-list">
+      <li><b>Ask for an explainer.</b> The <code>j-explain</code> skill structures the answer
+        into typed blocks and publishes it with <code>explain.py</code>.</li>
+      <li><b>Read it as an article.</b> It opens in jTicket's reader at <code>/e/&lt;key&gt;</code>,
+        with real typography, rendered code and diffs, and live charts.</li>
+      <li><b>Annotate blocks.</b> Pin notes to exactly the paragraphs or code blocks that
+        need work.</li>
+      <li><b>Send notes back.</b> “Copy notes for Claude” hands your feedback to the next
+        session; a <code>--replace</code> publish revises the article in place.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Skills that drive it</h2>
+    <div class="skill-cards">
+      <div class="skill-card">
+        <h3>j-explain</h3>
+        <p>Explains a concept, a PR, a system or a decision as an article. It owns the
+          <code>explain.py</code> publish script and the block vocabulary every other
+          document skill uses.</p>
+      </div>
+      <div class="skill-card">
+        <h3>to-jspec</h3>
+        <p>Writes a spec into a project as a doc, and says which field renders what.</p>
+      </div>
+      <div class="skill-card">
+        <h3>to-jdoc</h3>
+        <p>Drafts a page onto the board locally for review first, without posting
+          anything to Confluence.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>One pool, one set of charts</h2>
+    <p>A project's doc in jTicket wraps a document in the pool with project, status and
+      label metadata, so <b>the doc on the board and the article in the reader are the same
+      object</b>. Figures aren't screenshots either: a chart block embeds a chart from the
+      shared chart pool, so fixing a label in the chart editor fixes the article.</p>
+  </section>
+
+  <section>
+    <h2>State &amp; integration</h2>
+    <dl class="kv">
+      <dt>State</dt><dd><code>.data/jexplain/&lt;key&gt;.json</code> per document, plus
+        <code>&lt;key&gt;.notes.json</code> for your block notes.</dd>
+      <dt>Charts</dt><dd>Served from the shared pool in <code>.data/jchart/</code> by
+        <code>@jsuite/charting</code>. Edits flow both ways.</dd>
+      <dt>Old links</dt><dd><code>https://jexplain.local/e/&lt;key&gt;</code> redirects to
+        <code>https://jticket.local/e/&lt;key&gt;</code>.</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>Explore the rest of jTicket</h2>
+    <div class="next-links">
+      <a href="/learn/charts.html"><div class="k">Charts →</div><div class="v">The editor behind every chart these articles embed.</div></a>
+      <a href="/learn/reviews.html"><div class="k">Reviews &amp; diffs →</div><div class="v">Review the change before you ask for its walkthrough.</div></a>
+    </div>
+  </section>
+</article>
+
+<footer class="site">
+  <div class="wrap">
+    <span><a href="/">← Back to jSuite</a></span>
+    <nav>
+      <a href="/learn/jticket.html">jTicket</a>
+      <a href="/learn/documents.html">Documents</a>
+      <a href="/learn/charts.html">Charts</a>
+      <a href="/learn/reviews.html">Reviews &amp; diffs</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

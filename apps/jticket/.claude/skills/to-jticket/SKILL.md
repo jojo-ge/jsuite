@@ -96,7 +96,7 @@ Keys are global and sequential across the whole store — `TICK-7` is the sevent
 ever created, not the seventh in its project.
 
 Full endpoint list, query params, and payload shapes: **[reference/api.md](reference/api.md)**.
-Doc content is authored as blocks (the jExplain format — vocabulary in the `j-explain`
+Doc content is authored as blocks (vocabulary in the `j-explain`
 skill); descriptions and resolutions are plain GFM markdown. See **`to-jspec`**,
 [SKILL.md](../to-jspec/SKILL.md), before writing any doc, description, or resolution.
 
@@ -225,7 +225,7 @@ These are the ways a write silently does the wrong thing. All of them are real.
 8. **Images go in two different stores.** Ticket markdown (description, resolution,
    comments) embeds `POST /api/attachments` uploads (`{ file }` or `{ name, base64 }` →
    use the returned `markdown`). Doc content carries pictures as `image` blocks (`file`
-   or `base64`), never `/attachments/…` links — jExplain can't serve those. Attachment
+   or `base64`), never `/attachments/…` links — the document reader can't serve those. Attachment
    upload **overwrites on name collision**; prefix names to keep them unique.
 9. **Comments are append-only, via their own endpoint.** `POST
    /api/tickets/:id/comments` adds one; PATCHing `comments` does nothing. Comments are

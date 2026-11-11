@@ -74,7 +74,7 @@ async function save() {
       color="neutral"
       variant="subtle"
       title="Content is authored as blocks"
-      description="The page itself is a shared block document (same format as jExplain). Author or revise it with the to-jdoc skill — POST/PATCH /api/docs with a blocks payload — or link an existing document by key above."
+      description="The page itself is a shared block document (the format the j-explain skill documents). Author or revise it with the to-jdoc skill — POST/PATCH /api/docs with a blocks payload — or link an existing document by key above."
     />
 
     <div class="flex justify-end gap-2">

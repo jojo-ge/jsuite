@@ -57,10 +57,11 @@ line clamp stays honest.
 - **Doc** — `{ key: "DOC-1", title, documentKey, projectId, labels[], status }`.
   A tracker record wrapping a **block document** in the shared jSuite document
   system (`@jsuite/documents`; files in the root `.data/jexplain/` pool, which
-  jExplain lists and renders too). Shown at the top of the board and at
-  `/docs/DOC-1`.
+  the reader at `/e/<documentKey>` renders and the library at `/e` lists).
+  Shown at the top of the board and at `/docs/DOC-1`.
   - Content is authored as **blocks** (prose, callout, code, diff, chart, image,
-    steps, compare, timeline, takeaway + glossary — the jExplain format).
+    steps, compare, timeline, takeaway + glossary — the vocabulary the
+    `j-explain` skill documents).
     `POST /api/docs` with `blocks` creates the document; `documentKey` links an
     existing one; `PATCH` with `blocks` rewrites it (notes survive). Full
     reference at **/api-guide** in the running app.
@@ -68,7 +69,7 @@ line clamp stays honest.
   - Images are `image` blocks — `{ type: "image", file }` (a local path) or
     `{ type: "image", base64 | dataUrl, name }` (inline bytes); the server copies
     them into `.data/jexplain/media/<documentKey>/` and serves them at
-    `/api/media/<documentKey>/<file>` in jTicket and jExplain alike. The doc page's
+    `/api/media/<documentKey>/<file>`. The doc page's
     **Add image** button (or a paste / drop onto the page) appends one.
 
 - **Images in ticket markdown** — descriptions, resolutions, comments (and
@@ -77,8 +78,8 @@ line clamp stays honest.
   data: URL; `dataUrl` is a synonym) or `{ file, name? }` (a local path) — and
   embed the `markdown` it returns. In the UI, paste or drop an image into any of
   those fields, or click **Attach image**. Files live in
-  `.data/jticket/attachments/`, jTicket-only (jExplain can't serve them — hence
-  image blocks for docs). Same name overwrites; the UI prefixes a timestamp.
+  `.data/jticket/attachments/`, outside the document pool (a document's
+  `/api/media` paths can't reach them — hence image blocks for docs). Same name overwrites; the UI prefixes a timestamp.
 
 ## HTTP API
 
@@ -228,10 +229,10 @@ without taking focus; it reads the target's exact commits and POSTs the tour
 back. The floating tour bar walks it: ← → (or n / p) and esc, a resume point
 per browser, and `?stop=i` links (the overview's stop list uses them); a stop
 on unchanged code expands its gap, or opens the full file, to show itself.
-Tours live in jDiff's store, `.data/jdiff/tours.json`, keyed by jDiff's target
-keys (a GitHub PR's number, `branch/<name>`; jTicket adds `PR-n`), so the
-tours jDiff saved still walk: a target's detail tour, else the overview tour
-jDiff's analyze run left. Logic: `server/utils/tours.ts`, `tourStore.ts`,
+Tours live in `.data/jdiff/tours.json` (the store the retired jDiff app
+kept), keyed by target (a GitHub PR's number, `branch/<name>`, `PR-n`), so
+tours saved before the move still walk: a target's detail tour, else an
+overview tour left by the old app (read-only, never built here). Logic: `server/utils/tours.ts`, `tourStore.ts`,
 `tourJobs.ts` (the run in flight, and why the last one failed);
 `app/composables/useTourWalk.ts`. Endpoints, each taking the target's params:
 `GET|POST|DELETE /api/projects/:id/diff/tour` (read / build / cancel), and the
@@ -279,7 +280,7 @@ The project page's *Pull requests* tab shows both lists: **Local pull
 requests** (with per-PR commit fold-outs, merge/close buttons) above **On
 GitHub** (the read-only `gh pr list` view, usually just the roll-up).
 
-### Review tab (jReview)
+### Review tab
 
 The project page's **Review** tab runs the review engine over the project's
 branches and turns what it finds into tickets **in this project**. The rule
@@ -288,23 +289,24 @@ one without a project is refused, and nothing is ever split into a new
 project — and its findings are always tickets on that project's board.
 
 - **Start review** — `POST /api/projects/:id/reviews { branch?, base?, reviewers? }`
-  proxies jReview's `POST /api/reviews` with `project: <KEY>`. The branch
+  starts a review on the engine (`POST /api/reviews`'s `createReview`) with
+  `project: <KEY>`. The branch
   defaults to the integration branch (a branch only on origin is
   `origin/<name>`), the target to the branch's PR base else the default branch,
   and 1–4 Opus reviewers (default 4) run in herdr, then a triager merges their
-  findings. When triage lands, jReview opens the browser on this tab
+  findings. When triage lands, jTicket opens the browser on this tab
   (`?tab=review&review=<key>`).
 - **Follow it** — `GET /api/projects/:id/reviews` lists the project's reviews
   (the ones this tab started, plus the auto loop's consensus reviews,
   read-only); `GET /api/projects/:id/reviews/:key` is one of them whole. The tab
-  polls while a review is in flight. Reviewer and triage reports are jExplain
+  polls while a review is in flight. Reviewer and triage reports are
   documents in the shared pool and open inline. Retry/skip a reviewer or retry
   the triager with `POST /api/projects/:id/reviews/:key/action
   { action: 'retry-reviewer' | 'skip-reviewer' | 'retry-triage', n? }`.
 - **Add findings as tickets** — tick findings and press *Add N to <KEY>*:
-  `POST /api/projects/:id/reviews/:key/tickets { findingIds }` has jReview file
+  `POST /api/projects/:id/reviews/:key/tickets { findingIds }` files
   one AFK `bug` ticket per finding (labelled `jreview`, `review:finding`,
-  `severity:*`, `category:*`) into this project. jReview records each finding's
+  `severity:*`, `category:*`) into this project. The engine records each finding's
   ticket key, so a finding is never added twice and the rest can be added
   later. A review belongs to one project, and every route checks it.
 - **A PR review project's findings file themselves** — its agreement reviews
@@ -367,7 +369,7 @@ it asks the codebase, and keeps the answer as the codebase's **worktree guide**
    `body`, the `root` worktrees go under, and the `sources` it rests on, hashed
    at save so a changed lockfile or `CLAUDE.md` turns the guide **stale**.
 2. **Consumers.** Everything that makes a worktree `GET`s the guide first:
-   `/jimplement`, `/jreproduce`, jReview (its reviewer checkouts go under the
+   `/jimplement`, `/jreproduce`, the review engine (its reviewer checkouts go under the
    guide's `root`), and the connect prompt. Agents take the cheapest form the
    guide offers that fits the ticket (a slim/test-only worktree for tests, lint
    and typecheck; the full one only when the app must run) and tear it down,
@@ -376,7 +378,7 @@ it asks the codebase, and keeps the answer as the codebase's **worktree guide**
    unless a worktree still has it checked out, in which case the answer names
    it as `headWorktree`; the merge sweep's prompt then tears that worktree
    down the guide's way and deletes the branch, so nothing outlives its merge
-   into the integration branch. jReview's watcher removes its own reviewer
+   into the integration branch. The review watcher removes its own reviewer
    checkouts once a finished review's panes close.
 3. **Connect.** Once a guide exists, the integration branch's row on the
    project's GitHub panel shows **Connect worktree**: it fires

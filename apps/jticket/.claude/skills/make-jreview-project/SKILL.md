@@ -4,7 +4,7 @@ description: Set up a jTicket PR review project for one GitHub pull request — 
 argument-hint: "[PR number] [--no-assess] [--no-start]"
 ---
 
-# make-jreview-project — point jReview at a pull request
+# make-jreview-project — point a review at a pull request
 
 You turn a PR number into a **PR review project** in jTicket: a project
 (mode `prreview`) whose only job is to review that PR — never to change it.

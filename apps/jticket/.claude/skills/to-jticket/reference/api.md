@@ -41,7 +41,7 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | PUT | `/api/projects/:id/run-plan` | Save the Run setup tab's plan `{steps}` (409 while it runs) |
 | POST / DELETE | `/api/projects/:id/run-plan/build` | Dispatch / cancel the Fable `/jrunplan` session that writes the plan |
 | POST | `/api/projects/:id/run-plan/built` | `/jrunplan` reports the plan written `{summary?}` → `{plan, problems}` |
-| GET / POST | `/api/projects/:id/reviews` | The project's jReview reviews / start one `{branch?, base?, reviewers?}` |
+| GET / POST | `/api/projects/:id/reviews` | The project's reviews / start one `{branch?, base?, reviewers?}` |
 | GET | `/api/projects/:id/reviews/:key` | One review, whole (polled while reviewers work) |
 | POST | `/api/projects/:id/reviews/:key/action` | `{action: 'retry-reviewer' \| 'skip-reviewer', n}` or `{action: 'retry-triage'}` |
 | POST | `/api/projects/:id/reviews/:key/tickets` | File a triage review's findings `{findingIds}` into this project as tickets (a PR review project's agreement findings are filed as record-only tickets when they land — no call) |
@@ -50,7 +50,7 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | GET | `/api/today/github?repo=` | My open PRs with CI rolled up + PRs waiting on my review, via `gh` |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc record (id or key) — metadata only; content is at `/api/documents/<documentKey>` |
-| GET / POST | `/api/documents` | The shared document pool (`@jsuite/documents`, also served by jExplain) |
+| GET / POST | `/api/documents` | The shared document pool (`@jsuite/documents`; read at `/e/<key>`) |
 | GET / DELETE | `/api/documents/:key` | One block document (title page, blocks, glossary) |
 | GET / PUT | `/api/documents/:key/notes` | The reader's per-block review notes |
 | POST | `/api/documents/:key/media` | Upload a picture for a note (returns its URL) |
@@ -338,7 +338,7 @@ set-up artefacts gitignored.
 ```jsonc
 POST /api/docs
 { "title": "Checkout spec",             // required
-  "blocks": [                           // block document (jExplain format) — see to-jdoc / j-explain
+  "blocks": [                           // block document — see to-jdoc / j-explain
     { "type": "prose", "md": "## Problem Statement\n…" },
     { "type": "image", "file": "/abs/path/shot.png", "alt": "…" }   // or "base64": "…" — see Images
   ],
@@ -358,15 +358,15 @@ POST /api/docs
 DELETE removes the record but leaves the shared document in the pool.
 
 Docs render at `http://localhost:43000/docs/DOC-n` and are listed at the top of the board. The
-shared pool itself is at `GET /api/documents` (also served by jExplain — one
-document system, two apps).
+shared pool itself is at `GET /api/documents`, and any document in it reads at
+`/e/<key>` (the library is `/e`).
 
 ### Attachments (images in ticket markdown)
 
 The attachment store is for anything that renders **markdown** — ticket `description`,
 `resolution`, comments, project descriptions. Upload, then embed the `markdown` the
 response hands back. Doc content does **not** use this: a doc carries pictures as
-`image` blocks (below), which jExplain can serve too.
+`image` blocks (below), served from the document pool.
 
 ```jsonc
 POST /api/attachments
@@ -384,7 +384,7 @@ POST /api/attachments
 - Names are sanitised to `[\w.-]` and stripped of directories. **Same name overwrites** —
   no versioning, no warning — so prefix names to keep them unique.
 - `GET /api/attachments` lists what's stored; files serve from `/attachments/<name>`
-  (jTicket only — that path doesn't exist in jExplain, which is why docs use image blocks).
+  (outside the document pool — a document's media paths can't reach it, which is why docs use image blocks).
 
 ```bash
 # a screenshot already on disk → into a ticket description
@@ -401,7 +401,7 @@ jq -n --arg n 'checkout-flow.png' --arg b "$(base64 -i ./flow.png)" '{name:$n, b
 
 A doc's pictures are **`image` blocks**, stored beside the document in
 `.data/jexplain/media/<documentKey>/` and served at `/api/media/<documentKey>/<file>`
-(by jTicket and jExplain alike). Give the block its bytes one of three ways:
+Give the block its bytes one of three ways:
 
 ```jsonc
 { "type": "image", "file": "/abs/path/shot.png", "alt": "…", "caption": "…" }   // local path — copied in
