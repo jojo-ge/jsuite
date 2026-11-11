@@ -25,7 +25,6 @@ const router = useRouter()
 const { tickets } = useTracker()
 const { available: herdrUp } = useHerdr()
 const errorText = branchErrorText
-const JREVIEW = 'https://jreview.local'
 
 const active = (s: ReviewStatus) => s === 'reviewing' || s === 'triaging'
 
@@ -444,15 +443,13 @@ const severityCounts = computed(() => {
                 </p>
               </div>
               <UButton
-                :to="`${JREVIEW}/r/${review.key}`"
-                target="_blank"
-                external
-                icon="i-lucide-external-link"
+                :to="reviewPath(review.key)"
+                icon="i-lucide-panel-top-open"
                 size="xs"
                 color="neutral"
                 variant="ghost"
               >
-                jReview
+                Open
               </UButton>
             </div>
 

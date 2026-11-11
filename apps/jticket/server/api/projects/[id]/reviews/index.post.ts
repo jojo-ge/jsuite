@@ -33,5 +33,5 @@ export default defineEventHandler(async (event) => {
     ...(body.reviewers ? { reviewers: body.reviewers } : {}),
     project: project.key,
   })
-  return { key: res.key, url: `${JREVIEW_PUBLIC}${res.path}` }
+  return { key: res.key, url: `${JTICKET_PUBLIC}${res.path}` }
 })

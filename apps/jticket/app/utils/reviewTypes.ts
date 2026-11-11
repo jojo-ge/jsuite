@@ -329,6 +329,9 @@ export function readyForTriage(review: Pick<Review, 'reviewers' | 'consensus' | 
   return review.reviewers.every(reviewerSettled) && review.reviewers.some((r) => r.status === 'done')
 }
 
+/** A review's page in jTicket (jReview's `/r/<key>` room moved here) — prefix JTICKET_PUBLIC for a link outside the app. */
+export const reviewPath = (key: string) => `/reviews/${encodeURIComponent(key)}`
+
 /** Whether the consensus session (not the triager) closes this review: a consensus or an agreement review. */
 export const votes = (review: Pick<Review, 'consensus' | 'agreement'>) => !!(review.consensus || review.agreement)
 

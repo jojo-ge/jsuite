@@ -26,8 +26,7 @@ code and file no ticket.
 - The slice report, if the hand-off names one — what the slice set out to
   build and the decisions it recorded. Hold the diff to those decisions.
 - The project's spec and standards: `jt project <key>` (the project the
-  hand-off names; `curl -s http://localhost:43000/api/projects/<key>` without
-  `jt`), its linked docs, and anything in the repo that states its
+  hand-off names), its linked docs, and anything in the repo that states its
   architecture (`CONTEXT.md`, `GLOSSARY.md`, ADRs, `CLAUDE.md`). No project
   named, or no spec: say so in the verdict and review against the codebase's
   own patterns.

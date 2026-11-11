@@ -18,7 +18,7 @@ on Sonnet 5: match and file, don't re-review.
 
 Argument: the review key.
 
-APIs: jReview `http://localhost:43008` (curl); jTicket through the `jt` CLI
+API: jTicket — the review engine included — through the `jt` CLI
 (`jt project KEY`, `jt projects --json`, `jt post PATH JSON|@file|-`, `jt new`,
 `jt set` — `jt` alone prints the verbs). Never hand-build curl against :43000.
 
@@ -34,7 +34,7 @@ human decides what to post to the PR.
 ## 1. Read the run
 
 ```sh
-curl -s http://localhost:43008/api/reviews/<key>
+jt get /api/reviews/<key>
 ```
 
 Gives `repoPath`, `base`, `branch`, `reviewers[]` (`n`, `docKey`, `status`),
@@ -46,7 +46,7 @@ skill and the rules in §2a apply instead of §2. Every reviewer is `done` —
 read each report:
 
 ```sh
-curl -s http://localhost:43008/api/documents/<docKey>
+jt get /api/documents/<docKey>
 ```
 
 Findings are the callout blocks (ids `f1`, `f2`, … titled `[severity] claim`),
@@ -142,7 +142,7 @@ nothing else:
 - Reviewer 2: <their claim, one line>
 
 ---
-Agreed by every reviewer in jReview [<title>](https://jreview.local/r/<key>) — reports: [reviewer 1](https://jticket.local/e/<docKey1>) · [reviewer 2](https://jticket.local/e/<docKey2>).
+Agreed by every reviewer in jReview [<title>](https://jticket.local/reviews/<key>) — reports: [reviewer 1](https://jticket.local/e/<docKey1>) · [reviewer 2](https://jticket.local/e/<docKey2>).
 ```
 
 No agreed findings → skip this step entirely.
@@ -175,16 +175,14 @@ This POST flips the review to *ticketed*, which is what the auto loop waits
 on, so send it only after the tickets exist:
 
 ```sh
-curl -s -X POST http://localhost:43008/api/reviews/<key>/consensus \
-  -H 'content-type: application/json' \
-  -d '{"ticketKeys": ["TICK-41", "TICK-42"], "considered": 9, "kept": 2}'
+jt post /api/reviews/<key>/consensus '{"ticketKeys": ["TICK-41", "TICK-42"], "considered": 9, "kept": 2}'
 ```
 
 Zero agreed findings is a normal outcome — POST `{"ticketKeys": [],
 "considered": <n>, "kept": 0}` so the loop moves on.
 
 Then reply with one line — "N considered → M agreed → tickets … (K to <follow-ups key>)"
-plus the jReview URL (`https://jreview.local/r/<key>`) — and stop. Don't implement
+plus the review's URL (`https://jticket.local/reviews/<key>`) — and stop. Don't implement
 anything; the auto loop dispatches the tickets. jReview closes this pane (and
 the reviewers') once you've gone idle.
 
@@ -298,12 +296,11 @@ which is what the review plan waits on:
 ```
 
 ```sh
-curl -s -X POST http://localhost:43008/api/reviews/<key>/findings \
-  -H 'content-type: application/json' -d @findings.json
+jt post /api/reviews/<key>/findings @findings.json
 ```
 
 Most severe first; `file`/`line` must be the PR's new-side path and line (they
 become inline comments when the human posts). Zero survivors is normal —
 POST `"findings": []` with the assessment. Then reply with one line —
-"N raised → M agreed → K verified (R refuted) · <verdict>" plus the jReview URL — and
+"N raised → M agreed → K verified (R refuted) · <verdict>" plus the review's URL — and
 stop. The POST opens the project's Review tab; jReview closes this pane.

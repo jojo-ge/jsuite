@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -36,5 +36,21 @@ describe('jTicket-owned skills reach reviews through jTicket', () => {
     expect(skill).toMatch(/jt get \/api\/reviews\/<key>/)
     expect(skill).toMatch(/jt get \/api\/documents\/<docKey>/)
     expect(skill).not.toMatch(/curl\s/)
+  })
+
+  // TICK-943: the review skills moved from apps/jreview into jTicket's. The
+  // reviewer prompt names the report skill by path (it is typed-only), so a
+  // stale path leaves every reviewer unable to publish.
+  it('the reviewer prompt names a report skill that exists', () => {
+    const herdr = readFileSync(join(__dirname, '..', 'server', 'utils', 'reviewHerdr.ts'), 'utf8')
+    const rel = /REPORT_SKILL = join\(suiteRoot\(\), '([^']+)'\)/.exec(herdr)?.[1]
+    expect(rel).toBe('apps/jticket/.claude/skills/jreview-report/SKILL.md')
+    expect(existsSync(join(__dirname, '..', '..', '..', rel!))).toBe(true)
+  })
+
+  it('every review skill lives in jTicket', () => {
+    for (const name of ['jreview-report', 'jreview-triage', 'jreview-consensus', 'jarch-review', 'jreview-assess', 'jpr-check', 'make-jreview-project']) {
+      expect(existsSync(join(SKILLS_DIR, name, 'SKILL.md')), name).toBe(true)
+    }
   })
 })

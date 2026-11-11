@@ -1,4 +1,4 @@
-import { APPROVAL_VERDICTS, SEVERITIES, type Finding, type ReviewAssessment, type Severity } from '../../../../app/utils/reviewTypes'
+import { APPROVAL_VERDICTS, SEVERITIES, reviewPath, type Finding, type ReviewAssessment, type Severity } from '../../../../app/utils/reviewTypes'
 
 /**
  * The triage session's hand-back. Body: { findings: Finding[] } — or, from an
@@ -98,5 +98,5 @@ export default defineEventHandler(async (event) => {
     r.triage.doneAt = new Date().toISOString()
   })
   if (current.status !== 'triaged') void openReviewInBrowser(current)
-  return { key: review.key, findings: review.findings.length, path: `/r/${review.key}` }
+  return { key: review.key, findings: review.findings.length, path: reviewPath(review.key) }
 })

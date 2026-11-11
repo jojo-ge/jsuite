@@ -344,14 +344,13 @@ async function turnOffNow() {
         <span class="font-mono">{{ p.key }}</span>
         <span class="text-muted">{{ p.status }}</span>
       </span>
-      <a
+      <NuxtLink
         v-if="auto.reviewKey"
-        :href="`https://jreview.local/r/${auto.reviewKey}`"
-        target="_blank"
+        :to="reviewPath(auto.reviewKey)"
         class="text-xs text-primary hover:underline"
       >
-        This {{ plan ? 'step' : 'loop' }}'s review in jReview ↗
-      </a>
+        This {{ plan ? 'step' : 'loop' }}'s review
+      </NuxtLink>
     </div>
 
     <!-- A pause, and the way out of it -->

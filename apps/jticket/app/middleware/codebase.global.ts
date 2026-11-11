@@ -13,6 +13,9 @@ export default defineNuxtRouteMiddleware((to) => {
   // Same for the chart pool (/charts, /charts/<key>, and /c/<key> — the old
   // jchart.local path): chart.py and embedded charts link there.
   if (to.path === '/charts' || to.path.startsWith('/charts/') || to.path.startsWith('/c/')) return
+  // A review's page (/reviews/<key>, and /r/<key> — the old jreview.local
+  // path): ticket descriptions, reports and the review hand-off link there.
+  if (to.path.startsWith('/reviews/') || to.path.startsWith('/r/')) return
   const selected = useCookie<string | null>('jticket-codebase')
   if (!selected.value) return navigateTo('/codebases')
 })

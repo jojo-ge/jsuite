@@ -14,11 +14,11 @@ import {
   invalidateHerdrState,
 } from './herdr'
 import { suiteRoot } from '@jsuite/data'
-import { isReviewTab, votes, type Review } from '../../app/utils/reviewTypes'
+import { isReviewTab, reviewPath, votes, type Review } from '../../app/utils/reviewTypes'
 import { JTICKET_PUBLIC } from './sandbox'
 
 // The publish step reviewers read by path (jreview-report is typed-only, so it cannot be invoked mid-task).
-const REPORT_SKILL = join(suiteRoot(), 'apps/jreview/.claude/skills/jreview-report/SKILL.md')
+const REPORT_SKILL = join(suiteRoot(), 'apps/jticket/.claude/skills/jreview-report/SKILL.md')
 
 const pExecFile = promisify(execFile)
 
@@ -151,7 +151,7 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
         ]
       : []),
     'Work unattended: do not stop to ask questions — if no spec turns up, carry on without one and say so.',
-    `When the review is complete, publish it into jReview: read ${REPORT_SKILL} and follow it with review=${review.key} reviewer=${n} doc=${r.docKey}.`,
+    `When the review is complete, publish it: read ${REPORT_SKILL} and follow it with review=${review.key} reviewer=${n} doc=${r.docKey}.`,
   ].join(' ')
 }
 
@@ -286,7 +286,7 @@ export async function openReviewInBrowser(review: Pick<Review, 'key' | 'project'
   // A sandbox opens its own Review tab, never the live jTicket's.
   const url = project
     ? `${JTICKET_PUBLIC}/projects/${encodeURIComponent(project)}?tab=review&review=${encodeURIComponent(key)}`
-    : `https://jreview.local/r/${key}`
+    : `${JTICKET_PUBLIC}${reviewPath(key)}`
   try {
     await pExecFile('open', [url])
   } catch (err: any) {

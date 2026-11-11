@@ -14,12 +14,13 @@ into tickets. You run in the reviewed repo (cwd), so you can check the code.
 
 Argument: the review key.
 
-API: `http://localhost:43008` (jReview; also https://jreview.local).
+API: jTicket, through the `jt` CLI (`jt get|post PATH …`) — the review engine
+runs inside jTicket. Never hand-build curl.
 
 ## 1. Read the run
 
 ```sh
-curl -s http://localhost:43008/api/reviews/<key>
+jt get /api/reviews/<key>
 ```
 
 Gives `repoPath`, `base`, `reviewers[]` (`n`, `docKey`, `status`) and
@@ -27,7 +28,7 @@ Gives `repoPath`, `base`, `reviewers[]` (`n`, `docKey`, `status`) and
 (skipped reviewers have no report):
 
 ```sh
-curl -s http://localhost:43008/api/documents/<docKey>
+jt get /api/documents/<docKey>
 ```
 
 Findings are the callout blocks (ids `f1`, `f2`, … titled
@@ -90,8 +91,7 @@ document is published. Write the JSON to a file and post it:
 ```
 
 ```sh
-curl -s -X POST http://localhost:43008/api/reviews/<key>/findings \
-  -H 'content-type: application/json' -d @findings.json
+jt post /api/reviews/<key>/findings @findings.json
 ```
 
 `severity` is `critical` · `high` · `medium` · `low`; `file`/`line` optional;
@@ -105,9 +105,10 @@ are reassigned `f1`… in the order sent. Two `409`s: the review is a consensus
 review (that's `/jreview-consensus`'s job — stop) or it was already split into
 tickets (your findings would be discarded — stop).
 
-Then reply with one line — "N reported → M distinct" plus the jReview URL
-(`https://jreview.local/r/<key>`) — and stop. **Don't create tickets.** The
-human decides that in jReview. Don't open the page or close this pane either:
-the first POST opens the review in the browser — its jTicket project's Review
-tab when `review.project` is set, else its jReview page (a re-POST doesn't) —
-and jReview closes this pane (and the reviewers') once you've gone idle.
+Then reply with one line — "N reported → M distinct" plus the review's URL
+(`https://jticket.local/reviews/<key>`) — and stop. **Don't create tickets.** The
+human decides that on the review's page. Don't open the page or close this
+pane either: the first POST opens the review in the browser — its jTicket
+project's Review tab when `review.project` is set, else its review page (a
+re-POST doesn't) — and the review engine closes this pane (and the reviewers')
+once you've gone idle.

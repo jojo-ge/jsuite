@@ -7,9 +7,6 @@
 import type { Review } from '../../app/utils/reviewTypes'
 import { readReview, sanitizeReviewKey } from './reviewStore'
 
-/** Where the review room lives, for links handed to the browser. */
-export const JREVIEW_PUBLIC = process.env.JREVIEW_URL || 'https://jreview.local'
-
 /** Whether a review is this project's: its Review tab started it, or its auto loop asked for it. */
 export function reviewBelongsTo(review: Pick<Review, 'project' | 'consensus'>, projectKey: string): boolean {
   return review.project === projectKey || review.consensus?.projectKey === projectKey

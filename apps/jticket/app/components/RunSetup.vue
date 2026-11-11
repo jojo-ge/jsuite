@@ -658,8 +658,8 @@ async function resumeRun() {
 
         <!-- what a started step did -->
         <div v-if="recordOf(i) && !recordOf(i)!.skipped" class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-          <a v-if="recordOf(i)!.archReviewKey" :href="`https://jreview.local/r/${recordOf(i)!.archReviewKey}`" target="_blank" class="text-primary hover:underline" @click.stop>architectural review ↗</a>
-          <a v-if="recordOf(i)!.reviewKey" :href="`https://jreview.local/r/${recordOf(i)!.reviewKey}`" target="_blank" class="text-primary hover:underline" @click.stop>review ↗</a>
+          <NuxtLink v-if="recordOf(i)!.archReviewKey" :to="reviewPath(recordOf(i)!.archReviewKey)" class="text-primary hover:underline" @click.stop>architectural review</NuxtLink>
+          <NuxtLink v-if="recordOf(i)!.reviewKey" :to="reviewPath(recordOf(i)!.reviewKey)" class="text-primary hover:underline" @click.stop>review</NuxtLink>
           <span v-if="recordOf(i)!.fixTickets.length">fixed: {{ recordOf(i)!.fixTickets.join(', ') }}</span>
           <span v-if="recordOf(i)!.forced?.length">closed by the watchdog: {{ recordOf(i)!.forced!.join(', ') }}</span>
         </div>

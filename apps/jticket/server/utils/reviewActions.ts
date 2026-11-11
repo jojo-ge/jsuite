@@ -15,6 +15,7 @@ import {
   MAX_REVIEWERS,
   PROJECT_KEY_SHAPE,
   REVIEW_EFFORTS,
+  reviewPath,
   unticketedFindings,
   type Finding,
   type PullRequest,
@@ -249,7 +250,7 @@ export async function createReview(body: CreateReviewInput): Promise<{ key: stri
   await writeReview(review)
 
   void dispatchQueuedReviewers(key)
-  return { key, path: `/r/${key}` }
+  return { key, path: reviewPath(key) }
 }
 
 /**
@@ -431,7 +432,7 @@ export async function fileReviewTickets(
   }
 }
 
-const reviewUrl = (r: Review) => `https://jreview.local/r/${r.key}`
+const reviewUrl = (r: Review) => `${JTICKET_PUBLIC}${reviewPath(r.key)}`
 // Reports are pool documents, read in jTicket's reader (jExplain retired).
 const docUrl = (docKey: string) => `${JTICKET_PUBLIC}/e/${docKey}`
 

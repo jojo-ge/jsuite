@@ -27,8 +27,8 @@ Sonnet subagent builds and publishes the document.
 - Report only. Don't fix code, don't commit, don't create tickets. Tickets
   come later and are not yours: a consensus review's consensus session files
   the agreed findings; a plain review is triaged, then the human splits the
-  findings into tickets from jReview (or from the jTicket project's Review
-  tab, when the review belongs to a project).
+  findings into tickets from the review's page in jTicket (or from the
+  project's Review tab, when the review belongs to a project).
 - If the review found nothing, still dump it (no FINDING sections) — the
   document must still land, or triage waits on you forever.
 - Never publish a draft or a placeholder yourself — a partial document ends
@@ -88,10 +88,10 @@ Call the Agent tool with `model: "sonnet"` and `subagent_type:
 ## 3. Check it landed
 
 ```sh
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:43008/api/documents/<docKey>
+jt get /api/documents/<docKey> > /dev/null && echo landed
 ```
 
-`200` means you're done: reply with the subagent's one line and stop. If it's
+`landed` means you're done: reply with the subagent's one line and stop. If it's
 anything else, the subagent failed. Read
 `~/.claude/skills/jreview-report/reference/document.md` and publish the
 document yourself, so triage isn't left waiting.
