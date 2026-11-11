@@ -292,7 +292,6 @@ function restartTour() {
           :stop="currentStop"
           :index="tourIndex"
           :count="tour.stops.length"
-          :variant="tourView?.variant ?? 'detail'"
           @prev="prevStop"
           @next="nextStop"
           @end="endTour"

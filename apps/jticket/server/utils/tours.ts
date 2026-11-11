@@ -13,7 +13,7 @@ import { tourKeyFor, type TourView } from '../../app/utils/tour'
 import type { Project, Store } from './store'
 import { cleanTour } from './tourArtifact'
 import { clearTourFailure, clearTourJob, getTourJob, recordTourFailure, registerTourJob, tourFailure, type TourJob } from './tourJobs'
-import { loadWalkableTour, saveTour } from './tourStore'
+import { loadTour, saveTour } from './tourStore'
 
 export interface TourContext {
   store: Store
@@ -42,15 +42,14 @@ export function tourContext(projectRef: string | undefined, raw: Record<string, 
   return { store, project, repoDir, target, key }
 }
 
-/** What the Diff tab shows: the target's tour (detail, else a legacy overview) and its build state. */
+/** What the Diff tab shows: the target's detail tour (never an overview or chain tour jDiff left) and its build state. */
 export function tourView(ctx: TourContext): TourView {
-  const saved = loadWalkableTour(ctx.repoDir, ctx.key)
+  const saved = loadTour(ctx.repoDir, ctx.key, 'detail')
   const job = getTourJob(ctx.repoDir, ctx.key)
   const failure = tourFailure(ctx.repoDir, ctx.key)
   return {
     key: ctx.key,
     tour: saved?.tour ?? null,
-    variant: saved?.variant ?? null,
     createdAt: saved?.createdAt ?? '',
     job: job ? { startedAt: job.startedAt, agent: job.agent } : null,
     failure: job ? '' : failure,

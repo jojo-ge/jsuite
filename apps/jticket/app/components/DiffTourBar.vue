@@ -8,8 +8,6 @@ const props = defineProps<{
   stop: TourStop
   index: number
   count: number
-  /** 'detail' for a jTicket-built tour; 'overview' for one jDiff's analyze run left. */
-  variant: string
 }>()
 const emit = defineEmits<{ prev: []; next: []; end: [] }>()
 
@@ -35,7 +33,7 @@ const lines = computed(() => (props.stop.endLine > props.stop.line ? `${props.st
     aria-label="Guided tour"
   >
     <div class="flex items-baseline gap-2.5">
-      <span class="shrink-0 font-mono text-[11px] text-primary">{{ variant === 'overview' ? '' : `${variant} ` }}{{ index + 1 }}/{{ count }}</span>
+      <span class="shrink-0 font-mono text-[11px] text-primary">{{ index + 1 }}/{{ count }}</span>
       <span class="min-w-0 font-semibold">{{ stop.title }}</span>
       <UButton class="ml-auto shrink-0" icon="i-lucide-x" size="xs" color="neutral" variant="ghost" aria-label="End tour (esc)" title="End tour (esc)" @click="emit('end')" />
     </div>

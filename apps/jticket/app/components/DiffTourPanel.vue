@@ -24,7 +24,6 @@ const open = ref(false)
 
 const tour = computed(() => props.view?.tour ?? null)
 const building = computed(() => !!props.view?.job)
-const legacy = computed(() => props.view?.variant === 'overview')
 const failure = computed(() => props.dispatchError || props.view?.failure || '')
 const overviewHtml = computed(() => (tour.value?.overview.trim() ? render(tour.value.overview) : ''))
 const builtAt = computed(() => (props.view?.createdAt ? new Date(props.view.createdAt).toLocaleString() : ''))
@@ -49,7 +48,7 @@ const stopLink = (i: number) => ({ query: { ...route.query, stop: String(i) } })
       <template v-if="tour">
         <span class="font-medium">Guided tour</span>
         <span class="text-xs text-muted">
-          {{ tour.stops.length }} stops<template v-if="legacy"> · overview tour (from before the move)</template><template v-if="builtAt"> · {{ builtAt }}</template>
+          {{ tour.stops.length }} stops<template v-if="builtAt"> · {{ builtAt }}</template>
         </span>
         <UButton v-if="!touring" size="xs" icon="i-lucide-play" @click="emit('start', resumeIndex ?? 0)">
           {{ resumeIndex ? `Resume ${resumeIndex + 1}/${tour.stops.length}` : 'Start tour' }}
@@ -69,7 +68,7 @@ const stopLink = (i: number) => ({ query: { ...route.query, stop: String(i) } })
         </template>
         <UTooltip v-else-if="herdrUp" text="One Opus session in a new herdr tab reads the whole change and writes a 20–40-stop walk (background — no focus steal)">
           <UButton size="xs" :color="tour ? 'neutral' : 'primary'" :variant="tour ? 'outline' : 'solid'" icon="i-lucide-sparkles" :loading="busy" @click="emit('build')">
-            {{ tour && !legacy ? 'Rebuild tour' : 'Build tour' }}
+            {{ tour ? 'Rebuild tour' : 'Build tour' }}
           </UButton>
         </UTooltip>
         <span v-else class="text-xs text-dimmed">Start herdr to build a tour</span>

@@ -1,6 +1,8 @@
 // The guided-tour store, carried over from jDiff: `.data/jdiff/tours.json`, one
 // row per (resolved repo path, target key, variant), latest wins. The file and
-// its shape are jDiff's unchanged, so every tour jDiff saved still loads here.
+// its shape are jDiff's unchanged, so every detail tour jDiff saved still walks
+// here. Only detail tours survived the move: jDiff's overview and chain rows
+// stay in the file but nothing in jTicket reads them.
 // Like jReview's records (`.data/jreview/`), the data stays where its app put it.
 //
 // Target keys follow jDiff's: a GitHub PR is its bare number, a branch is
@@ -27,16 +29,6 @@ const variantOf = (t: SavedTour): TourVariant => t.variant ?? 'overview'
 
 export function loadTour(repo: string, number: string, variant: TourVariant = 'detail'): SavedTour | null {
   return loadAll().find((t) => t.repo === repo && t.number === number && variantOf(t) === variant) ?? null
-}
-
-/**
- * The tour the Diff tab walks for a target: its detail tour, else the overview
- * tour jDiff's analyze run left behind. Chain tours are not walked here.
- */
-export function loadWalkableTour(repo: string, number: string): (SavedTour & { variant: TourVariant }) | null {
-  const rows = loadAll().filter((t) => t.repo === repo && t.number === number)
-  const pick = rows.find((t) => variantOf(t) === 'detail') ?? rows.find((t) => variantOf(t) === 'overview')
-  return pick ? { ...pick, variant: variantOf(pick) } : null
 }
 
 /** Save a tour, replacing only the same (repo, target, variant) row. */

@@ -231,8 +231,8 @@ per browser, and `?stop=i` links (the overview's stop list uses them); a stop
 on unchanged code expands its gap, or opens the full file, to show itself.
 Tours live in `.data/jdiff/tours.json` (the store the retired jDiff app
 kept), keyed by target (a GitHub PR's number, `branch/<name>`, `PR-n`), so
-tours saved before the move still walk: a target's detail tour, else an
-overview tour left by the old app (read-only, never built here). Logic: `server/utils/tours.ts`, `tourStore.ts`,
+detail tours saved before the move still walk. Only the detail tour survived:
+the overview and chain tours the old app left stay in the file, never shown. Logic: `server/utils/tours.ts`, `tourStore.ts`,
 `tourJobs.ts` (the run in flight, and why the last one failed);
 `app/composables/useTourWalk.ts`. Endpoints, each taking the target's params:
 `GET|POST|DELETE /api/projects/:id/diff/tour` (read / build / cancel), and the

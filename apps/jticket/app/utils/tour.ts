@@ -22,7 +22,7 @@ export interface Tour {
  * Which tour a stored row is. jTicket only builds `detail` tours (the
  * fine-grained, 20–40-stop walk). jDiff's analyze run also wrote `overview`
  * tours and its chains mode `chain:<slug>` ones; those rows stay in the store
- * and an `overview` one still walks when a target has no detail tour.
+ * but are never read — only the detail tour survived the move.
  */
 export type TourVariant = 'overview' | 'detail' | `chain:${string}`
 
@@ -30,8 +30,8 @@ export type TourVariant = 'overview' | 'detail' | `chain:${string}`
 export interface TourView {
   /** The store key the target maps to ('123' for GitHub PR #123, 'PR-7', 'branch/<name>'). */
   key: string
+  /** The target's detail tour, if one was built. */
   tour: Tour | null
-  variant: TourVariant | null
   createdAt: string
   /** A live Build tour session, if one is running. */
   job: { startedAt: number; agent: string } | null

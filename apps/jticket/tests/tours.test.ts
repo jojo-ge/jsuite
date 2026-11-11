@@ -11,8 +11,8 @@ import { diffGaps, gapForLine } from '../app/utils/diffGaps'
 import { stopFromQuery, tourKeyFor } from '../app/utils/tour'
 import { cleanTour, MAX_DETAIL_STOPS } from '../server/utils/tourArtifact'
 import { clearTourJob, getTourJob, recordTourFailure, registerTourJob, tourFailure, TOUR_STALE_MS } from '../server/utils/tourJobs'
-import { loadTour, loadWalkableTour, saveTour } from '../server/utils/tourStore'
-import { completeTour, saveTourArtifact, tourPrompt, type TourContext } from '../server/utils/tours'
+import { loadTour, saveTour } from '../server/utils/tourStore'
+import { completeTour, saveTourArtifact, tourPrompt, tourView, type TourContext } from '../server/utils/tours'
 
 ;(globalThis as any).createError ??= (o: { statusCode: number; statusMessage: string }) =>
   Object.assign(new Error(o.statusMessage), o)
@@ -52,14 +52,16 @@ describe('tour store (jDiff’s .data/jdiff/tours.json)', () => {
     expect(loadTour(REPO, key, 'detail')?.tour.overview).toBe('dt-1')
   })
 
-  it('walks the detail tour, else the overview jDiff left, never a chain tour', () => {
+  it('the Diff tab walks only the detail tour — never an overview or chain tour jDiff left (TICK-975)', () => {
     const key = freshTarget()
+    const view = () => tourView({ repoDir: REPO, key, project: { key: 'PROJ-1' }, target: {} } as unknown as TourContext)
     saveTour(saved(key, 'chain:a', 'chain'))
-    expect(loadWalkableTour(REPO, key)).toBeNull()
-    saveTour(saved(key, undefined, 'overview'))
-    expect(loadWalkableTour(REPO, key)).toMatchObject({ variant: 'overview', tour: { overview: 'overview' } })
+    saveTour(saved(key, undefined, 'legacy overview'))
+    saveTour(saved(key, 'overview', 'overview'))
+    expect(view().tour).toBeNull()
+    expect(view()).not.toHaveProperty('variant')
     saveTour(saved(key, 'detail', 'detail'))
-    expect(loadWalkableTour(REPO, key)).toMatchObject({ variant: 'detail', tour: { overview: 'detail' } })
+    expect(view().tour?.overview).toBe('detail')
   })
 
   it('writes jDiff’s file, in jDiff’s row shape', () => {
@@ -161,7 +163,7 @@ describe('the session’s hand-back', () => {
     const key = freshTarget()
     registerTourJob({ repo: REPO, key, startedAt: Date.now(), agent: 'a', tabId: 't' })
     expect(saveTourArtifact(ctx(key), many(3))).toMatchObject({ saved: 'tour', key, stops: 3 })
-    expect(loadWalkableTour(REPO, key)?.variant).toBe('detail')
+    expect(loadTour(REPO, key, 'detail')?.tour.stops).toHaveLength(3)
     expect(getTourJob(REPO, key)).toBeNull()
   })
 
@@ -170,7 +172,7 @@ describe('the session’s hand-back', () => {
     registerTourJob({ repo: REPO, key, startedAt: Date.now(), agent: 'a', tabId: 't' })
     expect(() => saveTourArtifact(ctx(key), { overview: 'md', stops: [] })).toThrow()
     expect(() => saveTourArtifact(ctx(key), undefined)).toThrow()
-    expect(loadWalkableTour(REPO, key)).toBeNull()
+    expect(loadTour(REPO, key, 'detail')).toBeNull()
     expect(getTourJob(REPO, key)).not.toBeNull()
     clearTourJob(REPO, key)
   })
