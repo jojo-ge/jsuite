@@ -2,8 +2,9 @@
 // The project's PRs, on the project page: its local PRs (ticket branches
 // squash-merged onto the integration branch right here) and every open GitHub
 // PR that belongs to it — each row linking into jDiff (local diff review) and
-// github.com. The integration branch itself — cutting it, pushing it, the
-// roll-up PR — is the Branches tab (ProjectBranches).
+// github.com — plus the roll-up PR, the project's one real GitHub PR
+// (integration branch → default branch). Cutting or setting the integration
+// branch is the Overview tab (ProjectIntegrationBranch).
 //
 // The data comes from GET /api/projects/:id/github, which does the `gh`/`git`
 // work server-side. It's a network call, so it loads lazily and client-side:
@@ -103,7 +104,7 @@ let tick: ReturnType<typeof setInterval> | undefined
 onMounted(() => { tick = setInterval(() => { now.value = new Date() }, 60_000) })
 onUnmounted(() => { if (tick) clearInterval(tick) })
 
-// Somebody changed the branch — the Branches tab, the header, or another tab.
+// Somebody changed the branch — the Overview tab, the header, or another tab.
 watch(revision, () => reload())
 
 // Somebody else changed a PR — an agent merging over the API, a herdr sweep
@@ -122,6 +123,30 @@ watch(prFingerprint, () => refresh())
 const errorText = branchErrorText
 
 const prs = computed(() => data.value?.prs ?? [])
+
+// ── The roll-up PR — integration branch → default branch, on GitHub ──
+// POST /integration-pr pushes the branch, then opens the PR or finds the open
+// one, so the button is safe to re-click.
+const rollupPr = computed(() => prs.value.find((pr) => pr.matchedBy.includes('integration')) ?? null)
+const openingRollup = ref(false)
+async function openRollupPr() {
+  openingRollup.value = true
+  try {
+    const res = await $fetch<{ url: string; created: boolean }>(`/api/projects/${props.project.id}/integration-pr`, { method: 'POST' })
+    toast.add({
+      title: res.created ? 'Roll-up PR opened' : 'Roll-up PR already open',
+      description: res.url,
+      color: 'success',
+      icon: 'i-lucide-git-pull-request',
+    })
+    if (res.url) window.open(res.url, '_blank')
+  } catch (err: any) {
+    toast.add({ title: 'Could not open the roll-up PR', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    openingRollup.value = false
+    reload()
+  }
+}
 const localPrs = computed(() => data.value?.localPrs ?? [])
 
 // ── Local PRs — created, merged and closed right here ──
@@ -405,7 +430,7 @@ async function createPr() {
           </UButton>
         </div>
 
-        <!-- The integration branch — managed on the Branches tab -->
+        <!-- The integration branch — cut or set on the Overview tab; its roll-up PR here -->
         <div class="mt-2 flex flex-wrap items-center gap-2 border-t border-default/60 pt-2 text-sm">
           <UIcon name="i-lucide-git-branch" class="size-4 shrink-0 text-muted" />
           <template v-if="data.branch">
@@ -413,17 +438,46 @@ async function createPr() {
             <span class="text-xs text-muted">integration branch · local PRs land here</span>
           </template>
           <span v-else class="text-xs text-muted">No integration branch yet — local PRs need one to land on.</span>
-          <UButton
-            :to="{ query: { tab: 'branches' } }"
-            icon="i-lucide-arrow-right"
-            trailing
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            class="ml-auto"
-          >
-            {{ data.branch ? 'Push, pull, roll-up PR' : 'Set one up' }}
-          </UButton>
+          <div class="ml-auto flex items-center gap-1">
+            <template v-if="data.branch">
+              <UButton
+                v-if="rollupPr"
+                :to="rollupPr.githubUrl"
+                target="_blank"
+                external
+                icon="i-lucide-git-pull-request"
+                size="xs"
+                color="neutral"
+                variant="soft"
+              >
+                Roll-up PR #{{ rollupPr.number }}
+              </UButton>
+              <UTooltip v-else text="Push the integration branch, then open the roll-up PR against the default branch">
+                <UButton
+                  icon="i-lucide-git-pull-request-arrow"
+                  size="xs"
+                  color="neutral"
+                  variant="soft"
+                  :disabled="!data.branch.local"
+                  :loading="openingRollup"
+                  @click="openRollupPr"
+                >
+                  Open roll-up PR
+                </UButton>
+              </UTooltip>
+            </template>
+            <UButton
+              v-else
+              :to="{ query: { tab: 'overview' } }"
+              icon="i-lucide-arrow-right"
+              trailing
+              size="xs"
+              color="neutral"
+              variant="ghost"
+            >
+              Set one up
+            </UButton>
+          </div>
         </div>
       </div>
 

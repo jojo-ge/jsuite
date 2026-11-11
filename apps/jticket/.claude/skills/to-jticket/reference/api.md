@@ -27,10 +27,7 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | POST | `/api/projects/:id/integration-branch` | Cut (or adopt) the project's empty integration branch off the default branch and push it |
 | GET | `/api/projects/:id/branches?q=&fetch=1` | Branches in the project's repo, local + origin, for adopting an integration branch |
 | GET | `/api/projects/:id/github` | The project's GitHub side: repo, integration-branch state, its open PRs with jDiff + github.com links |
-| GET | `/api/projects/:id/branch-status?fetch=1` | Where the integration branch stands vs origin and vs the default branch |
-| POST | `/api/projects/:id/sync` | Push the integration branch to origin (the only remote write) |
-| POST | `/api/projects/:id/branch-pull` | Fast-forward the integration branch to origin's (never merges; diverged → 409) |
-| POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` |
+| POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` (the only remote write) |
 | POST | `/api/projects/:id/auto` | The jButton: `{enabled, once?, tickets?, plan?, continue?, stopRequested?, retry?}` — auto mode / run plan on or off |
 | GET | `/api/projects/:id/auto/queue?orchestrator=n` | An orchestrated loop's phase as the orchestrator sees it (409 unless orchestrated) |
 | POST | `/api/projects/:id/auto/claim` | Orchestrator claims `{ticket, orchestrator?}` for a subagent; refused past the budget |
@@ -286,9 +283,9 @@ jt post /api/prs/PR-4/merge
 # unless the *integration branch itself* is checked out dirty (409, says so).
 ```
 
-Everything stays on the machine until `POST /api/projects/:id/sync` pushes the
-integration branch. `POST /api/projects/:id/integration-pr` opens the one real GitHub
-roll-up PR (integration → default branch) via `gh`.
+Everything stays on the machine until `POST /api/projects/:id/integration-pr` pushes
+the integration branch and opens (or finds) the one real GitHub roll-up PR
+(integration → default branch) via `gh`.
 
 ### Codebase worktrees
 

@@ -47,15 +47,17 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'run' | 'review-setup' | 'overview' | 'docs' | 'branches' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
-const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'review-setup', 'overview', 'docs', 'branches', 'prs', 'review', 'agents', 'loops', 'analytics']
+type ProjectTab = 'board' | 'run' | 'review-setup' | 'overview' | 'docs' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'review-setup', 'overview', 'docs', 'prs', 'review', 'agents', 'loops', 'analytics']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
     const q = String(route.query.tab ?? '')
-    // A PR review project has no Branches / Pull requests tabs (see tabItems) —
+    // The retired Branches tab: its integration-branch card now sits on Overview.
+    if (q === 'branches') return 'overview'
+    // A PR review project has no Pull requests tab (see tabItems) —
     // a deep link to one lands on the board instead of rendering it anyway.
-    if (project.value?.mode === 'prreview' && (q === 'branches' || q === 'prs')) return 'board'
+    if (project.value?.mode === 'prreview' && q === 'prs') return 'board'
     return (PROJECT_TABS as string[]).includes(q) ? (q as ProjectTab) : 'board'
   },
   set: (value) => {
@@ -83,13 +85,10 @@ const tabItems = computed(() => [
     : []),
   { label: 'Overview', value: 'overview', icon: 'i-lucide-align-left' },
   { label: 'Docs', value: 'docs', icon: 'i-lucide-file-text', badge: projectDocs.value.length || undefined },
-  // A PR review project's branch is a mirror of someone's PR head — nothing to push, sync or roll up.
+  // A PR review project's branch is a mirror of someone's PR head — nothing to land on or roll up.
   ...(project.value?.mode === 'prreview'
     ? []
-    : [
-        { label: 'Branches', value: 'branches', icon: 'i-lucide-git-branch' },
-        { label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined },
-      ]),
+    : [{ label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined }]),
   { label: 'Review', value: 'review', icon: 'i-lucide-scan-search' },
   { label: 'Agents', value: 'agents', icon: 'i-lucide-message-square-code' },
   ...(loopCount.value ? [{ label: 'Loops', value: 'loops', icon: 'i-lucide-repeat', badge: loopCount.value }] : []),
@@ -303,8 +302,9 @@ async function removeProject() {
           />
         </template>
 
-        <!-- Overview — the description (a wayfinder project's map) -->
-        <section v-else-if="tab === 'overview'">
+        <!-- Overview — the description (a wayfinder project's map), then the
+             integration branch: cut or set it, and connect its worktree -->
+        <section v-else-if="tab === 'overview'" class="space-y-8">
           <div v-if="renderedDescription" class="jx-prose max-w-3xl" v-html="renderedDescription" />
           <div v-else class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-default py-10 text-center">
             <p class="text-sm text-muted">No description yet.</p>
@@ -312,6 +312,7 @@ async function removeProject() {
               Add a description
             </UButton>
           </div>
+          <ProjectIntegrationBranch v-if="project.mode !== 'prreview'" :project="project" @configure="openEditProject(project)" />
         </section>
 
         <!-- Documents — compact rows or chips; a click previews the doc -->
@@ -388,10 +389,7 @@ async function removeProject() {
           </div>
         </section>
 
-        <!-- Branches — the integration branch: cut/adopt, push, pull, roll-up PR -->
-        <ProjectBranches v-else-if="tab === 'branches'" :project="project" @configure="openEditProject(project)" />
-
-        <!-- Pull requests — local PRs onto the integration branch, and GitHub's -->
+        <!-- Pull requests — local PRs onto the integration branch, GitHub's, and the roll-up PR -->
         <ProjectGithub v-else-if="tab === 'prs'" :project="project" pinned-open @configure="openEditProject(project)" />
 
         <!-- Review — jReview runs over this project's branches; findings → tickets here -->

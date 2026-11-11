@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The integration branch's worktree row, under the branch on the GitHub panel:
+// The integration branch's worktree row, under the branch on the Overview tab:
 // is this branch connected to a worktree made the codebase's way, and if not,
 // the button that asks an agent to do it.
 //

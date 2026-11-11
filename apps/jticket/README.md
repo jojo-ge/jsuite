@@ -162,7 +162,8 @@ The project header carries the branch: a **Branch** button while the project has
 a repo but no integration branch (one click — same call as below), which becomes
 a chip naming the branch and linking to its jDiff review once it exists.
 
-The project page's **Branches** tab manages the integration branch:
+The project page's **Overview** tab manages the integration branch, under the
+description:
 
 - **Cut the branch** — `POST /api/projects/:id/integration-branch` runs
   `git branch <name> origin/<default>` + `git push -u origin <name>` and records
@@ -176,19 +177,11 @@ The project page's **Branches** tab manages the integration branch:
   teammate pushed a minute ago shows up). Picking one just sets
   `integrationBranch` — nothing is created or pushed. The same search sits
   behind the 🔍 on a project that already has a branch, for repointing it.
-- **Where it stands** — `GET /api/projects/:id/branch-status` compares the
-  branch with `origin/<branch>` (commits a push would send, commits a pull would
-  bring, diverged or not) and with `origin/<default>` (ahead/behind), plus the
-  worktree it's checked out in. `?fetch=1` fetches both branches first — the
-  tab does on open and on ↻; otherwise it reads the refs the clone has.
-- **Push / pull** — *Push* is `POST /api/projects/:id/sync` (below). *Pull*
-  (`POST /api/projects/:id/branch-pull`) fast-forwards the local branch to
-  origin's, for commits pushed from elsewhere — inside the worktree that has it
-  checked out, else by moving the ref (compare-and-swap). It never merges: a
-  diverged branch is a 409, left for a human.
-- **The roll-up PR** and the branch's **worktree** (below) sit on the same tab.
+- **Its worktree** — the **Connect worktree** card (below) sits under the
+  branch.
 
-The **Pull requests** tab lists the project's PRs:
+The **Pull requests** tab lists the project's PRs, and carries the **roll-up
+PR** button (below):
 
 - **The PR list** — `GET /api/projects/:id/github` returns the repo's open PRs
   that belong to this project, matched three ways:
@@ -238,11 +231,10 @@ The loop, per ticket:
 4. **Conflicts refuse cleanly** — the repo is left exactly as it was, the PR
    turns `conflicted` with the file list on the row. Rebase the ticket branch
    onto the integration branch, then hit merge again.
-5. **Push** — `POST /api/projects/:id/sync` (the Branches tab's *Push* button)
-   pushes the integration branch to origin: the only remote write in the flow.
-   The *Open roll-up PR* button (`POST /api/projects/:id/integration-pr`) pushes
-   and then opens — or finds — the one real GitHub PR, integration → default
-   branch, via `gh`.
+5. **Roll up** — the Pull requests tab's *Open roll-up PR* button
+   (`POST /api/projects/:id/integration-pr`) pushes the integration branch to
+   origin — the only remote write in the flow — and then opens, or finds, the
+   one real GitHub PR, integration → default branch, via `gh`.
 
 The project page's *Pull requests* tab shows both lists: **Local pull
 requests** (with per-PR commit fold-outs, merge/close buttons) above **On

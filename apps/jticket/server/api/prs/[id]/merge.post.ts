@@ -4,7 +4,7 @@
 // PR bringing upstream history the base lacks lands as a real merge instead
 // (mergedAs: 'merge'), so upstream stays an ancestor of the base.
 // Everything stays local; pushing the integration branch is a separate,
-// explicit action (POST /api/projects/:id/sync).
+// explicit action (the roll-up PR, POST /api/projects/:id/integration-pr).
 //
 // A conflict refuses cleanly: the repo is left exactly as it was, the PR is
 // marked 'conflicted' with the files recorded, and the answer is a 409 —

@@ -40,8 +40,7 @@ const endpoints = [
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
   { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch, local PRs (with commits) and matching GitHub PRs (?force=1 skips the 30s cache)" },
   { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
-  { m: 'POST', p: '/api/projects/:id/sync', d: 'Push the integration branch to origin — the only remote write in the local-PR flow' },
-  { m: 'POST', p: '/api/projects/:id/integration-pr', d: 'Push, then open (or find) the roll-up PR on GitHub via gh: integration → default branch' },
+  { m: 'POST', p: '/api/projects/:id/integration-pr', d: 'Push, then open (or find) the roll-up PR on GitHub via gh: integration → default branch — the only remote write in the local-PR flow' },
   { m: 'GET', p: '/api/projects/:id/branches', d: 'Branches in the project\'s repo, local + origin (?q= search, ?fetch=1 pulls origin first)' },
   { m: 'GET', p: '/api/prs', d: 'List local PRs (?projectId= &repo= &ticket= &status=open|conflicted|merged|closed)' },
   { m: 'POST', p: '/api/prs', d: 'Open a local PR { ticket, title?, description?, headBranch?, baseBranch? } — one per ticket' },
@@ -226,8 +225,8 @@ curl -s -X POST http://localhost:43000/api/prs/PR-4/merge
 # On conflict: 409, the PR turns 'conflicted' with conflictFiles, repo untouched —
 # rebase the ticket branch onto the integration branch and POST the merge again.
 
-# The only remote write: push the integration branch when you're ready
-curl -s -X POST http://localhost:43000/api/projects/PROJ-2/sync`
+# The only remote write: push the integration branch and open (or find) the roll-up PR
+curl -s -X POST http://localhost:43000/api/projects/PROJ-2/integration-pr`
 
 const methodColor: Record<string, string> = {
   GET: 'info',
