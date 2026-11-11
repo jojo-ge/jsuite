@@ -102,13 +102,20 @@ const busy = ref('')
 function fail(title: string, err: any) {
   toast.add({ title, description: String(err.data?.message ?? err.data?.statusMessage ?? err.message ?? err), icon: 'i-lucide-triangle-alert', color: 'error' })
 }
-const api = (path: string) => `/api/reviews/${encodeURIComponent(key.value)}${path}`
+// Every button goes through the project's routes (/api/projects/:id/reviews/:key/…),
+// which refuse a review that isn't the project's; /api/reviews/:key is only
+// read and watched from here. A review with no project gets no buttons.
+const homeKey = computed(() => review.value?.tickets?.projectKey || (review.value ? reviewProjectKey(review.value) : '') || null)
+const api = (path: string) =>
+  `/api/projects/${encodeURIComponent(homeKey.value ?? '')}/reviews/${encodeURIComponent(key.value)}${path}`
+const act = (body: { action: 'retry-reviewer' | 'skip-reviewer' | 'retry-triage'; n?: number }) =>
+  $fetch<Review>(api('/action'), { method: 'POST', body })
 
 async function redispatchReviewer(r: Reviewer) {
   if (r.status === 'running' && !window.confirm(`Reviewer ${r.n} is still running. Start a fresh session anyway?`)) return
   busy.value = `r${r.n}`
   try {
-    review.value = await $fetch<Review>(api(`/reviewers/${r.n}/dispatch`), { method: 'POST' })
+    review.value = await act({ action: 'retry-reviewer', n: r.n })
   } catch (err) {
     fail(`Could not dispatch reviewer ${r.n}`, err)
   } finally {
@@ -119,7 +126,7 @@ async function redispatchReviewer(r: Reviewer) {
 async function skipReviewer(r: Reviewer) {
   if (!window.confirm(`Skip reviewer ${r.n}? Triage goes ahead without its report.`)) return
   try {
-    review.value = await $fetch<Review>(api(`/reviewers/${r.n}/skip`), { method: 'POST' })
+    review.value = await act({ action: 'skip-reviewer', n: r.n })
   } catch (err) {
     fail(`Could not skip reviewer ${r.n}`, err)
   }
@@ -128,7 +135,7 @@ async function skipReviewer(r: Reviewer) {
 async function redispatchTriage() {
   busy.value = 'triage'
   try {
-    review.value = await $fetch<Review>(api('/triage/dispatch'), { method: 'POST' })
+    review.value = await act({ action: 'retry-triage' })
   } catch (err) {
     fail(review.value?.consensus || review.value?.agreement ? 'Could not dispatch the consensus session' : 'Could not dispatch the triager', err)
   } finally {
@@ -144,7 +151,10 @@ async function splitIntoTickets() {
   if (!target || !window.confirm(`Add ${n} to ${target}?`)) return
   busy.value = 'tickets'
   try {
-    const res = await $fetch<{ projectKey: string }>(api('/tickets'), { method: 'POST', body: { findingIds: ids } })
+    const res = await $fetch<{ projectKey: string }>(`/api/projects/${encodeURIComponent(target)}/reviews/${encodeURIComponent(key.value)}/tickets`, {
+      method: 'POST',
+      body: { findingIds: ids },
+    })
     toast.add({ title: `Added to ${res.projectKey}`, description: n, icon: 'i-lucide-ticket', color: 'success' })
   } catch (err) {
     fail('Could not create tickets', err)
@@ -245,7 +255,7 @@ const projectLink = computed(() =>
                     Reviewer {{ r.n }}
                   </button>
                   <UBadge :color="reviewerBadge(r.status).color" variant="subtle" size="sm">{{ reviewerBadge(r.status).label }}</UBadge>
-                  <div v-if="review.status === 'reviewing' && r.status !== 'done' && r.status !== 'skipped'" class="ml-auto flex gap-0.5">
+                  <div v-if="homeKey && review.status === 'reviewing' && r.status !== 'done' && r.status !== 'skipped'" class="ml-auto flex gap-0.5">
                     <UButton
                       icon="i-lucide-rotate-ccw"
                       size="xs"
@@ -297,7 +307,7 @@ const projectLink = computed(() =>
               </p>
               <p v-if="review.triage.status === 'failed'" class="text-xs text-error">{{ review.triage.error }}</p>
               <UButton
-                v-if="review.status === 'triaging'"
+                v-if="homeKey && review.status === 'triaging'"
                 class="mt-2"
                 icon="i-lucide-rotate-ccw"
                 size="xs"

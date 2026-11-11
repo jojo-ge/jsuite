@@ -306,14 +306,14 @@ PR's base; a branch not checked out is reviewed in a detached worktree),
 {projectKey, loop}`, `pass: 'architecture'`, `context.review` — or, from a PR
 review project, `pr: N`, `agreement: {loop}`, `verify: true`, `context: {brief:
 DOC-n, checks: [TICK-n]}`. Returns `{key, path: "/reviews/<key>"}`.
-`GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE), `POST
-…/reviewers/:n/dispatch` / `skip`, `POST …/triage/dispatch`, `POST …/findings`
+`GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE), `POST …/findings`
 (the triager's or agreement session's hand-back), `POST …/consensus` (the
-consensus session's ticket keys), `POST …/tickets {findingIds?, projectKey?}`
-(the human's filing of a triage review's findings onto its own project —
-`projectKey` only for a review that predates projects; never a new project),
-`POST …/pr-comments {ticketKeys, body}`. The room page is `/reviews/<key>`
-(`/r/<key>` alias). Models: reviewers and agreement consensus
+consensus session's ticket keys). That is all `/api/reviews` serves: every
+human action on a review (retry/skip a reviewer, retry triage, file findings
+as tickets, Post to PR) goes through the project's routes,
+`/api/projects/:id/reviews/:key/{action,tickets,pr-comments}` (above), which
+404 a review that isn't the project's. The room page is `/reviews/<key>`
+(`/r/<key>` alias) and uses those routes too. Models: reviewers and agreement consensus
 `claude-opus-5-5` (`JREVIEW_MODEL`), consensus `claude-sonnet-5`
 (`JREVIEW_CONSENSUS_MODEL`). Watcher `server/plugins/reviewWatcher.ts` (off in
 a sandbox without `--engines`): polls the document pool for the pre-assigned

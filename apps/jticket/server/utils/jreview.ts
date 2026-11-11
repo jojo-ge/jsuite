@@ -9,9 +9,13 @@
 import type { Review } from '../../app/utils/reviewTypes'
 import { readReview, sanitizeReviewKey } from './reviewStore'
 
-/** Whether a review is this project's: its Review tab started it, or its auto loop asked for it. */
-export function reviewBelongsTo(review: Pick<Review, 'project' | 'consensus'>, projectKey: string): boolean {
-  return review.project === projectKey || review.consensus?.projectKey === projectKey
+/**
+ * Whether a review is this project's: its Review tab started it, its auto loop
+ * asked for it, or (a review that predates projects) its findings were filed
+ * here.
+ */
+export function reviewBelongsTo(review: Pick<Review, 'project' | 'consensus' | 'tickets'>, projectKey: string): boolean {
+  return review.project === projectKey || review.consensus?.projectKey === projectKey || review.tickets?.projectKey === projectKey
 }
 
 /** One of this project's reviews, or a 404 — the Review tab's routes never reach another project's. */
