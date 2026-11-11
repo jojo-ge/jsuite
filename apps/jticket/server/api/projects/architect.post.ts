@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
       '',
       'How this project works:',
       '1. The scan ticket (label `arch:scan`) runs `/jarchitect-scan` in herdr: it explores the repo for deepening opportunities, publishes the assessment spec on this project, and creates one HITL `arch:candidate` ticket per candidate, tagged `arch:strong` / `arch:worth-exploring` / `arch:speculative` (one `arch:top-pick`).',
-      '2. Grill a candidate with its herdr button (`/jarchitect-grill`): a jGrilling browser interview that stress-tests that one candidate. Dispatching the grilling IS the triage decision — the ticket moves to done.',
+      '2. Grill a candidate with its herdr button (`/jarchitect-grill`): a terminal grilling (`/grilling`) that stress-tests that one candidate. Dispatching the grilling IS the triage decision — the ticket moves to done.',
       "3. The grilling hardens the candidate into an implementation-ready spec doc on this project; kick off whatever comes next from that spec.",
       '',
       'No branches, no PRs — the outputs are tickets, docs, and CONTEXT.md/ADR updates in the repo.',

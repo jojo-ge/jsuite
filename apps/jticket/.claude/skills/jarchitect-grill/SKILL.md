@@ -47,11 +47,8 @@ Skill tool with **"codebase-design"** for the vocabulary and keep to it.
 ## 2. Run the interview — in this terminal
 
 Call the Skill tool with **"grilling"** and follow it: YOU are the interviewer,
-the human answers here in the herdr pane. If they want one question argued
-properly — tabbed options with their own tables and charts — call the Skill
-tool with **"j-grilling"** to escalate *that single question* into the
-jGrilling room, key the session after the ticket (`tick-<n>-<short-slug>`), and
-come back here for the next one. Never route the whole interview to the room.
+the human answers here in the herdr pane. The whole interview stays in this
+terminal.
 
 This grilling is a **go/no-go stress test of this one candidate**. Walk its
 decision tree — with a recommendation on every question:
@@ -80,8 +77,7 @@ the repo (unlike the scan, this session makes decisions):
 
 ## 3. Finish and write back
 
-When the frontier is empty, close any jGrilling room you opened (the
-j-grilling skill carries the `finish` call). Then land the outcome in jTicket:
+When the frontier is empty, land the outcome in jTicket:
 
 **Pursued** — publish the candidate's implementation-ready spec as a doc on
 the project (the `to-jspec` skill has the field formats; `/to-spec` the
@@ -106,8 +102,7 @@ jt set TICK-n resolution=@resolution.md
 ```
 
 The resolution: verdict (pursue / reject), the load-bearing decisions, and
-links — the spec doc key or ADR path, plus any jGrilling room
-(`https://jgrilling.local/g/<key>`) and debrief an escalated question produced. End by telling the user where the spec doc
+links — the spec doc key or ADR path. End by telling the user where the spec doc
 lives — **the workflow ends here**; whatever comes next (implementation via
 `/jimplement`, a new project, nothing) is the human's move, made from that
 spec.

@@ -155,8 +155,7 @@ describe('the built-in prompts', () => {
     expect(resolve({ mode: 'todo' }).text).toBe(
       'Grill me about this todo — TICK-42: "Persist the cart". Read the ticket first ' +
         '(GET http://localhost:43000/api/tickets/TICK-42), then run /grilling here in the terminal — ' +
-        'I answer in this pane. Only if I ask for one question in the browser, escalate that ' +
-        'single question with /j-grilling. When the grilling finishes, write the decisions into ' +
+        'I answer in this pane. When the grilling finishes, write the decisions into ' +
         "TICK-42's resolution. No branch, no PR.",
     )
   })

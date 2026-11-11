@@ -157,9 +157,7 @@ ticket's `labels`; the sub-type below is its `type` (plus the `prototype` tag).
   tag is what makes a research ticket this one — throwaway, never shipped.
 - **Grilling** (HITL) — `type: "decision"`, tag `hitl`. Conversation one question at a time,
   run **in this terminal** with the `/grilling` skill and `/domain-modeling`
-  alongside — the human comes to the herdr pane to answer. If they want one
-  question argued properly (tabbed options, tables, charts), escalate that
-  *single* question with **`/j-grilling`**, then carry on here. The default case.
+  alongside — the human comes to the herdr pane to answer. The default case.
 - **Task** (HITL or AFK) — `type: "task"`, tag `afk` or `hitl`. Manual work that must happen before a
   *decision* can be made — nothing to decide, prototype, or research, but the discussion
   is blocked until it's done. Signing up for a service so its API can be judged,

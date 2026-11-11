@@ -18,8 +18,6 @@ git clone git@github.com:jojo-ge/jsuite.git && cd jsuite
 | https://jdiff.local      | jDiff                     | 43002     |
 | https://jchart.local     | jChart                    | 43003     |
 | https://jexplain.local   | jExplain                  | 43004     |
-| https://jgrilling.local  | jGrilling                 | 43005     |
-| https://jcode.local      | jCode                     | 43006     |
 | https://jreview.local    | jReview                   | 43008     |
 
 ## Setup
@@ -73,8 +71,6 @@ jsuite/
 │   ├── jdiff/          # diff / PR review workbench
 │   ├── jchart/         # diagram workbench (specialised chart app)
 │   ├── jexplain/       # blog-style explainers with live charts
-│   ├── jgrilling/      # one escalated grilling question, argued in the browser
-│   ├── jcode/          # hand-code the part that matters — sandbox katas: brief → hints → answer, marked in herdr
 │   └── jreview/        # multi-reviewer code review — 4 herdr reviewers, a triager, findings → jTicket (+ 2-reviewer consensus reviews for jTicket's auto loop)
 └── packages/
     ├── charting/       # @jsuite/charting — shared chart module (Nuxt layer)
@@ -112,8 +108,6 @@ overrides the search when set.
 | jchart | `.data/jchart/<key>.json` (+ `.notes.json`) — shared: jexplain reads/writes the same pool |
 | jdiff | `.data/jdiff/` — ratings, tours, risks, asks, comments, caches |
 | jexplain | `.data/jexplain/<key>.json` (+ `.notes.json`) — shared: jticket docs live in the same pool |
-| jgrilling | `.data/jgrilling/<key>.json` — grilling sessions; debriefs land in the shared document pool |
-| jcode | `.data/jcode/<key>.json` — katas: brief, hint ladder, the hidden answer, attempts + verdicts (the page only ever sees the reached rungs); `.data/jcode/sandbox/<key>/` — each kata's sandbox (stub, cases, runner) |
 | jreview | `.data/jreview/<key>.json` — one review run: reviewer/triage dispatch state, the triaged findings, the jTicket project they became; the reports themselves live in the shared document pool |
 
 ## @jsuite/charting
@@ -181,8 +175,7 @@ claude sequence in it to make the sequence atomic. Every CLI call has a
 timeout (30s default). Plain ESM, no layer; failures throw `HerdrError` with
 an HTTP-ish `statusCode` and herdr's error `code`.
 jTicket dispatches all ticket work through it, jDiff dispatches its review-guidance sessions (the
-`jdiff-review` / `jdiff-ask` skills, pinned to Opus 5), and jCode dispatches
-its marking sessions (`jcode-mark`, one job tab per attempt).
+`jdiff-review` / `jdiff-ask` skills, pinned to Opus 5).
 
 ## @jsuite/relay — jTicket project sync
 
@@ -241,8 +234,7 @@ small WebSocket broadcast server with the same topic fan-out semantics, and
 Apps own their Claude skills in `<app>/.claude/skills` (the jTicket pattern:
 jticket owns `jimplement`, `jwayfinder`, `to-jticket`, `to-jspec`, `to-jdoc`;
 jdiff owns `jdiff-review` and `jdiff-ask`;
-jchart owns `j-chart`; jexplain owns `j-explain`; jgrilling owns `j-grilling`;
-jcode owns `jcode` (the build side) and `jcode-mark` (the marker);
+jchart owns `j-chart`; jexplain owns `j-explain`;
 jreview owns `jreview-report`, `jreview-triage` and `jreview-consensus`).
 Suite-level skills live in
 `.claude/skills/` at the repo root: `jsuite` is the ecosystem map — what each
@@ -289,7 +281,7 @@ picker and open-in-VSCode, none of which survive containerisation. OrbStack
 terminates TLS; Caddy just routes each name to `host.docker.internal:<port>`.
 
 ```
-browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43005,43006,43008}
+browser ──TLS──▶ [ OrbStack proxy :443 ] ──http──▶ [ Caddy :80 ] ──http──▶ host.docker.internal:{43000,43002,43003,43004,43008}
                         │
                         └─ OrbStack local CA, auto-trusted on first visit
 ```

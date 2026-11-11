@@ -16,8 +16,6 @@
 #   https://jdiff.local      jDiff
 #   https://jchart.local     jChart
 #   https://jexplain.local   jExplain
-#   https://jgrilling.local  jGrilling
-#   https://jcode.local      jCode
 #   https://jreview.local    jReview
 set -euo pipefail
 
@@ -50,12 +48,10 @@ APPS=(
   "jdiff|jdiff|43002|pnpm dev --port 43002"
   "jchart|jchart|43003|pnpm dev --port 43003"
   "jexplain|jexplain|43004|pnpm dev --port 43004"
-  "jgrilling|jgrilling|43005|pnpm dev --port 43005"
-  "jcode|jcode|43006|pnpm dev --port 43006"
   "jreview|jreview|43008|pnpm dev --port 43008"
 )
 
-DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jgrilling.local jcode.local jreview.local)
+DOMAINS=(jsuite.local jticket.local jdiff.local jchart.local jexplain.local jreview.local)
 
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
@@ -68,8 +64,6 @@ SKILLS_MANIFEST=(
   "apps/jdiff|jdiff-review jdiff-ask jdiff-tour jdiff-chains"
   "apps/jchart|j-chart"
   "apps/jexplain|j-explain"
-  "apps/jgrilling|j-grilling"
-  "apps/jcode|jcode jcode-mark"
   "apps/jreview|jreview-report jreview-triage jreview-consensus jarch-review make-jreview-project jreview-assess jpr-check"
 )
 POCOCK_SOURCE="mattpocock/skills"

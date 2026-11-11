@@ -1,6 +1,6 @@
 ---
 name: jsuite
-description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain, jGrilling, jCode and jReview each do, how they share data, charts and herdr dispatch, and which app, skill or endpoint a request should route to (the same routing table as the repo's CLAUDE.md, for sessions outside it). Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, how to drive jTicket (the `jt` CLI, auto mode, run plans, Branches, Today), or how to start/stop/manage the suite. API and engine detail lives in reference/api.md.
+description: Map of the jSuite local product ecosystem — what jTicket, jDiff, jChart, jExplain and jReview each do, how they share data, charts and herdr dispatch, and which app, skill or endpoint a request should route to (the same routing table as the repo's CLAUDE.md, for sessions outside it). Use when the user mentions a j-app you need context on, asks which jSuite app fits a task, how the apps relate, how to drive jTicket (the `jt` CLI, auto mode, run plans, Branches, Today), or how to start/stop/manage the suite. API and engine detail lives in reference/api.md.
 ---
 
 # jSuite — the local product ecosystem
@@ -20,8 +20,6 @@ jsuite status | stop | restart | logs [app] | open [app] | setup
 | jDiff | https://jdiff.local | 43002 | local PR & branch diff reviewer |
 | jChart | https://jchart.local | 43003 | editable, annotatable Excalidraw diagrams |
 | jExplain | https://jexplain.local | 43004 | blog-style explainers with live charts |
-| jGrilling | https://jgrilling.local | 43005 | one escalated grilling question, argued in the browser |
-| jCode | https://jcode.local | 43006 | hand-code a shipped feature's core as a sandbox kata |
 | jReview | https://jreview.local | 43008 | multi-reviewer code review → deduped findings → tickets |
 
 Always include the scheme: `https://<app>.local`. Bare host ports
@@ -39,8 +37,7 @@ Always include the scheme: `https://<app>.local`. Bare host ports
 | review a PR or local branch diff; a guided tour; dependency chains | `jdiff` CLI (`jdiff pr N`, `jdiff branch B`, `--print`); the UI dispatches `jdiff-review` / `jdiff-ask` / `jdiff-tour` / `jdiff-chains` sessions on Opus 5 |
 | a diagram the human can edit and annotate | `j-chart` |
 | a rich explainer / walkthrough / post-mortem | `j-explain` |
-| be grilled about a plan | `grilling` in the terminal — `j-grilling` only when the operator asks for ONE question in the browser; jGrilling's **Up next** strip lists the HITL grilling frontier from jTicket and starts a ticket in herdr |
-| build a feature and hand-code its core ("with jcode") | `jcode` — ship as usual, then publish the core as a kata; the page's Mark-it dispatches `jcode-mark` |
+| be grilled about a plan | `grilling` in the terminal — always; a HITL grilling ticket's herdr button dispatches it into its own tab |
 | review someone's GitHub PR, reviewers sized to it, findings → post to the PR | skill `make-jreview-project N` in the repo → a jTicket **PR review project** (mode `prreview`): Fable 5.2 `/jreview-assess` picks 2–4 reviewers + one shared brief + optional `/jpr-check` checks into the project's own **review plan** (Review setup tab — not Run setup); a jReview agreement review (consensus + adversarial verification + approvability) hands findings back to the Review tab, whose **Post to PR** sends a COMMENT review under your gh auth (never an approval) and **Rerun review** re-runs on the new head |
 | a thorough multi-reviewer review of a branch, findings → tickets | jReview New review (4 Opus 5.5 reviewers on the global `/code-review`; `jreview-report`, `jreview-triage`); from a jTicket project's **Review** tab the findings join that project |
 | a few small tasks/decision tickets in ONE session ("run these together") | jTicket board: tick 2+ frontier cards → **One session** — one claude session, tickets in key order, each on its own hand-off; prompt kind `batch` (overridable per project/codebase/global); no claims, budget or subagents; HITL asks in that pane; 409 under auto mode unless every ticket is HITL (`POST /api/projects/:id/herdr-batch`) |
@@ -181,23 +178,6 @@ document system (`@jsuite/documents`); its charts ARE jChart objects. Skill:
 `j-explain` (author JSON, publish via `explain.py`, `--replace` to revise; also
 the block-vocabulary reference for jTicket docs).
 
-**jGrilling** — one grilling question in the browser. An external Claude
-session IS the interviewer: it posts the question as jspec blocks (the
-question, why it matters, the options as tabbed cases) and watches
-`.data/jgrilling/` for the answer. **It never hosts a whole interview** —
-grillings run in the terminal under `grilling` (HITL jTickets included). Its
-**Up next** strip (`GET /api/upnext`) shows the HITL grilling frontier from
-jTicket grouped by project; Start dispatches the ticket into herdr through
-jTicket in its own tab. Skill: `j-grilling`.
-
-**jCode** — hand-code the part that matters. A BUILD session (`jcode`) ships
-the feature, then POSTs its core as a **kata**: sandbox under
-`.data/jcode/sandbox/<key>/` (stub, cases, the app's runner for ts/js/php/py),
-brief, 2–3 hints, hidden answer. *Mark it* dispatches `jcode-mark` into herdr
-(runs cases, judges, posts a verdict that unlocks the next hint). Disclosure is
-server-side (brief → hints → answer); nothing ships from a kata. Skills:
-`jcode`, `jcode-mark`.
-
 **jReview** — multi-reviewer code review. Pick a codebase, branch (open PRs via
 `gh`) and target (defaults to the PR's base; a branch not checked out is
 reviewed in a detached worktree); Run dispatches **four Opus 5.5 reviewers**
@@ -232,15 +212,15 @@ never an approval. State `.data/jreview/`. Skills: `jreview-report`,
   `.data/jchart/` in every consumer — a chart in a jExplain article is the
   object opened in jChart; edits and notes flow both ways.
 - **One document pool**: `@jsuite/documents` (extends charting) serves
-  `/api/documents` over `.data/jexplain/` in jTicket, jExplain AND jGrilling —
+  `/api/documents` over `.data/jexplain/` in jTicket AND jExplain —
   a jTicket doc IS a jExplain document.
 - **One herdr adapter**: `@jsuite/herdr` (`ensureHerdrWorkspace`,
   `acquirePackedPane`, `startClaudeIn`) dispatches whole terminal claude
   sessions — panes packed 2×2 per tab, model/effort via agent args. Imported
   by **jTicket** (ticket work, loops, batches, merges, worktree prompts,
   slice/outcome reports), **jDiff** (review/ask/tour/chains on Opus 5),
-  **jCode** (`jcode-mark`) and **jReview** (reviewers, triage, consensus).
-  jChart, jExplain and jGrilling
+  and **jReview** (reviewers, triage, consensus).
+  jChart and jExplain
   dispatch nothing. No app runs a headless claude of its own.
 - **Notes loop everywhere**: jChart and jExplain keep human feedback in
   `<key>.notes.json` sidecars — annotate in the browser, Claude reads it back.

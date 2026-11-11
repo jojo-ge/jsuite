@@ -44,14 +44,6 @@ http://jexplain.local:80 {
 	import app host.docker.internal:43004
 }
 
-http://jgrilling.local:80 {
-	import app host.docker.internal:43005
-}
-
-http://jcode.local:80 {
-	import app host.docker.internal:43006
-}
-
 http://jreview.local:80 {
 	import app host.docker.internal:43008
 }

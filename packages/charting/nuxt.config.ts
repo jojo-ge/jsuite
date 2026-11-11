@@ -22,7 +22,7 @@ export default defineNuxtConfig({
   // client — a hydration mismatch (and a stream of `[Icon] failed to load` warns).
   // `scan: true` walks every layer's source (app + this layer) for `i-lucide-*`
   // usages and bundles them, so they resolve synchronously on both sides. Set here
-  // so all layered apps (jticket/jexplain/jgrilling/jchart) inherit the fix.
+  // so all layered apps (jticket/jexplain/jchart) inherit the fix.
   icon: {
     clientBundle: { scan: true },
   },

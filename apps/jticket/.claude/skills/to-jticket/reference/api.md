@@ -118,7 +118,7 @@ POST /api/projects
 ### TODO project (per codebase)
 
 Every codebase gets exactly one `todo`-mode project — its human-written todo list,
-whose one-liner tickets the UI exercises with a Grill button (a jGrilling interview).
+whose one-liner tickets the UI exercises with a Grill button (a `/grilling` session dispatched into herdr).
 Never POST one directly; use the idempotent get-or-create:
 
 ```jsonc

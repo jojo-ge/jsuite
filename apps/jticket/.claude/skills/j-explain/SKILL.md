@@ -1,6 +1,6 @@
 ---
 name: j-explain
-description: Explain something as a blog-style article in jTicket's document reader (formerly jExplain) — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc / to-jspec / j-grilling / jcode payloads.
+description: Explain something as a blog-style article in jTicket's document reader (formerly jExplain) — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc / to-jspec payloads.
 ---
 
 # j-explain

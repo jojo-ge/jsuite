@@ -3,8 +3,7 @@
 Detail behind `SKILL.md`. Every path is verified against `apps/*/server/api/**`
 (route files) — a path not listed there does not exist. Base URLs:
 `https://<app>.local` or `http://localhost:<port>` (jTicket :43000, jDiff
-:43002, jChart :43003, jExplain :43004, jGrilling :43005, jCode :43006,
-jReview :43008).
+:43002, jChart :43003, jExplain :43004, jReview :43008).
 
 ## jTicket — the `jt` CLI
 
@@ -291,35 +290,14 @@ jTicket proxies here with `ticket=`/`project=`), `POST /api/ask-dispatch`
 Writes: `/api/comment`, `/api/branch-comment(-delete)`, `/api/branch-create-pr`,
 `/api/open`, `/api/ai-job-cancel`. State `.data/jdiff/`.
 
-## jGrilling (:43005)
-
-`GET/POST /api/sessions`, `GET/DELETE /api/sessions/:key`, `POST …/questions`
-(the interviewer posts jspec-format blocks), `POST …/answer`, `POST …/finish`,
-`GET …/watch`. **Up next** strip: `GET /api/upnext` — the HITL grilling
-frontier read from jTicket, grouped by project (`available: false` = jTicket
-unreachable, shown as no strip); `POST /api/upnext/:id/start` dispatches that
-ticket through jTicket's `POST /api/tickets/:id/herdr` in its own tab
-(`/jwayfinder KEY` for wayfinder projects, else `/jimplement KEY`, told to run
-`/grilling` in the terminal and escalate single questions with `/j-grilling`).
-State `.data/jgrilling/`.
-
-## jCode (:43006)
-
-`GET/POST /api/katas`, `GET/DELETE /api/katas/:key`, `GET …/full` (answer
-included — for the marker), `GET …/files`, `GET …/run`, `GET …/watch`,
-`POST …/open` (VS Code), `POST …/hint`, `POST …/reveal`, `POST …/attempts`,
-`POST …/attempts/:id/dispatch` (Mark it → `/jcode-mark` into herdr via
-`server/utils/kataHerdr.ts`), `POST …/attempts/:id/mark` (the verdict).
-Sandbox `.data/jcode/sandbox/<key>/`, record `.data/jcode/<key>.json`.
-
 ## Shared packages
 
 - `@jsuite/charting` — Nuxt layer: Excalidraw canvas + `server/api/charts/**`
   over `.data/jchart/`.
 - `@jsuite/documents` — Nuxt layer (extends charting): block model,
   `<DocumentArticle>`, `server/api/documents/**` over `.data/jexplain/`; in
-  jTicket, jExplain and jGrilling.
+  jTicket and jExplain.
 - `@jsuite/data` — `appDataDir` / `appDataFile` resolve `.data/<app>/`.
 - `@jsuite/herdr` — `ensureHerdrWorkspace`, `acquirePackedPane`,
-  `startClaudeIn`; imported by jTicket, jDiff, jCode and jReview.
+  `startClaudeIn`; imported by jTicket, jDiff and jReview.
 - `@jsuite/relay` — `wizard.sh` sync setup + local broadcast relay.

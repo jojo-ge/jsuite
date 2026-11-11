@@ -66,9 +66,7 @@ A ticket's `type` says what kind of work it is (`story`, `task`, `bug`, `review`
 `verification`, `research`, `decision`, `docs`); its agency is a tag in `labels`.
 A **`hitl`** ticket needs the human in the loop. Confirm they're here for it before
 claiming, and leave their side of it to them. Put its questions to them **in this
-terminal** (`/grilling`) — they come to the herdr pane to answer. Only when they
-ask for one question in the browser do you escalate it with **`/j-grilling`**;
-the rest of the interview stays here. **`afk`** tickets you can take cold. A
+terminal** (`/grilling`) — they come to the herdr pane to answer. **`afk`** tickets you can take cold. A
 **`prototype`**-tagged ticket is throwaway work that stays on its branch — build it to
 answer its question, with no PR and no merge.
 

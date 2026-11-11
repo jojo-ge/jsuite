@@ -181,8 +181,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
     template:
       'Grill me about this todo — {key}: "{title}". Read the ticket first ' +
       '(GET http://localhost:43000/api/tickets/{key}), then run /grilling here in the terminal — ' +
-      'I answer in this pane. Only if I ask for one question in the browser, escalate that ' +
-      'single question with /j-grilling. When the grilling finishes, write the decisions into ' +
+      'I answer in this pane. When the grilling finishes, write the decisions into ' +
       "{key}'s resolution. No branch, no PR.",
   },
   'architect:scan': {
