@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process'
 import { prCoordinates, type Finding, type Review } from '../../app/utils/reviewTypes'
+import { assertCommandAllowed } from './sandbox'
 
 // Posting a review's findings to its GitHub PR — the human's "Post to PR"
-// button (jReview's room or jTicket's Review tab), never a session's.
+// button (the review room or jTicket's Review tab), never a session's.
 //
 // It goes out as ONE pull-request review through `gh api`, so it is posted
 // with the human's own gh auth, as them. The review event is always COMMENT:
@@ -20,6 +21,8 @@ import { prCoordinates, type Finding, type Review } from '../../app/utils/review
 const REVIEW_EVENT = 'COMMENT' as const
 
 function gh(args: string[], input: string, cwd: string): Promise<string> {
+  // A sandbox never posts to GitHub outside its writable repos.
+  assertCommandAllowed('gh', args, cwd)
   return new Promise((resolve, reject) => {
     const child = spawn('gh', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
     let out = ''

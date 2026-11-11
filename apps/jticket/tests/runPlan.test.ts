@@ -5,7 +5,6 @@ import {
   effectiveOrchestration,
   enterPlanStep,
   finishPlan,
-  finishedReviews,
   newAutoLoop,
   newOrchestrator,
   finishSlice,
@@ -252,7 +251,6 @@ describe('plan transitions', () => {
     expect(off).toMatchObject({ enabled: false, plan: null, ended: { reason: 'plan-finished' } })
     expect(off.history.at(-1)).toMatchObject({ fixTickets: ['T-7'], reviewKey: 'R-1' })
     expect(finishPlan(st, AT, true)).toMatchObject({ enabled: true, phase: 'reporting', plan: null })
-    expect(finishedReviews(off).has('R-1')).toBe(true)
   })
 
   it('a plan stopped mid-step keeps what it got through', () => {

@@ -102,7 +102,6 @@ describe('reviewRunStep', () => {
     expect(reviewRunStep(run, world()).kind).toBe('startReview')
     const asked = { ...run, reviewRequestedAt: T0, reviewKey: 'k' }
     expect(reviewRunStep(asked, world({ review: { status: 'reviewing' } })).kind).toBe('wait')
-    expect(reviewRunStep(asked, world({ review: 'unreachable' })).kind).toBe('wait')
     expect(reviewRunStep(asked, world({ review: 'missing' })).kind).toBe('pause')
     expect(reviewRunStep(asked, world({ review: { status: 'triaged', verdict: 'approve-with-nits' } }))).toEqual({ kind: 'finish', verdict: 'approve-with-nits' })
   })

@@ -1,5 +1,7 @@
-// The j-review format — shared by the server store and the UI (the jMap
-// app/utils pattern: server files import these relatively).
+// The j-review format — shared by the review engine in server/ (store,
+// watcher, herdr dispatch; server files import this relatively) and the UI.
+// The engine was jReview's server; it runs inside jTicket now, over the same
+// .data/jreview/ records.
 //
 // A review is one run over one repo: up to MAX_REVIEWERS herdr claude sessions
 // each run the global /code-review skill and publish their report as a
@@ -339,34 +341,9 @@ export function prCoordinates(url: string): { owner: string; repo: string; numbe
 /**
  * Whether a herdr tab label is one of this review's: its reviewer tabs
  * ('review K', overflow 'review K · 2') or its triage tab ('triage K'). The
- * trailing space keeps review 'foo' off 'review foo-2'. jTicket's auto-loop
- * sweep (panesToClean) matches the same labels.
+ * trailing space keeps review 'foo' off 'review foo-2'. The review watcher's
+ * sweep is the only thing that closes these tabs.
  */
 export function isReviewTab(label: string, key: string): boolean {
   return [`review ${key}`, `triage ${key}`].some((base) => label === base || label.startsWith(`${base} `))
-}
-
-/** A codebase jReview (or jTicket) has been pointed at before. */
-export interface KnownRepo {
-  path: string
-  name: string
-  lastUsedAt: string | null
-}
-
-export interface BranchInfo {
-  /** What to pass back as `branch` / `base`: `feature-x`, or `origin/feature-x` for remote-only. */
-  name: string
-  remote: boolean
-  current: boolean
-  committedAt: string
-  pr: PullRequest | null
-}
-
-export interface BranchList {
-  current: string
-  /** origin's default branch (or main/master) — the target when there's no PR. */
-  defaultBase: string
-  branches: BranchInfo[]
-  /** Why PR detection is unavailable (no gh, no GitHub remote, …). */
-  prError?: string
 }

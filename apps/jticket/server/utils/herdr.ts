@@ -1,6 +1,6 @@
 // Driving Herdr (the terminal workspace manager) from jTicket.
 //
-// The adapter itself lives in @jsuite/herdr (shared with jDiff and jReview): binary
+// The adapter itself lives in @jsuite/herdr (shared with jDiff): binary
 // resolution, JSON exec, state cache, workspace/tab/pane topology, agent
 // start with its retry dance. Re-exported here so Nitro auto-imports keep
 // working for the herdr routes. jTicket's own topology choices: one workspace
@@ -12,7 +12,7 @@
 // Everything degrades: no herdr binary or no running server ⇒ state reports
 // { available: false } and the UI hides the buttons.
 //
-// The four calls that create panes or talk to claude are wrapped here for
+// The calls that create panes or talk to claude are wrapped here for
 // sandbox mode (server/utils/sandbox.ts): a sandbox makes panes only in its
 // writable repos, and every prompt it sends — and every session it starts —
 // is pointed back at the sandbox's own jTicket. Outside a sandbox the
@@ -56,6 +56,11 @@ export function submitPrompt(agentName: string, prompt: string) {
  * tab regex only matches 'KEY' / 'KEY · <number>'.
  */
 export function acquireTicketPane(workspaceId: string, baseLabel: string, cwd: string, freshTab: { tabId: string; paneId: string } | null) {
+  return acquirePackedPane(workspaceId, baseLabel, cwd, freshTab)
+}
+
+/** A pane packed 2×2-wise into the first `baseLabel` tab with room — the review engine's reviewer tabs ('review K'). */
+export function acquirePackedPane(workspaceId: string, baseLabel: string, cwd: string, freshTab: { tabId: string; paneId: string } | null) {
   assertDispatchAllowed(cwd)
   return herdr.acquirePackedPane(workspaceId, baseLabel, cwd, freshTab)
 }

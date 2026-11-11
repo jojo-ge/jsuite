@@ -3,13 +3,26 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { appDataDir } from '@jsuite/data'
-import type { BranchInfo, BranchList, PullRequest } from '../../app/utils/reviewTypes'
+import type { PullRequest } from '../../app/utils/reviewTypes'
+import { assertCommandAllowed } from './sandbox'
+
+// The review engine's git and gh reads/writes (jReview's, run inside jTicket
+// since TICK-942). Every command passes the sandbox's guard first, like the
+// rest of jTicket's git: a sandbox reads anywhere and writes (a review
+// worktree) only in its writable repos.
 
 const exec = promisify(execFile)
 
 async function git(repo: string, args: string[], timeout = 15_000): Promise<string> {
+  assertCommandAllowed('git', args, repo)
   const { stdout } = await exec('git', ['-C', repo, ...args], { timeout, maxBuffer: 8 * 1024 * 1024 })
   return stdout.trim()
+}
+
+async function gh(repo: string, args: string[]): Promise<string> {
+  assertCommandAllowed('gh', args, repo)
+  const { stdout } = await exec('gh', args, { cwd: repo, timeout: 20_000 })
+  return stdout
 }
 
 // Refs land verbatim in a claude prompt — accept only ref-shaped text rather
@@ -68,18 +81,14 @@ export async function requireRef(repo: string, ref: string, what: string): Promi
 
 /**
  * Open PRs by head branch name. One `gh pr list` per call (a network round
- * trip), so the branch list caches it briefly. Throws with gh's own message
+ * trip), so it is cached briefly. Throws with gh's own message
  * when gh is missing or the repo has no GitHub remote.
  */
 const prCache = new Map<string, { at: number; prs: Map<string, PullRequest> }>()
 async function openPrs(repo: string): Promise<Map<string, PullRequest>> {
   const hit = prCache.get(repo)
   if (hit && Date.now() - hit.at < 30_000) return hit.prs
-  const { stdout } = await exec(
-    'gh',
-    ['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,title,url,headRefName,baseRefName,isDraft'],
-    { cwd: repo, timeout: 20_000 },
-  )
+  const stdout = await gh(repo, ['pr', 'list', '--state', 'open', '--limit', '200', '--json', 'number,title,url,headRefName,baseRefName,isDraft'])
   const prs = new Map<string, PullRequest>()
   for (const pr of JSON.parse(stdout || '[]') as PullRequest[]) prs.set(pr.headRefName, pr)
   prCache.set(repo, { at: Date.now(), prs })
@@ -93,58 +102,6 @@ export async function prForBranch(repo: string, branch: string): Promise<PullReq
   } catch {
     return null
   }
-}
-
-/**
- * Every branch worth reviewing: local branches plus origin branches with no
- * local counterpart (as `origin/<name>`), each with its open PR when gh can
- * tell.
- */
-export async function listBranches(repo: string): Promise<BranchList> {
-  await assertGitRepo(repo)
-  const [current, base, raw] = await Promise.all([
-    currentBranch(repo),
-    defaultBase(repo),
-    git(repo, [
-      'for-each-ref',
-      '--sort=-committerdate',
-      '--format=%(refname)%09%(committerdate:iso-strict)',
-      'refs/heads',
-      'refs/remotes/origin',
-    ]),
-  ])
-
-  let prs = new Map<string, PullRequest>()
-  let prError: string | undefined
-  try {
-    prs = await openPrs(repo)
-  } catch (err: any) {
-    prError = String(err?.stderr || err?.message || err).trim().split('\n')[0]!.slice(0, 200)
-  }
-
-  const local = new Set<string>()
-  const rows = raw.split('\n').filter(Boolean).map((line) => {
-    const [ref, committedAt] = line.split('\t') as [string, string]
-    return { ref, committedAt }
-  })
-  const branches: BranchInfo[] = []
-  for (const { ref, committedAt } of rows) {
-    if (!ref.startsWith('refs/heads/')) continue
-    const name = ref.slice('refs/heads/'.length)
-    local.add(name)
-    branches.push({ name, remote: false, current: name === current, committedAt, pr: prs.get(name) ?? null })
-  }
-  for (const { ref, committedAt } of rows) {
-    if (!ref.startsWith('refs/remotes/origin/')) continue
-    const short = ref.slice('refs/remotes/origin/'.length)
-    if (short === 'HEAD' || local.has(short)) continue
-    branches.push({ name: `origin/${short}`, remote: true, current: false, committedAt, pr: prs.get(short) ?? null })
-  }
-  // The checked-out branch, then branches with an open PR, then the rest —
-  // each group newest commit first. Big repos carry 1000+ stale branches.
-  const rank = (b: BranchInfo) => (b.current ? 0 : b.pr ? 1 : 2)
-  branches.sort((a, b) => rank(a) - rank(b) || b.committedAt.localeCompare(a.committedAt))
-  return { current, defaultBase: base, branches, prError }
 }
 
 /**
@@ -206,11 +163,7 @@ export async function removeReviewWorktree(repo: string, dir: string): Promise<v
  */
 export async function prByNumber(repo: string, number: number): Promise<PullRequest> {
   try {
-    const { stdout } = await exec(
-      'gh',
-      ['pr', 'view', String(number), '--json', 'number,title,url,headRefName,baseRefName,isDraft'],
-      { cwd: repo, timeout: 20_000 },
-    )
+    const stdout = await gh(repo, ['pr', 'view', String(number), '--json', 'number,title,url,headRefName,baseRefName,isDraft'])
     return JSON.parse(stdout) as PullRequest
   } catch (err: any) {
     const why = String(err?.stderr || err?.message || err).trim().split('\n')[0]!.slice(0, 200)

@@ -31,7 +31,6 @@ import {
   finishPlan,
   withPlanHistory,
   finishLoop,
-  finishedReviews,
   isMergePhase,
   newAutoLoop,
   newOrchestrator,
@@ -55,7 +54,8 @@ import {
   type HerdrPaneSeen,
 } from '../../app/utils/autoLoop'
 import type { Project, Store, Ticket } from './store'
-import type { JreviewReview } from './jreview'
+import { readReview, sanitizeReviewKey } from './reviewStore'
+import { createReview, type CreateReviewInput } from './reviewActions'
 import type { SessionMeta } from './herdrDispatch'
 import { outcomeReportPrompt } from './outcomeReport'
 import { sliceReportPrompt } from './sliceReport'
@@ -106,12 +106,8 @@ async function integrationTip(project: Project): Promise<string | null> {
 
 async function reviewState(key: string | null): Promise<AutoWorld['review']> {
   if (!key) return null
-  try {
-    const review = await jreviewFetch<JreviewReview>(`/api/reviews/${encodeURIComponent(key)}`)
-    return { status: review.status, ticketKeys: review.tickets?.ticketKeys ?? [] }
-  } catch (err: any) {
-    return err?.statusCode === 404 ? 'missing' : 'unreachable'
-  }
+  const review = await readReview(sanitizeReviewKey(key))
+  return review ? { status: review.status, ticketKeys: review.tickets?.ticketKeys ?? [] } : 'missing'
 }
 
 /**
@@ -225,7 +221,7 @@ export async function advanceAutoLoop(projectId: string): Promise<AutoStep | nul
   if (advancing.has(projectId)) return null
   advancing.add(projectId)
   try {
-    // The async half of the world first (git, jReview), then everything else
+    // The async half of the world first (git, the review store), then everything else
     // off a fresh store read, so the plan and the write see the same state.
     const before = loadStore()
     const p0 = findProject(before, projectId)
@@ -839,7 +835,7 @@ export function recordOutcomeReport(store: Store, project: Project, raw: any): A
 }
 
 async function startReview(projectId: string) {
-  let body = null as Record<string, unknown> | null
+  let body = null as CreateReviewInput | null
   const state = updateAuto(projectId, (auto, _store, project) => {
     if (!auto.enabled || auto.paused || auto.reviewRequestedAt) return false
     const step = currentPlanStep(auto)
@@ -868,15 +864,15 @@ async function startReview(projectId: string) {
   })
   if (!state?.enabled || !body) return
   try {
-    // jReview resolves refs, maybe cuts a worktree, and asks gh about PRs before answering.
-    const res = await jreviewFetch<{ key: string }>('/api/reviews', { method: 'POST', body, timeout: 60_000 })
+    // The engine resolves refs, maybe cuts a worktree, and asks gh about PRs before answering.
+    const res = await createReview(body)
     updateAuto(projectId, (auto) => {
       auto.reviewKey = res.key
     })
   } catch (err) {
     updateAuto(projectId, (auto) => {
       auto.reviewRequestedAt = ''
-      auto.paused = { reason: 'review-failed', detail: `jReview: ${errText(err)}`, at: now() }
+      auto.paused = { reason: 'review-failed', detail: `review: ${errText(err)}`, at: now() }
     })
   }
 }
@@ -930,11 +926,7 @@ export async function cleanUpHerdr(projectId: string): Promise<number> {
       paneLabel: String(p.label ?? ''),
       agentStatus: String(p.agent_status ?? 'unknown'),
     }))
-    const ids = panesToClean(panes, {
-      projectKey: project.key,
-      doneTickets,
-      finishedReviews: finishedReviews(project.auto),
-    })
+    const ids = panesToClean(panes, { projectKey: project.key, doneTickets })
     let closed = 0
     for (const id of ids) {
       try {

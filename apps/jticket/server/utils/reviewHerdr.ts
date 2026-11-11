@@ -2,6 +2,8 @@ import { basename, join } from 'node:path'
 import { existsSync, readdirSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+// jTicket's herdr wrappers, not @jsuite/herdr's: a sandbox dispatches only
+// into its writable repos and points every session back at itself.
 import {
   ensureHerdrWorkspace,
   acquirePackedPane,
@@ -10,18 +12,20 @@ import {
   startClaudeIn,
   herdrJson,
   invalidateHerdrState,
-} from '@jsuite/herdr'
+} from './herdr'
 import { suiteRoot } from '@jsuite/data'
 import { isReviewTab, votes, type Review } from '../../app/utils/reviewTypes'
+import { JTICKET_PUBLIC } from './sandbox'
 
 // The publish step reviewers read by path (jreview-report is typed-only, so it cannot be invoked mid-task).
 const REPORT_SKILL = join(suiteRoot(), 'apps/jreview/.claude/skills/jreview-report/SKILL.md')
 
 const pExecFile = promisify(execFile)
 
-// Driving Herdr (the terminal workspace manager) from jReview.
+// Driving Herdr (the terminal workspace manager) for the review engine —
+// jReview's, run inside jTicket since TICK-942.
 //
-// jReview runs NO claude of its own. Every session is an interactive claude in
+// The engine runs NO claude of its own. Every session is an interactive claude in
 // a herdr pane, one workspace per reviewed repo (`jreview · <dir>`), every
 // pane's cwd the review's workdir (the repo, or the branch's worktree):
 //   - REVIEWERS — packed 2×2 into a `review <key>` tab, one pane each. The
@@ -48,9 +52,8 @@ const pExecFile = promisify(execFile)
 // Once that hand-back lands the watcher closes the review's panes (every pane
 // in its 'review K' / 'triage K' tabs — never one whose agent is still working
 // or blocked), and a triaged review opens in the browser instead — on its
-// jTicket project's Review tab when it belongs to one.
-// jTicket's auto loop sweeps the same tabs for its consensus reviews; closing
-// is idempotent, so whichever gets there first wins and the other finds nothing.
+// jTicket project's Review tab when it belongs to one. That watcher sweep is
+// the only one: the auto loop's cleanup leaves review tabs to it.
 
 /** Every session is pinned to Opus 5.5; JREVIEW_MODEL overrides it. */
 export const REVIEW_MODEL = process.env.JREVIEW_MODEL?.trim() || 'claude-opus-5-5'
@@ -115,7 +118,7 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
       : []),
     ...(priorDocs.length
       ? [
-          `An architectural review of this same diff ran before you — its report${priorDocs.length > 1 ? 's' : ''}: ${priorDocs.join(', ')} (GET http://localhost:43008/api/documents/<key>). ` +
+          `An architectural review of this same diff ran before you — its report${priorDocs.length > 1 ? 's' : ''}: ${priorDocs.join(', ')} (GET http://localhost:43000/api/documents/<key>). ` +
             'Its architectural findings have already been fixed in what you are reading: do not raise them again, but do check the fixes.',
         ]
       : []),
@@ -253,7 +256,7 @@ export async function dispatchTriage(key: string): Promise<void> {
  * blocked (closing a tab's last pane closes the tab; an emptied workspace goes
  * too, and is recreated on the next dispatch). Returns true when none of the
  * review's panes are left open. Throws only when herdr can't be listed; a pane
- * that won't close (jTicket's sweep got it first) is simply skipped.
+ * that won't close (already gone) is simply skipped.
  */
 export async function closeReviewPanes(key: string): Promise<boolean> {
   const [tabList, paneList] = await Promise.all([herdrJson<any>(['tab', 'list']), herdrJson<any>(['pane', 'list'])])
@@ -280,12 +283,13 @@ export async function closeReviewPanes(key: string): Promise<boolean> {
 export async function openReviewInBrowser(review: Pick<Review, 'key' | 'project' | 'agreement'>): Promise<void> {
   if (process.env.JREVIEW_OPEN_BROWSER?.trim() === '0') return
   const { key, project } = review
+  // A sandbox opens its own Review tab, never the live jTicket's.
   const url = project
     ? `${JTICKET_PUBLIC}/projects/${encodeURIComponent(project)}?tab=review&review=${encodeURIComponent(key)}`
     : `https://jreview.local/r/${key}`
   try {
     await pExecFile('open', [url])
   } catch (err: any) {
-    console.error(`[jreview] could not open ${key} in the browser:`, String(err?.message ?? err))
+    console.error(`[jticket] review engine could not open ${key} in the browser:`, String(err?.message ?? err))
   }
 }

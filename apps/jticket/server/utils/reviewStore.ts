@@ -1,15 +1,18 @@
 import { readFile, writeFile, readdir, rm, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { createError } from 'h3'
 import { appDataDir } from '@jsuite/data'
 import type { Review, ReviewMeta } from '../../app/utils/reviewTypes'
 
-// One review per pretty-printed file in .data/jreview/<key>.json — the jMap/
-// jCode store layout, so an LLM can read a review straight off disk.
-// Function names are deliberately distinct from the charting and documents
-// stores (readChart, readDoc, …), which are auto-imported into this server
-// context too via the extended layers.
-const DATA_DIR = appDataDir('jreview')
+// The review engine's store (jReview's, run inside jTicket since TICK-942):
+// one review per pretty-printed file in .data/jreview/<key>.json, so an LLM
+// can read a review straight off disk. The directory keeps jReview's name —
+// existing records load as they are. Function names are deliberately distinct
+// from the charting and documents stores (readChart, readDoc, …) and from
+// jTicket's own (loadStore, …), which share this server's auto-import
+// namespace.
+const DATA_DIR = () => appDataDir('jreview')
 
 export type * from '../../app/utils/reviewTypes'
 
@@ -21,7 +24,7 @@ export function sanitizeReviewKey(key: unknown): string {
     .slice(0, 60)
 }
 
-const reviewPath = (key: string) => join(DATA_DIR, sanitizeReviewKey(key) + '.json')
+const reviewPath = (key: string) => join(DATA_DIR(), sanitizeReviewKey(key) + '.json')
 
 export async function uniqueReviewKey(base: string): Promise<string> {
   const root = sanitizeReviewKey(base) || 'review'
@@ -84,11 +87,11 @@ export async function deleteReview(key: string): Promise<void> {
 }
 
 export async function listReviews(): Promise<Review[]> {
-  const files = (await readdir(DATA_DIR)).filter((f) => f.endsWith('.json'))
+  const files = (await readdir(DATA_DIR())).filter((f) => f.endsWith('.json'))
   const out: Review[] = []
   for (const f of files) {
     try {
-      const r = JSON.parse(await readFile(join(DATA_DIR, f), 'utf8')) as Review
+      const r = JSON.parse(await readFile(join(DATA_DIR(), f), 'utf8')) as Review
       if (r.format === 'j-review') out.push(r)
     } catch {
       // An unparseable file just doesn't appear in the list.

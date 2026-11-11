@@ -6,5 +6,5 @@
 export default defineEventHandler(async (event) => {
   const project = String(getQuery(event).project ?? '').trim()
   const reviews = await listReviews()
-  return (project ? reviews.filter((r) => r.project === project || r.consensus?.projectKey === project) : reviews).map(reviewMeta)
+  return (project ? reviews.filter((r) => reviewBelongsTo(r, project)) : reviews).map(reviewMeta)
 })

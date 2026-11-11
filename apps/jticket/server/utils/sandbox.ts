@@ -19,6 +19,8 @@ import { inWritableRepo, isReadOnlyCommand, LIVE_BASE, parseSandboxRepos, sandbo
 export const IN_SANDBOX = process.env.JTICKET_SANDBOX === '1'
 /** This jTicket's own base URL. */
 export const JTICKET_BASE = (process.env.JTICKET_URL?.trim() || LIVE_BASE).replace(/\/+$/, '')
+/** Where the human reads this jTicket in a browser — a sandbox's own base, never the live one. */
+export const JTICKET_PUBLIC = IN_SANDBOX ? JTICKET_BASE : 'https://jticket.local'
 const WRITABLE_REPOS = parseSandboxRepos(process.env.JTICKET_SANDBOX_REPOS)
 
 /** Whether the background engines (auto loop, review runner, share sync) run here. */

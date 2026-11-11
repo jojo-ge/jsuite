@@ -294,8 +294,8 @@ export interface ReviewRunWorld {
   now: number
   /** The project's tickets. */
   tickets: Array<{ key: string; status: string }>
-  /** The run's jReview review: its status, or why it can't be read. */
-  review: null | 'missing' | 'unreachable' | { status: 'reviewing' | 'triaging' | 'triaged' | 'ticketed'; verdict?: string }
+  /** The run's review: its status, or 'missing' when the review store no longer has it. */
+  review: null | 'missing' | { status: 'reviewing' | 'triaging' | 'triaged' | 'ticketed'; verdict?: string }
 }
 
 export type ReviewRunStep =
@@ -339,7 +339,6 @@ export function reviewRunStep(run: ReviewRun, world: ReviewRunWorld): ReviewRunS
           ? { kind: 'pause', detail: 'jReview was asked for the review but its key never came back — Retry asks again' }
           : { kind: 'wait', note: 'asking jReview for the review' }
       }
-      if (world.review === 'unreachable') return { kind: 'wait', note: 'jReview is not reachable on :43008' }
       if (world.review === 'missing' || !world.review) return { kind: 'pause', detail: `jReview no longer has review ${run.reviewKey} — Retry starts a new one` }
       if (world.review.status === 'triaged' || world.review.status === 'ticketed') return { kind: 'finish', verdict: world.review.verdict }
       if (age > REVIEW_RUN_STALL_MS) return { kind: 'pause', detail: `review ${run.reviewKey} has had no hand-back for ${mins} — look at its panes, then Retry starts a new one` }

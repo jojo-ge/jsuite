@@ -701,10 +701,11 @@ export interface AutoWorld {
   /** The integration branch tip; null when it doesn't resolve. */
   tip: string | null
   /**
-   * This loop's jReview review: null when there is none to look at (no key
-   * yet, or jReview says it's gone), 'unreachable' when jReview is down.
+   * This loop's review: null when there is none to look at (no key yet),
+   * 'missing' when the review store no longer has it. The engine runs in
+   * jTicket's own server, so it is never unreachable.
    */
-  review: null | 'unreachable' | 'missing' | { status: string; ticketKeys: string[] }
+  review: null | 'missing' | { status: string; ticketKeys: string[] }
   /** The tick's clock (ms since epoch) — paces the no-PR re-checks and the watchdog. */
   now: number
   /**
@@ -896,7 +897,6 @@ export function planStep(state: AutoLoop, world: AutoWorld): AutoStep {
       if (!state.reviewKey) {
         return { kind: 'pause', reason: 'review-failed', detail: 'jReview was asked for a review but its key was never recorded — Retry step asks again' }
       }
-      if (world.review === 'unreachable') return { kind: 'wait', pending: [state.reviewKey], note: 'jReview is not reachable on :43008' }
       if (world.review === 'missing' || !world.review) {
         return { kind: 'pause', reason: 'review-failed', detail: `jReview no longer has review ${state.reviewKey} — Retry step starts a new one` }
       }
@@ -1517,40 +1517,23 @@ const LOOP_JOBS = ['merge', 'outcome report', 'slice report', ...Array.from({ le
  * is working or blocked, and never one the loop can't vouch for (unlabelled,
  * a job it doesn't run, a ticket still open — HITL work waits in its pane).
  * Closed: in the project's tabs ('KEY', 'KEY · …'), a done ticket's pane and
- * the merge / outcome-report panes; in jReview's tabs ('review K', 'review K · n',
- * 'triage K', 'triage K n'), everything of a review the loop has moved past.
- * jReview closes those same tabs itself once the consensus lands (its
- * isReviewTab), so this is the backstop — a pane already gone just fails to
- * close and is skipped.
+ * the merge / outcome-report panes. A review's tabs ('review K', 'triage K')
+ * are never this sweep's: the review watcher (server/plugins/reviewWatcher.ts)
+ * is the one sweep that closes them, once the review's hand-back lands.
  */
 export function panesToClean(
   panes: HerdrPaneSeen[],
-  ctx: { projectKey: string; doneTickets: ReadonlySet<string>; finishedReviews: ReadonlySet<string> },
+  ctx: { projectKey: string; doneTickets: ReadonlySet<string> },
 ): string[] {
   const jobLabels = new Set(LOOP_JOBS.map((j) => `${ctx.projectKey} · ${j}`))
-  const reviewTabs = [...ctx.finishedReviews].flatMap((k) => [`review ${k}`, `triage ${k}`])
   const isProjectTab = (label: string) => label === ctx.projectKey || label.startsWith(`${ctx.projectKey} · `)
-  const isReviewTab = (label: string) =>
-    reviewTabs.some((base) => label === base || label.startsWith(`${base} `))
   const ticketOf = (label: string) => label.split(' · ')[0]!
 
   return panes
     .filter((p) => p.agentStatus !== 'working' && p.agentStatus !== 'blocked')
     .filter((p) => {
-      if (isReviewTab(p.tabLabel)) return true
       if (!isProjectTab(p.tabLabel) || !p.paneLabel) return false
       return jobLabels.has(p.paneLabel) || ctx.doneTickets.has(ticketOf(p.paneLabel))
     })
     .map((p) => p.paneId)
-}
-
-/** The reviews the loop is done with: every past loop's, and this loop's once it has left the review phase. */
-export function finishedReviews(state: AutoLoop): Set<string> {
-  const keys = [
-    ...state.history.flatMap((h) => [h.reviewKey, ...(h.plan ?? []).flatMap((r) => [r.reviewKey, r.archReviewKey ?? null])]),
-    ...state.planLog.flatMap((r) => [r.reviewKey, r.archReviewKey ?? null]),
-  ]
-  if (state.phase !== 'reviewing' && state.phase !== 'arch-reviewing') keys.push(state.reviewKey)
-  if (state.phase !== 'arch-reviewing') keys.push(state.archReviewKey)
-  return new Set(keys.filter((k): k is string => !!k))
 }
