@@ -2,6 +2,7 @@
 # jsuite — one command for the local suite: jTicket behind its HTTPS edge.
 #
 #   ./jsuite start | stop | restart | status | logs [app] | open [app] | setup
+#   ./jsuite skills [--dry-run] [--only <app dir>]   (just setup's skill links)
 #   ./jsuite sandbox [--port N] [--fresh] [--repos A:B] [--engines]
 #
 # jTicket runs natively on a fixed port (it needs host git/gh/claude and the
@@ -54,8 +55,8 @@ DOMAINS=(jsuite.local jticket.local jexplain.local jreview.local jchart.local)
 # app dir (relative to this repo) | space-separated skills it owns
 # "." is the repo root — suite-level skills live in ./.claude/skills. Everything
 # else under an app's .claude/skills comes from mattpocock/skills and is
-# installed by the `skills` CLI instead. Keep apps/jticket/j-setup's JSKILLS
-# list in sync with its row here.
+# installed by the `skills` CLI instead. The one list: apps/jticket/j-setup
+# installs this table's apps/jticket row through `./jsuite skills`.
 SKILLS_MANIFEST=(
   ".|jsuite"
   "apps/jticket|jimplement jorchestrate jwayfinder to-jticket to-jspec to-jdoc jarchitect-scan jarchitect-grill jreproduce jslice-report jrunplan j-explain j-chart jdiff-tour jreview-report jreview-triage jreview-consensus jarch-review make-jreview-project jreview-assess jpr-check"
@@ -233,34 +234,56 @@ cmd_open() {
 
 # -------------------------------------------------------------------- setup --
 
-# link_skills <dest> — link every SKILLS_MANIFEST skill into <dest>, then prune
-# the links there that point nowhere (a retired app's skills, a deleted skill,
-# a removed checkout). Only dangling symlinks go; real directories and links
-# that resolve are left alone.
+# link_skills <dest> [dry] [only] — link the SKILLS_MANIFEST skills into <dest>
+# (every row, or only the row whose app dir is <only>), then prune the links
+# there that point nowhere (a retired app's skills, a deleted skill, a removed
+# checkout). Only dangling symlinks go; real directories and links that resolve
+# are left alone. With dry=true it prints what it would change and changes
+# nothing. The one implementation: `setup`, `skills` and apps/jticket/j-setup
+# all end up here.
 link_skills() {
-  local dest=$1
+  local dest=$1 dry=${2:-false} only=${3:-}
+  _skill_do() { if $dry; then dim "    would: $*"; else "$@"; fi; }
   bold "skills -> $dest"
-  mkdir -p "$dest"
-  local row app skills skill src link target
+  _skill_do mkdir -p "$dest"
+  local row app skills skill src link target matched=false
   for row in "${SKILLS_MANIFEST[@]}"; do
     app="${row%%|*}"; skills="${row#*|}"
+    [[ -z "$only" || "$app" == "$only" ]] || continue
+    matched=true
     for skill in $skills; do
       src="$HERE/$app/.claude/skills/$skill"
       if [[ ! -f "$src/SKILL.md" ]]; then warn "skip $skill (not found in $app)"; continue; fi
       # Link, not copy: the installed skill IS the checkout's, so a pull updates
       # it and its scripts resolve this checkout. An existing entry (an old copy,
       # or a symlink into ~/.agents/skills from the skills CLI) is replaced.
-      rm -rf "${dest:?}/$skill"
-      ln -s "$src" "$dest/$skill"
+      if [[ -e "$dest/$skill" || -L "$dest/$skill" ]]; then _skill_do rm -rf "${dest:?}/$skill"; fi
+      _skill_do ln -s "$src" "$dest/$skill"
       ok "$skill -> $app"
     done
   done
+  $matched || die "no SKILLS_MANIFEST row for '$only'"
   for link in "$dest"/*; do
     [[ -L "$link" && ! -e "$link" ]] || continue
     target="$(readlink "$link")"
-    rm -f "$link"
+    _skill_do rm -f "$link"
     ok "pruned ${link##*/} (pointed at $target)"
   done
+}
+
+# skills [--dry-run] [--only <app dir>] — just the skill links, none of the rest
+# of setup. apps/jticket/j-setup delegates here (`--only apps/jticket`).
+cmd_skills() {
+  local dry=false only=
+  while (($#)); do
+    case "$1" in
+      --dry-run) dry=true ;;
+      --only) only=${2:?--only needs an app dir, e.g. apps/jticket}; shift ;;
+      *) die "skills: unknown option '$1' (usage: skills [--dry-run] [--only <app dir>])" ;;
+    esac
+    shift
+  done
+  link_skills "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills" "$dry" "$only"
 }
 
 # One-shot onboarding: verify OrbStack is in charge (it does DNS + HTTPS for
@@ -414,7 +437,8 @@ case "${1:-start}" in
   open) shift; cmd_open "$@" ;;
   setup) cmd_setup ;;
   sandbox) shift; cmd_sandbox "$@" ;;
+  skills) shift; cmd_skills "$@" ;;
   # Where this checkout lives, for skills and scripts: `$(jsuite root)/.data/jchart`.
   root) echo "$HERE" ;;
-  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup|sandbox|root}" ;;
+  *) die "usage: $0 {start|stop|restart|status|logs [app|edge]|open [app]|setup|skills|sandbox|root}" ;;
 esac

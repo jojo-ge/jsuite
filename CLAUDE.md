@@ -70,8 +70,10 @@ another.
   suite-level `jsuite` skill lives in `.claude/skills/` here at the root.
   `./jsuite setup` installs all of them globally from `SKILLS_MANIFEST` in
   `./jsuite`, and prunes links that point nowhere — a new skill goes in the
-  manifest's `apps/jticket` row AND `JSKILLS` in `apps/jticket/j-setup`, or
-  `suiteWiring.test.ts` fails.
+  manifest's `apps/jticket` row, the only list. `apps/jticket/j-setup` has no
+  list or link logic of its own: it runs `./jsuite skills --only apps/jticket`,
+  so `link_skills` in `./jsuite` is the one implementation
+  (`suiteWiring.test.ts` runs both against a throwaway config dir).
 - **One git repo covers the whole workspace.** Commit everything (the app,
   packages, skills, `www/`) from this root.
 - **Don't restart jTicket blindly.** `./jsuite status` first; `./jsuite start` is

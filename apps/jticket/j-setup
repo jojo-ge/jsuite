@@ -3,42 +3,17 @@
 # j-setup — install the jTicket skills globally and pull in Matt Pocock's skills.
 #
 #   ./j-setup              install everything
-#   ./j-setup --skills     only copy the jTicket skills
+#   ./j-setup --skills     only link the jTicket skills
 #   ./j-setup --pocock     only install mattpocock/skills
 #   ./j-setup --dry-run    show what would happen, change nothing
 #
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SRC_DIR="$REPO_DIR/.claude/skills"
-DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
-
-# The skills this repo owns — the apps/jticket row of SKILLS_MANIFEST in the
-# suite's ./jsuite; keep the two in step. Everything else under .claude/skills
-# comes from mattpocock/skills and is installed by the `skills` CLI instead.
-JSKILLS=(
-  jimplement
-  jorchestrate
-  jwayfinder
-  to-jticket
-  to-jspec
-  to-jdoc
-  jarchitect-scan
-  jarchitect-grill
-  jreproduce
-  jslice-report
-  jrunplan
-  j-explain
-  j-chart
-  jdiff-tour
-  jreview-report
-  jreview-triage
-  jreview-consensus
-  jarch-review
-  make-jreview-project
-  jreview-assess
-  jpr-check
-)
+# The suite launcher two levels up owns the skill list (SKILLS_MANIFEST) and the
+# one link/prune implementation; --skills delegates to it rather than keeping a
+# second copy that could drift.
+JSUITE="$REPO_DIR/../../jsuite"
 
 POCOCK_SOURCE="mattpocock/skills"
 
@@ -64,38 +39,11 @@ fail() { printf 'j-setup: %s\n' "$*" >&2; exit 1; }
 $DRY_RUN && say "(dry run — nothing will be changed)"
 
 if $DO_SKILLS; then
-  say "Installing jTicket skills into $DEST_DIR"
-  [ -d "$SRC_DIR" ] || fail "no skills directory at $SRC_DIR"
-  $DRY_RUN || mkdir -p "$DEST_DIR"
-
-  for skill in "${JSKILLS[@]}"; do
-    src="$SRC_DIR/$skill"
-    dest="$DEST_DIR/$skill"
-
-    if [ ! -f "$src/SKILL.md" ]; then
-      say "  skip $skill (not found in $SRC_DIR)"
-      continue
-    fi
-
-    # Link, not copy (same as ./jsuite setup): the installed skill IS the
-    # checkout's. An existing entry (an old copy, or a symlink into
-    # ~/.agents/skills from the skills CLI) is replaced.
-    if [ -e "$dest" ] || [ -L "$dest" ]; then
-      run rm -rf "$dest"
-    fi
-
-    run ln -s "$src" "$dest"
-    say "  linked $skill"
-  done
-
-  # Prune links that point nowhere (a retired app's skills, a deleted skill, a
-  # removed checkout), as ./jsuite setup does. Only dangling symlinks go.
-  for link in "$DEST_DIR"/*; do
-    [ -L "$link" ] && [ ! -e "$link" ] || continue
-    target="$(readlink "$link")"
-    run rm -f "$link"
-    say "  pruned ${link##*/} (pointed at $target)"
-  done
+  [ -x "$JSUITE" ] || fail "no suite launcher at $JSUITE — j-setup runs from apps/jticket of a jSuite checkout"
+  # The jTicket row only, as j-setup always installed; prunes dangling links too.
+  skills_args=(skills --only apps/jticket)
+  $DRY_RUN && skills_args+=(--dry-run)
+  "$JSUITE" "${skills_args[@]}"
 fi
 
 if $DO_POCOCK; then

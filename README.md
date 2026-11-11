@@ -270,9 +270,10 @@ feature/skill a request routes to.
 
 `./jsuite setup` installs them all globally (plus the interactive
 `mattpocock/skills` installer when run from a terminal). The `SKILLS_MANIFEST`
-table in `./jsuite` lists them; keep `apps/jticket/j-setup` (jTicket's
-standalone installer, `JSKILLS`) in sync with its `apps/jticket` row —
-`suiteWiring.test.ts` checks both.
+table in `./jsuite` lists them, and `./jsuite skills [--dry-run] [--only <app dir>]`
+makes just the links. `apps/jticket/j-setup` (jTicket's standalone installer)
+delegates to `./jsuite skills --only apps/jticket`, so there is one list and one
+link/prune implementation — `suiteWiring.test.ts` runs both entry points.
 
 ## Why OrbStack does TLS
 
