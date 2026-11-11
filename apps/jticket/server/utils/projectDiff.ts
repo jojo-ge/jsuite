@@ -50,6 +50,29 @@ async function projectTarget(project: Project, repoDir: string): Promise<DiffTar
   return { kind: 'project', label: branch, head, base: defaultBranch }
 }
 
+// A GitHub PR target costs a `gh pr view` and a `git fetch` — held briefly
+// per (repo, PR), like listOpenPrs' answer, so reopening the tab doesn't pay
+// them again. The in-flight promise is what's held, so two loads at once share
+// one fetch; a failure isn't kept. The reload button sends force to go fresh.
+export const GH_TARGET_TTL_MS = 30_000
+const GH_TARGET_MAX = 24
+const ghTargets = new Map<string, { at: number; target: Promise<DiffTarget> }>()
+
+function cachedGithubTarget(n: number, repoDir: string, force: boolean): Promise<DiffTarget> {
+  const key = `${repoDir}\n${n}`
+  const hit = ghTargets.get(key)
+  if (!force && hit && Date.now() - hit.at < GH_TARGET_TTL_MS) return hit.target
+  const target = githubTarget(n, repoDir)
+  const entry = { at: Date.now(), target }
+  ghTargets.delete(key)
+  ghTargets.set(key, entry)
+  if (ghTargets.size > GH_TARGET_MAX) ghTargets.delete(ghTargets.keys().next().value!)
+  target.catch(() => {
+    if (ghTargets.get(key) === entry) ghTargets.delete(key)
+  })
+  return target
+}
+
 /**
  * A GitHub PR: its head fetched into refs/remotes/jticket/pr-<n>, its base into
  * origin's — remote-tracking refs only, so no local branch moves (and a
@@ -64,12 +87,16 @@ async function githubTarget(n: number, repoDir: string): Promise<DiffTarget> {
   return { kind: 'gh', label: `#${n} ${info.title}`.trim(), head, base }
 }
 
-/** Resolve what a Diff tab query names, for this project. */
+/**
+ * Resolve what a Diff tab query names, for this project. `force` skips the
+ * GitHub PR target's short cache (the tab's reload button).
+ */
 export async function resolveDiffTarget(
   store: Store,
   project: Project,
   repoDir: string,
   q: DiffTargetQuery,
+  opts: { force?: boolean } = {},
 ): Promise<DiffTarget> {
   if (q.pr) {
     const pr = findPrRef(store, q.pr)
@@ -79,7 +106,7 @@ export async function resolveDiffTarget(
     const ticket = store.tickets.find((t) => t.id === pr.ticketId)
     return { kind: 'pr', label: `${pr.key}${ticket ? ` · ${ticket.key} ${ticket.title}` : ''}`, ...refs }
   }
-  if (q.gh) return githubTarget(q.gh, repoDir)
+  if (q.gh) return cachedGithubTarget(q.gh, repoDir, !!opts.force)
   if (q.head) {
     const head = checkRef(q.head, 'head')
     const base = q.base

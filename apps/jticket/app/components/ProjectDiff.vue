@@ -80,10 +80,24 @@ const selected = computed({
 })
 
 const query = computed(() => diffTargetParams(target.value))
-const { data, pending, error, refresh } = useFetch<DiffResponse>(
+const { data, pending, error } = useFetch<DiffResponse>(
   () => `/api/projects/${props.project.id}/diff`,
   { query, server: false, lazy: true, watch: [query] },
 )
+// The reload button goes fresh: a GitHub PR target is otherwise held for 30s
+// server-side (no new gh/fetch), so plain refresh() would show the same head.
+const reloading = ref(false)
+async function reload() {
+  reloading.value = true
+  try {
+    data.value = await $fetch<DiffResponse>(`/api/projects/${props.project.id}/diff`, { query: { ...query.value, force: '1' } })
+    error.value = undefined
+  } catch (err: any) {
+    error.value = err
+  } finally {
+    reloading.value = false
+  }
+}
 const errMessage = (e: any) => String(e?.data?.statusMessage ?? e?.data?.message ?? e?.statusMessage ?? e?.message ?? e)
 const errorText = computed(() => (error.value ? errMessage(error.value) : ''))
 
@@ -208,7 +222,7 @@ function restartTour() {
           class="w-full max-w-xl"
           aria-label="What to diff"
         />
-        <UButton icon="i-lucide-refresh-cw" color="neutral" variant="ghost" size="sm" :loading="pending" aria-label="Reload the diff" @click="refresh()" />
+        <UButton icon="i-lucide-refresh-cw" color="neutral" variant="ghost" size="sm" :loading="pending || reloading" aria-label="Reload the diff" @click="reload()" />
         <div v-if="data" class="ml-auto flex items-center gap-3 font-mono text-xs text-muted">
           <span :title="`${data.target.head} @ ${data.target.headOid}`">{{ data.target.head }} <span class="text-dimmed">{{ shortOid(data.target.headOid) }}</span></span>
           <UIcon name="i-lucide-arrow-left" class="size-3" />
