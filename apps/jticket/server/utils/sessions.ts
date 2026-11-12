@@ -15,6 +15,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { appDataFile } from '@jsuite/data'
+import { harnessStamp } from './harnessVersion'
+import { loadStore } from './store'
 
 /** What a session was dispatched to do. */
 export type SessionRole =
@@ -25,9 +27,14 @@ export type SessionRole =
   | 'slice-report'
   | 'outcome-report'
   | 'runplan-build'
-  | 'pr-assess' // a PR review project's /jreview-assess
+  | 'ticketplan-build' // a plan project's /jplan-to-jtickets (the Ticket plan button)
+  | 'pr-assess' // a PR review project's /jreview-assess — retired; older ledger rows still carry it
   | 'worktree' // the codebase's worktree kickoff / connect
   | 'tour' // the Diff tab's Build tour (/jdiff-tour)
+  | 'review' // one reviewer of a multi-reviewer review (reviewHerdr.ts)
+  | 'arch-review' // the architectural pass's reviewer
+  | 'review-triage' // the session that dedupes the reviewers' findings
+  | 'review-consensus' // the session that keeps (and verifies) what every reviewer raised
   | 'other'
 
 export interface SessionRecord {
@@ -56,6 +63,15 @@ export interface SessionRecord {
   dispatchedAt: string
   /** 'dispatch' = recorded as the session started; 'backfill' = matched to a transcript after the fact. */
   source: 'dispatch' | 'backfill'
+  /**
+   * The harness it ran under — a content hash of the engine, skills and
+   * suite-wide prompts — with the commit that was checked out and the
+   * codebase's own tuning (harnessVersion.ts). Stamped at dispatch; '' on rows
+   * from before the stamp and on backfilled ones (nobody knows what they ran under).
+   */
+  harness: string
+  commit: string
+  setup: string
 }
 
 export const SESSIONS_FILE = appDataFile('jticket', 'sessions.json')
@@ -79,7 +95,7 @@ export function saveSessions(sessions: SessionRecord[]): void {
   writeFileSync(SESSIONS_FILE, JSON.stringify({ sessions }, null, 2) + '\n', 'utf8')
 }
 
-const ROLES: SessionRole[] = ['implement', 'batch', 'orchestrate', 'merge', 'slice-report', 'outcome-report', 'runplan-build', 'pr-assess', 'worktree', 'tour', 'other']
+const ROLES: SessionRole[] = ['implement', 'batch', 'orchestrate', 'merge', 'slice-report', 'outcome-report', 'runplan-build', 'ticketplan-build', 'pr-assess', 'worktree', 'tour', 'review', 'arch-review', 'review-triage', 'review-consensus', 'other']
 
 function coerceSession(raw: any): SessionRecord | null {
   if (!raw || typeof raw.id !== 'string' || !raw.id) return null
@@ -102,6 +118,9 @@ function coerceSession(raw: any): SessionRecord | null {
     agent: str(raw.agent),
     dispatchedAt: str(raw.dispatchedAt),
     source: raw.source === 'backfill' ? 'backfill' : 'dispatch',
+    harness: str(raw.harness),
+    commit: str(raw.commit),
+    setup: str(raw.setup),
   }
 }
 
@@ -117,8 +136,21 @@ export function newSessionId(): string {
  */
 export function recordSession(row: SessionRecord): void {
   const all = loadSessions().filter((s) => s.id !== row.id)
-  all.push(row)
+  all.push(stampHarness(row))
   saveSessions(all)
+}
+
+/**
+ * A session recorded as it is dispatched runs under the harness as it stands
+ * now. Never throws — a ledger row without a stamp beats a dispatch that fails.
+ */
+function stampHarness(row: SessionRecord): SessionRecord {
+  if (row.source !== 'dispatch' || row.harness) return row
+  try {
+    return { ...row, ...harnessStamp(loadStore(), row.repo) }
+  } catch {
+    return row
+  }
 }
 
 /** Fill a row from what a dispatch knows; everything else defaults. */
@@ -136,6 +168,9 @@ export function sessionRow(
     agent: '',
     dispatchedAt: new Date().toISOString(),
     source: 'dispatch',
+    harness: '',
+    commit: '',
+    setup: '',
     ...partial,
   }
 }

@@ -111,16 +111,25 @@ describe('promptKindFor', () => {
     expect(promptKindFor('standard', { labels: [] }, 'integration')).toBe('standard:integration')
   })
 
+  it('a HITL decision ticket on a standard board is a grilling, whatever the picker says', () => {
+    const decision = { labels: ['hitl'], type: 'decision' as const }
+    for (const target of ['local', 'master', 'integration'] as const) {
+      expect(promptKindFor('standard', decision, target)).toBe('standard:decision')
+    }
+    // An AFK decision is the agent's to make, and any other HITL ticket is still work with a PR.
+    expect(promptKindFor('standard', { labels: ['afk'], type: 'decision' }, 'local')).toBe('standard:local')
+    expect(promptKindFor('standard', { labels: ['hitl'], type: 'task' }, 'local')).toBe('standard:local')
+    // Other modes keep their own hand-off.
+    expect(promptKindFor('plan', decision, 'local')).toBe('plan')
+    expect(PROMPT_KIND_META['standard:decision'].template).toMatch(/\/grilling.*No branch, no PR/)
+  })
+
   it('ignores the picker everywhere else', () => {
-    expect(promptKindFor('wayfinder', { labels: [] }, 'master')).toBe('wayfinder')
+    expect(promptKindFor('plan', { labels: [] }, 'master')).toBe('plan')
     expect(promptKindFor('todo', { labels: [] }, 'master')).toBe('todo')
     expect(promptKindFor('predeploy', { labels: [] }, 'master')).toBe('predeploy')
   })
 
-  it('splits an architect board into the scan and its candidates', () => {
-    expect(promptKindFor('architect', { labels: ['arch:scan'] }, 'local')).toBe('architect:scan')
-    expect(promptKindFor('architect', { labels: ['arch:candidate'] }, 'local')).toBe('architect:grill')
-  })
 })
 
 describe('the built-in prompts', () => {
@@ -144,10 +153,8 @@ describe('the built-in prompts', () => {
     )
   })
 
-  it('is the bare command in wayfinder, architect and predeploy mode', () => {
-    expect(resolve({ mode: 'wayfinder' }).text).toBe('/jwayfinder TICK-42')
-    expect(resolve({ mode: 'architect', ticket: { labels: ['arch:scan'] } }).text).toBe('/jarchitect-scan TICK-42')
-    expect(resolve({ mode: 'architect' }).text).toBe('/jarchitect-grill TICK-42')
+  it('is the bare command in plan and predeploy mode', () => {
+    expect(resolve({ mode: 'plan' }).text).toBe('/jplan TICK-42')
     expect(resolve({ mode: 'predeploy' }).text).toBe('/jreproduce TICK-42')
   })
 
@@ -275,8 +282,8 @@ describe('renderPrompt', () => {
 
 describe('promptTemplateFor', () => {
   it('treats a missing project as no override', () => {
-    expect(promptTemplateFor('wayfinder', null, {}).layer).toBe('built-in')
-    expect(promptTemplateFor('wayfinder', null, { wayfinder: 'x' }).layer).toBe('default')
+    expect(promptTemplateFor('plan', null, {}).layer).toBe('built-in')
+    expect(promptTemplateFor('plan', null, { plan: 'x' }).layer).toBe('default')
   })
 })
 
@@ -291,8 +298,8 @@ describe('the codebase layer', () => {
   })
 
   it('is skipped when absent, so the old three-argument call is unchanged', () => {
-    expect(promptTemplateFor('wayfinder', null, {}, null).layer).toBe('built-in')
-    expect(promptTemplateFor('wayfinder', null, {}, { prompts: { wayfinder: 'x' } })).toEqual({ template: 'x', layer: 'codebase' })
+    expect(promptTemplateFor('plan', null, {}, null).layer).toBe('built-in')
+    expect(promptTemplateFor('plan', null, {}, { prompts: { plan: 'x' } })).toEqual({ template: 'x', layer: 'codebase' })
   })
 
   it('reaches the project-level sweep too', () => {
@@ -350,7 +357,7 @@ describe('the batch prompt (the board\'s One session button)', () => {
 
   it('is a project-level Implementation kind, one line, every var advertised', () => {
     expect(PROMPT_KIND_META.batch.level).toBe('project')
-    expect(PROMPT_KIND_META.batch.group).toBe('Implementation')
+    expect(PROMPT_KIND_META.batch.group).toBe('Build')
     expect(PROMPT_KIND_META.batch.template).not.toContain('\n')
     expect(PROMPT_KIND_META.batch.vars).toEqual(expect.arrayContaining(['keys', 'handoffs', 'projectKey']))
   })

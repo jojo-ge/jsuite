@@ -17,10 +17,10 @@ describe('mergePromptOverrides', () => {
   const base: PromptOverrides = { 'standard:local': 'do the thing', merge: 'land them all' }
 
   it('leaves kinds the patch does not name alone', () => {
-    expect(mergePromptOverrides(base, { wayfinder: 'ask around' })).toEqual({
+    expect(mergePromptOverrides(base, { plan: 'ask around' })).toEqual({
       'standard:local': 'do the thing',
       merge: 'land them all',
-      wayfinder: 'ask around',
+      plan: 'ask around',
     })
   })
 
@@ -45,9 +45,9 @@ describe('mergePromptOverrides', () => {
   })
 
   it('does not mutate what it was given', () => {
-    const current: PromptOverrides = { wayfinder: 'ask around' }
-    mergePromptOverrides(current, { wayfinder: '', merge: 'land them' })
-    expect(current).toEqual({ wayfinder: 'ask around' })
+    const current: PromptOverrides = { plan: 'ask around' }
+    mergePromptOverrides(current, { plan: '', merge: 'land them' })
+    expect(current).toEqual({ plan: 'ask around' })
   })
 
   it('ignores a patch that is not an object', () => {
@@ -63,7 +63,7 @@ describe('mergePromptOverrides', () => {
 
 describe('cleanPromptOverrides', () => {
   it('keeps only non-empty known kinds', () => {
-    expect(cleanPromptOverrides({ todo: ' grill me ', wayfinder: '', bogus: 'x' })).toEqual({ todo: 'grill me' })
+    expect(cleanPromptOverrides({ todo: ' grill me ', plan: '', bogus: 'x' })).toEqual({ todo: 'grill me' })
   })
 
   it('survives a store field that is not an object', () => {

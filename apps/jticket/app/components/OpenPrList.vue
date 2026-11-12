@@ -1,76 +1,91 @@
 <script setup lang="ts">
 // The Reviews board's Open PRs section — jDiff's PR list, here: the
-// codebase's open GitHub PRs through `gh` (GET /api/repos/prs), with its
-// filters (hide drafts, only mine, i'm reviewing, team reviewing, by author)
-// and a refresh. A row's Review this PR opens the PR's review project, or
-// makes one and starts its assessment (POST /api/projects/pr-review). Rows
-// that already have a project show its verdict. Logic: ~/utils/prList.
+// codebase's open GitHub PRs (GET /api/repos/prs), a page at a time, most
+// recently updated first. Hide drafts (on by default), only mine and the two
+// reviewing filters are part of the GitHub search, so changing one starts
+// over from the first page; the author chips narrow what is loaded. The list
+// comes from the server's cache and settles by itself; refresh reads GitHub
+// now. A row's Make review project makes the PR's review project (POST
+// /api/projects/pr-review) and goes to its Review tab — nothing is
+// dispatched: the human presses Start review there. A row that already has
+// a project shows its verdict and Open review project. Paging: ~/composables/useOpenPrs; logic:
+// ~/utils/prList.
+//
+// With `attachTo` it is the PR picker of a review project that has no pull
+// request yet (made from the create modal): a row's button attaches that PR
+// to the project (POST /api/projects/:id/pr-review) instead of making a new
+// one; a PR another project already reviews still only offers to open that.
 import type { Project } from '~/composables/useTracker'
-import { authorChips, filterPrs, filterPrsExceptAuthor, projectsByPr, verdictBadge, type OpenPr } from '~/utils/prList'
-import { prReviewRunState, prReviewVerdict } from '~/utils/reviewPlan'
+import { authorChips, DEFAULT_PR_QUERY, filterByAuthors, PR_PAGE_SIZE, projectsByPr, verdictBadge, type OpenPr } from '~/utils/prList'
+import { prReviewRunState, prReviewVerdict } from '~/utils/prReview'
 
-const props = defineProps<{ repo: string; projects: Project[] }>()
+const props = defineProps<{ repo: string; projects: Project[]; attachTo?: Project | null }>()
 const toast = useToast()
+const { refresh: refreshTracker } = useTracker()
 
-const force = ref<string | undefined>(undefined)
-const { data, pending, error } = useFetch<{ error: string; viewer: string; prs: OpenPr[] }>('/api/repos/prs', {
-  query: { repo: computed(() => props.repo), force },
-})
-function refresh() {
-  force.value = String(Date.now())
-}
-
-const viewer = computed(() => data.value?.viewer ?? '')
-const prs = computed(() => data.value?.prs ?? [])
-const loadError = computed(() => error.value?.data?.statusMessage ?? error.value?.message ?? data.value?.error ?? '')
-
-const hideDrafts = ref(false)
-const onlyMine = ref(false)
-const imReviewing = ref(false)
-const teamReviewing = ref(false)
+const query = ref({ ...DEFAULT_PR_QUERY })
+const { prs, total, hasMore, error: loadError, fetchedAt, loaded, loading, loadingMore, refreshing, loadMore, refresh } = useOpenPrs(
+  () => props.repo,
+  query,
+)
 const authorFilter = ref<string[]>([])
-const filters = computed(() => ({
-  hideDrafts: hideDrafts.value,
-  onlyMine: onlyMine.value,
-  imReviewing: imReviewing.value,
-  teamReviewing: teamReviewing.value,
-  authors: authorFilter.value,
-}))
 
-const authors = computed(() => authorChips(filterPrsExceptAuthor(prs.value, filters.value, viewer.value)))
-// A chip can vanish when another filter changes; drop it from the selection
+const authors = computed(() => authorChips(prs.value))
+// A chip can vanish when the search changes; drop it from the selection
 // rather than leaving an invisible filter that empties the list.
+// Assign only when a selected chip really went, so this never re-triggers
+// itself.
 watch(authors, (list) => {
   const live = new Set(list.map((a) => a.login))
-  authorFilter.value = authorFilter.value.filter((l) => live.has(l))
+  if (authorFilter.value.some((l) => !live.has(l))) authorFilter.value = authorFilter.value.filter((l) => live.has(l))
 })
 function toggleAuthor(login: string) {
   authorFilter.value = authorFilter.value.includes(login) ? authorFilter.value.filter((l) => l !== login) : [...authorFilter.value, login]
 }
 
-const shown = computed(() => filterPrs(prs.value, filters.value, viewer.value))
+const shown = computed(() => filterByAuthors(prs.value, authorFilter.value))
+const remaining = computed(() => Math.max(0, total.value - prs.value.length))
+
+// "updated 3m ago" beside the refresh button; a minute's granularity is plenty.
+const now = ref(new Date())
+let tick: ReturnType<typeof setInterval> | undefined
+onMounted(() => { tick = setInterval(() => { now.value = new Date() }, 60_000) })
+onUnmounted(() => { if (tick) clearInterval(tick) })
+watch(fetchedAt, () => { now.value = new Date() })
 const byPr = computed(() => projectsByPr(props.projects))
 
-const RUN_LABEL: Record<string, string> = { assessing: 'assessing', running: 'running', paused: 'paused' }
+const RUN_LABEL: Record<string, string> = { running: 'reviewing' }
 
 const busy = ref<number | null>(null)
 async function review(pr: OpenPr) {
   const existing = byPr.value.get(pr.number)
-  if (existing) return navigateTo(`/projects/${existing.key}`)
+  if (existing) return navigateTo(`/projects/${existing.key}?tab=review`)
   busy.value = pr.number
   try {
-    const res = await $fetch<{ project: Project; created: boolean; assessError?: string }>('/api/projects/pr-review', {
+    if (props.attachTo) {
+      const project = await $fetch<Project>(`/api/projects/${props.attachTo.id}/pr-review`, { method: 'POST', body: { pr: pr.number } })
+      // The page stops being the picker once the tracker knows about the PR.
+      await refreshTracker()
+      await navigateTo(`/projects/${project.key}?tab=review`)
+      return
+    }
+    // No `review`: making the project starts nothing. The Review tab is
+    // where the human presses Start review, so that is where this lands.
+    const res = await $fetch<{ project: Project; created: boolean }>('/api/projects/pr-review', {
       method: 'POST',
-      body: { repo: props.repo, pr: pr.number, assess: true },
+      body: { repo: props.repo, pr: pr.number },
     })
-    if (res.assessError) toast.add({ title: `Project made, but the assessment didn't start`, description: res.assessError, color: 'warning' })
-    await navigateTo(`/projects/${res.project.key}`)
+    await navigateTo(`/projects/${res.project.key}?tab=review`)
   } catch (err: any) {
-    toast.add({ title: `Couldn't set up a review of #${pr.number}`, description: String(err?.data?.statusMessage ?? err?.message ?? err), color: 'error' })
+    toast.add({ title: props.attachTo ? `Couldn't attach #${pr.number} to ${props.attachTo.key}` : `Couldn't make a review project for #${pr.number}`, description: String(err?.data?.statusMessage ?? err?.message ?? err), color: 'error' })
   } finally {
     busy.value = null
   }
 }
+
+// Built here, not in the template: a `//` inside a template-literal attribute
+// makes vue-tsc lose the v-for scope for everything after it.
+const avatarUrl = (login: string, size: number) => `https://github.com/${login}.png?size=${size}`
 
 function timeAgo(iso: string): string {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
@@ -83,22 +98,24 @@ function timeAgo(iso: string): string {
 <template>
   <section>
     <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <h2 class="text-lg font-semibold">Open PRs</h2>
-      <span v-if="prs.length" class="text-sm text-muted">{{ shown.length }} of {{ prs.length }}</span>
+      <h2 class="text-lg font-semibold">{{ attachTo ? 'Pick the pull request to review' : 'Open PRs' }}</h2>
+      <span v-if="prs.length" class="text-sm text-muted">{{ shown.length }} of {{ total }}</span>
       <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
-        <UCheckbox v-model="hideDrafts" label="hide drafts" />
-        <UCheckbox v-model="onlyMine" label="only mine" :disabled="!viewer" />
-        <UCheckbox v-model="imReviewing" label="i'm reviewing" :disabled="!viewer" />
-        <UCheckbox v-model="teamReviewing" label="my team is reviewing" />
+        <UCheckbox v-model="query.hideDrafts" label="hide drafts" />
+        <UCheckbox v-model="query.onlyMine" label="only mine" />
+        <UCheckbox v-model="query.imReviewing" label="i'm reviewing" />
+        <UCheckbox v-model="query.teamReviewing" label="my team is reviewing" />
       </div>
+      <span v-if="fetchedAt" class="ml-auto text-xs text-muted">{{ refreshing ? 'updating…' : `updated ${fetchedAgo(fetchedAt, now)}` }}</span>
       <UButton
-        class="ml-auto"
+        :class="!fetchedAt && 'ml-auto'"
         icon="i-lucide-refresh-cw"
         color="neutral"
         variant="ghost"
         size="xs"
-        :loading="pending"
-        aria-label="Refresh the PR list"
+        :loading="loading || refreshing"
+        aria-label="Refresh the PR list from GitHub"
+        title="Read the list from GitHub now"
         @click="refresh()"
       />
     </div>
@@ -115,18 +132,22 @@ function timeAgo(iso: string): string {
         :title="`${a.name ? `${a.name} — ` : ''}${a.login} · ${a.count} open`"
         @click="toggleAuthor(a.login)"
       >
-        <UAvatar :src="`https://github.com/${a.login}.png?size=40`" :alt="a.login" size="3xs" />
+        <UAvatar :src="avatarUrl(a.login, 40)" :alt="a.login" size="3xs" />
         {{ a.login }}<span v-if="a.count > 1" class="text-muted">{{ a.count }}</span>
       </UButton>
       <UButton v-if="authorFilter.length" size="xs" color="neutral" variant="link" @click="authorFilter = []">clear</UButton>
     </div>
 
-    <p v-if="pending && !data" class="py-6 text-center text-sm text-muted">Loading PRs from GitHub…</p>
+    <p v-if="!loaded" class="py-6 text-center text-sm text-muted">Loading PRs from GitHub…</p>
     <UAlert v-else-if="loadError" color="error" variant="subtle" icon="i-lucide-circle-alert" title="gh couldn't list this codebase's PRs" :description="loadError" />
-    <p v-else-if="!prs.length" class="py-6 text-center text-sm text-muted">No open pull requests.</p>
-    <p v-else-if="!shown.length" class="py-6 text-center text-sm text-muted">No pull requests match the filters.</p>
+    <p v-else-if="!prs.length" class="py-6 text-center text-sm text-muted">
+      No open pull requests{{ query.onlyMine || query.imReviewing || query.teamReviewing ? ' match the filters' : '' }}{{ query.hideDrafts ? ' — drafts are hidden' : '' }}.
+    </p>
+    <p v-else-if="!shown.length" class="py-6 text-center text-sm text-muted">
+      None of the {{ prs.length }} loaded pull requests are by the selected authors.
+    </p>
 
-    <ul v-else class="divide-y divide-default rounded-lg border border-default">
+    <ul v-else class="divide-y divide-default rounded-lg border border-default transition-opacity" :class="loading && 'opacity-60'">
       <li v-for="pr in shown" :key="pr.number" class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
         <div class="min-w-0 flex-1">
           <a :href="pr.url" target="_blank" rel="noopener" class="group flex items-baseline gap-2">
@@ -138,7 +159,7 @@ function timeAgo(iso: string): string {
           </a>
           <p class="flex flex-wrap items-center gap-x-3 text-xs text-muted">
             <span class="inline-flex items-center gap-1">
-              <UAvatar v-if="pr.author?.login" :src="`https://github.com/${pr.author.login}.png?size=32`" :alt="pr.author.login" size="3xs" />
+              <UAvatar v-if="pr.author?.login" :src="avatarUrl(pr.author.login, 32)" :alt="pr.author.login" size="3xs" />
               {{ pr.author?.login }}
             </span>
             <span class="max-w-[34ch] truncate font-mono">{{ pr.headRefName }} → {{ pr.baseRefName }}</span>
@@ -168,9 +189,22 @@ function timeAgo(iso: string): string {
           :disabled="busy !== null && busy !== pr.number"
           class="shrink-0"
           @click="review(pr)"
-        :title="byPr.get(pr.number) ? `Open ${byPr.get(pr.number)!.key}, this PR's review project` : 'Set up a review project for this PR and start its assessment'"
-        >Review this PR</UButton>
+        :title="byPr.get(pr.number)
+          ? `Open ${byPr.get(pr.number)!.key}, this PR's review project`
+          : attachTo
+            ? `Attach this PR to ${attachTo.key}: its head is fetched onto a local branch — the review starts when you start it`
+            : 'Make a review project for this PR and open it — the review starts when you start it there'"
+        >{{ byPr.get(pr.number) ? 'Open review project' : attachTo ? 'Review this PR' : 'Make review project' }}</UButton>
       </li>
     </ul>
+
+    <div v-if="loaded && !loadError && hasMore" class="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+      <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-chevrons-down" :loading="loadingMore" @click="loadMore()">
+        Load {{ Math.min(PR_PAGE_SIZE, remaining) || PR_PAGE_SIZE }} more
+      </UButton>
+      <span class="text-xs text-muted">
+        {{ prs.length }} of {{ total }} loaded<template v-if="authorFilter.length"> — the author filter only covers these</template>
+      </span>
+    </div>
   </section>
 </template>

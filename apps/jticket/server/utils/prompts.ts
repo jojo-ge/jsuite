@@ -25,11 +25,12 @@
 /**
  * Every prompt jTicket fires, keyed by what picks it:
  * - `standard:*` — the three PR targets of the hand-off picker (an implementation ticket)
+ * - `standard:decision` — a HITL decision ticket on a standard board: a grilling
+ *   in the herdr pane, no branch and no PR, whatever the picker says
  * - `batch` — the board's One session button: several ticked tickets worked in
  *   order by one session, each on its own hand-off (project-level; not a ticket)
- * - `wayfinder` — a wayfinder frontier ticket
+ * - `plan` — a frontier ticket of a plan project
  * - `todo` — a todo-list ticket's grilling
- * - `architect:*` — the architecture scan and a candidate's go/no-go grilling
  * - `predeploy` — a pre-deploy bug reproduction
  * - `merge` — the project-level merge sweep (not a ticket; project layer only)
  * - `worktree:kickoff` — asks a codebase how it does worktrees (codebase-level; no project)
@@ -37,23 +38,23 @@
  *   codebase's worktree setup (project-level; not a ticket)
  * - `runplan:build` — the Run setup tab's Build button: one Fable 5.2 session
  *   writes the project's run plan (project-level; not a ticket)
+ * - `ticketplan:build` — a plan project's Ticket plan button: one session
+ *   drafts the build tickets and proposes the graph's shape (project-level)
  */
 export const PROMPT_KINDS = [
   'standard:local',
   'standard:master',
   'standard:integration',
+  'standard:decision',
   'batch',
-  'wayfinder',
+  'plan',
   'todo',
-  'architect:scan',
-  'architect:grill',
   'predeploy',
   'merge',
   'worktree:kickoff',
   'worktree:connect',
   'runplan:build',
-  'prcheck',
-  'prreview:assess',
+  'ticketplan:build',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 

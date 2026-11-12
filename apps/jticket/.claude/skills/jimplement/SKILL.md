@@ -13,7 +13,7 @@ back so the next session — or another human — can see what happened without 
 diff.
 
 This skill **does** the work. If the way to the destination isn't clear yet — decisions
-still open, questions to resolve — that's `/jwayfinder`, not this. If there's no
+still open, questions to resolve — that's `/jplan`, not this. If there's no
 breakdown at all yet, that's `/to-jticket` in tickets mode first.
 
 Who runs it: a person typing `/jimplement [TICK-n]` (or a project key, or nothing),
@@ -38,8 +38,8 @@ field from a file with `field=@file.md`, and reaches any endpoint without a verb
 `jt get|post|patch|put|delete PATH [JSON]`.
 
 API reference: the `to-jticket` skill's [reference/api.md](../to-jticket/reference/api.md).
-Markdown dialect for anything you write into a description or resolution: the `to-jspec`
-skill, [SKILL.md](../to-jspec/SKILL.md).
+Markdown dialect for anything you write into a description or resolution: the `to-jdoc`
+skill, [SKILL.md](../to-jdoc/SKILL.md).
 
 ## 1. Choose the ticket
 

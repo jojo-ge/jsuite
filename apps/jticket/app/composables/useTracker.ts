@@ -1,10 +1,12 @@
 // Client-side mirror of the server types (see server/utils/store.ts).
 import type { AutoLoop } from '~/utils/autoLoop'
 import type { RunPlan, RunPlanBuild } from '~/utils/runPlan'
-import type { PrReview } from '~/utils/reviewPlan'
+import type { PrReview } from '~/utils/prReview'
+import type { PlanReview } from '~/utils/planReview'
 import type { PromptOverrides, TicketPromptMode } from '~/utils/prompts'
 // Relative, like diffTarget below: vitest runs this file without Nuxt's `~` alias.
 import { isRecordOnly, type TicketFinding } from '../utils/reviewFindings'
+import type { TicketSentBack } from '../utils/reviewHandoff'
 import { diffTabUrl, ticketDiffTarget } from '../utils/diffTarget'
 
 // Main ticket type + well-known tags — see server/utils/ticketTypes.ts.
@@ -14,7 +16,7 @@ export type TicketTag = AgencyTag | 'prototype' | 'paused'
 export type TicketStatus = 'todo' | 'in_progress' | 'done' | 'merged'
 export type DocStatus = 'draft' | 'ready'
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-export type ProjectMode = 'standard' | 'wayfinder' | 'todo' | 'architect' | 'predeploy' | 'prreview'
+export type ProjectMode = 'standard' | 'plan' | 'todo' | 'predeploy' | 'prreview' | 'planreview'
 export type ShareSide = 'creator' | 'importer'
 
 // Two-party sync (see server/utils/ownership.ts): which side this machine is
@@ -36,6 +38,9 @@ export interface Project {
   // empty branch this project's PRs target. See <ProjectGithub>.
   repo: string
   integrationBranch: string
+  // The branch the integration branch was cut from and its roll-up PR
+  // targets: '' = the default branch, else the build it stacks on.
+  integrationBase: string
   // Legacy: starred once put a project on the (removed) Up next page. Kept
   // because sync, import and export still carry it; nothing reads it.
   starred: boolean
@@ -55,8 +60,12 @@ export interface Project {
   runPlan?: RunPlan | null
   // A /jrunplan session building it (the tab's Build button) — the tab is read-only while set.
   runPlanBuild?: RunPlanBuild | null
-  // A PR review project's PR, assessment, review plan and runs — see ~/utils/reviewPlan.ts.
+  // A plan project's /jplan-to-jtickets session writing its ticket plan — see ~/utils/ticketPlan.ts.
+  ticketPlanBuild?: RunPlanBuild | null
+  // A PR review project's PR and the reviews it has started — see ~/utils/prReview.ts.
   prReview?: PrReview | null
+  // A plan review project's plan and the reviews it has started — see ~/utils/planReview.ts.
+  planReview?: PlanReview | null
   createdAt: string
   updatedAt: string
   // Derived by GET /api/projects (never persisted): `repo` with '~' resolved,
@@ -112,8 +121,15 @@ export interface Ticket {
   transfer: '' | 'pending' | 'declined'
   transferAt: string
   // Set on a ticket a review finding became — see ~/utils/reviewFindings.ts.
-  // In a PR review project such a ticket is record-only: no hand-off.
+  // In a PR review project every ticket is record-only: no hand-off.
   finding?: TicketFinding
+  // Set on a finding ticket Send back turned into a ticket on the upstream
+  // project — see ~/utils/reviewHandoff.ts.
+  sentBack?: TicketSentBack | null
+  // A draft of its plan project's ticket plan: the graph node id of the
+  // proposed build it moves into on approve — see ~/utils/ticketPlan.ts.
+  // Record-only while set: off the frontier, no hand-off.
+  plannedFor?: string | null
   createdAt: string
   updatedAt: string
   // Derived flags the GET endpoints attach (never persisted). Optional so a
@@ -215,8 +231,9 @@ export function useTracker() {
 
   // ── Projects ──
   async function createProject(input: Partial<Project>) {
-    await $fetch('/api/projects', { method: 'POST', body: input })
+    const created = await $fetch<Project>('/api/projects', { method: 'POST', body: input })
     await refresh()
+    return created
   }
   async function updateProject(id: string, input: Partial<Project>) {
     await $fetch(`/api/projects/${id}`, { method: 'PATCH', body: input })
@@ -408,7 +425,7 @@ export function isFrontier(
 }
 
 // ── Flow-state buckets ──
-// The one precedence every view groups by: the board's buckets, the wayfinder
+// The one precedence every view groups by: the board's buckets, the dependency
 // graph's node states, the digest's row order. Kept here rather than in each
 // component because they must agree — a ticket the board calls takeable and
 // the graph calls something else is the bug TICK-312 was.
@@ -470,7 +487,7 @@ export function blockerTone(
 }
 
 // The same precedence as a tally: every bucket present, zeros included, so a
-// summary view — the stacked bar on project cards, the wayfinder graph's
+// summary view — the stacked bar on project cards, the dependency graph's
 // legend — can lay its own segments out over it without re-deriving which
 // bucket a ticket falls in. Lifted out of the components because there is no
 // component test harness, and this rule is one the views must not restate.
@@ -541,34 +558,6 @@ export function ticketTags(ticket: Pick<Ticket, 'labels'>): TicketTag[] {
   return [isHitl(ticket) ? 'hitl' : 'afk', ...(isPrototype(ticket) ? ['prototype' as const] : []), ...(isPaused(ticket) ? ['paused' as const] : [])]
 }
 
-// ── Architect labels ──
-// The scan tags each candidate with the skill's native recommendation
-// strength, plus arch:top-pick on exactly one — the "really worth working on"
-// signal the board renders as badges.
-export type ArchTag = 'strong' | 'worth-exploring' | 'speculative'
-
-export const ARCH_TAG_META: Record<ArchTag, { label: string; icon: string; color: 'success' | 'warning' | 'neutral' }> = {
-  'strong': { label: 'Strong', icon: 'i-lucide-gem', color: 'success' },
-  'worth-exploring': { label: 'Worth exploring', icon: 'i-lucide-telescope', color: 'warning' },
-  'speculative': { label: 'Speculative', icon: 'i-lucide-sparkles', color: 'neutral' },
-}
-
-// Pull the strength out of a candidate's labels (first arch:<strength>).
-export function archTag(ticket: Pick<Ticket, 'labels'>): ArchTag | null {
-  for (const l of ticket.labels ?? []) {
-    const m = /^arch:(strong|worth-exploring|speculative)$/.exec(l)
-    if (m) return m[1] as ArchTag
-  }
-  return null
-}
-
-export function isArchCandidate(ticket: Pick<Ticket, 'labels'>): boolean {
-  return (ticket.labels ?? []).includes('arch:candidate')
-}
-
-export function isArchTopPick(ticket: Pick<Ticket, 'labels'>): boolean {
-  return (ticket.labels ?? []).includes('arch:top-pick')
-}
 
 // ── Completion times ──
 // Newest completion first; unstamped tickets sort last.
@@ -595,6 +584,19 @@ export function timeLabel(iso: string): string {
 }
 
 // "just now" / "20 minutes ago" / "3 days ago" — the at-a-glance recency on a row.
+/**
+ * "2026-09-28 11:08" in local time. Not toLocaleString(): Node and the browser
+ * format a locale differently ("11:08:56 am" vs "11:08:56"), and a
+ * server-rendered timestamp that differs from the client's is a hydration
+ * mismatch.
+ */
+export function localStamp(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export function agoLabel(iso: string, now: Date): string {
   const mins = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60_000))
   if (mins < 1) return 'just now'

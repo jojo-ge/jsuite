@@ -57,6 +57,8 @@ j-explain payload (block vocabulary in the `j-explain` skill), key =
 
 - kicker `Review · triage`; title `Triage — <repo> <base>...HEAD`; subtitle
   with the before/after counts ("23 reported → 11 distinct").
+- `"tags": ["review-output"]`, exactly — it keeps review write-ups out of the
+  document library until someone asks for them.
 - `compare` block: findings by severity, with the reviewers that raised each.
 - One `callout` per merged finding, ids `f1`… in the order you will POST them,
   titled `[severity] title`, with Where / Category / Raised by / failure

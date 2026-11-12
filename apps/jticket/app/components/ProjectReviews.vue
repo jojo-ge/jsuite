@@ -10,17 +10,30 @@
 // added later and nothing is added twice. The auto loop's consensus reviews
 // show here too, read-only — their tickets were filed by the loop.
 //
-// A PR review project's agreement reviews need no press: every verified
-// finding is already a record-only ticket on this project when it lands
-// (a rerun matches the open ones), so there is no Add button. Post to PR
+// A PR review project starts its PR's review here instead (Start / Rerun
+// review — an agreement review, no branch to pick), and its findings need no
+// press: every verified finding is already a record-only ticket on this
+// project when it lands (a rerun matches the open ones), so there is no Add
+// button. The consensus session's verdict and summary head the review. Post to PR
 // picks finding TICKETS — a finding is posted through its ticket, and the
-// ticket is what gets stamped "posted".
+// ticket is what gets stamped "posted". When the project sits after a build in
+// a graph, Send back (beside Post to PR) turns picked finding tickets into fix
+// tickets on that build, and each finding then shows its fix ticket's status.
+//
+// A plan review project starts its plan's review the same way (Start / Rerun
+// review — an agreement review with no diff: the reviewers read the plan's
+// spec and ticket plan), and its Send back files decision tickets on the plan
+// it reviews, in a graph or not. One made by a graph node with no single plan
+// before it picks its plan here first.
 //
 // Reports (triage + each reviewer's) are jExplain documents in the shared
 // pool, which jTicket serves too — they open inline.
 import type { Project } from '~/composables/useTracker'
 import type { Explainer } from '@jsuite/documents/types'
-import type { Review, ReviewMeta, ReviewStatus } from '~/utils/reviewTypes'
+import { reviewTargetLabel, unticketedFindings, type Review, type ReviewMeta, type ReviewStatus } from '~/utils/reviewTypes'
+import { planReviewNeedsPlan, planReviewRunState } from '~/utils/planReview'
+import { prReviewRunState, REVIEW_REVIEWERS_DEFAULT, REVIEW_REVIEWERS_MAX, REVIEW_REVIEWERS_MIN } from '~/utils/prReview'
+import { isFindingTicket } from '~/utils/reviewFindings'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ configure: [] }>()
@@ -28,18 +41,23 @@ const emit = defineEmits<{ configure: [] }>()
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
-const { tickets } = useTracker()
+const { tickets, projects, refresh: refreshTracker } = useTracker()
 const { available: herdrUp } = useHerdr()
 const errorText = branchErrorText
 
 const active = (s: ReviewStatus) => s === 'reviewing' || s === 'triaging'
 
 // ── The list ──
-const { data: listData, pending: listPending, refresh: refreshList } = useFetch<{
+const { data: listData, pending: listFetching, refresh: refreshList } = useFetch<{
   available: boolean
   reviews: ReviewMeta[]
   error?: string
 }>(() => `/api/projects/${props.project.id}/reviews`, { lazy: true, server: false })
+// Client-only: pending from the first client render, idle on the server — read
+// it once mounted, or hydration mismatches.
+const listMounted = ref(false)
+onMounted(() => (listMounted.value = true))
+const listPending = computed(() => listMounted.value && listFetching.value)
 const reviews = computed(() => listData.value?.reviews ?? [])
 
 // The open review rides in ?review= (jReview opens the tab there when triage
@@ -140,7 +158,10 @@ const deselected = ref(new Set<string>())
 watch(selectedKey, () => { deselected.value = new Set() })
 // Manual filing is a triage review's: an agreement review's findings are filed for it.
 const canAdd = computed(() => !!review.value && !review.value.consensus && !review.value.agreement && (review.value.status === 'triaged' || review.value.status === 'ticketed'))
-const openFindings = computed(() => (review.value?.findings ?? []).filter((f) => !f.ticketKey))
+// unticketedFindings, not a bare `!f.ticketKey`: a review split before findings
+// carried their ticket key has none on any finding, yet all of them are tickets.
+const openFindings = computed(() => (review.value ? unticketedFindings(review.value) : []))
+const openIds = computed(() => new Set(openFindings.value.map((f) => f.id)))
 const picked = computed(() => openFindings.value.filter((f) => !deselected.value.has(f.id)))
 function setPicked(id: string, on: boolean) {
   const next = new Set(deselected.value)
@@ -178,19 +199,78 @@ async function addTickets() {
   }
 }
 
-// ── A PR review project: rerun from here, the run lives in Review setup ──
+// ── A PR review project: its PR's review starts here ──
+// One agreement review of the PR's diff, head re-fetched first: 2–4 reviewers,
+// then the consensus session's findings, verdict and summary. Nothing else to
+// set up — no branch, no base (the PR names both).
 const isPrReview = computed(() => props.project.mode === 'prreview' && !!props.project.prReview)
-const prRun = computed(() => props.project.prReview?.run ?? null)
-const prRunLive = computed(() => prRun.value?.status === 'running' || prRun.value?.status === 'paused')
+const prRuns = computed(() => props.project.prReview?.runs ?? [])
+// Out per the project's record, or per the list — whichever notices first.
+const prRunLive = computed(() => prReviewRunState(props.project.prReview) === 'running' || reviews.value.some((r) => r.agreement && active(r.status)))
+const prReviewers = ref(REVIEW_REVIEWERS_DEFAULT)
+const PR_REVIEWER_ITEMS = Array.from({ length: REVIEW_REVIEWERS_MAX - REVIEW_REVIEWERS_MIN + 1 }, (_, i) => i + REVIEW_REVIEWERS_MIN).map((n) => ({ label: `${n} reviewers`, value: n }))
 const rerunning = ref(false)
-async function rerunReview() {
+async function startPrReview() {
   rerunning.value = true
   try {
-    const ran = !!props.project.prReview?.runs.length
-    await $fetch(`/api/projects/${props.project.id}/review-run`, { method: 'POST', body: { action: ran ? 'rerun' : 'start' } })
-    toast.add({ title: ran ? 'Rerunning the review' : 'Review started', description: 'Against the PR head as it is now — checks first, then the reviewers.', color: 'success', icon: 'i-lucide-refresh-cw' })
+    const res = await $fetch<{ key: string }>(`/api/projects/${props.project.id}/reviews`, { method: 'POST', body: { reviewers: prReviewers.value } })
+    toast.add({
+      title: prRuns.value.length ? 'Rerunning the review' : 'Review started',
+      description: `${prReviewers.value} reviewers going into herdr against the PR head as it is now — the findings and the summary land here.`,
+      color: 'success',
+      icon: 'i-lucide-scan-search',
+    })
+    await refreshList()
+    select(res.key)
   } catch (err: any) {
-    toast.add({ title: 'Could not run the review', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+    toast.add({ title: 'Could not start the review', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    rerunning.value = false
+  }
+}
+
+// ── A plan review project: its plan's review starts here ──
+// The same agreement review, reading the plan instead of a diff. Until a plan
+// is picked (a graph node with no single plan before it), the picker.
+const isPlanReview = computed(() => props.project.mode === 'planreview')
+const needsPlan = computed(() => planReviewNeedsPlan(props.project))
+const planRuns = computed(() => props.project.planReview?.runs ?? [])
+const reviewedPlan = computed(() => projects.value.find((p) => p.id === props.project.planReview?.planProjectId) ?? null)
+const planRunLive = computed(() => planReviewRunState(props.project.planReview) === 'running' || reviews.value.some((r) => r.agreement && active(r.status)))
+// Plans of this codebase (any plan, when the project has no repo yet).
+const planItems = computed(() =>
+  projects.value
+    .filter((p) => p.mode === 'plan' && (!props.project.repo.trim() || p.repo === props.project.repo))
+    .map((p) => ({ label: `${p.key} · ${p.title}`, value: p.key })),
+)
+const pickedPlan = ref('')
+const attachingPlan = ref(false)
+async function attachPlan() {
+  if (!pickedPlan.value) return
+  attachingPlan.value = true
+  try {
+    await $fetch(`/api/projects/${props.project.id}/plan-review`, { method: 'POST', body: { plan: pickedPlan.value } })
+    await Promise.all([refreshTracker(), refreshSendBack()])
+  } catch (err: any) {
+    toast.add({ title: 'Could not pick that plan', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    attachingPlan.value = false
+  }
+}
+async function startPlanReview() {
+  rerunning.value = true
+  try {
+    const res = await $fetch<{ key: string }>(`/api/projects/${props.project.id}/reviews`, { method: 'POST', body: { reviewers: prReviewers.value } })
+    toast.add({
+      title: planRuns.value.length ? 'Rerunning the plan review' : 'Plan review started',
+      description: `${prReviewers.value} reviewers going into herdr against the plan as it is now — the findings and the verdict land here.`,
+      color: 'success',
+      icon: 'i-lucide-scan-search',
+    })
+    await Promise.all([refreshList(), refreshTracker()])
+    select(res.key)
+  } catch (err: any) {
+    toast.add({ title: 'Could not start the plan review', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
   } finally {
     rerunning.value = false
   }
@@ -267,6 +347,72 @@ async function postToPr() {
   }
 }
 
+// ── Send back — a review in a graph, after a build ──
+// The picked finding tickets become normal AFK bug tickets on the build before
+// this review (findings/send-back); each finding ticket records the ticket it
+// became, so a second press files nothing. Offered only where the graph puts
+// a build directly before this project. The rows are the board's finding
+// tickets, not one review's: a finding outlives the run that raised it.
+interface SendBackProject { id: string; key: string; title: string; url: string }
+const { data: sendBackData, refresh: refreshSendBack } = useFetch<{ offered: boolean; why: string; target: SendBackProject | null; candidates: SendBackProject[]; ticketType: string }>(
+  () => `/api/projects/${props.project.id}/findings/send-back`,
+  { lazy: true, server: false, immediate: props.project.mode === 'prreview' || props.project.mode === 'planreview' },
+)
+const sendBack = computed(() => (sendBackData.value?.offered ? sendBackData.value : null))
+// Several builds lead in and none is the reviewed PR's: the human picks.
+const sendBackTo = ref('')
+const sendBackTarget = computed(() => sendBack.value?.target ?? sendBack.value?.candidates.find((c) => c.key === sendBackTo.value) ?? null)
+const ticketById = computed(() => new Map(tickets.value.map((t) => [t.id, t])))
+/** The ticket a finding ticket became on the build, when it was sent back and that ticket is still there. */
+const sentBackTicket = (findingTicket: { sentBack?: { ticketId: string } | null } | null | undefined) =>
+  (findingTicket?.sentBack ? ticketById.value.get(findingTicket.sentBack.ticketId) : undefined) ?? null
+const sendBackRows = computed(() =>
+  tickets.value
+    .filter((t) => t.projectId === props.project.id && isFindingTicket(t))
+    .map((t) => ({ ticket: t, fix: sentBackTicket(t) })),
+)
+const sendBackOpen = ref(false)
+const sendBackPicked = ref(new Set<string>())
+const sendingBack = ref(false)
+function openSendBack() {
+  // In-scope, still-open findings not sent yet start ticked.
+  sendBackPicked.value = new Set(
+    sendBackRows.value.filter((r) => !r.fix && r.ticket.finding?.scope !== 'out' && !isFinished(r.ticket.status)).map((r) => r.ticket.key),
+  )
+  sendBackTo.value = ''
+  sendBackOpen.value = true
+}
+function toggleSendBack(key: string, on: boolean) {
+  const next = new Set(sendBackPicked.value)
+  if (on) next.add(key)
+  else next.delete(key)
+  sendBackPicked.value = next
+}
+async function sendFindingsBack() {
+  if (!sendBackTarget.value) return
+  sendingBack.value = true
+  try {
+    const res = await $fetch<{ target: SendBackProject; sent: { key: string; ticketKey: string }[]; already: unknown[]; refused: { key: string; why: string }[] }>(
+      `/api/projects/${props.project.id}/findings/send-back`,
+      { method: 'POST', body: { ticketKeys: [...sendBackPicked.value], to: sendBackTarget.value.key } },
+    )
+    sendBackOpen.value = false
+    const skipped = [res.already.length ? `${res.already.length} already sent` : '', res.refused.length ? `${res.refused.length} refused (${res.refused.map((r) => r.key).join(', ')})` : ''].filter(Boolean).join(' · ')
+    toast.add({
+      title: `Sent ${res.sent.length} finding${res.sent.length === 1 ? '' : 's'} back to ${res.target.key}`,
+      description: [res.sent.map((s) => s.ticketKey).join(', '), skipped].filter(Boolean).join(' — '),
+      color: res.sent.length ? 'success' : 'warning',
+      icon: 'i-lucide-undo-2',
+      actions: [{ label: `Open ${res.target.key}`, onClick: () => { router.push(res.target.url) } }],
+    })
+  } catch (err: any) {
+    toast.add({ title: 'Could not send the findings back', description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    sendingBack.value = false
+    await Promise.all([refreshSendBack(), refreshTracker()])
+  }
+}
+
 // ── Reports, opened inline ──
 const reportOpen = ref(false)
 const reportTitle = ref('')
@@ -319,7 +465,7 @@ const severityCounts = computed(() => {
   <section class="space-y-4">
     <!-- No repo -->
     <div
-      v-if="!project.repo.trim()"
+      v-if="!project.repo.trim() && !isPlanReview"
       class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-default py-10 text-center"
     >
       <UIcon name="i-lucide-scan-search" class="size-7 text-muted" />
@@ -331,29 +477,92 @@ const severityCounts = computed(() => {
     </div>
 
     <template v-else>
-      <!-- A PR review project: its reviews come from its review plan -->
-      <div v-if="isPrReview" class="flex flex-wrap items-center gap-3 rounded-lg border border-default px-3 py-3">
-        <UIcon name="i-lucide-git-pull-request" class="size-5 shrink-0 text-muted" />
-        <div class="min-w-0 flex-1">
-          <a :href="project.prReview!.pr.url" target="_blank" class="truncate text-sm font-medium hover:underline">
-            #{{ project.prReview!.pr.number }} {{ project.prReview!.pr.title }}
-          </a>
-          <p class="text-xs text-muted">
-            <template v-if="prRunLive">Run {{ prRun!.n }} is {{ prRun!.status }} — follow it in Review setup.</template>
-            <template v-else-if="!project.prReview!.plan">Not assessed yet — Assess it in Review setup first.</template>
-            <template v-else>Reviews run from the review plan in Review setup. Rerun re-fetches the PR head and runs the plan again.</template>
-          </p>
+      <!-- A PR review project: start (or rerun) its PR's review -->
+      <div v-if="isPrReview" class="rounded-lg border border-default px-3 py-3">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="flex min-w-0 flex-1 items-center gap-3 self-center">
+            <UIcon name="i-lucide-git-pull-request" class="size-5 shrink-0 text-muted" />
+            <div class="min-w-0">
+              <a :href="project.prReview!.pr.url" target="_blank" class="block truncate text-sm font-medium hover:underline">
+                #{{ project.prReview!.pr.number }} {{ project.prReview!.pr.title }}
+              </a>
+              <p class="truncate text-xs text-muted">
+                <span class="font-mono">{{ project.prReview!.pr.headRefName }} → {{ project.prReview!.pr.baseRefName }}</span>
+                <template v-if="project.prReview!.pr.author"> · {{ project.prReview!.pr.author }}</template>
+                <template v-if="prRuns.length"> · {{ prRuns.length }} review{{ prRuns.length === 1 ? '' : 's' }} so far</template>
+              </p>
+            </div>
+          </div>
+          <UFormField label="Reviewers" class="w-36">
+            <USelect v-model="prReviewers" :items="PR_REVIEWER_ITEMS" value-key="value" :disabled="prRunLive" class="w-full" />
+          </UFormField>
+          <UButton
+            :icon="prRuns.length ? 'i-lucide-refresh-cw' : 'i-lucide-scan-search'"
+            :loading="rerunning"
+            :disabled="prRunLive || !herdrUp || listData?.available === false"
+            @click="startPrReview"
+          >
+            {{ prRuns.length ? 'Rerun review' : 'Start review' }}
+          </UButton>
         </div>
-        <UButton :to="{ query: { tab: 'review-setup' } }" icon="i-lucide-list-checks" size="sm" color="neutral" variant="ghost">Review setup</UButton>
-        <UButton
-          icon="i-lucide-refresh-cw"
-          size="sm"
-          :loading="rerunning"
-          :disabled="prRunLive || !project.prReview!.plan || !!project.prReview!.assessing || !herdrUp"
-          @click="rerunReview"
-        >
-          {{ project.prReview!.runs.length ? 'Rerun review' : 'Start review' }}
-        </UButton>
+        <p class="mt-2 text-xs text-muted">
+          <template v-if="prRunLive">A review is out — the reviewers and the consensus session are in herdr; follow it below.</template>
+          <template v-else>
+            The PR head is re-fetched, then each reviewer runs as an Opus session in herdr over the PR's diff. A consensus
+            session keeps only what every reviewer raised, verifies each finding, and writes the verdict and the summary —
+            the findings land on this board as record-only tickets, and <strong>Post to PR</strong> sends the ones you pick.
+          </template>
+          <span v-if="!herdrUp" class="text-warning"> herdr isn't running — start it first, or the reviewers can't be dispatched.</span>
+        </p>
+      </div>
+
+      <!-- A plan review project: pick its plan, then start (or rerun) its review -->
+      <div v-else-if="isPlanReview" class="rounded-lg border border-default px-3 py-3">
+        <div v-if="needsPlan || !reviewedPlan" class="flex flex-wrap items-end gap-3">
+          <UFormField
+            label="Plan to review"
+            :hint="needsPlan ? 'none picked yet' : 'its plan is gone'"
+            class="min-w-64 flex-1"
+          >
+            <USelect v-model="pickedPlan" :items="planItems" value-key="value" placeholder="Pick a plan project" class="w-full" />
+          </UFormField>
+          <UButton icon="i-lucide-compass" :loading="attachingPlan" :disabled="!pickedPlan" @click="attachPlan">Review this plan</UButton>
+        </div>
+        <div v-else class="flex flex-wrap items-end gap-3">
+          <div class="flex min-w-0 flex-1 items-center gap-3 self-center">
+            <UIcon name="i-lucide-compass" class="size-5 shrink-0 text-muted" />
+            <div class="min-w-0">
+              <NuxtLink :to="`/projects/${reviewedPlan.key}?tab=ticket-plan`" class="block truncate text-sm font-medium hover:underline">
+                {{ reviewedPlan.key }} {{ reviewedPlan.title }}
+              </NuxtLink>
+              <p class="truncate text-xs text-muted">
+                its spec and ticket plan
+                <template v-if="planRuns.length"> · {{ planRuns.length }} review{{ planRuns.length === 1 ? '' : 's' }} so far</template>
+              </p>
+            </div>
+          </div>
+          <UFormField label="Reviewers" class="w-36">
+            <USelect v-model="prReviewers" :items="PR_REVIEWER_ITEMS" value-key="value" :disabled="planRunLive" class="w-full" />
+          </UFormField>
+          <UButton
+            :icon="planRuns.length ? 'i-lucide-refresh-cw' : 'i-lucide-scan-search'"
+            :loading="rerunning"
+            :disabled="planRunLive || !herdrUp || listData?.available === false"
+            @click="startPlanReview"
+          >
+            {{ planRuns.length ? 'Rerun review' : 'Start review' }}
+          </UButton>
+        </div>
+        <p class="mt-2 text-xs text-muted">
+          <template v-if="planRunLive">A review is out — the reviewers and the consensus session are in herdr; follow it below.</template>
+          <template v-else>
+            Each reviewer runs as an Opus session in herdr and reads the plan — its map, decisions, spec and ticket plan — and
+            the code it will change, read-only. There is no diff. A consensus session keeps only what every reviewer raised,
+            verifies each finding and judges whether the builds can run as planned; the findings land on this board as
+            record-only tickets, and <strong>Send back</strong> makes the ones you pick decision tickets on the plan.
+          </template>
+          <span v-if="!herdrUp" class="text-warning"> herdr isn't running — start it first, or the reviewers can't be dispatched.</span>
+        </p>
       </div>
 
       <!-- Start a review -->
@@ -404,9 +613,16 @@ const severityCounts = computed(() => {
 
       <div v-else-if="listPending && !listData" class="py-8 text-center text-sm text-muted">Loading reviews…</div>
 
-      <p v-else-if="!reviews.length" class="rounded-lg border border-dashed border-default py-8 text-center text-sm text-muted">
-        No reviews for {{ project.key }} yet.
-      </p>
+      <div v-else-if="!reviews.length" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-default py-8 text-center text-sm text-muted">
+        <p>No reviews for {{ project.key }} yet.</p>
+        <!-- Finding tickets with no review record (filed by hand, or the review was forgotten) can still go back. -->
+        <p v-if="sendBack && sendBackRows.length" class="flex flex-wrap items-center justify-center gap-2">
+          {{ sendBackRows.length }} finding ticket{{ sendBackRows.length === 1 ? '' : 's' }} on this board.
+          <UButton icon="i-lucide-undo-2" size="sm" color="neutral" variant="soft" @click="openSendBack">
+            Send back<template v-if="sendBack.target"> to {{ sendBack.target.key }}</template>
+          </UButton>
+        </p>
+      </div>
 
       <div v-else class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <!-- Reviews, newest first -->
@@ -425,7 +641,7 @@ const severityCounts = computed(() => {
                 name="i-lucide-loader-circle"
                 class="size-3.5 shrink-0 animate-spin text-primary"
               />
-              <span class="min-w-0 flex-1 truncate font-mono text-xs">{{ r.branch }}</span>
+              <span class="min-w-0 flex-1 truncate font-mono text-xs">{{ r.subject ? `plan ${r.subject.projectKey}` : r.branch }}</span>
               <UBadge :color="STATUS_BADGE[r.status].color" variant="subtle" size="sm">{{ STATUS_BADGE[r.status].label }}</UBadge>
             </div>
             <p class="mt-0.5 flex gap-2 text-xs text-muted">
@@ -459,7 +675,7 @@ const severityCounts = computed(() => {
                   </UBadge>
                 </p>
                 <p class="mt-0.5 truncate text-xs text-muted">
-                  <span class="font-mono">{{ review.base.length === 40 ? review.base.slice(0, 10) : review.base }}...{{ review.branch }}</span>
+                  <span class="font-mono">{{ reviewTargetLabel(review) }}</span>
                   <template v-if="review.pr"> · <a :href="review.pr.url" target="_blank" class="hover:underline">PR #{{ review.pr.number }}</a></template>
                   <template v-if="review.worktree"> · in a worktree</template>
                   · {{ agoLabel(review.createdAt, now) }}
@@ -678,6 +894,17 @@ const severityCounts = computed(() => {
                     Post to PR #{{ review.pr!.number }}
                   </UButton>
                   <UButton
+                    v-if="sendBack && sendBackRows.length"
+                    icon="i-lucide-undo-2"
+                    size="sm"
+                    color="neutral"
+                    variant="soft"
+                    :class="canPost ? '' : 'ml-auto'"
+                    @click="openSendBack"
+                  >
+                    Send back<template v-if="sendBack.target"> to {{ sendBack.target.key }}</template>
+                  </UButton>
+                  <UButton
                     v-if="canAdd && openFindings.length"
                     icon="i-lucide-ticket-plus"
                     size="sm"
@@ -697,9 +924,10 @@ const severityCounts = computed(() => {
                     v-for="f in review.findings"
                     :key="f.id"
                     :finding="f"
-                    :selectable="canAdd && !f.ticketKey"
+                    :selectable="canAdd && openIds.has(f.id)"
                     :selected="!deselected.has(f.id)"
                     :ticket="f.ticketKey ? ticketByKey.get(f.ticketKey) : null"
+                    :sent-back="f.ticketKey ? sentBackTicket(ticketByKey.get(f.ticketKey)) : null"
                     @update:selected="setPicked(f.id, $event)"
                   />
                 </div>
@@ -751,6 +979,7 @@ const severityCounts = computed(() => {
           <p v-if="unticketedCount" class="text-xs text-muted">
             {{ unticketedCount }} finding{{ unticketedCount === 1 ? ' isn’t a ticket' : 's aren’t tickets' }} yet —
             <template v-if="review.agreement">this review ran before findings were filed as tickets; rerun it to file and post {{ unticketedCount === 1 ? 'it' : 'them' }}.</template>
+            <template v-else-if="!openFindings.length">this review was split before findings recorded their tickets, so {{ unticketedCount === 1 ? 'it' : 'they' }} can’t be posted from here.</template>
             <template v-else>add {{ unticketedCount === 1 ? 'it' : 'them' }} to {{ project.key }} first to post {{ unticketedCount === 1 ? 'it' : 'them' }}.</template>
           </p>
           <p v-if="review.prPosts?.length" class="text-xs text-muted">
@@ -771,6 +1000,87 @@ const severityCounts = computed(() => {
             @click="postToPr"
           >
             Post as comment
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <!-- Send back: picked findings become fix tickets on the build before this review -->
+    <UModal v-model:open="sendBackOpen" :title="sendBackTarget ? `Send back to ${sendBackTarget.key}` : 'Send back'" :ui="{ content: 'sm:max-w-3xl' }">
+      <template #body>
+        <div v-if="sendBack" class="space-y-3">
+          <p class="text-xs text-muted">
+            <template v-if="sendBack.ticketType === 'decision'">
+              Each finding you pick becomes a HITL decision ticket on the plan — its title, description and a link back here —
+              to settle like any other decision there, then revise the spec and the ticket plan. The finding stays on this board
+              and shows that ticket's status. A finding already sent back isn't sent again. Then rerun the review.
+            </template>
+            <template v-else>
+              Each finding you pick becomes an AFK bug ticket on the build — its title, description, file and line, and a link
+              back here — ready to run like any other ticket. The finding stays on this board and shows that ticket's status.
+              A finding already sent back isn't sent again. Then rerun the review.
+            </template>
+          </p>
+          <UFormField v-if="!sendBack.target" label="Send to" :hint="sendBack.why">
+            <USelect
+              v-model="sendBackTo"
+              :items="sendBack.candidates.map((c) => ({ label: `${c.key} · ${c.title}`, value: c.key }))"
+              value-key="value"
+              placeholder="Pick the build"
+              class="w-full"
+            />
+          </UFormField>
+          <p v-else class="text-sm">
+            To <NuxtLink :to="sendBack.target.url" class="font-mono hover:underline">{{ sendBack.target.key }}</NuxtLink> · {{ sendBack.target.title }}
+          </p>
+          <div class="space-y-1">
+            <p class="text-xs font-semibold text-muted">Finding tickets · {{ sendBackPicked.size }} of {{ sendBackRows.length }}</p>
+            <label
+              v-for="r in sendBackRows"
+              :key="r.ticket.key"
+              class="flex items-start gap-2 rounded-md border border-default px-2.5 py-1.5 text-sm"
+              :class="[r.fix ? 'cursor-default' : 'cursor-pointer', r.fix || !sendBackPicked.has(r.ticket.key) ? 'opacity-60' : '']"
+            >
+              <UCheckbox
+                :model-value="!r.fix && sendBackPicked.has(r.ticket.key)"
+                :disabled="!!r.fix"
+                class="mt-0.5"
+                @update:model-value="toggleSendBack(r.ticket.key, !!$event)"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="flex items-center gap-2">
+                  <span class="shrink-0 font-mono text-xs text-muted">{{ r.ticket.key }}</span>
+                  <span class="min-w-0 flex-1 font-medium">
+                    <template v-if="r.ticket.finding">[{{ r.ticket.finding.severity }}] </template>{{ r.ticket.title }}
+                  </span>
+                  <UBadge :color="STATUS_META[r.ticket.status].color" variant="subtle" size="sm" class="shrink-0">
+                    {{ STATUS_META[r.ticket.status].label }}
+                  </UBadge>
+                </span>
+                <span class="block text-xs text-dimmed">
+                  <template v-if="r.ticket.finding?.file"><span class="font-mono">{{ r.ticket.finding.file }}<template v-if="r.ticket.finding.line">:{{ r.ticket.finding.line }}</template></span></template>
+                  <template v-else>not pinned to a file</template>
+                  <template v-if="r.ticket.finding?.scope === 'out'"> · pre-existing</template>
+                  <template v-if="r.fix">
+                    · sent back as <NuxtLink :to="`/tickets/${r.fix.key}`" class="font-mono hover:underline">{{ r.fix.key }}</NuxtLink>
+                    ({{ STATUS_META[r.fix.status].label }})
+                  </template>
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" @click="sendBackOpen = false">Cancel</UButton>
+          <UButton
+            icon="i-lucide-undo-2"
+            :loading="sendingBack"
+            :disabled="!sendBackPicked.size || !sendBackTarget"
+            @click="sendFindingsBack"
+          >
+            Send {{ sendBackPicked.size }} back
           </UButton>
         </div>
       </template>

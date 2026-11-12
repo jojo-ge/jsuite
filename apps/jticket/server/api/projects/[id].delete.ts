@@ -1,7 +1,7 @@
 export default defineEventHandler((event) => {
   const id = getRouterParam(event, 'id')
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   store.projects = store.projects.filter((p) => p.id !== project.id)
@@ -9,6 +9,8 @@ export default defineEventHandler((event) => {
   for (const t of store.tickets) {
     if (t.projectId === project.id) {
       t.projectId = null
+      // A ticket-plan draft leaves its plan as a plain backlog ticket.
+      t.plannedFor = null
       t.updatedAt = now()
     }
   }
@@ -21,6 +23,8 @@ export default defineEventHandler((event) => {
   // Local PRs are meaningless without their project's repo — drop the records
   // (branches on disk are untouched).
   store.prs = store.prs.filter((pr) => pr.projectId !== project.id)
+  // Its graph node stays, proposed again under the project's title.
+  detachProjectFromGraphs(store, project)
   saveStore(store)
   return { ok: true }
 })

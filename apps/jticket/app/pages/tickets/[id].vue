@@ -38,7 +38,6 @@ onMounted(async () => {
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
     <UContainer class="py-20">
       <div
         v-if="notFound"

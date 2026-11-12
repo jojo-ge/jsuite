@@ -51,10 +51,9 @@ export function useHerdrDispatch() {
       }),
   }))
 
-  // Which prompt a ticket fires is its project's mode plus, inside
-  // architect mode, its own label — see promptKindFor. Only standard mode
-  // consults the hand-off picker, which is why the picker is hidden on the
-  // other boards. Wayfinder, todo, architect, predeploy and PR-check hand-offs are
+  // Which prompt a ticket fires is its project's mode — see promptKindFor.
+  // Only standard mode consults the hand-off picker, which is why the picker
+  // is hidden on the other boards. Plan, todo and predeploy hand-offs are
   // the bare command: no PR target (a predeploy reproduction makes its own
   // throwaway worktree and tears it down again).
   function projectOf(t: Ticket) {
@@ -85,11 +84,12 @@ export function useHerdrDispatch() {
   // moment the prompt is handed off (copied or dispatched) — off the integration
   // branch, local only. A failed cut (no repo, no integration branch) still
   // hands off; the agent will be told to cut a branch itself via POST
-  // /api/prs's error. Wayfinder tickets never get branches — their
+  // /api/prs's error. Plan tickets never get branches — their
   // work is research/docs, not code; a predeploy ticket cuts none either — the
-  // reproduction lives and dies in its own worktree.
+  // reproduction lives and dies in its own worktree. Nor does a HITL decision
+  // ticket: its hand-off is a grilling, with nothing to commit.
   async function resolveBranch(t: Ticket, mode: ProjectMode): Promise<string> {
-    if (mode !== 'standard' || promptTarget.value !== 'local' || t.branch) return t.branch
+    if (mode !== 'standard' || promptTarget.value !== 'local' || t.branch || isDecisionGrilling(t)) return t.branch
     try {
       const res = await $fetch<{ branch: string }>(`/api/tickets/${t.id}/branch`, { method: 'POST', body: {} })
       return res.branch
@@ -130,18 +130,10 @@ export function useHerdrDispatch() {
   // tally failures; the single-ticket button wraps it with its own toasts.
   async function dispatchOne(t: Ticket, mode: ProjectMode) {
     const branch = await resolveBranch(t, mode)
-    const res = await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
+    return await $fetch<{ agent: string; tabId: string }>(`/api/tickets/${t.id}/herdr`, {
       method: 'POST',
       body: { prompt: commandFor(t, mode, branch), ownTab: isHitl(t) },
     })
-    // Sending a candidate to its grilling IS the triage decision, so the ticket
-    // finishes here, at dispatch — not when the interview ends (an abandoned
-    // grilling doesn't un-triage it, and re-grilling is just re-dispatching the
-    // done ticket). Best-effort: the dispatch already succeeded.
-    if (mode === 'architect' && isArchCandidate(t) && !isFinished(t.status)) {
-      await $fetch(`/api/tickets/${t.id}`, { method: 'PATCH', body: { status: 'done' } }).catch(() => {})
-    }
-    return res
   }
 
   async function dispatchTicket(t: Ticket, mode: ProjectMode) {
@@ -224,13 +216,6 @@ export function useHerdrDispatch() {
         method: 'POST',
         body: { prompt: batchPrompt(project, handoffs), tickets: rows.map((r) => r.ticket.key) },
       })
-      // Same rule as dispatchOne: sending a candidate to its grilling IS the
-      // triage decision. Best-effort — the dispatch already succeeded.
-      for (const { ticket, mode } of rows) {
-        if (mode === 'architect' && isArchCandidate(ticket) && !isFinished(ticket.status)) {
-          await $fetch(`/api/tickets/${ticket.id}`, { method: 'PATCH', body: { status: 'done' } }).catch(() => {})
-        }
-      }
       toast.add({
         title: `${rows.length} ${project.key} tickets in one herdr session`,
         description: `Agent ${res.agent} works ${handoffs.map((h) => h.key).join(', ')} in that order — use the tab chip to go watch it.`,

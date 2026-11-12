@@ -4,7 +4,7 @@ export default defineEventHandler((event) => {
   const ref = getRouterParam(event, 'id')!
   const pullId = getRouterParam(event, 'pullId')!
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === ref || p.key === ref)
+  const project = findByRef(store.projects, ref)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   const pull = useSyncPuller().get(pullId)
   if (!pull || pull.projectId !== project.id) {

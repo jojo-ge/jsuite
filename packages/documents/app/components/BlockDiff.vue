@@ -58,9 +58,9 @@ const commentaryHtml = computed(() => render(props.block.commentary))
       <span class="font-mono text-xs text-muted">{{ block.file }}</span>
     </figcaption>
 
-    <div class="overflow-x-auto bg-default py-3 font-mono text-[13px] leading-relaxed">
+    <div class="overflow-x-auto bg-default py-3 font-mono text-[13px] leading-relaxed print:overflow-visible">
       <template v-for="(line, i) in lines" :key="i">
-        <div class="whitespace-pre px-4" :class="kindClass[line.kind]">{{ line.text }}&#8203;</div>
+        <div class="whitespace-pre px-4 print:whitespace-pre-wrap print:[overflow-wrap:anywhere]" :class="kindClass[line.kind]">{{ line.text }}&#8203;</div>
         <div v-for="(md, k) in line.annotations" :key="`a${k}`" class="my-1.5 px-4">
           <div class="flex min-w-0 gap-2 rounded-lg border border-primary/25 bg-primary/5 px-3 py-1.5 font-sans">
             <UIcon name="i-lucide-corner-left-up" class="mt-1 size-3.5 shrink-0 text-primary" />

@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
 import { mediaDir } from './media'
+import { cleanTags, matchDocument, tagCounts, type TagCount } from '../../tags'
 import type { Block, Explainer, DocNote, DocNotes, ExplainerMeta } from '../../types'
 
 // The shared document pool: one document per pretty-printed file in
@@ -91,7 +92,29 @@ export async function writeDocNotes(key: string, notes: DocNotes): Promise<void>
   await writeFile(docNotesPath(key), JSON.stringify(notes, null, 2) + '\n', 'utf8')
 }
 
-export async function listDocs(): Promise<ExplainerMeta[]> {
+/**
+ * Set a document's tags without republishing it. `updatedAt` is left alone:
+ * tagging is filing, not a revision, and must not reshuffle the library.
+ */
+export async function setDocTags(key: string, tags: unknown): Promise<Explainer | null> {
+  const doc = await readDoc(key)
+  if (!doc) return null
+  doc.tags = cleanTags(tags)
+  await writeDoc(key, doc)
+  return doc
+}
+
+/** The vocabulary: every tag in use across the pool, most used first. */
+export async function listDocTags(): Promise<TagCount[]> {
+  return tagCounts(await listDocs())
+}
+
+/**
+ * Every document in the pool, most recently updated first. With `q`, only the
+ * ones whose title, subtitle, kicker, key, tags or block text contain every
+ * word of it — a body-only hit carries a `snippet`.
+ */
+export async function listDocs(opts: { q?: unknown } = {}): Promise<ExplainerMeta[]> {
   const files = (await readdir(DATA_DIR)).filter((f) => f.endsWith('.json') && !f.endsWith('.notes.json'))
   const out: ExplainerMeta[] = []
   for (const f of files) {
@@ -99,6 +122,8 @@ export async function listDocs(): Promise<ExplainerMeta[]> {
     try {
       const doc = JSON.parse(await readFile(join(DATA_DIR, f), 'utf8')) as Explainer
       if (doc.format !== 'j-explain') continue
+      const match = matchDocument({ ...doc, key }, opts.q)
+      if (!match) continue
       const { notes } = await readDocNotes(key)
       const blocks = Array.isArray(doc.blocks) ? doc.blocks : []
       out.push({
@@ -111,6 +136,8 @@ export async function listDocs(): Promise<ExplainerMeta[]> {
         blockCount: blocks.length,
         chartCount: blocks.filter((b) => b.type === 'chart').length,
         noteCount: notes.filter((n) => (n.text || '').trim()).length,
+        tags: cleanTags(doc.tags),
+        ...(match.snippet ? { snippet: match.snippet } : {}),
       })
     } catch {
       // An unparseable file just doesn't appear in the list.

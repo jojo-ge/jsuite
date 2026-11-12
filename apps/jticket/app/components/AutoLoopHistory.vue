@@ -3,6 +3,7 @@
 // Reads project.auto.history, which the server's loop appends to as each loop
 // ends; the live loop itself is <AutoLoopPanel>'s.
 import type { Project } from '~/composables/useTracker'
+import { localStamp } from '~/composables/useTracker'
 
 const props = defineProps<{ project: Project }>()
 
@@ -39,7 +40,7 @@ const history = computed(() => [...(props.project.auto?.history ?? [])].reverse(
       <NuxtLink v-else-if="h.reviewKey" :to="reviewPath(h.reviewKey)" class="text-primary hover:underline">
         review
       </NuxtLink>
-      <span class="ml-auto text-xs text-dimmed">{{ new Date(h.endedAt).toLocaleString() }}</span>
+      <span class="ml-auto text-xs text-dimmed">{{ localStamp(h.endedAt) }}</span>
     </li>
   </ul>
 </template>

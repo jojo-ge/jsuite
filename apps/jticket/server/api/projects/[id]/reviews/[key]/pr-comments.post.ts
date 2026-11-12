@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = (await readBody<{ ticketKeys?: string[]; findingIds?: string[]; body?: string }>(event)) ?? {}
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   const review = await projectReview(project.key, String(getRouterParam(event, 'key')))
   return postReviewToPr(review.key, {

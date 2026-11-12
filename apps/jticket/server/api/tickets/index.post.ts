@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   let projectId: string | null = null
   let share: ProjectShare | null = null
   if (body.projectId) {
-    const project = store.projects.find((p) => p.id === body.projectId || p.key === body.projectId)
+    const project = findByRef(store.projects, body.projectId)
     if (!project) throw createError({ statusCode: 400, statusMessage: `unknown project: ${body.projectId}` })
     projectId = project.id
     share = project.share
@@ -17,6 +17,8 @@ export default defineEventHandler(async (event) => {
 
   // Resolve blockedBy refs (ids or keys) to ticket ids.
   const blockedBy = resolveTicketRefs(store, body.blockedBy ?? [])
+  // A ticket-plan draft: the build node it is planned for (ticketPlan.ts) — checked, 400 when it has nowhere to go.
+  const plannedFor = resolvePlannedFor(store, projectId, body.plannedFor)
 
   // Type + tags: a legacy 'AFK' | 'HITL' type or wayfinder:<sub-type> label is
   // folded in; no type at all takes what the labels or project mode imply.
@@ -55,6 +57,7 @@ export default defineEventHandler(async (event) => {
     ...entityOwnership(share),
     transfer: '',
     transferAt: '',
+    plannedFor,
     createdAt: ts,
     updatedAt: ts,
   }

@@ -54,19 +54,21 @@ import {
   type HerdrPaneSeen,
 } from '../../app/utils/autoLoop'
 import type { Project, Store, Ticket } from './store'
+import { findByRef } from './ids'
 import { readReview, sanitizeReviewKey } from './reviewStore'
 import { createReview, type CreateReviewInput } from './reviewActions'
 import type { SessionMeta } from './herdrDispatch'
 import { outcomeReportPrompt } from './outcomeReport'
 import { sliceReportPrompt } from './sliceReport'
-import { outcomeDocOf } from '../../app/utils/projectGraphs'
+import { outcomeDocOf } from '../../app/utils/graphs'
+import { projectTypeNoun } from '../../app/utils/projectType'
 import { planProblems, type Effort, type PlanModel, type PlanProblem, type PlanTicket, type RunPlan } from '../../app/utils/runPlan'
 
 /** Consensus reviews are two reviewers: a finding both raise is worth a fix ticket. */
 export const AUTO_REVIEWERS = 2
 
 function findProject(store: Store, projectId: string) {
-  return store.projects.find((p) => p.id === projectId || p.key === projectId)
+  return findByRef(store.projects, projectId)
 }
 
 /**
@@ -790,7 +792,7 @@ export function recordSliceReport(store: Store, project: Project, raw: any): Aut
   }
   if (auto.slicedAt) return auto
   const ref = typeof raw?.doc === 'string' ? raw.doc.trim() : ''
-  const doc = store.docs.find((d) => d.key === ref || d.id === ref)
+  const doc = findByRef(store.docs, ref)
   if (!doc) throw createError({ statusCode: 400, statusMessage: `unknown doc: ${ref || '(none given)'} — send {"doc": "DOC-n"}` })
   if (doc.projectId !== project.id) throw createError({ statusCode: 400, statusMessage: `${doc.key} is not one of ${project.key}'s docs` })
   const at = now()
@@ -815,7 +817,7 @@ export function recordOutcomeReport(store: Store, project: Project, raw: any): A
   }
   if (auto.reportedAt) return auto
   const ref = typeof raw?.doc === 'string' ? raw.doc.trim() : ''
-  const doc = store.docs.find((d) => d.key === ref || d.id === ref)
+  const doc = findByRef(store.docs, ref)
   if (!doc) throw createError({ statusCode: 400, statusMessage: `unknown doc: ${ref || '(none given)'} — send {"doc": "DOC-n"}` })
   if (doc.projectId !== project.id) throw createError({ statusCode: 400, statusMessage: `${doc.key} is not one of ${project.key}'s docs` })
   const at = now()
@@ -1290,7 +1292,7 @@ export function saveRunPlan(store: Store, project: Project, plan: RunPlan): { pl
 
 /** Why a project can't go into auto mode — null when it can. */
 export function autoModeBlocker(store: Store, project: Project): string | null {
-  if (project.mode !== 'standard') return `auto mode drives standard projects — ${project.key} is a ${project.mode} project`
+  if (project.mode !== 'standard') return `auto mode drives build projects — ${project.key} is a ${projectTypeNoun(project.mode)} project`
   if (!project.repo.trim()) return `${project.key} has no repo — set one on the project first`
   if (!project.integrationBranch.trim()) return `${project.key} has no integration branch — cut one first; every loop merges into it`
   if (project.share && project.share.side !== 'creator') return `${project.key} is shared with you — only its creator's side can run it in auto mode`

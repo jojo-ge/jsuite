@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { authorChips, filterPrs, filterPrsExceptAuthor, NO_FILTERS, projectsByPr, verdictBadge, type OpenPr } from '../app/utils/prList'
+import {
+  authorChips,
+  DEFAULT_PR_QUERY,
+  filterByAuthors,
+  mergePrPages,
+  parsePrQuery,
+  projectsByPr,
+  prQueryParams,
+  prSearchQuery,
+  verdictBadge,
+  type OpenPr,
+  type PrQuery,
+} from '../app/utils/prList'
 
 const pr = (number: number, over: Partial<OpenPr> = {}): OpenPr => ({
   number,
@@ -22,27 +34,57 @@ const prs = [
   pr(5, { author: { login: 'bob' } }),
 ]
 const nums = (list: OpenPr[]) => list.map((p) => p.number)
+const q = (over: Partial<PrQuery> = {}): PrQuery => ({ ...DEFAULT_PR_QUERY, ...over })
 
-describe('filterPrs', () => {
-  it('keeps everything with no filters', () => {
-    expect(nums(filterPrs(prs, NO_FILTERS, 'me'))).toEqual([1, 2, 3, 4, 5])
+describe('prSearchQuery', () => {
+  it('leaves drafts out by default, newest update first', () => {
+    expect(prSearchQuery('o/r', DEFAULT_PR_QUERY)).toBe('repo:o/r is:pr is:open draft:false sort:updated-desc')
   })
-  it('hides drafts', () => {
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, hideDrafts: true }, 'me'))).toEqual([2, 3, 4, 5])
+  it('includes drafts when asked', () => {
+    expect(prSearchQuery('o/r', q({ hideDrafts: false }))).toBe('repo:o/r is:pr is:open sort:updated-desc')
   })
-  it('only mine needs a viewer', () => {
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, onlyMine: true }, 'me'))).toEqual([2])
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, onlyMine: true }, ''))).toEqual([])
+  it('only mine is the author qualifier', () => {
+    expect(prSearchQuery('o/r', q({ onlyMine: true }))).toContain(' author:@me ')
   })
-  it("i'm reviewing and team reviewing each narrow, and widen each other", () => {
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, imReviewing: true }, 'me'))).toEqual([3])
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, teamReviewing: true }, 'me'))).toEqual([4])
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, imReviewing: true, teamReviewing: true }, 'me'))).toEqual([3, 4])
+  it("i'm reviewing is a direct request; my team widens it to me or my teams", () => {
+    expect(prSearchQuery('o/r', q({ imReviewing: true }))).toContain(' user-review-requested:@me ')
+    expect(prSearchQuery('o/r', q({ teamReviewing: true }))).toContain(' review-requested:@me ')
+    const both = prSearchQuery('o/r', q({ imReviewing: true, teamReviewing: true }))
+    expect(both).toContain(' review-requested:@me ')
+    expect(both).not.toContain('user-review-requested')
   })
-  it('filters by author, on top of the rest', () => {
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, authors: ['bob'] }, 'me'))).toEqual([4, 5])
-    expect(nums(filterPrs(prs, { ...NO_FILTERS, authors: ['bob'], teamReviewing: true }, 'me'))).toEqual([4])
-    expect(nums(filterPrsExceptAuthor(prs, { ...NO_FILTERS, authors: ['bob'] }, 'me'))).toHaveLength(5)
+})
+
+describe('prQueryParams / parsePrQuery', () => {
+  it('the default search sends nothing, and nothing parses back to it', () => {
+    expect(prQueryParams(DEFAULT_PR_QUERY)).toEqual({})
+    expect(parsePrQuery({})).toEqual(DEFAULT_PR_QUERY)
+  })
+  it('round-trips every filter', () => {
+    for (const query of [q({ hideDrafts: false }), q({ onlyMine: true }), q({ imReviewing: true }), q({ hideDrafts: false, onlyMine: true, teamReviewing: true })]) {
+      expect(parsePrQuery(prQueryParams(query))).toEqual(query)
+    }
+  })
+  it('both reviewing filters travel as the wider one', () => {
+    expect(prQueryParams(q({ imReviewing: true, teamReviewing: true }))).toEqual({ reviewing: 'team' })
+  })
+})
+
+describe('mergePrPages', () => {
+  it('joins pages in order and keeps the first sighting of a PR that moved', () => {
+    expect(nums(mergePrPages([[pr(1), pr(2)], [pr(2, { title: 'later copy' }), pr(3)]]))).toEqual([1, 2, 3])
+    expect(mergePrPages([[pr(2)], [pr(2, { title: 'later copy' })]])[0]!.title).toBe('PR 2')
+    expect(mergePrPages([])).toEqual([])
+  })
+})
+
+describe('filterByAuthors', () => {
+  it('an empty selection is everyone', () => {
+    expect(nums(filterByAuthors(prs, []))).toEqual([1, 2, 3, 4, 5])
+  })
+  it('keeps only the selected authors', () => {
+    expect(nums(filterByAuthors(prs, ['bob']))).toEqual([4, 5])
+    expect(nums(filterByAuthors(prs, ['bob', 'me']))).toEqual([2, 4, 5])
   })
 })
 

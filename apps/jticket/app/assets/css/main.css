@@ -5,27 +5,19 @@
    renderers, DocumentArticle, NotesRail live outside this app's source tree). */
 @source "../../../../../packages/documents/app";
 
-/* The brand periwinkle, anchored at 400 — the exact bar colour in the jTicket
-   mark (favicon.svg / <AppLogo>) — so the app's primary and its icon are the
-   same blue. */
-@theme static {
-  --color-periwinkle-50: #f0f2ff;
-  --color-periwinkle-100: #e0e4ff;
-  --color-periwinkle-200: #c2caff;
-  --color-periwinkle-300: #a8b4ff;
-  --color-periwinkle-400: #8b9bff;
-  --color-periwinkle-500: #677bf9;
-  --color-periwinkle-600: #495fe9;
-  --color-periwinkle-700: #3046d5;
-  --color-periwinkle-800: #2d3ea9;
-  --color-periwinkle-900: #2b3788;
-  --color-periwinkle-950: #1f2651;
-  /* The mark's plate — the dark square the bars sit on. */
-  --color-jticket-ink: #12141d;
+/* Ink — colour only means status. The primary is not a hue: it is the ink
+   itself (near-black on light, near-white on dark, set on --ui-primary below),
+   so the only colours on a page are the ones that say something — success,
+   info, warning, error. Geist and Geist Mono are fetched and self-hosted by
+   @nuxt/fonts (Nuxt UI turns it on). */
+@theme {
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 :root {
-  --ui-radius: 0.5rem;
+  --ui-radius: 0.25rem;
+  --ui-primary: var(--ui-color-neutral-900);
   /* Analytics colours (see app/utils/analyticsFormat.ts and the Analytics
      views). Phases are categorical: a fixed slot each, never cycled. Wait is
      not work, so it is the de-emphasis gray. Light steps here, dark below. */
@@ -41,6 +33,13 @@
   --jt-viz-grid: color-mix(in oklab, var(--ui-text-dimmed) 25%, transparent);
 }
 .dark {
+  --ui-primary: var(--ui-color-neutral-50);
+  /* One step darker than Nuxt UI's dark ground, so cards and the sidebar sit
+     on ink rather than on grey. */
+  --ui-bg: var(--ui-color-neutral-950);
+  --ui-bg-muted: var(--ui-color-neutral-900);
+  --ui-bg-elevated: var(--ui-color-neutral-900);
+  --ui-bg-accented: var(--ui-color-neutral-800);
   --jt-phase-wait: #5f5e59;
   --jt-phase-research: #3987e5;
   --jt-phase-build: #d95926;
@@ -55,6 +54,18 @@ html,
 body,
 #__nuxt {
   height: 100%;
+}
+
+/* With an ink primary a text link can't be told from the text around it by
+   colour, so the links that only underlined on hover carry a quiet underline
+   at rest. (Prose links in documents already do — documents.css.) */
+a.text-primary.hover\:underline {
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+a.text-primary.hover\:underline:hover {
+  text-decoration-color: currentColor;
 }
 
 /* Live updates: a card whose ticket just moved under you (see useLiveTracker)

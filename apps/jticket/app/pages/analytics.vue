@@ -57,8 +57,6 @@ const spendByModel = computed(() => Object.entries(data.value?.spend.byModel ?? 
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="space-y-8 py-8">
       <div class="flex flex-wrap items-end gap-3">
         <div class="mr-auto">

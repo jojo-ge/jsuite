@@ -2,7 +2,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<{ author?: string; body?: string }>(event)
   const store = loadStore()
-  const ticket = store.tickets.find((t) => t.id === id || t.key === id)
+  const ticket = findByRef(store.tickets, id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
   if (!body?.body?.trim()) throw createError({ statusCode: 400, statusMessage: 'body is required' })
 

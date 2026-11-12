@@ -12,7 +12,6 @@ import {
   titleSimilarity,
   type FindingTicketRef,
 } from '../app/utils/reviewFindings'
-import { reviewPlanProblems } from '../app/utils/reviewPlan'
 import type { Finding } from '../app/utils/reviewTypes'
 
 // Every review belongs to a project and its findings are always tickets
@@ -65,15 +64,16 @@ describe('a review needs a project', () => {
 
 describe('the record-only dispatch rule', () => {
   const findingTicket = { key: 'TICK-9', labels: ['hitl', 'jreview', 'review:finding'] }
-  const check = { key: 'TICK-3', labels: ['afk', 'pr:check'] }
+  const note = { key: 'TICK-3', labels: ['afk'] }
 
   it('makes a finding ticket in a PR review project record-only', () => {
     expect(isRecordOnly(findingTicket, 'prreview')).toBe(true)
     expect(isRecordOnly({ labels: ['hitl'], finding: { review: 'r', id: 'f1' } }, 'prreview')).toBe(true)
   })
 
-  it('leaves check tickets dispatchable', () => {
-    expect(isRecordOnly(check, 'prreview')).toBe(false)
+  it('makes a ticket added by hand to a PR review project record-only too', () => {
+    // The pull request is someone else's: nothing on its project is work.
+    expect(isRecordOnly(note, 'prreview')).toBe(true)
   })
 
   it('leaves a finding ticket in any other project as work', () => {
@@ -84,22 +84,16 @@ describe('the record-only dispatch rule', () => {
 
   it('says why a dispatch is refused, and nothing when it is not', () => {
     expect(recordOnlyError(findingTicket, { key: 'PROJ-7', mode: 'prreview' })).toMatch(/TICK-9 is a review finding on PROJ-7.*never dispatched/)
-    expect(recordOnlyError(check, { key: 'PROJ-7', mode: 'prreview' })).toBe('')
+    expect(recordOnlyError(note, { key: 'PROJ-7', mode: 'prreview' })).toMatch(/TICK-3 is a note on PROJ-7, a PR review project.*never dispatched/)
+    expect(recordOnlyError(note, { key: 'PROJ-2', mode: 'standard' })).toBe('')
     expect(recordOnlyError(findingTicket, { key: 'PROJ-2', mode: 'standard' })).toBe('')
     expect(recordOnlyError(findingTicket, null)).toBe('')
-  })
-
-  it('keeps a finding ticket out of a review plan checks step — never a /jpr-check', () => {
-    const plan = { steps: [{ id: 'r1', kind: 'checks' as const, tickets: ['TICK-9'], runners: {}, reviewers: 2, model: 'opus' as const, effort: 'high' as const, verify: true, note: '' }, { id: 'r2', kind: 'review' as const, tickets: [], runners: {}, reviewers: 2, model: 'opus' as const, effort: 'high' as const, verify: true, note: '' }] }
-    // Even one that also carries the check label.
-    const problems = reviewPlanProblems(plan, [{ key: 'TICK-9', status: 'todo', labels: ['hitl', 'review:finding', 'pr:check'] }])
-    expect(problems.map((p) => p.message)).toEqual(['TICK-9 is a review finding — a record-only ticket, never run as a check.'])
   })
 
   it('recognises a finding ticket by its record or its label', () => {
     expect(isFindingTicket({ labels: ['afk', 'review:finding'] })).toBe(true)
     expect(isFindingTicket({ labels: [], finding: {} })).toBe(true)
-    expect(isFindingTicket({ labels: ['afk', 'pr:check'] })).toBe(false)
+    expect(isFindingTicket({ labels: ['afk'] })).toBe(false)
   })
 })
 

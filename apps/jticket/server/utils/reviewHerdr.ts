@@ -14,8 +14,11 @@ import {
   invalidateHerdrState,
 } from './herdr'
 import { suiteRoot } from '@jsuite/data'
-import { isReviewTab, reviewPath, votes, type Review } from '../../app/utils/reviewTypes'
+import { isPlanReview, isReviewTab, reviewPath, votes, type Review } from '../../app/utils/reviewTypes'
+import { planReviewerPrompt } from '../../app/utils/planReview'
 import { JTICKET_PUBLIC } from './sandbox'
+import { loadStore } from './store'
+import { newSessionId, recordSession, sessionRow, type SessionRole } from './sessions'
 
 // The publish step reviewers read by path (jreview-report is typed-only, so it cannot be invoked mid-task).
 const REPORT_SKILL = join(suiteRoot(), 'apps/jticket/.claude/skills/jreview-report/SKILL.md')
@@ -44,7 +47,7 @@ const pExecFile = promisify(execFile)
 //     A consensus review gets `/jreview-consensus <key>` on CONSENSUS_MODEL in
 //     that tab instead: it files the findings every reviewer raised into the
 //     caller's jTicket project and POSTs the ticket keys to /consensus.
-//     An agreement review (a PR review plan) gets `/jreview-consensus <key>`
+//     An agreement review (a PR review project's) gets `/jreview-consensus <key>`
 //     too, on REVIEW_MODEL: it keeps what every reviewer raised, has each
 //     finding adversarially verified when `verify` is set, judges
 //     approvability, and POSTs findings + assessment to /findings — where
@@ -86,7 +89,7 @@ export function codebaseReviewSkill(workdir: string): CodebaseSkill | null {
   } catch {
     return null
   }
-  const ours = (d: string) => d.startsWith('jreview-') || d === 'jarch-review' || d === 'jdiff-review'
+  const ours = (d: string) => d.startsWith('jreview-') || d === 'jarch-review'
   const pick = names.includes('code-review') ? 'code-review' : names.sort().find((d) => /review/i.test(d) && !ours(d))
   return pick && /^[A-Za-z0-9._-]{1,60}$/.test(pick) ? { name: pick, path: join(dir, pick, 'SKILL.md') } : null
 }
@@ -95,10 +98,12 @@ export function codebaseReviewSkill(workdir: string): CodebaseSkill | null {
  * The reviewer's hand-off. `priorDocs` are the reports of the earlier review
  * named in `context.review` (the architectural pass), resolved by the caller.
  * `own` is the codebase's own review skill (codebaseReviewSkill): an
- * agreement review (a PR review plan) runs it in place of the global
+ * agreement review (a PR review project's) runs it in place of the global
  * /code-review when there is one — the codebase knows its own standards.
  */
 export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = [], own: CodebaseSkill | null = null): string {
+  // A plan review reads a plan, not a diff: its own hand-off (/jplan-review).
+  if (isPlanReview(review)) return planReviewerPrompt(review, n, REPORT_SKILL)
   const r = review.reviewers.find((x) => x.n === n)!
   const arch = review.pass === 'architecture'
   // One line: herdr submits the prompt as typed input, and a newline would
@@ -159,6 +164,35 @@ export function reviewerPrompt(review: Review, n: number, priorDocs: string[] = 
 export const triagePrompt = (review: Review) =>
   votes(review) ? `/jreview-consensus ${review.key}` : `/jreview-triage ${review.key}`
 
+/**
+ * Put a review session in the session ledger (sessions.ts), so analytics and
+ * the harness capture can find its transcript by the id it was started with.
+ * Never throws — the ledger is a record, not part of the dispatch.
+ */
+function ledgerReviewSession(review: Review, id: string, role: SessionRole, model: string, agent: string): void {
+  try {
+    const projectKey = review.project ?? review.consensus?.projectKey ?? ''
+    const project = projectKey ? loadStore().projects.find((p) => p.key === projectKey) : undefined
+    recordSession(
+      sessionRow({
+        id,
+        role,
+        projectId: project?.id ?? '',
+        projectKey,
+        repo: review.repoPath,
+        cwd: review.workdir,
+        loop: review.consensus?.loop ?? review.agreement?.loop ?? 0,
+        stepKind: 'review',
+        model,
+        effort: review.effort ?? '',
+        agent,
+      }),
+    )
+  } catch (err) {
+    console.error(`[jticket] review ${review.key}: could not ledger its ${role} session —`, err)
+  }
+}
+
 async function workspaceFor(review: Review) {
   return ensureHerdrWorkspace(`jreview · ${basename(review.repoPath)}`, review.workdir)
 }
@@ -179,10 +213,14 @@ export async function dispatchReviewer(key: string, n: number): Promise<void> {
     const prior = review.context?.review ? await readReview(review.context.review).catch(() => null) : null
     const priorDocs = prior ? prior.reviewers.filter((x) => x.status === 'done').map((x) => x.docKey) : []
     // Slot first, so the 28-char agent-name cap trims the key, not the slot.
-    const own = review.agreement ? codebaseReviewSkill(review.workdir) : null
+    // A plan review runs /jplan-review, never the codebase's code-review skill.
+    const own = review.agreement && !isPlanReview(review) ? codebaseReviewSkill(review.workdir) : null
+    const sessionId = newSessionId()
+    const reviewerModel = review.model || REVIEW_MODEL
     const agent = await startClaudeIn(paneId, `jr${n}-${review.key}`, reviewerPrompt(review, n, priorDocs, own), {
-      args: ['--model', review.model || REVIEW_MODEL, ...(review.effort ? ['--effort', review.effort] : [])],
+      args: ['--session-id', sessionId, '--model', reviewerModel, ...(review.effort ? ['--effort', review.effort] : [])],
     })
+    ledgerReviewSession(review, sessionId, review.pass === 'architecture' ? 'arch-review' : 'review', reviewerModel, agent)
     await updateReview(key, (fresh) => {
       fresh.workspaceId = workspaceId
       if (own) fresh.reviewSkill = own.name
@@ -236,9 +274,11 @@ export async function dispatchTriage(key: string): Promise<void> {
     // An agreement review's consensus session also judges approvability and,
     // with `verify`, runs the adversarial verifiers — Opus work, not matching.
     const model = review.agreement ? REVIEW_MODEL : review.consensus ? CONSENSUS_MODEL : REVIEW_MODEL
+    const sessionId = newSessionId()
     const agent = await startClaudeIn(paneId, `jrt-${review.key}`, triagePrompt(review), {
-      args: ['--model', model],
+      args: ['--session-id', sessionId, '--model', model],
     })
+    ledgerReviewSession(review, sessionId, votes(review) ? 'review-consensus' : 'review-triage', model, agent)
     await updateReview(key, (fresh) => {
       if (fresh.triage.status === 'done') return
       Object.assign(fresh.triage, { status: 'running', agent, tabId, error: undefined, dispatchedAt: new Date().toISOString() })

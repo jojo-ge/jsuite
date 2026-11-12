@@ -122,8 +122,8 @@ already exists, omit it from the payload and reference it **by key** from the ti
 { "tickets": [ { "title": "…", "project": "PROJ-2", "blockedBy": ["TICK-3"] } ] }
 ```
 
-Ticket bodies follow this shape — see the `to-jspec` skill
-([SKILL.md](../../to-jspec/SKILL.md)) for the markdown dialect:
+Ticket bodies follow this shape — see the `to-jdoc` skill
+([SKILL.md](../../to-jdoc/SKILL.md)) for the markdown dialect:
 
 <ticket-template>
 

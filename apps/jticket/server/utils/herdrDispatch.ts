@@ -9,8 +9,8 @@
 // errors; callers that must not throw catch them.
 import type { Store, Ticket, Project } from './store'
 import {
-  resolveAssessPrompt,
   resolveBuildPlanPrompt,
+  resolveTicketPlanPrompt,
   resolveMergePrompt,
   resolveTicketPrompt,
   type PromptOverrides,
@@ -41,7 +41,7 @@ function roleForJob(job: string): SessionRole {
   if (job === 'outcome report') return 'outcome-report'
   if (job === 'slice report') return 'slice-report'
   if (job === 'run plan') return 'runplan-build'
-  if (job === 'pr assess') return 'pr-assess'
+  if (job === 'ticket plan') return 'ticketplan-build'
   if (job === 'worktree') return 'worktree'
   if (job.startsWith('tour')) return 'tour'
   if (job.startsWith('batch')) return 'batch'
@@ -96,8 +96,8 @@ export async function dispatchTicketSession(
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — herdr workspaces are per-project` })
   // A PR review project's finding ticket is a record, not work: this is the
-  // one door every ticket dispatch goes through (the card's button, Run all,
-  // the review plan's /jpr-check runner), so the rule is enforced here.
+  // one door every ticket dispatch goes through (the card's button, Run all),
+  // so the rule is enforced here.
   const record = recordOnlyError(ticket, project)
   if (record) throw createError({ statusCode: 409, statusMessage: record })
 
@@ -352,29 +352,14 @@ export function localPrPrompt(store: Store, project: Project, ticket: Ticket): s
   }).text
 }
 
-/**
- * A ticket's hand-off for its own project mode (a PR review project's check →
- * `prcheck`), every layer applied — what the review plan's runner fires.
- */
-export function modeTicketPrompt(store: Store, project: Project, ticket: Ticket): string {
-  return resolveTicketPrompt({
-    ticket,
-    project: { ...project, repoPath: projectRepoPath(project) },
-    mode: project.mode,
-    target: 'integration',
-    defaults: store.promptDefaults,
-    codebase: codebasePromptsFor(store, project),
-  }).text
-}
-
-/** A PR review project's Assess hand-off (`prreview:assess`), layers 2–5 applied. */
-export function assessPrompt(store: Store, project: Project): string {
-  return resolveAssessPrompt({ ...project, repoPath: projectRepoPath(project) }, store.promptDefaults, codebasePromptsFor(store, project))
-}
-
 /** The Run setup tab's Build hand-off (`runplan:build`), layers 2–5 applied. */
 export function buildPlanPrompt(store: Store, project: Project): string {
   return resolveBuildPlanPrompt({ ...project, repoPath: projectRepoPath(project) }, store.promptDefaults, codebasePromptsFor(store, project))
+}
+
+/** A plan project's Ticket plan hand-off (`ticketplan:build`), layers 2–5 applied. */
+export function ticketPlanPrompt(store: Store, project: Project): string {
+  return resolveTicketPlanPrompt({ ...project, repoPath: projectRepoPath(project) }, store.promptDefaults, codebasePromptsFor(store, project))
 }
 
 /** The project's merge sweep over `prKeys`, layers 2–5 applied. */

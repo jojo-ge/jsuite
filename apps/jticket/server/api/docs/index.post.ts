@@ -1,9 +1,13 @@
 import type { Explainer } from '@jsuite/documents/store'
+import { cleanTags } from '@jsuite/documents/tags'
 
 // Create a tracker doc backed by a document in the shared @jsuite/documents
 // pool (the jExplain block format — see the to-jdoc / j-explain skills).
 // Either link an existing shared document via `documentKey`, or author one
 // inline: `blocks` (+ optional `subtitle`, `kicker`, `glossary`) creates it.
+// `tags` are the backing document's (what the library filters on) — not the
+// record's `labels`, which the engine reads; on a linked document they replace
+// the tags it had.
 // `project` accepts a project id, key, or exact title; `projectId` also works.
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
@@ -31,6 +35,7 @@ export default defineEventHandler(async (event) => {
     if (!(await readDoc(documentKey))) {
       throw createError({ statusCode: 400, statusMessage: `unknown document: ${documentKey}` })
     }
+    if (body.tags !== undefined) await setDocTags(documentKey, body.tags)
   } else {
     documentKey = await uniqueDocKey(docKeyFromTitle(title))
     const document: Explainer = {
@@ -44,6 +49,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: ts,
       blocks: await materialiseBlocks(documentKey, Array.isArray(body.blocks) ? body.blocks : []),
       glossary: cleanGlossary(body.glossary),
+      tags: cleanTags(body.tags),
     }
     await writeDoc(documentKey, document)
   }

@@ -185,6 +185,8 @@ describe('diff targets', () => {
     const q = Object.fromEntries(new URL(url, 'http://x').searchParams)
     expect(parseDiffTarget(q)).toEqual({ head: 'tick/TICK-7-x', base: 'proj/one' })
     expect(parseDiffTarget({ gh: '12' })).toEqual({ gh: 12 })
+    // A JSON body (the tour routes) spells it as a number.
+    expect(parseDiffTarget({ gh: 12 })).toEqual({ gh: 12 })
     expect(parseDiffTarget({ gh: 'nope' })).toEqual({})
     expect(parseDiffTarget({ pr: ['PR-1', 'PR-2'] })).toEqual({ pr: 'PR-1' })
     expect(parseDiffTarget({})).toEqual({})

@@ -71,13 +71,14 @@ export default defineEventHandler(async (event) => {
     key: nextKey(store, 'project'),
     title: bundle.project.title.trim(),
     description: fixAttachments(description),
-    mode: bundle.project.mode === 'wayfinder' ? 'wayfinder' : 'standard',
+    mode: coerceProjectMode(bundle.project.mode) === 'plan' ? 'plan' : 'standard',
     // The integration branch travels with the bundle (it names a branch on the
     // shared remote); the repo path does not — it's local to the machine that
     // exported it. ?repo= lets the importer attach the project to their own
     // clone in the same call (the UI passes the selected codebase).
     repo: repoOverride,
     integrationBranch: bundle.project.integrationBranch?.trim() ?? '',
+    integrationBase: '',
     // Starring is a local "what's on deck" flag, so it doesn't travel.
     starred: false,
     position: null,

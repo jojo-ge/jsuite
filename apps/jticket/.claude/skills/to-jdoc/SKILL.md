@@ -1,63 +1,89 @@
 ---
 name: to-jdoc
-description: Draft a document into the local jTicket app over its HTTP API, without posting anything to Confluence. Docs are block documents in the shared jSuite document system (the jExplain format). Use when the user wants to write, draft, or publish a doc/page/design note/RFC "to jdoc" / "to jTicket docs", or wants a page drafted locally for review first. jTicket is a local app, NOT Confluence.
+description: Write a document into jTicket as a doc (DOC-n) — a spec, design note, RFC or any page — as a block document published with `jt post /api/docs`; also the format every other jTicket field takes. Use when the user wants a spec or a doc written into jTicket ("to jdoc"), when revising a DOC-n from their notes, or before writing a ticket description, resolution or project description. jTicket is local — nothing is posted to Confluence.
 ---
 
 # To jDoc
 
-jTicket (a lean local Nuxt app) has a **docs** section: draft pages stored as
-**block documents** in the shared jSuite document system — the same format and
-pool as `j-explain` articles (`@jsuite/documents`, files in `.data/jexplain/`).
-Nothing is ever posted to Confluence — a doc exists so you can author it
-locally, the user reviews it rendered (at `/docs/DOC-n` in jTicket, and it
-also appears in the **All documents** library at `/e`), and *they* copy it elsewhere by hand if they
-want it there.
+A jTicket **doc** is a tracker record (`DOC-n`: project, labels, status) wrapping
+a **block document** in the shared pool (`documentKey`) — the same pool and
+format as `j-explain` articles. It is a **local draft**: the user reviews it
+rendered and copies it elsewhere by hand if they want it there. Nothing is ever
+posted to Confluence.
 
-A jTicket doc = a tracker record (`DOC-n`: project, labels, status) wrapping a
-shared document (`documentKey`: title page, blocks, glossary).
+Every call goes through `jt` (on PATH after `./jsuite setup`, else `bin/jt` in
+the jSuite checkout), which talks to `http://localhost:43000` (`$JTICKET_URL`
+overrides).
 
-## Before you start
+## Steps
 
-1. Confirm the app is running. Every call goes through `jt` (on PATH after
-   `./jsuite setup`, else `bin/jt` in the jSuite checkout), which talks to jTicket's
-   fixed port, `http://localhost:43000` (`$JTICKET_URL` overrides; the Caddy
-   edge also serves it at `https://jticket.local`). Quick check:
-   ```bash
-   jt projects >/dev/null && echo up \
-     || echo "not up — jsuite status, then ./jsuite start"
-   ```
+1. **Connect.** `jt projects >/dev/null && echo up || echo down`. Down: say so
+   (`./jsuite status`, then `./jsuite start`) and stop — a file on disk is not a
+   fallback.
+2. **Decide what the document says.**
+   - A **spec**: run `/to-spec` first. It owns the template (Problem Statement →
+     Solution → User Stories → Implementation Decisions → Testing Decisions →
+     Out of Scope → Further Notes), the seams check and the no-interview rule.
+   - **Any other doc** (design note, RFC, page): structure it like an article —
+     open with why it matters, alternate prose with evidence blocks, close with
+     a `takeaway`. The `j-explain` skill's "Writing guidance" applies.
+   - A plan's map belongs to `/jplan`; an explainer with no place on the board
+     belongs to `/j-explain` (same document system, no tracker record).
+3. **Author the blocks** — see [Blocks](#blocks).
+4. **Publish** as `status: "draft"` — see [Publish](#publish).
+5. **Report** the key, the title and both links
+   (`https://jticket.local/docs/DOC-n`, `https://jticket.local/e/<documentKey>`),
+   and say plainly that it is a local draft.
+6. **Revise** from the user's notes — see [Revise](#revise). Set `status` to
+   `ready` only when they sign off.
 
-## The content format: blocks
+Next, if the user wants the spec sliced into work: `/to-jticket tickets`,
+pointed at the `DOC-n` (same `project` ref ties the breakdown to the doc).
 
-The body is **not markdown** — it is the block vocabulary of the shared
-document system: `prose`, `callout`, `code`, `diff`, `chart` (live Excalidraw,
-the same charts jTicket's chart editor opens), `image` (a screenshot — local `file` path or inline
-`base64`, copied into the doc's media dir), `steps`, `compare`, `timeline`,
-`takeaway`, plus an optional `glossary`. **The full vocabulary with worked examples lives in the
-`j-explain` skill** (`~/.claude/skills/j-explain/SKILL.md`) — read its "Block
-vocabulary" section before authoring. Everything there applies verbatim;
-only the publish call differs.
+## Blocks
 
-Give blocks stable `"id"`s if you expect to revise later — the user's
-per-block notes pin to those ids.
+The body is **not markdown** — it is the block vocabulary of the shared document
+system: `prose`, `callout`, `code`, `diff`, `chart`, `image`, `steps`,
+`compare`, `timeline`, `takeaway`, plus an optional `glossary`. **The vocabulary
+with worked examples lives in the `j-explain` skill**
+(`~/.claude/skills/j-explain/SKILL.md`) — read its "Block vocabulary" section
+before authoring. Everything there applies verbatim; only the publish call
+differs.
 
-## Create a doc: `POST /api/docs`
+- **Start prose at `##`.** The `title` field is the `#`.
+- **Give every block a stable `id`** — the user's review notes pin to them.
+- **A spec** takes one `prose` block per `/to-spec` section; `compare` for an
+  options table; `chart` for the shape of the system; `takeaway` for the
+  decisions summary.
+- **Restraint.** Prose carries the document. A `callout` marks one of the two
+  or three things a reader must not miss.
+- **Pictures are `image` blocks**: `file` (an absolute path on this machine) or
+  `base64` / `dataUrl` (inline bytes; `name` picks the stored filename). The
+  server copies them into `.data/jexplain/media/<documentKey>/`.
+  `/attachments/…` links are for ticket markdown only.
+- **File paths and code snippets go stale** — keep them out of specs, except a
+  snippet that encodes a decision more precisely than prose can (a state
+  machine, a schema, a type shape): a `code` block, with where it came from.
 
-Write the doc to a file, then post it (`jt post /api/docs @doc.json`, or `-` for stdin):
+## Publish
+
+Pick the project first (`jt projects` — key, title, mode per row) and use an
+existing one where it fits. Write the doc to a file, then post it:
 
 ```bash
 cat > doc.json <<'JSON'
 {
-  "title": "Checkout revamp — design notes",
-  "project": "Checkout",
-  "labels": ["design", "payments"],
+  "title": "Checkout revamp — spec",
+  "project": "PROJ-1",
+  "labels": ["spec"],
+  "tags": ["spec"],
   "status": "draft",
-  "kicker": "DESIGN NOTES",
+  "kicker": "SPEC",
   "subtitle": "Why the legacy flow is being rebuilt, and how.",
   "glossary": { "PCI": "payment card industry — the compliance scope" },
   "blocks": [
-    { "id": "why", "type": "prose", "md": "## Why now\n\nThe legacy flow drops **12%** of carts at the payment step." },
-    { "id": "trap", "type": "callout", "tone": "warning", "title": "The trap", "md": "PCI scope is unconfirmed." },
+    { "id": "problem", "type": "prose", "md": "## Problem Statement\n\nThe legacy flow drops **12%** of carts at the payment step." },
+    { "id": "risk", "type": "callout", "tone": "warning", "title": "Blocking risk", "md": "PCI scope is unconfirmed." },
     { "id": "options", "type": "compare", "title": "Options", "columns": ["", "Rebuild", "Patch"],
       "rows": [["Effort", "High", "Low"], ["Debt", "None", "Accrues"]] },
     { "id": "shape", "type": "chart", "title": "New request path",
@@ -68,74 +94,62 @@ cat > doc.json <<'JSON'
   ]
 }
 JSON
-jt post /api/docs @doc.json
+jt post /api/docs @doc.json     # or `-` for stdin
 ```
 
-Fields:
-- `title` — required. Becomes both the record title and the document's `#` —
-  start prose at `##`.
-- `blocks` — the content. Optional but the point; omitting it creates an empty
-  document.
-- `subtitle` / `kicker` / `glossary` — document header extras (see j-explain).
-- Pictures are `image` blocks: `file` (absolute path on this machine) or
-  `base64` / `dataUrl` (inline bytes, `name` picks the stored filename) — the
-  server copies them into `.data/jexplain/media/<documentKey>/` and serves them
-  at `/api/media/<documentKey>/<file>` in both apps. Don't link `/attachments/…`
-  from a doc — that store is jTicket-only (ticket markdown). The user can also
-  add one from the doc page: **Add image**, or paste / drop onto the page.
-- `documentKey` — link an existing shared document instead of authoring one
-  (e.g. promote a `j-explain` article to a tracked doc). 400 on unknown keys.
-- `project` — optional parent project, referenced by **title, key, or id**
-  (`projectId` also accepted). Omit for a standalone doc.
-- `labels` — optional string array; `status` — `draft` (default) or `ready`.
+| Field | Notes |
+| --- | --- |
+| `title` | required — the record title and the document's `#` |
+| `blocks` | the content; omitted, the document is empty |
+| `subtitle` / `kicker` / `glossary` | document header extras (see `j-explain`) |
+| `project` | optional parent, by id, key or exact title (`projectId` is a synonym); an unknown one is a 400. Omit for a standalone doc |
+| `labels` | string array — `["spec"]` makes a spec findable: `GET /api/docs?label=spec` |
+| `tags` | always set it: ONE tag on the document itself saying what kind it is. The **All documents** library (`/e`) lists and searches only `explainer` (how something works, a branch walkthrough), `research` (findings, audits, inventories), `decision` (options weighed, a decision record), `spec`, `proposal` (a plan put forward) — pick the one that fits; any other kind is filed behind the library's **Other kinds** switch (`jt get /api/document-tags` lists the kinds in use; don't coin one unasked). Not `labels`: those sit on the record and the engine reads them. PATCH `{"tags": [...]}` re-tags without touching the content |
+| `status` | `draft` (default) or `ready` |
+| `documentKey` | link an existing shared document instead of authoring one (promote a `j-explain` article to a tracked doc); an unknown key is a 400 |
 
-The response returns the generated `key` (e.g. `DOC-3`) and `documentKey`. The
-doc is then visible at `https://jticket.local/docs/DOC-3`, on the board,
-on its project page — and in jTicket's document reader (same document, same notes) at
-`https://jticket.local/e/<documentKey>`.
+The response carries the generated `key` (`DOC-3`) and `documentKey`. The doc
+is then on the board, on its project page, at `/docs/DOC-3`, and in the **All
+documents** library (`/e`) beside reports and articles.
 
-## Revise: `PATCH /api/docs/:id`
-
-`:id` is the record id or key (`DOC-3`). Metadata fields (`title`, `labels`,
-`status`, `project`) update the record. Content fields (`blocks`, `glossary`,
-`subtitle`, `kicker`) **rewrite the shared document wholesale** — send the
-complete blocks array, never a fragment. Notes and `createdAt` survive, and
-chart blocks whose mermaid didn't change keep the user's hand edits (same
-idempotency rule as j-explain `--replace`). Image blocks: send existing ones
-back with their stored `src` (GET `/api/documents/<documentKey>` has it) —
-media a republish no longer references is pruned.
+## Revise
 
 ```bash
-jt patch /api/docs/DOC-3 @revised-blocks.json     # {"blocks": [...]}
+jt get /api/documents/<documentKey>             # the current blocks, images with their stored `src`
+jt patch /api/docs/DOC-3 @revised.json          # {"blocks": [...]}
 ```
 
-## Other endpoints
+`:id` is the record id or key. Metadata (`title`, `labels`, `status`,
+`project`) updates the record. Content (`blocks`, `glossary`, `subtitle`,
+`kicker`) **rewrites the shared document wholesale** — send the complete blocks
+array, with existing image blocks carrying their stored `src` (media a rewrite
+no longer references is pruned). Notes and `createdAt` survive, and a chart
+whose mermaid didn't change keeps the user's hand edits.
 
-| Method | Path | Purpose |
+The user's feedback is notes pinned to blocks, and edits to charts:
+
+- `jt get /api/documents/<documentKey>/notes` — their notes
+  (on disk: `$(jsuite root)/.data/jexplain/<documentKey>.notes.json`)
+- `$(jsuite root)/.data/jchart/<chartKey>.json` — a chart as they left it
+
+Other endpoints: `GET /api/docs` lists records (`?projectId=` `?status=`
+`?label=`); `DELETE /api/docs/:id` removes the record and keeps the shared
+document in the pool; `GET /api/documents` is the pool itself.
+
+## Which field takes what
+
+Only a doc's `blocks` hold rich structure. Every other field is plain GFM
+markdown (tables, task lists, fenced code with a language, blockquotes).
+
+| Field | Format | Write |
 | --- | --- | --- |
-| GET | `/api/docs` | List doc records (`?projectId=` `?status=` `?label=`) |
-| GET/DELETE | `/api/docs/:id` | Read / delete the record (delete keeps the shared document in the pool) |
-| GET | `/api/documents` | The shared pool itself (every document, read at `/e/<key>`) |
-| GET | `/api/documents/:key/notes` | The user's review notes for a document |
+| Doc content (`blocks`) | **block document** | the document itself |
+| Ticket `description` | GFM markdown; the card shows a one-line plain-text preview | the *what*, from the user's perspective, meaning front-loaded |
+| Ticket `resolution` | GFM markdown | the answer — what was decided and why — plus links to whatever it produced; the one field a future session reads for the outcome |
+| Project `description` | GFM markdown on the board, preview on project cards | short for ordinary projects; a plan project keeps its whole map here (`/jplan` owns it) |
+| Ticket `acceptanceCriteria[]` | **inline** markdown only | `` `code` ``, `**bold**`, links |
+| Pictures in ticket markdown | `![…](/attachments/<name>)` | upload first: `POST /api/attachments` `{ file }` or `{ name, base64 }`, embed its `markdown` |
 
-## Reading feedback back
-
-The user reviews in either app — hovering a block and pinning notes. Read them
-off disk or the API:
-- `$(jsuite root)/.data/jexplain/<documentKey>.json` — the document
-- `$(jsuite root)/.data/jexplain/<documentKey>.notes.json` — their notes
-- chart edits land in `$(jsuite root)/.data/jchart/<chartKey>.json`
-
-## Workflow tips
-
-- POST as `status: "draft"`, then tell the user the key and link
-  (`https://jticket.local/docs/DOC-n`) so they can review it rendered.
-- Revise via PATCH based on their notes; set `status` to `ready` when they
-  sign off.
-- Structure like a good article, not a wall of prose: open with why it
-  matters, alternate prose with evidence blocks, close with `takeaway`. The
-  j-explain skill's "Writing guidance" applies.
-- Pair with `to-jticket`: breakdown goes to `/api/import`, the accompanying
-  design/RFC doc goes to `/api/docs` (same `project` ref ties them together).
-- For a standalone explainer that doesn't belong on the board, use
-  `/j-explain` instead — same document system, no tracker record.
+Ticket comments are the discussion around the work; the resolution is its
+outcome. The rest of the jTicket surface — tickets, projects, the full
+[API reference](../to-jticket/reference/api.md) — is `/to-jticket`.

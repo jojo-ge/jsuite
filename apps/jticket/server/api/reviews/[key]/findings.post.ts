@@ -117,6 +117,8 @@ export default defineEventHandler(async (event) => {
     r.triage.error = undefined
     r.triage.doneAt = new Date().toISOString()
   })
+  // A PR review project's review is back: its run is done, with this verdict.
+  if (review.agreement) settlePrReviewRun(review.key, 'done', review.assessment?.verdict)
   if (current.status !== 'triaged') void openReviewInBrowser(current)
   const { tickets } = filed
   return {

@@ -77,9 +77,11 @@ This report covers only what changed since.
 
 ## 2. Write it
 
-A jTicket doc in the block-document format (the `to-jspec` skill has the
+A jTicket doc in the block-document format (the `to-jdoc` skill has the
 block shapes). Title `<PROJ-n> slice report · before step <n>`, labels
-`["slice", "slice:step-<n>"]`, status `ready`, project `<PROJ-n>`. These
+`["slice", "slice:step-<n>"]`, tags `["slice-report"]` (the document's kind
+— it files the report out of the document library), status `ready`, project
+`<PROJ-n>`. These
 sections, in this order, headings as given, empty ones left out:
 
 ```

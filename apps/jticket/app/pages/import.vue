@@ -88,8 +88,6 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="max-w-xl py-12">
       <div class="mb-8 text-center">
         <h1 class="text-2xl font-bold">Import a shared project</h1>

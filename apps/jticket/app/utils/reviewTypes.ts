@@ -23,7 +23,7 @@
 // raised and files each straight into the caller's jTicket project as a ticket.
 // jReview records just the ticket keys — no triage document, no findings.
 //
-// An AGREEMENT review (a PR review project's run plan) filters the same way —
+// An AGREEMENT review (a PR review project's Review tab) filters the same way —
 // only what every reviewer raised survives — but hands the agreed findings
 // back here as findings, with an approvability assessment. The server files
 // each one on the project as a RECORD-ONLY ticket as it lands (a rerun
@@ -55,13 +55,37 @@ export type ReviewEffort = (typeof REVIEW_EFFORTS)[number]
  */
 export type ReviewPass = 'consensus' | 'architecture'
 
+/**
+ * What a review reads, when it isn't a diff. Unset (every review but a plan
+ * review's): `branch` against `base` in `workdir`. 'plan': a plan project's
+ * map, decisions, spec and ticket plan (a plan review project's review) — no
+ * diff, no branch, no worktree: the reviewers read the plan through jTicket
+ * and the code read-only in the codebase's main checkout, so `branch` and
+ * `base` are '' and `pr` is null. Always an agreement review.
+ */
+export interface ReviewSubject {
+  kind: 'plan'
+  /** The plan project under review (PROJ-n), and its title when the review started. */
+  projectKey: string
+  title: string
+}
+
+/** A review of a plan, not of a diff. */
+export const isPlanReview = (r: { subject?: ReviewSubject | null } | null | undefined): boolean => r?.subject?.kind === 'plan'
+
+/** What a review reads, in one line: "plan PROJ-3", or "<base>...<branch>" (a full sha base shortened). */
+export function reviewTargetLabel(r: { subject?: ReviewSubject | null; base: string; branch: string }): string {
+  if (r.subject?.kind === 'plan') return `plan ${r.subject.projectKey}`
+  return `${r.base.length === 40 ? r.base.slice(0, 10) : r.base}...${r.branch}`
+}
+
 /** What the reviewers read before the diff. */
 export interface ReviewContext {
   /** jTicket docs (DOC-n) — e.g. the run plan's slice report. */
   docs?: string[]
   /** An earlier review of the same diff (the architectural pass): its reports are handed over, its findings already fixed. */
   review?: string
-  /** The review brief (a jTicket DOC-n) every reviewer reads first — the same brief for all of them (a PR review's assessor writes it). */
+  /** The review brief (a jTicket DOC-n) every reviewer reads first — the same brief for all of them. Nothing in jTicket sends one today. */
   brief?: string
   /** jTicket check tickets (TICK-n) run against this code before the review — their resolutions say what was run and what failed. */
   checks?: string[]
@@ -73,7 +97,7 @@ export interface ReviewContext {
  * tickets. `considered`/`kept` are the consensus session's counts.
  */
 export interface ReviewAgreement {
-  /** The run-plan run that asked, for titles. */
+  /** Which of the project's reviews this is (1-based), for titles. */
   loop?: number
   considered?: number
   kept?: number
@@ -226,6 +250,8 @@ export interface Review {
   branch: string
   /** The open PR for `branch` when the review started, if any. */
   pr: PullRequest | null
+  /** Set when the review reads something other than a diff — see ReviewSubject. */
+  subject?: ReviewSubject
   /** The code-review skill's fixed point (the target): the diff is `<base>...HEAD`. */
   base: string
   /**
@@ -302,8 +328,10 @@ export interface ReviewMeta {
   /** The jTicket project the review belongs to (`Review.project`). */
   project?: string
   consensus?: boolean
-  /** An agreement review (a PR review project's run plan). */
+  /** An agreement review (a PR review project's, or a plan review project's). */
   agreement?: boolean
+  /** A plan review's subject — the plan project it read (no branch, no base). */
+  subject?: ReviewSubject
   /** The approvability verdict, once the consensus session handed it back. */
   verdict?: ApprovalVerdict
   /** The auto-loop iteration that asked, for a consensus review. */

@@ -30,11 +30,11 @@ const emit = defineEmits<{
 }>()
 
 const MODE_BADGE: Partial<Record<Project['mode'], { label: string; color: 'primary' | 'success' | 'warning' | 'info' | 'error'; icon: string }>> = {
-  wayfinder: { label: 'Wayfinder', color: 'primary', icon: 'i-lucide-compass' },
+  plan: { label: projectTypeLabel('plan'), color: 'primary', icon: 'i-lucide-compass' },
   todo: { label: 'TODO list', color: 'warning', icon: 'i-lucide-list-todo' },
-  architect: { label: 'Architect', color: 'info', icon: 'i-lucide-drafting-compass' },
   predeploy: { label: 'Predeploy', color: 'error', icon: 'i-lucide-bug' },
-  prreview: { label: 'PR review', color: 'primary', icon: 'i-lucide-git-pull-request' },
+  prreview: { label: projectTypeLabel('prreview'), color: 'primary', icon: 'i-lucide-git-pull-request' },
+  planreview: { label: projectTypeLabel('planreview'), color: 'primary', icon: 'i-lucide-scan-search' },
 }
 const modeBadge = computed(() => MODE_BADGE[props.project.mode] ?? null)
 

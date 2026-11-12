@@ -50,9 +50,9 @@ const blocked = computed(() => (live.value ? isBlocked(live.value, props.tickets
 const project = computed(() =>
   live.value?.projectId ? projects.value.find((p) => p.id === live.value!.projectId) : undefined,
 )
-// A ticket is "in wayfinder mode" when its project is a wayfinder effort — then
+// A ticket is "in plan mode" when its project is a plan — then
 // the resolution controls appear.
-const isWayfinder = computed(() => project.value?.mode === 'wayfinder')
+const isPlan = computed(() => project.value?.mode === 'plan')
 // Peer-owned = the other side of a shared project's ticket — badged with the
 // peer's name; the API refuses writes and dispatch on it.
 const peerName = computed(() => (live.value ? peerNameOf(live.value, project.value) : null))
@@ -221,6 +221,9 @@ const statusOptions = [
             <TicketTypeIcon :type="live.type" size="md" label />
             <TicketTags :ticket="live" />
             <UBadge v-if="blocked" color="error" variant="subtle" size="sm" icon="i-lucide-lock">Blocked</UBadge>
+            <UBadge v-if="isDraftTicket(live)" color="neutral" variant="outline" size="sm" icon="i-lucide-circle-dashed" title="A draft in its plan's ticket plan — not work until the plan is approved">
+              Draft
+            </UBadge>
             <UBadge v-if="live.assignee" color="primary" variant="subtle" size="sm" icon="i-lucide-user-round">
               {{ live.assignee }}
             </UBadge>
@@ -378,7 +381,7 @@ const statusOptions = [
         :projects="projects"
         :tickets="tickets"
         :default-project-id="defaultProjectId"
-        :wayfinder="isWayfinder"
+        :plan="isPlan"
         @saved="onSaved"
       />
     </template>

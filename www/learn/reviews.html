@@ -52,13 +52,14 @@
     <h2>Reviewing a GitHub PR</h2>
     <ol class="step-list">
       <li><b>Pick the PR.</b> The Reviews board lists the codebase's open PRs. Press
-        <b>Review this PR</b>, or run <code>/make-jreview-project 123</code> in the repo.</li>
-      <li><b>Size the review.</b> An assessor reads the PR, picks two to four reviewers, writes
-        one brief they all read, and adds checks only where running code beats reading it.</li>
+        <b>Review this PR</b>.</li>
+      <li><b>Start the review.</b> In the project's Review tab, pick two to four reviewers and
+        press <b>Start review</b>. The PR's head is fetched fresh and every reviewer reads its diff.</li>
       <li><b>Agree and verify.</b> The reviewers report; a consensus session keeps what every
         reviewer raised, verifies each finding adversarially, and judges whether the PR is
-        approvable. Each finding becomes a ticket on the review's project.</li>
-      <li><b>Post on your say-so.</b> <b>Post to PR</b> sends the finding tickets you pick as one
+        approvable, with a summary written to the PR's author. Each finding becomes a ticket on
+        the review's project.</li>
+      <li><b>Post on your say-so.</b> <b>Post to PR</b> sends the summary and the finding tickets you pick as one
         comment review under your own <code>gh</code> login. It never approves and never
         requests changes. <b>Rerun review</b> runs again on the PR's new head.</li>
     </ol>
@@ -75,14 +76,6 @@
   <section>
     <h2>Skills that drive it</h2>
     <div class="skill-cards">
-      <div class="skill-card">
-        <h3>make-jreview-project</h3>
-        <p>Sets up a review project for one GitHub PR and dispatches the assessor.</p>
-      </div>
-      <div class="skill-card">
-        <h3>jreview-assess</h3>
-        <p>Decides how many reviewers a PR needs, what they focus on, and which checks to run.</p>
-      </div>
       <div class="skill-card">
         <h3>jreview-consensus</h3>
         <p>Keeps only the findings every reviewer raised and verifies each one.</p>

@@ -5,6 +5,7 @@
 // jticket.json, so a restart just picks the loop back up.
 
 const TICK_MS = 5_000
+const CAPTURE_MS = 10 * 60_000
 
 export default defineNitroPlugin((nitroApp) => {
   // A sandbox runs over a copy of real projects — its engines stay off unless asked for.
@@ -29,5 +30,23 @@ export default defineNitroPlugin((nitroApp) => {
 
   const timer = setInterval(tick, TICK_MS)
   timer.unref?.()
-  nitroApp.hooks.hook('close', () => clearInterval(timer))
+
+  // Harness capture rides the same plugin: every few minutes, freeze the
+  // sessions that have finished and snapshot the runs that have ended
+  // (harnessCapture.ts) — before claude's transcript cleanup takes the evidence.
+  async function capture() {
+    try {
+      const r = await captureHarness(loadStore())
+      if (r.sessions.frozen || r.runs.snapshotted.length) console.log(`[jticket] harness capture: ${r.sessions.frozen} session(s) frozen, ${r.runs.snapshotted.length} run(s) snapshotted`)
+    } catch (err) {
+      console.error('[jticket] harness capture failed:', err)
+    }
+  }
+  const captureTimer = setInterval(capture, CAPTURE_MS)
+  captureTimer.unref?.()
+
+  nitroApp.hooks.hook('close', () => {
+    clearInterval(timer)
+    clearInterval(captureTimer)
+  })
 })

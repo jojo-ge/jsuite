@@ -73,7 +73,7 @@ const countHint = computed(() => {
 // What would stop the server from saying yes — shown before the human confirms.
 const blocker = computed(() => {
   const p = props.project
-  if (p.mode !== 'standard') return `Auto mode drives standard projects — this is a ${p.mode} project.`
+  if (p.mode !== 'standard') return `Auto mode drives build projects — this is a ${projectTypeNoun(p.mode)} project.`
   if (!p.repo) return 'This project has no repo — set one first.'
   if (!p.integrationBranch) return 'This project has no integration branch — cut one first (the Branch button). Every loop merges into it.'
   return ''

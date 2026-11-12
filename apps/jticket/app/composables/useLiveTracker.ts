@@ -107,7 +107,7 @@ function toastFor(move: Move): ToastSpec | null {
 }
 
 // Just the shared connection state — for anything that wants to *show* whether
-// the board is live (the header dot) without opening a second EventSource.
+// the board is live (the sidebar dot) without opening a second EventSource.
 export function useLiveStatus() {
   const status = useState<LiveStatus>('jticket-live-status', () => 'connecting')
   // When the board last actually moved, as a client timestamp.

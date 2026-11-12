@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { Project, Ticket } from '~/composables/useTracker'
+import type { Project } from '~/composables/useTracker'
 import { moveBy, moveTo, sortByOrder } from '~/utils/projectOrder'
+import { isDraftTicket } from '~/utils/ticketPlan'
 
 useHead({ title: 'Projects' })
 
@@ -9,7 +10,6 @@ const { refresh, updateProject, reorderProjects } = useTracker()
 // PR review projects have their own board (/reviews) and never list here.
 const { boardProjects: projects, boardTickets: tickets, selectedPath } = useCodebase()
 const { openNewProject, openEditProject, onDeleteProject } = useTrackerModals()
-const { herdrUp, dispatchTicket } = useHerdrDispatch()
 
 // ── Import a project bundle (produced by the project page's Export button) ──
 const toast = useToast()
@@ -43,9 +43,11 @@ async function importBundle(e: Event) {
 }
 
 // Every ticket under a project. TicketProgress buckets these into the
-// flow-state bar on each card.
+// flow-state bar on each card. A plan's ticket-plan drafts aren't work yet —
+// they count nowhere until approve moves them into their build (the plan's
+// own page and its graph node leave them out the same way).
 function ticketsFor(projectId: string | null) {
-  return tickets.value.filter((t) => t.projectId === projectId)
+  return tickets.value.filter((t) => t.projectId === projectId && !isDraftTicket(t))
 }
 
 // A project is finished once it has tickets and none of them are outstanding.
@@ -156,46 +158,10 @@ async function setHidden(project: Project, hidden: boolean) {
     toast.add({ title: `Could not ${hidden ? 'hide' : 'unhide'} ${project.key}`, description: detail, color: 'error' })
   }
 }
-
-// ── Improve architecture — one click, one scan ──
-// Creates an architect-mode project against the selected codebase (repo comes
-// from the scope, nothing to ask) and dispatches its scan straight into herdr.
-// The review moment is the populated board, not the empty project — so there
-// is no create-then-confirm step; with herdr down the project still lands and
-// the scan waits on its Run button.
-const improving = ref(false)
-async function improveArchitecture() {
-  if (!selectedPath.value || improving.value) return
-  improving.value = true
-  try {
-    const res = await $fetch<{ project: Project; ticket: Ticket }>('/api/projects/architect', {
-      method: 'POST',
-      body: { repo: selectedPath.value },
-    })
-    await refresh()
-    if (herdrUp.value) await dispatchTicket(res.ticket, 'architect')
-    else {
-      toast.add({
-        title: `${res.project.key} created — herdr isn't running`,
-        description: 'Start herdr, then Run the scan ticket from the board.',
-        icon: 'i-lucide-drafting-compass',
-        color: 'warning',
-      })
-    }
-    navigateTo(`/projects/${res.project.key}`)
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    toast.add({ title: 'Could not start the architecture scan', description: detail, color: 'error' })
-  } finally {
-    improving.value = false
-  }
-}
 </script>
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="py-8">
       <div class="mb-6 flex items-end justify-between gap-4">
         <div>
@@ -215,18 +181,6 @@ async function improveArchitecture() {
           >
             Import
           </UButton>
-          <UTooltip text="Scan this codebase for deepening opportunities — a herdr session fills a new project with graded candidates">
-            <UButton
-              icon="i-lucide-drafting-compass"
-              variant="soft"
-              color="neutral"
-              :loading="improving"
-              :disabled="!selectedPath"
-              @click="improveArchitecture"
-            >
-              Improve architecture
-            </UButton>
-          </UTooltip>
           <UButton icon="i-lucide-folder-tree" variant="soft" color="neutral" @click="openNewProject">New project</UButton>
         </div>
       </div>

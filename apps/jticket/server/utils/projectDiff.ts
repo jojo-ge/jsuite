@@ -5,12 +5,13 @@
 // a GitHub PR's head is fetched into a remote-tracking ref, which a sandbox
 // allows — so it works over a sandbox's copy of the data.
 import { localPrRefs, type DiffTargetQuery } from '../../app/utils/diffTarget'
-import { prBranchName } from '../../app/utils/reviewPlan'
+import { prBranchName } from '../../app/utils/prReview'
 import type { Project, Store } from './store'
 import { buildDiff, type DiffFile } from './diffBuild'
 import { highlightLines } from './diffHighlight'
-import { isSafeRef, localBranchExists, repoContext, run } from './github'
+import { isSafeRef, localBranchExists, run } from './github'
 import { findPrRef } from './localPrs'
+import { integrationDiffBase } from './integrationBase'
 import { ghPrInfo, prReviewBase } from './prReview'
 
 export interface DiffTarget {
@@ -19,6 +20,8 @@ export interface DiffTarget {
   label: string
   head: string
   base: string
+  /** What to call the base when `base` is a bare commit (a stacked build's slice base). */
+  baseLabel?: string
 }
 
 export interface ProjectDiff {
@@ -35,7 +38,11 @@ function checkRef(ref: string, what: string): string {
   return ref
 }
 
-/** The project's own branch: integration vs default, or a PR review project's PR head vs its base. */
+/**
+ * The project's own branch: integration vs its base (the default branch, or for
+ * a stacked build the commit where it meets its upstream — integrationBase.ts —
+ * so only its own work shows), or a PR review project's PR head vs its base.
+ */
 async function projectTarget(project: Project, repoDir: string): Promise<DiffTarget> {
   if (project.mode === 'prreview' && project.prReview) {
     const pr = project.prReview.pr
@@ -46,8 +53,8 @@ async function projectTarget(project: Project, repoDir: string): Promise<DiffTar
   if (!branch) throw bad('this project has no integration branch — cut or set one on the Overview tab')
   // Adopted from origin but never checked out here: diff origin's copy.
   const head = (await localBranchExists(repoDir, branch)) || !(await refExists(repoDir, `refs/remotes/origin/${branch}`)) ? branch : `origin/${branch}`
-  const { defaultBranch } = await repoContext(repoDir)
-  return { kind: 'project', label: branch, head, base: defaultBranch }
+  const base = await integrationDiffBase(project, repoDir)
+  return { kind: 'project', label: branch, head, base: base.ref, ...(base.ref !== base.name ? { baseLabel: base.name } : {}) }
 }
 
 // A GitHub PR target costs a `gh pr view` and a `git fetch` — held briefly
@@ -113,8 +120,11 @@ export async function resolveDiffTarget(
       ? checkRef(q.base, 'base')
       : project.integrationBranch.trim() && project.integrationBranch.trim() !== head
         ? project.integrationBranch.trim()
-        : (await repoContext(repoDir)).defaultBranch
-    return { kind: 'refs', label: head, head, base }
+        : null
+    if (base) return { kind: 'refs', label: head, head, base }
+    // The integration branch itself, by name: measured like the project's own target.
+    const own = await integrationDiffBase(project, repoDir)
+    return { kind: 'refs', label: head, head, base: own.ref, ...(own.ref !== own.name ? { baseLabel: own.name } : {}) }
   }
   return projectTarget(project, repoDir)
 }

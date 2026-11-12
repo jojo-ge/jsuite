@@ -197,9 +197,9 @@ describe('buildSyncExport', () => {
 
   it('exports project metadata from the creator side only', () => {
     const creator = buildSyncExport(exportInput({
-      project: makeProject({ title: 'Shared effort', description: 'the plan', mode: 'wayfinder' }),
+      project: makeProject({ title: 'Shared effort', description: 'the plan', mode: 'plan' }),
     }))
-    expect(creator.snapshot.projectMeta).toEqual({ title: 'Shared effort', description: 'the plan', mode: 'wayfinder' })
+    expect(creator.snapshot.projectMeta).toEqual({ title: 'Shared effort', description: 'the plan', mode: 'plan' })
 
     const importer = buildSyncExport(exportInput({
       project: makeProject({ share: { key: 'AB', side: 'importer', peerName: 'jo' } }),
@@ -463,13 +463,14 @@ describe('applySyncSnapshot — project metadata', () => {
       project: importerLocal,
       snapshot: makeSnapshot({
         side: 'creator',
+        // A peer from before the rename still sends plan mode's old name.
         projectMeta: { title: 'Renamed', description: 'new plan', mode: 'wayfinder' },
       }),
     }))
     expect(res.project).toMatchObject({
       title: 'Renamed',
       description: 'new plan',
-      mode: 'wayfinder',
+      mode: 'plan',
       repo: '/home/me/code/thing',
       integrationBranch: 'proj/shared-effort',
       starred: true,

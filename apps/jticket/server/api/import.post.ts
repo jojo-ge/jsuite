@@ -19,7 +19,7 @@
 interface ImportProject {
   title: string
   description?: string
-  mode?: ProjectMode // 'wayfinder' turns the whole project into a wayfinder effort
+  mode?: ProjectMode // 'plan' turns the whole project into a plan (a map + its tickets)
   repo?: string // path to a local clone — wires the project to GitHub
   integrationBranch?: string // branch this project's PRs target
   starred?: boolean
@@ -38,6 +38,10 @@ interface ImportTicket {
   wayfinderType?: string
   resolution?: string
   blockedBy?: string[]
+  // A ticket-plan draft: the build node (graph node id) it is planned for —
+  // the ticket's project must be a plan in that graph. Checked: a bad one
+  // fails the whole import (400) before anything is created.
+  plannedFor?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -62,6 +66,7 @@ export default defineEventHandler(async (event) => {
       mode: coerceProjectMode(p.mode),
       repo: p.repo?.trim() ?? '',
       integrationBranch: p.integrationBranch?.trim() ?? '',
+      integrationBase: '',
       starred: p.starred === true,
       position: null,
       hidden: false,
@@ -88,6 +93,8 @@ export default defineEventHandler(async (event) => {
     const projectId = project?.id ?? null
     const labels = cleanLabels([...(t.labels ?? []), ...(t.wayfinderType ? [`wayfinder:${t.wayfinderType}`] : [])])
     const kind = normalizeTicketKind({ type: t.type, labels }, defaultTicketType(labels, project?.mode))
+    // Throws 400 before saveStore — nothing from this import lands.
+    const plannedFor = resolvePlannedFor(store, projectId, t.plannedFor)
     const ticket: Ticket = {
       id: newId('tick'),
       // Shared projects mint under the shared key with the side's parity
@@ -116,6 +123,7 @@ export default defineEventHandler(async (event) => {
       // Freshly minted here: no ownership transfer in flight.
       transfer: '',
       transferAt: '',
+      plannedFor,
       createdAt: ts,
       updatedAt: ts,
     }
@@ -125,8 +133,12 @@ export default defineEventHandler(async (event) => {
   }
 
   // 3. Resolve blocked-by edges now that every ticket exists (by title or key).
+  // A title names a ticket of THIS import first: an older ticket elsewhere in
+  // the store with the same title must not capture the edge.
   const byRef = (ref: string) =>
-    store.tickets.find((x) => x.id === ref || x.key === ref || x.title === ref)
+    store.tickets.find((x) => x.id === ref || x.key === ref) ??
+    createdTickets.find((x) => x.title === ref) ??
+    store.tickets.find((x) => x.title === ref)
   for (const { ticket, src } of importPairs) {
     const edges = new Set<string>()
     for (const ref of src.blockedBy ?? []) {

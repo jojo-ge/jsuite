@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
     mode: 'todo',
     repo: probe.path,
     integrationBranch: '',
+    integrationBase: '',
     starred: false,
     position: null,
     hidden: false,

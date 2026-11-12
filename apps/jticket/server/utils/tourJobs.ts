@@ -18,6 +18,8 @@ export interface TourJob {
   startedAt: number
   agent: string
   tabId: string
+  /** The head commit the session was told to read — saved with its tour, so the Diff tab can tell when the target has moved on. */
+  headOid?: string
 }
 
 /** The one job kind jTicket runs; jDiff's file holds others for the same targets. */

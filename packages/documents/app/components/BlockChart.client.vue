@@ -12,10 +12,16 @@ const props = defineProps<{ block: ChartBlock }>()
 
 const { data: chart, error } = await useFetch(() => `/api/charts/${props.block.chartKey}`)
 
-const canvas = ref<{ setScene: (s: Scene, o?: { scrollToContent?: boolean }) => void } | null>(null)
+const canvas = ref<{ setScene: (s: Scene, o?: { scrollToContent?: boolean }) => void; fitToContent: () => void } | null>(null)
 const importing = ref(false)
 const canvasError = ref('')
 const status = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+// A print shows the canvas as it stands, so before an export the reader asks
+// every chart to bring its whole drawing into view (see EXPORT_EVENT).
+const fitForExport = () => canvas.value?.fitToContent()
+onMounted(() => window.addEventListener(EXPORT_EVENT, fitForExport))
+onBeforeUnmount(() => window.removeEventListener(EXPORT_EVENT, fitForExport))
 
 const colorMode = useColorMode()
 const theme = computed<'light' | 'dark'>(() => (colorMode.value === 'light' ? 'light' : 'dark'))
@@ -72,11 +78,12 @@ const statusLabel = computed(
     <figcaption class="flex items-center gap-2 border-b border-default bg-elevated/60 px-4 py-2">
       <UIcon name="i-lucide-shapes" class="size-4 text-dimmed" />
       <span class="text-xs font-medium text-muted">{{ block.title || chart?.title || block.chartKey }}</span>
-      <span class="ml-auto text-[11px]" :class="status === 'error' ? 'text-error' : 'text-dimmed'">
+      <span class="ml-auto text-[11px] print:hidden" :class="status === 'error' ? 'text-error' : 'text-dimmed'">
         {{ statusLabel }}
       </span>
       <UButton
         :to="editorUrl"
+        class="print:hidden"
         target="_blank"
         icon="i-lucide-external-link"
         color="neutral"

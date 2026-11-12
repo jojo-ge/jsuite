@@ -5,7 +5,7 @@ export default defineEventHandler((event) => {
   let tickets = all
   if (q.projectId) {
     // Accept a project id or key.
-    const project = store.projects.find((p) => p.id === q.projectId || p.key === q.projectId)
+    const project = findByRef(store.projects, q.projectId)
     const projectId = project?.id ?? q.projectId
     tickets = tickets.filter((t) => t.projectId === projectId)
   }

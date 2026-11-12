@@ -8,7 +8,7 @@ export default defineEventHandler((event) => {
   let prs = store.prs
 
   if (q.projectId) {
-    const project = store.projects.find((p) => p.id === q.projectId || p.key === q.projectId)
+    const project = findByRef(store.projects, q.projectId)
     const projectId = project?.id ?? q.projectId
     prs = prs.filter((pr) => pr.projectId === projectId)
   }
@@ -19,7 +19,7 @@ export default defineEventHandler((event) => {
   }
   if (q.ticket || q.ticketId) {
     const ref = String(q.ticket ?? q.ticketId)
-    const ticket = store.tickets.find((t) => t.id === ref || t.key === ref)
+    const ticket = findByRef(store.tickets, ref)
     prs = prs.filter((pr) => pr.ticketId === (ticket?.id ?? ref))
   }
   if (q.status) prs = prs.filter((pr) => pr.status === q.status)

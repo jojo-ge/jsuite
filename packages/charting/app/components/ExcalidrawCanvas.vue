@@ -164,6 +164,12 @@ function setScene(scene: Scene, opts: { scrollToContent?: boolean } = {}) {
   })
 }
 
+/** Zoom and pan so the whole drawing is in view — what a print of the canvas should show. */
+function fitToContent() {
+  if (!api) return
+  api.scrollToContent(api.getSceneElements(), { fitToContent: true, animate: false })
+}
+
 /** Select an element and bring it into view — how the notes list points at a shape. */
 function focusElement(id: string) {
   if (!api) return
@@ -186,7 +192,7 @@ function getScene(): Scene | null {
   }
 }
 
-defineExpose({ setScene, focusElement, getElements, getScene })
+defineExpose({ setScene, focusElement, getElements, getScene, fitToContent })
 </script>
 
 <template>

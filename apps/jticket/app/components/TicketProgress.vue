@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A ticket set as one stacked bar: done · in progress · not takeable here ·
 // blocked · not started. The states are the shared flow-state buckets — this
-// groups by `bucketOf`, the same call TicketBoard and the wayfinder graph
+// groups by `bucketOf`, the same call TicketBoard and the dependency graph
 // make, so the bar cannot say something the board contradicts. Only the order
 // is the bar's own: finished on the left, unstarted on the right, so the bar
 // fills as a project lands.

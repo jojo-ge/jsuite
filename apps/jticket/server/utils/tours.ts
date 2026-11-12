@@ -11,6 +11,7 @@
 import { diffTargetParams, parseDiffTarget, type DiffTargetQuery } from '../../app/utils/diffTarget'
 import { tourKeyFor, type TourView } from '../../app/utils/tour'
 import type { Project, Store } from './store'
+import { findByRef } from './ids'
 import { cleanTour } from './tourArtifact'
 import { clearTourFailure, clearTourJob, getTourJob, recordTourFailure, registerTourJob, tourFailure, type TourJob } from './tourJobs'
 import { loadTour, saveTour } from './tourStore'
@@ -27,7 +28,7 @@ export interface TourContext {
 /** A project ref + a target query/body → everything a tour call needs. 404/400 on a bad ref or target. */
 export function tourContext(projectRef: string | undefined, raw: Record<string, unknown>): TourContext {
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === projectRef || p.key === projectRef)
+  const project = findByRef(store.projects, projectRef)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   const repoDir = resolveRepoDir(project.repo)
   const target = parseDiffTarget(raw)
@@ -51,6 +52,7 @@ export function tourView(ctx: TourContext): TourView {
     key: ctx.key,
     tour: saved?.tour ?? null,
     createdAt: saved?.createdAt ?? '',
+    headOid: saved?.headOid ?? '',
     job: job ? { startedAt: job.startedAt, agent: job.agent } : null,
     failure: job ? '' : failure,
   }
@@ -101,7 +103,7 @@ async function startTour(ctx: TourContext): Promise<TourJob> {
     agent: `tour-${ctx.project.key}-${agentSlug(ctx.key)}`,
     session: { role: 'tour' },
   })
-  return registerTourJob({ repo: ctx.repoDir, key: ctx.key, startedAt, agent, tabId })
+  return registerTourJob({ repo: ctx.repoDir, key: ctx.key, startedAt, agent, tabId, headOid: diff.target.headOid })
 }
 
 /**
@@ -117,12 +119,21 @@ export async function cancelTour(ctx: TourContext): Promise<{ cancelled: boolean
   return { cancelled: !!job }
 }
 
-/** The session's tour: cleaned, saved as the target's detail tour, and the run settled. */
-export function saveTourArtifact(ctx: TourContext, artifact: unknown): { saved: 'tour'; key: string; stops: number; createdAt: string } {
+const OID = /^[0-9a-f]{40}([0-9a-f]{24})?$/
+
+/**
+ * The session's tour: cleaned, saved as the target's detail tour, and the run
+ * settled. `head` is the commit the session read (its `head=` argument); the
+ * live job's is the fallback. It is what the Diff tab compares against the
+ * diff's head to warn that a tour is out of date.
+ */
+export function saveTourArtifact(ctx: TourContext, artifact: unknown, head?: unknown): { saved: 'tour'; key: string; stops: number; createdAt: string } {
   if (!artifact || typeof artifact !== 'object') throw createError({ statusCode: 400, statusMessage: 'missing artifact' })
   const tour = cleanTour(artifact)
   const createdAt = new Date().toISOString()
-  saveTour({ repo: ctx.repoDir, number: ctx.key, variant: 'detail', tour, createdAt })
+  const said = typeof head === 'string' ? head.trim().toLowerCase() : ''
+  const headOid = OID.test(said) ? said : getTourJob(ctx.repoDir, ctx.key)?.headOid
+  saveTour({ repo: ctx.repoDir, number: ctx.key, variant: 'detail', tour, createdAt, ...(headOid ? { headOid } : {}) })
   clearTourJob(ctx.repoDir, ctx.key)
   clearTourFailure(ctx.repoDir, ctx.key)
   return { saved: 'tour', key: ctx.key, stops: tour.stops.length, createdAt }

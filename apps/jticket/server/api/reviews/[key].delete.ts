@@ -8,5 +8,7 @@ export default defineEventHandler(async (event) => {
   const review = await readReview(key)
   if (review?.worktree) await removeReviewWorktree(review.repoPath, review.workdir)
   await deleteReview(key)
+  // A PR review project that was waiting on it stops waiting.
+  settlePrReviewRun(key, 'stopped')
   return { ok: true }
 })

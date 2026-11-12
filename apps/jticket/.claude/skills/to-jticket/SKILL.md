@@ -1,6 +1,6 @@
 ---
 name: to-jticket
-description: Interface with jTicket — the local projects/tickets/docs tracker. Break a plan into tickets (to-tickets), author or update any project, ticket, doc or attachment, and query the board. Invoked as /to-jticket [tickets | TICK-n | PROJ-n | a request]. For writing a spec as a doc, and for which format each field takes, use to-jspec.
+description: Interface with jTicket — the local projects/tickets/docs tracker. Break a plan into tickets (to-tickets), author or update any project, ticket, doc or attachment, and query the board. Invoked as /to-jticket [tickets | TICK-n | PROJ-n | a request]. For writing a spec as a doc, and for which format each field takes, use to-jdoc.
 argument-hint: "[tickets | TICK-n | PROJ-n | what to do]"
 disable-model-invocation: true
 ---
@@ -38,21 +38,20 @@ Read the response of every write: jTicket **silently drops** refs it cannot reso
 | --- | --- |
 | "break this into tickets", "/to-jticket tickets", a plan or spec to slice up | [Mode: tickets](#mode-tickets) |
 | "add a ticket", "mark TICK-4 done", "what's on the board", any single read or write | [Mode: direct](#mode-direct) |
-| "write a spec/PRD", "document this" | stop; use **`/to-jspec`** instead |
-| anything wayfinder — charting a map, working a frontier | stop; use **`/jwayfinder`** instead |
+| "write a spec/PRD", "document this" | stop; use **`/to-jdoc`** instead |
+| anything plan-mode — charting a map, working a frontier | stop; use **`/jplan`** instead |
 
 Ambiguous between tickets and spec? A spec answers *what and why* as one document; tickets
-answer *what to build next, in what order*. If the work is unscoped, `/to-jspec` first,
+answer *what to build next, in what order*. If the work is unscoped, `/to-jdoc` first,
 then tickets from that spec. Ask if it is genuinely a coin flip.
 
 ## 2. Core model
 
 - **Project** `PROJ-n` — `{ key, title, description, mode, repo, integrationBranch }`. `mode` is
-  `standard`, `wayfinder`, `predeploy` (a pre-deploy bug sweep — each ticket is one
-  suspected bug and dispatches `/jreproduce`, which reproduces it as a failing test and never
-  fixes it), or one of the two modes you must never create with a plain POST: `todo` (a
-  codebase's auto-created TODO list — see **Codebases** below) and `architect` (one
-  architecture scan, made by `POST /api/projects/architect`). `repo` (path to a local clone) +
+  `standard`, `plan` (a map + its tickets — `/jplan`'s territory), `predeploy` (a pre-deploy bug
+  sweep — each ticket is one suspected bug and dispatches `/jreproduce`, which reproduces it
+  as a failing test and never fixes it), or the one mode you must never create with a plain
+  POST: `todo` (a codebase's auto-created TODO list — see **Codebases** below). `repo` (path to a local clone) +
   `integrationBranch` are the optional GitHub link — see **GitHub** below; both `""` when unset.
   `repo` is also what scopes a project to a **codebase**.
 - **Ticket** `TICK-n` — `{ key, title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], comments[], branch, prompt, promptMode, completedAt, origin, owner, transfer, transferAt }`
@@ -97,8 +96,8 @@ ever created, not the seventh in its project.
 
 Full endpoint list, query params, and payload shapes: **[reference/api.md](reference/api.md)**.
 Doc content is authored as blocks (vocabulary in the `j-explain`
-skill); descriptions and resolutions are plain GFM markdown. See **`to-jspec`**,
-[SKILL.md](../to-jspec/SKILL.md), before writing any doc, description, or resolution.
+skill); descriptions and resolutions are plain GFM markdown. See **`to-jdoc`**,
+[SKILL.md](../to-jdoc/SKILL.md), before writing any doc, description, or resolution.
 
 ## Mode: tickets
 

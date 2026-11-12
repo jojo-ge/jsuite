@@ -25,7 +25,6 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
     <UContainer class="space-y-6 py-6">
       <div>
         <h1 class="text-xl font-semibold">Prompts</h1>

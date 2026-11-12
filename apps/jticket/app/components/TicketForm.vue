@@ -12,9 +12,9 @@ const props = withDefaults(
     projects: Project[]
     tickets: Ticket[]
     defaultProjectId?: string | null
-    // Wayfinder projects get the resolution field. The parent
+    // Plan projects get the resolution field. The parent
     // decides: it already knows which project the ticket sits under.
-    wayfinder?: boolean
+    plan?: boolean
     // Off for the create modal's non-visible tabs: an autofocus on a hidden
     // form still steals the caret from the one you're looking at.
     autofocus?: boolean
@@ -148,9 +148,9 @@ const promptModeOptions = [
 const promptProject = computed(() => props.projects.find((p) => p.id === form.projectId) ?? null)
 const projectMode = computed<ProjectMode>(() => promptProject.value?.mode ?? 'standard')
 const promptKind = computed(() =>
-  promptKindFor(projectMode.value, { labels: live.value?.labels ?? [] }, promptTarget.value),
+  promptKindFor(projectMode.value, { labels: live.value?.labels ?? [], type: live.value?.type }, promptTarget.value),
 )
-// A PR review project's finding ticket is a record: it has no hand-off to show or override.
+// A PR review project's ticket is a record: it has no hand-off to show or override.
 const recordOnly = computed(() => !!live.value && isRecordOnly(live.value, projectMode.value))
 // What the project resolves to before this ticket has its say — the reference
 // text above the box, and what 'append' appends to.
@@ -318,7 +318,7 @@ defineExpose({ save, reset, saving, canSave })
     </UFormField>
 
     <UFormField
-      v-if="wayfinder"
+      v-if="plan"
       label="Resolution"
       help="The answer, recorded when the ticket resolves. Renders as markdown."
     >
@@ -338,8 +338,18 @@ defineExpose({ save, reset, saving, canSave })
          machine-local: they change what this jTicket dispatches, not the work. -->
     <p v-if="recordOnly" class="flex items-start gap-2 rounded-lg border border-default px-3 py-2 text-xs text-muted">
       <UIcon name="i-lucide-scan-search" class="mt-0.5 size-4 shrink-0 text-warning" />
-      A review finding — a record of what the review found in the pull request. It has no hand-off and is never dispatched:
-      post it to the PR from the project's Review tab, or close it when it no longer stands.
+      <span v-if="live && isDraftTicket(live)">
+        A draft in this plan's ticket plan — not work yet. It has no hand-off and is never dispatched until the plan is
+        approved and it moves into its build project (the plan's Ticket plan tab).
+      </span>
+      <span v-else-if="live && isFindingTicket(live)">
+        A review finding — a record of what the review found in the pull request. It has no hand-off and is never dispatched:
+        post it to the PR from the project's Review tab, or close it when it no longer stands.
+      </span>
+      <span v-else>
+        A note on a PR review project — the pull request is someone else's, so nothing here is work. It has no hand-off
+        and is never dispatched.
+      </span>
     </p>
     <div v-else class="rounded-lg border border-default">
       <button

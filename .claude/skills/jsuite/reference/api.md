@@ -33,7 +33,7 @@ A doc record (`/api/docs/DOC-n`) has no body — its blocks are at
 ## jTicket — routes by job
 
 **Core records**: `/api/projects` (GET/POST; `[id]` GET/PATCH/DELETE; `order` PUT;
-`architect` POST makes an architect-mode project; `todo` POST get-or-creates the
+`todo` POST get-or-creates the
 codebase's TODO project, idempotent), `/api/tickets` (GET/POST; `[id]`
 GET/PATCH/DELETE; `[id]/branch` POST; `[id]/comments` POST, `[commentId]`
 DELETE; `[id]/herdr` POST dispatches the ticket into herdr; `[id]/transfer`
@@ -42,6 +42,13 @@ DELETE; `[id]/herdr` POST dispatches the ticket into herdr; `[id]/transfer`
 `/api/repos` (GET/POST/PATCH/DELETE, `pick`, `probe`), `/api/stream` (SSE),
 `/api/import`, `/api/projects/import`, `/api/projects/:id/export`.
 
+**Ids**: every entity's `id` is a bare UUIDv7 (`server/utils/ids.ts`); `:id`
+takes the id, the key (`TICK-n`, `PROJ-n`, `G-n`) or a pre-UUID id (`tick_…`),
+which resolves through `.data/jticket/id-migration.json` (`findByRef`). That
+map was written by the one-off `POST /api/admin/migrate-ids {dryRun?}` (copies
+`.data` to `.data.backup-ids-<stamp>` first; 409 while auto mode or a run-plan
+build is on; a second run answers `noop: true`).
+
 **Local PRs**: `/api/prs` (GET/POST), `/api/prs/:id` (GET/PATCH/DELETE),
 `POST /api/prs/:id/merge` — squash-merges a ticket branch onto the project's
 integration branch; the response carries `headWorktree` (a worktree still
@@ -49,17 +56,47 @@ holding the merged head branch) so the merge sweep can remove it. Only the
 integration branch ever reaches origin, through the roll-up PR.
 
 **Integration branch** (the Overview tab's card, `ProjectIntegrationBranch.vue`,
-and the Pull requests tab): `POST /api/projects/:id/integration-branch` cuts or
-sets it; `GET /api/projects/:id/branches?q=&fetch=1` feeds the existing-branch
+and the Pull requests tab): `POST /api/projects/:id/integration-branch
+{branch?, base?}` cuts or sets it, recording `project.integrationBase` (the
+branch it was cut from; `''` = the default branch, also settable with
+`PATCH /api/projects/:id {integrationBase}`);
+`GET /api/projects/:id/branches?q=&fetch=1` feeds the existing-branch
 picker; `POST /api/projects/:id/integration-pr` is the roll-up PR — pushes the
-branch, then opens or finds the integration → default PR via `gh`;
-`GET /api/projects/:id/github` is the Pull requests tab's GitHub side (the repo, the integration branch, the open PRs that belong to the project, each with a Diff tab link). There is no
-separate push, pull or ahead/behind status.
+branch, then opens or finds the integration → base PR via `gh` (409 when a
+stacked base is gone from origin: sync first);
+`GET /api/projects/:id/github` is the Pull requests tab's GitHub side (the repo, the integration branch, `integrationBase`/`baseBranch`, the open PRs that belong to the project, each with a Diff tab link).
+
+**Stacking** (`app/utils/stacking.ts`, `server/utils/integrationBase.ts`): a
+build may stack on one upstream build's integration branch; it then shows only
+its own work — the Diff tab, its slice size and its Review tab measure from
+the **slice base**, where its branch meets the upstream's (or, once the
+upstream was squash-merged, the merged PR's head). `GET
+/api/projects/:id/integration-branch` (`?force=1` re-asks origin and gh;
+never fetches, never throws) → `{configured, branch, base, baseBranch,
+defaultBranch, stacked, upstreamProject, upstreamPr, baseExists,
+upstreamMerged, upstreamWhy, sync, comparedWith, ahead, behind, pushed,
+unpushed, slice: {files, additions, deletions} | null, sliceBase, refreshing,
+error}`. `POST /api/projects/:id/integration-branch/sync` is **Sync from
+upstream**: fetch, then merge (never rebase, never push) — `sync: 'upstream-open'`
+merges the upstream branch in; `'upstream-merged'` merges what it merged into
+(usually the default branch), records that as the base and retargets the open
+roll-up PR (`gh pr edit --base`); `'default'` (not stacked) merges the default
+branch. Answers `{ok, case, from, outcome, base, baseChanged, retarget,
+upstreamWhy}` (400 without an integration branch); a conflict or a dirty worktree holding the branch is `ok: false`
+with nothing moved.
+
+**GitHub reads are cached** (`server/utils/ghCache.ts`, in memory): this
+route, `GET /api/repos/prs` and `GET /api/today/github` answer from what was
+last read — at once when it is under a minute old (30s for Today), and at once
+with `refreshing: true` while a fresher copy is fetched behind the response
+when it is older (up to an hour). `fetchedAt` says how old the answer is; ask
+again to get the refreshed one, or send `&force=1` to wait for GitHub.
 
 **Diff tab** (`app/components/ProjectDiff.vue`, `server/utils/projectDiff.ts`):
 `GET /api/projects/:id/diff` → `{target, files}` — no params: the project's own
-branch (integration vs default; a PR review project's `jreview/pr-<n>` vs its
-base); `?pr=PR-n` a local PR (merged → its squash commit vs parent); `?gh=<n>`
+branch (integration vs its base — the default branch, or a stacked build's
+slice base, with `target.baseLabel` naming the upstream branch; a PR review
+project's `jreview/pr-<n>` vs its base); `?pr=PR-n` a local PR (merged → its squash commit vs parent); `?gh=<n>`
 a GitHub PR (head fetched into `refs/remotes/jticket/pr-<n>`); `?head=&base=`
 any two refs. `GET …/diff/file` is one file's full view. Links are
 `/projects/KEY?tab=diff&…` (`diffTabUrl`, `app/utils/diffTarget.ts`); API
@@ -79,12 +116,87 @@ not finished and not blocked, PRs asking for my review), what's building
 (in-progress AFK tickets, running auto loops), my PRs' CI, and the TODO inbox.
 `GET /api/today/github?repo=<codebase path>` reads `gh pr list` in the clone:
 `mine` (with `ci: {state, failed, pending, total}` rolled up from
-`statusCheckRollup`, `reviewDecision`) and `reviewRequested`; a `gh` failure
-returns `error`, not a 500. The TODO inbox is the codebase's todo-mode project
+`statusCheckRollup`, `reviewDecision`) and `reviewRequested` — drafts left out
+of both unless `&drafts=1`; a `gh` failure returns `error`, not a 500. The TODO inbox is the codebase's todo-mode project
 (`POST /api/projects/todo {repo}` — 201 created / 200 existing; a todo's Grill button runs a herdr interview, no branches).
 
-**Graphs**: `GET /api/graphs`, `GET /api/graphs/G-KEY` (a member project key
-works too). Logic `app/utils/projectGraphs.ts`.
+**Graphs** (menu `/graphs`, one graph `/graphs/G-n?node=<nodeId>`; logic `app/utils/graphs.ts`, server
+`server/utils/graphs.ts`) — stored in `store.graphs`, machine-local (never
+synced). A graph is `{id, key: 'G-n', title, description, repo, nodes, edges}`;
+a node is `{id, mode, projectId (null = proposed), title, note, enteredAt,
+enteredNote, enteredBriefing, stackOn}`, an edge `{from, to}` (node ids,
+acyclic). A project sits in at most one node of one graph; deleting it turns
+its node back into a proposed one. `:id` takes the graph's id, its key (any
+case), a member project's key, or an old `G-PROJ-n`.
+- `GET /api/graphs?repo=` — newest first; each node with its project, ticket
+  counts, `running`, `outcomeDoc`, `state` (`proposed` · `waiting` · `ready` ·
+  `entered` · `finished`) and `layer`. `GET /api/graphs/:id` adds each build
+  node's `slice` (`ok` with files/additions/deletions, `none`, or `unknown`
+  while git is slow) and the briefing each node was entered with.
+- `POST /api/graphs {title, repo, description?, nodes?, edges?}` → 201
+  `{graph, problems}`; `PATCH /api/graphs/:id {title?, description?, repo?}`;
+  `DELETE /api/graphs/:id` (projects untouched).
+- `PUT /api/graphs/:id {nodes, edges}` — the whole shape, saved as sent (a node
+  without a known id is new; entered records are kept) → `{graph, problems:
+  [{nodeId, message}]}`: a cycle, a project in two nodes or graphs, a `stackOn`
+  that isn't a direct upstream build.
+- `POST /api/graphs/:id/nodes` — `{projectId}` or `{mode, title, note?}`, plus
+  `after?: [nodeId]` and `stackOn?` → 201 `{node, graph, problems}`.
+- `GET /api/graphs/:id/nodes/:nodeId/briefing` (`?stackOn=<nodeId>` or `''`
+  previews a base) → `{graph, node, project, upstreams, base, flags, incomplete,
+  at}`: each upstream's tickets, running work, roll-up PR (state, CI), review
+  verdict and open findings, integration branch behind/unpushed, outcome doc,
+  slice size; a build's base and stack options. `flags` (`warning`|`info`) only
+  warn — a large slice (over `SLICE_LARGE_FILES` 30 files or
+  `SLICE_LARGE_LINES` 800 lines), stacking on one upstream while another is
+  unmerged, tickets blocked from outside the graph. `incomplete: true` means a
+  GitHub/git read timed out — ask again.
+- `POST /api/graphs/:id/nodes/:nodeId/enter {note?, stackOn?}` — **Move on**:
+  never refused, starts nothing. Creates a proposed node's project (a Review
+  node: a PR review project with the upstream build's open roll-up PR
+  attached, else with no PR yet, said in an `info` flag), sets a build's
+  `integrationBase` from `stackOn` when it has no integration branch yet,
+  stamps `enteredAt` and keeps the briefing → `{graph, node, project, created,
+  briefing, flags}`.
+- `GET /api/projects/:id/graph` → `{graph, node, upstream, downstream}` (or
+  `{graph: null}`) — the project page's strip, and its Move on banner while the
+  node isn't entered.
+
+**Ticket plan** (a Plan project's tab, `ProjectTicketPlan.vue`;
+`app/utils/ticketPlan.ts`, `server/utils/ticketPlan.ts`). A **draft** is a
+ticket on the plan project with `plannedFor` = a build node's id in the plan's
+graph (`POST/PATCH /api/tickets` and `/api/import` take it; 400 unless it names
+a build node; `null` clears it): off the frontier, record-only. Routes under
+`/api/projects/:id/ticket-plan` (409 on a non-plan project):
+- `GET` → `{project, graph, planNodeId, drafts, building, builds: [{nodeId,
+  title, note, proposed, project, after, reviews, layer, drafts}], reviews,
+  unplaced, problems}`.
+- `POST …/graph` — get-or-create the plan's graph → `{graph, planNodeId,
+  created}` (201 when made).
+- `POST …/build` (202 `{agent, paneId, graph}`; 409 without a repo, on a shared
+  plan, or while a session is live) / `DELETE …/build` — the **Draft ticket
+  plan** button: one Fable 5.2 high `/jplan-to-jtickets` session (prompt kind
+  `ticketplan:build`; `JTICKET_TICKETPLAN_MODEL`/`_EFFORT`), marked by
+  `project.ticketPlanBuild`. It reports back with `POST …/built {summary?}` →
+  `{wasBuilding, summary, plan}`.
+- `POST …/approve {nodes?}` → `{approved: [{nodeId, project, created, moved,
+  notes}], plan}` — each build node with drafts gets its project and its drafts
+  move in (`projectId` ← the build, `plannedFor` ← null; blockers carry over).
+  Starts and enters nothing; review nodes stay proposed. 409 shared, drafting,
+  in no graph, or nothing to approve.
+
+**Send back** (`app/utils/reviewHandoff.ts`, `server/utils/reviewHandoff.ts`):
+`GET /api/projects/:id/findings/send-back` → `{offered, why, graph, target,
+candidates, ticketType}` — per `SEND_BACK_RULES` (keyed by review mode). On a
+PR review project it is offered only directly after a build in a graph
+(`?to=PROJ-n` picks the build when several lead in), and each finding becomes
+an AFK `bug` on the build (with its file, line and a link back). On a plan
+review project it is offered whenever its plan still exists, graph or not, and
+each finding becomes a HITL `decision` on the plan. `POST … {ticketKeys, to?}`
+→ `{target, sent: [{key, ticketKey}], already, refused}`, 409 when not offered.
+Every new ticket is labelled `review:sent-back`; the finding records it in
+`ticket.sentBack {ticketId, ticketKey, projectId, at}`, and one already sent
+files nothing new. Starts nothing.
 
 **Analytics** (passive — nothing is reported by agents): `GET /api/analytics`
 (`?repo=` path or slug, `?from=`/`?to=` ISO dates on dispatch time, `?rows=1`
@@ -107,6 +219,37 @@ classification in `verification.ts`, extended per codebase with
 `PATCH /api/repos?path= {verificationRules: [{id, category, pattern}]}`; prices
 in `pricing.ts`, overridable at `.data/jticket/pricing.json`).
 
+**Harness capture** (mechanical — no session reports anything, no model reads
+anything; kept under `.data/jticket/harness/` so it outlives claude's 30-day
+transcript cleanup). `GET /api/harness/journal` (`?project=`, `?run=`,
+`?kind=a,b`, `?from=`/`?to=`) is the **run journal**: one event per change in
+an auto-mode run's state — `run-started`/`run-ended`, `loop-started`/
+`loop-finished`, `phase`, `step-finished`, `dispatched`, `ticket-stopped`,
+`nudged`, `forced`, `orchestrator-dispatched`/`-replaced`/`-nudged`, `paused`/
+`resumed` (reason, detail, how long), `gate-passed`, `stop-requested`,
+`merge-dispatched`/`merge-reported`, `no-pr-look`, `review-requested`,
+`fix-tickets-filed`, `slice-*`, `report-*` — each with `runId`
+(`PROJ-n@<start>`), `loop`, `phase`, `step`, `ticket`, `orchestrator`,
+`detail`, `data`. Derived in `saveStore` by diffing `project.auto` against the
+last save (`app/utils/runJournal.ts`, `server/utils/runJournal.ts`).
+`GET /api/harness/runs` (`?project=`, `?repo=`, `?from=`/`?to=`) lists runs
+with event counts and their snapshot's totals; `GET /api/harness/runs/:id` is
+the **run snapshot** — events, `pauses`, `tickets` (dispatched/stopped/nudged/
+forced, PR, `findingsAgainst`, `planned` — the plan's runner and the builder's
+`prediction` for it, frozen at `run-started` — and `actualMinutes`), `reviews` (each finding with `introducedBy` —
+the ticket whose merged PR git blames for the line; `by: line|file`),
+`sessions`, merged `friction`, `totals` — stored once the run has ended and
+settled, built live (`live: true`) before that. `GET /api/harness/sessions`
+(`?project=`, `?repo=`, `?role=`, `?harness=`, `?from=`/`?to=`; `?full=1` for
+whole digests) is the **session digests**: a ledgered session's metrics and
+`friction` (`server/utils/friction.ts`: `toolErrors`, `byClass`, `samples`
+with the error text, `apiErrors`, `interventions` human/interrupt/nudge,
+`reads`, `repeatedCommands`, `slowCalls`, `compactions`), its subagents' too.
+`POST /api/harness/capture {force?}` runs the capture pass now
+(`server/utils/harnessCapture.ts`; the auto-loop plugin runs it every 10
+minutes). Ledger rows carry `harness` / `commit` / `setup` — the harness
+version the session ran under (`server/utils/harnessVersion.ts`).
+
 **Worktrees**: `GET/PUT/DELETE /api/repos/worktree?repo=` — the codebase's
 worktree guide; `POST /api/repos/worktree/herdr` dispatches the
 `worktree:kickoff` prompt. `POST /api/projects/:id/herdr-worktree` dispatches
@@ -123,7 +266,7 @@ review's panes close.
 
 **Prompt kinds** (`app/utils/prompts.ts`; resolution ticket → project →
 codebase → global → built-in): hand-offs per ticket kind, `batch`,
-`worktree:kickoff`, `worktree:connect`, `runplan:build`, `prreview:assess`. Codebase settings
+`worktree:kickoff`, `worktree:connect`, `runplan:build`, `ticketplan:build`. Codebase settings
 (`/codebase`) hold a codebase's overrides.
 
 **One session (batch)**: `POST /api/projects/:id/herdr-batch {prompt, tickets}`
@@ -136,8 +279,11 @@ every ticket is HITL. `POST …/herdr-merge` runs the merge sweep by hand;
 
 **Reviews from a project** (the Review tab): `GET/POST /api/projects/:id/reviews`
 (POST `{branch?, base?, reviewers?}` — branch defaults to the integration
-branch; starts a triage review with `project: KEY`; 409 on a PR review
-project, whose reviews run from its review plan), `GET …/reviews/:key`,
+branch, and a stacked build's is reviewed from its slice base; starts a triage review with `project: KEY`; on a PR review
+project it takes only `{reviewers?}` (2–4, default 3), re-fetches the PR head
+and starts that PR's agreement review, 409 while one is still out; on a plan
+review project likewise `{reviewers?}`, starting the plan's agreement review —
+below), `GET …/reviews/:key`,
 `POST …/reviews/:key/action {action: retry-reviewer|skip-reviewer|retry-triage, n?}`,
 `POST …/reviews/:key/tickets` (files the picked findings as tickets in THIS
 project; each finding records its ticket key; 409 for an agreement review,
@@ -257,42 +403,96 @@ alone; budget 2 per orchestrator (a 1 is lifted on save) and 4+ tickets in a
 group; groups are folded to 2 on save, a solo ticket beside two orchestrators
 or a group under 4 tickets is a `problems` entry — orders
 each step's ticket list as its dispatch queue (the engine starts the next
-own-agent ticket as a session frees), PUTs the plan until `problems` is `[]`,
-and reports back via `POST …/run-plan/built`. `project.runPlanBuild` marks it
-in progress; the tab is read-only meanwhile.
+own-agent ticket as a session frees), records a prediction per open ticket
+(`step.predictions[key]` = `{weight: light|medium|heavy, minutes, risk:
+low|medium|high, why}` — what the run is later scored against), PUTs the plan
+until `problems` is `[]`, and reports back via `POST …/run-plan/built` (400,
+naming the tickets, while an open implement-step ticket has no prediction).
+`project.runPlanBuild` marks it in progress; the tab is read-only meanwhile.
 
 ## PR review projects and the Reviews board
 
-Mode `prreview` — one GitHub PR, reviewed, never changed (`app/utils/reviewPlan.ts`).
-They leave the projects board, Today and Graphs for the **Reviews** board
-(`/reviews`, `app/pages/reviews/index.vue`), whose **Open PRs** section reads
-`GET /api/repos/prs?repo=&force=1` → `{error, viewer, prs}` (a `gh` failure is
-`error`, not a 500) and whose **Review this PR** opens the PR's project or
-makes one. `POST /api/projects/pr-review {repo, pr, assess?, autoStart?}`
-get-or-creates it (PR head fetched to the never-pushed `jreview/pr-<n>`). `POST
-/api/projects/:id/pr-review/assess {autoStart?}` / `DELETE` — the Fable 5.2
-`/jreview-assess` (prompt kind `prreview:assess`); it reports back with `POST
-…/pr-review/assessed {reviewers, focus, briefDoc, rationale, risk}`. `PUT
-/api/projects/:id/review-plan {steps: [{kind: checks|gate|review, …}]}` →
-`{plan, problems}` (one review step, last; checks are `pr:check` tickets, run
-as `/jpr-check`, kind `prcheck`). `POST /api/projects/:id/review-run {action:
-start|rerun|stop|continue|retry}`. Runner `server/utils/reviewRun.ts`, ticked
-by `server/plugins/reviewRun.ts` — separate from auto mode. State
-`project.prReview` (`pr`, `assessment`, `assessing`, `plan`, `run`, `runs`).
+Mode `prreview` — one GitHub PR, reviewed, never changed (`app/utils/prReview.ts`).
+They leave the projects board and Today for the **Reviews** board
+(`/reviews`, `app/pages/reviews/index.vue`; one in a graph also appears there
+as a Review node, and Move on into a proposed Review node makes one), whose **Open PRs** section reads
+`GET /api/repos/prs?repo=` → `{error, viewer, prs, total, nextCursor, fetchedAt,
+refreshing}` — one GitHub search, 25 a page (`&limit=`, 50 at most), most
+recently updated first: drafts are left out unless `&drafts=1`, `&mine=1` keeps
+my PRs, `&reviewing=me|team` those asking me (or me and my teams) for review,
+`&cursor=<nextCursor>` is the next page (a `gh` failure is `error`, not a 500) and whose **Make review project** opens the PR's project or
+makes one — without `review`, so nothing is dispatched until the human
+presses Start review on its Review tab. `POST /api/projects/pr-review {repo, pr, review?, reviewers?}`
+get-or-creates it (PR head fetched to the never-pushed `jreview/pr-<n>`) and,
+with `review: true`, starts the review → `{project, created, review?: {key,
+url}, reviewError?}`. A review project can also be made with no PR yet — the
+create modal's **Review** type, `POST /api/projects {mode: "prreview", repo,
+title?}` (400 without a git repo): `prReview` is null and its page is only a
+picker of the repo's open PRs until `POST /api/projects/:id/pr-review {pr}`
+fetches that PR's head onto `jreview/pr-<n>` and attaches it → the project
+(nothing is started; a blank title and description become the PR's; 409 once
+the project has its PR, or when another project already reviews that one).
+`POST /api/projects/:id/reviews {reviewers?}` is Start /
+Rerun review (`startPrReview` in `server/utils/prReview.ts`): the head is
+re-fetched and one agreement review of the PR's diff starts — 2–4 reviewers
+(default 3) on Opus 5.5 high, `verify: true`; 409 while the last one is still
+`reviewing`/`triaging` (retry a stuck reviewer with `…/reviews/:key/action`).
+State `project.prReview` = `{pr, runs}` — one run per review started (`n`,
+`status: running|done|stopped`, `headSha`, `reviewKey`, `verdict?`), settled
+when the findings come back or the review is forgotten. Nothing on a PR
+review project is dispatched: a ticket added by hand is a record too, and the
+review neither runs nor reads it.
 
-The review step is an **agreement review**: when its consensus session hands
+The review is an **agreement review**: when its consensus session hands
 the verified findings back (`POST /api/reviews/:key/findings`), jTicket files
 each as a ticket on the project (`server/utils/reviewTickets.ts`) — a HITL
 `bug` labelled `jreview`, `review:finding`, `severity:*`, `category:*`,
 `scope:*`, `verdict:*`, with `ticket.finding` holding the structured copy.
 Finding tickets are **record-only**: never frontier, every dispatch path
-answers 409, a review plan refuses one as a check. A rerun updates the
+answers 409. A rerun updates the
 project's matching open finding ticket instead of filing a duplicate; a
 re-POST of the same review withdraws tickets for findings it dropped. **Post
 to PR** is `POST /api/projects/:id/reviews/:key/pr-comments {ticketKeys,
 body}` (human-only; the old `{findingIds}` body is refused): one GitHub review
 via `gh api`, event `COMMENT` always; "posted" is stamped on each ticket
 (`finding.postedAt`, label `pr:posted`).
+
+## Plan review projects
+
+Mode `planreview` ("Plan review") — one plan project's spec and ticket plan,
+reviewed before its builds run, never changed (`app/utils/planReview.ts`,
+`server/utils/planReview.ts`). Record-only like a PR review project, on the
+Reviews board beside them, off the projects board and Today. State
+`project.planReview` = `{planProjectId ('' = none picked yet), runs}` — one run
+per review started (`n`, `status`, `reviewKey`, `verdict?`, `drafts`,
+`builds` — the ticket plan's size then, `startedAt`, `endedAt`).
+- `POST /api/projects {mode: "planreview", plan, title?, description?}` — the
+  create modal's **Plan review** type (its plan picker); `plan` is a plan
+  project's key or id (400 without, 404 unknown, 409 not a plan); the repo is
+  the plan's. `PATCH /api/projects/:id` refuses a `mode` change into or out of
+  `planreview` (400).
+- `POST /api/projects/:id/plan-review {plan}` — pick or change the plan (one
+  made by a graph node with no plan before it, or whose plan was deleted);
+  starts nothing; 409 once it has reviewed another plan that still exists, or
+  on the peer side of a share.
+- `POST /api/projects/:id/reviews {reviewers?}` — Start / Rerun review
+  (`startPlanReview`): 2–4 reviewers (default 3) on Opus 5.5 high, `agreement:
+  {loop}`, `verify: true`, `subject: {kind: 'plan', projectKey}` — no branch,
+  PR, base, worktree or head sha. 409 while the last review is still out, while
+  a session is drafting the plan's ticket plan, for a plan with no repo, or one
+  with no ticket plan and no docs; 404 when the plan is gone.
+Each reviewer runs `/jplan-review` in the main checkout (never the codebase's
+own review skill): it reads the plan through jTicket — map, resolutions, docs
+(the spec is the `spec`-labelled one), the ticket plan — and the code read-only,
+and publishes its report through `/jreview-report` (plan variant: `BASE: plan
+PROJ-n`). The watcher, `/jreview-consensus` (its plan-review section) and the
+filing of findings as record-only tickets are the PR review's. Send back files
+the picked findings as HITL `decision` tickets on the plan (above). In a graph,
+Move on into a proposed plan review node creates the project pointed at the
+plan directly before it (else none yet; an existing plan review of that plan
+in no graph is linked instead); the briefing before it shows the plan's
+drafts, proposed builds, spec doc and drafting in progress, and the briefing
+before a build shows an upstream plan review's verdict and open findings.
 
 ## Review engine (`/api/reviews`)
 
@@ -305,7 +505,13 @@ PR's base; a branch not checked out is reviewed in a detached worktree),
 `project: KEY`, `reviewers` (4 by default; 2 for consensus), `consensus:
 {projectKey, loop}`, `pass: 'architecture'`, `context.review` — or, from a PR
 review project, `pr: N`, `agreement: {loop}`, `verify: true`, `context: {brief:
-DOC-n, checks: [TICK-n]}`. Returns `{key, path: "/reviews/<key>"}`.
+DOC-n, checks: [TICK-n]}` — or, from a plan review project, `subject: {kind:
+'plan', projectKey: PROJ-n}` (no branch or target; stored with the plan's
+`title`). Returns `{key, path: "/reviews/<key>"}`.
+`GET /api/reviews?orphaned=1` lists the reviews no project's Review tab shows
+(no project, or a deleted one) — the Reviews board's **Reviews without a
+project**. `DELETE /api/reviews/:key` is the room's **Forget** (record and
+worktree go; tickets and reports stay).
 `GET/DELETE /api/reviews/:key`, `GET …/watch` (SSE), `POST …/findings`
 (the triager's or agreement session's hand-back), `POST …/consensus` (the
 consensus session's ticket keys). That is all `/api/reviews` serves: every
@@ -323,9 +529,20 @@ review's worktree. State `.data/jreview/`.
 
 ## Documents and charts
 
-`/api/documents` (GET/POST; `:key` GET/DELETE, `:key/notes` GET/PUT,
+`/api/documents` (GET/POST; `:key` GET/PATCH/DELETE, `:key/notes` GET/PUT,
 `:key/media` POST) and `/api/media/:key/:file` over `.data/jexplain/` — the
 `@jsuite/documents` layer. Pages: the reader `/e/<key>`, the library `/e`.
+A document carries `tags` — one tag, its kind (lowercase kebab-case;
+`packages/documents/tags.ts`), separate from a DOC-n's `labels`: POST takes
+them, `PATCH /api/documents/:key {tags}` re-tags in place, and
+`GET /api/document-tags` is the vocabulary (the kinds in use, with counts).
+`GET /api/documents?q=` is a full-text search over titles, tags and block
+text. The library lists and searches only `explainer`, `research`,
+`decision`, `spec` and `proposal` (`LIBRARY_KINDS`) and untagged documents;
+every other kind (`review-output`, `slice-report`, `outcome-report`,
+`status-report`, `review-brief`, `reproduction`) waits for its **Other kinds**
+switch (`?all=1`). The reader's **Export PDF** is the
+browser's print dialog over the document's print styles.
 Publish with `j-explain`'s `explain.py` (`$JTICKET_URL` overrides the target).
 `/api/charts` (GET/POST; `:key` GET/PUT/DELETE, `:key/notes` GET/PUT) over
 `.data/jchart/` — the `@jsuite/charting` layer; POST answers `path:

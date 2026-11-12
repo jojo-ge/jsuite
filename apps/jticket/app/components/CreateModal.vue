@@ -27,10 +27,10 @@ const ticketForm = useTemplateRef<FormApi>('ticketForm')
 const projectForm = useTemplateRef<FormApi>('projectForm')
 const active = computed<FormApi | null>(() => (tab.value === 'project' ? projectForm.value : ticketForm.value))
 
-// A new ticket only offers the wayfinder fields when it lands in a wayfinder
+// A new ticket only offers the plan fields when it lands in a plan
 // project — same rule the ticket modal uses.
-const wayfinder = computed(
-  () => projects.value.find((p) => p.id === props.defaultProjectId)?.mode === 'wayfinder',
+const plan = computed(
+  () => projects.value.find((p) => p.id === props.defaultProjectId)?.mode === 'plan',
 )
 
 // Docs are long-form and get their own page rather than a modal.
@@ -59,7 +59,7 @@ const saveLabel = { ticket: 'Create ticket', project: 'Create project' } as cons
           :projects="projects"
           :tickets="tickets"
           :default-project-id="defaultProjectId"
-          :wayfinder="wayfinder"
+          :plan="plan"
           :autofocus="tab === 'ticket'"
           @saved="emit('update:open', false)"
         />

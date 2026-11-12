@@ -17,8 +17,6 @@ const grouped = computed(() => {
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="py-8">
       <div class="mb-6 flex items-center justify-between gap-3">
         <div>

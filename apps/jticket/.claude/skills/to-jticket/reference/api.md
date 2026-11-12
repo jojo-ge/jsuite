@@ -8,7 +8,6 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | --- | --- | --- |
 | GET / POST | `/api/projects` | List / create projects |
 | POST | `/api/projects/todo` | Get-or-create a codebase's TODO project (idempotent; the only way to make a `todo`-mode project) |
-| POST | `/api/projects/architect` | Create an architecture-review project + its `arch:scan` ticket (one per scan, never reused; the only way to make an `architect`-mode project) |
 | GET / PATCH / DELETE | `/api/projects/:id` | One project (id **or** key) |
 | GET / POST / PATCH / DELETE | `/api/repos` | Known repos = **codebases** (POST remembers a path after probing it; PATCH `?path=` `{prompts}` sets the codebase's prompt overrides; DELETE `?path=` forgets it and its settings) |
 | GET / PUT / DELETE | `/api/repos/worktree?repo=` | The codebase's **worktree guide** — how it creates, sets up, runs and tears down worktrees. Read it before making any worktree |
@@ -24,14 +23,16 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | GET / POST | `/api/prs` | List / open **local PRs** (ticket branch → integration branch, merged by jTicket) |
 | GET / PATCH / DELETE | `/api/prs/:id` | One local PR (id or `PR-n`); PATCH status only to `closed` / `open` |
 | POST | `/api/prs/:id/merge` | Squash-merge locally (a real merge when the PR brings upstream history); deletes the branch, ticket → `merged`; 409 on conflict |
-| POST | `/api/projects/:id/integration-branch` | Cut (or adopt) the project's empty integration branch off the default branch and push it |
+| POST | `/api/projects/:id/integration-branch` | Cut (or adopt) the project's empty integration branch `{branch?, base?}` off its base — the default branch, or another build's integration branch to stack on (recorded as `integrationBase`) — and push it |
+| GET | `/api/projects/:id/integration-branch` | The integration branch against its base: base, ahead/behind, unpushed, whether the upstream looks merged, what Sync would do, `slice: {files, additions, deletions}` (`?force=1` re-asks origin and gh) |
+| POST | `/api/projects/:id/integration-branch/sync` | **Sync from upstream**: fetch, merge the base in locally (never rebase, never push); upstream squash-merged → what it merged into becomes the base and the open roll-up PR is retargeted. `{ok, case, …}` — a conflict is `ok: false`, nothing moved |
 | GET | `/api/projects/:id/branches?q=&fetch=1` | Branches in the project's repo, local + origin, for adopting an integration branch |
 | GET | `/api/projects/:id/github` | The project's GitHub side: repo, integration-branch state, its open PRs with Diff tab (`diffUrl`) + github.com links |
-| GET | `/api/projects/:id/diff` | The Diff tab's rows for a target: none = the project's branch, `?pr=PR-n`, `?gh=<n>`, or `?head=&base=` → `{ target, files }` |
+| GET | `/api/projects/:id/diff` | The Diff tab's rows for a target: none = the project's branch against its base (a stacked build shows only its own work), `?pr=PR-n`, `?gh=<n>`, or `?head=&base=` → `{ target, files }` |
 | GET | `/api/projects/:id/diff/file` | One file at a commit, highlighted (`?oid=<headOid>&path=`) → `{ lines }` |
-| GET / POST / DELETE | `/api/projects/:id/diff/tour` | A target's guided tour (same target params; POST body = the target) — read `{ key, tour, variant, createdAt, job, failure }`, Build tour (one Opus `/jdiff-tour` session, no focus), cancel |
+| GET / POST / DELETE | `/api/projects/:id/diff/tour` | A target's guided tour (same target params; POST body = the target) — read `{ key, tour, createdAt, headOid, job, failure }`, Build tour (one Opus `/jdiff-tour` session, no focus), cancel |
 | POST | `/api/projects/:id/diff/tour/artifact` · `…/complete` | The `/jdiff-tour` session hands back `{ ...target, artifact: { overview, stops } }`, then signs off `{ ...target, failures? }` |
-| POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR via `gh` (the only remote write) |
+| POST | `/api/projects/:id/integration-pr` | Push + open (or find) the GitHub roll-up PR, integration branch → its base, via `gh` (the only remote write) |
 | POST | `/api/projects/:id/auto` | The jButton: `{enabled, once?, tickets?, plan?, continue?, stopRequested?, retry?}` — auto mode / run plan on or off |
 | GET | `/api/projects/:id/auto/queue?orchestrator=n` | An orchestrated loop's phase as the orchestrator sees it (409 unless orchestrated) |
 | POST | `/api/projects/:id/auto/claim` | Orchestrator claims `{ticket, orchestrator?}` for a subagent; refused past the budget |
@@ -41,24 +42,39 @@ every example here is a `jt` call (`jt get|post|patch|put|delete PATH [JSON|@fil
 | PUT | `/api/projects/:id/run-plan` | Save the Run setup tab's plan `{steps}` (409 while it runs) |
 | POST / DELETE | `/api/projects/:id/run-plan/build` | Dispatch / cancel the Fable `/jrunplan` session that writes the plan |
 | POST | `/api/projects/:id/run-plan/built` | `/jrunplan` reports the plan written `{summary?}` → `{plan, problems}` |
-| GET / POST | `/api/projects/:id/reviews` | The project's reviews / start one `{branch?, base?, reviewers?}` |
+| GET / POST | `/api/projects/:id/reviews` | The project's reviews / start one `{branch?, base?, reviewers?}` (a PR or plan review project takes only `{reviewers?}`: 2–4, default 3) |
+| POST | `/api/projects/:id/plan-review` | A plan review project: pick its plan `{plan}` (409 once it has reviewed another plan that still exists) |
 | GET | `/api/projects/:id/reviews/:key` | One review, whole (polled while reviewers work) |
 | POST | `/api/projects/:id/reviews/:key/action` | `{action: 'retry-reviewer' \| 'skip-reviewer', n}` or `{action: 'retry-triage'}` |
 | POST | `/api/projects/:id/reviews/:key/tickets` | File a triage review's findings `{findingIds}` into this project as tickets (a PR review project's agreement findings are filed as record-only tickets when they land — no call) |
 | GET / PATCH | `/api/prompts` | Suite-wide hand-off prompt overrides `{prompts: {kind: text}}` (`''` drops one back to the built-in) |
-| GET | `/api/graphs`, `/api/graphs/:id` | Project graphs (projects linked by cross-project blockers); `:id` is `G-KEY` or any member project key |
-| GET | `/api/today/github?repo=` | My open PRs with CI rolled up + PRs waiting on my review, via `gh` |
+| GET / POST | `/api/graphs` | Stored graphs of plan, build and review nodes (`?repo=`) / create one `{title, repo, description?, nodes?, edges?}` |
+| GET / PATCH / PUT / DELETE | `/api/graphs/:id` | One graph — `:id` is its id, `G-n`, or a member project's key. PATCH `{title?, description?}`; PUT the whole shape `{nodes, edges}` → `{graph, problems}`; DELETE leaves its projects alone |
+| POST | `/api/graphs/:id/nodes` | Add a node: `{projectId}` or a proposed `{mode, title, note?}`, plus `after?: [nodeId]`, `stackOn?` |
+| GET | `/api/graphs/:id/nodes/:nodeId/briefing` | What stands before a node — every upstream's state and `flags` (warnings only, never a gate); `?stackOn=` previews a base |
+| POST | `/api/graphs/:id/nodes/:nodeId/enter` | **Move on** `{note?, stackOn?}`: always works, starts nothing — creates a proposed node's project, records the base, keeps the briefing |
+| GET | `/api/projects/:id/graph` | The graph and node a project sits in, with the projects before and after it (`{graph: null}` when none) |
+| GET | `/api/projects/:id/ticket-plan` | A plan project's ticket plan: its graph, proposed builds with their drafts, the reviews after them, problems |
+| POST | `/api/projects/:id/ticket-plan/graph` | Get-or-create the plan's graph → `{graph, planNodeId, created}` |
+| POST / DELETE | `/api/projects/:id/ticket-plan/build` | Dispatch / cancel the Fable `/jplan-to-jtickets` session that drafts the ticket plan |
+| POST | `/api/projects/:id/ticket-plan/built` | That session reports back `{summary?}` |
+| POST | `/api/projects/:id/ticket-plan/approve` | `{nodes?}` — give each build node with drafts its project and move the drafts in; starts nothing |
+| GET / POST | `/api/projects/:id/findings/send-back` | Where a review's findings go back to / send `{ticketKeys, to?}`: a review after a build in a graph → AFK `bug` tickets on the build; a plan review → HITL `decision` tickets on its plan (409 when not offered) |
+| GET | `/api/today/github?repo=` | My open PRs with CI rolled up + PRs waiting on my review, via `gh` (drafts left out unless `&drafts=1`; cached — `&force=1` reads GitHub now) |
 | GET / POST | `/api/docs` | List / create docs |
 | GET / PATCH / DELETE | `/api/docs/:id` | One doc record (id or key) — metadata only; content is at `/api/documents/<documentKey>` |
-| GET / POST | `/api/documents` | The shared document pool (`@jsuite/documents`; read at `/e/<key>`) |
-| GET / DELETE | `/api/documents/:key` | One block document (title page, blocks, glossary) |
+| GET / POST | `/api/documents` | The shared document pool (`@jsuite/documents`; read at `/e/<key>`). `GET ?q=` is a full-text search — every word must appear in the title, subtitle, kicker, key, tags or block text; a body-only hit carries a `snippet`. POST takes `tags` |
+| GET / PATCH / DELETE | `/api/documents/:key` | One block document (title page, blocks, glossary, `tags`). PATCH `{tags: [...]}` re-tags it in place — content and `updatedAt` untouched |
+| GET | `/api/document-tags` | The tag vocabulary: every tag in use with its document count, most used first. Pick from it before coining a tag |
 | GET / PUT | `/api/documents/:key/notes` | The reader's per-block review notes |
 | POST | `/api/documents/:key/media` | Upload a picture for a note (returns its URL) |
 | GET | `/api/media/:key/:file` | Serve a doc's image-block media (and `/api/media/:key/notes/:file` for note pictures) |
 | GET / POST | `/api/attachments` | List / upload attachments (images for ticket markdown) |
 | GET | `/attachments/:name` | Serve an uploaded file |
 
-`:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`, `DOC-3`).
+`:id` accepts the internal id or the human key (`PROJ-1`, `TICK-7`, `DOC-3`, `G-2`). Ids are
+bare UUIDv7s (`0196f3c2-…`); an id from before the UUID migration (`tick_…`) still
+resolves. Refer to things by key.
 
 ## Query params
 
@@ -111,11 +127,19 @@ POST /api/projects
 { "title": "Checkout",                  // required
   "description": "Everything payments-related",
   "repo": "~/code/my-repo",             // the codebase this project belongs to
-  "mode": "standard" }                  // or "wayfinder" / "predeploy"; anything else → "standard"
-                                        // ("todo" and "architect" have their own endpoints below — don't POST them here)
+  "mode": "standard" }                  // or "plan" / "predeploy"; anything else → "standard"
+                                        // ("todo" has its own endpoint below — don't POST it here)
 ```
 
-`PATCH /api/projects/:id` accepts the same fields; omitted fields are untouched.
+A **plan review** project (mode `planreview`) reviews one plan's spec and ticket plan before
+its builds run: `POST /api/projects {"mode": "planreview", "plan": "PROJ-8"}` (title optional,
+the repo is the plan's; 409 unless `plan` is a plan project). A project can't be PATCHed into
+or out of that mode.
+
+`PATCH /api/projects/:id` accepts the same fields; omitted fields are untouched. It also
+takes `integrationBase` — the branch the integration branch was cut from and the roll-up
+PR targets (`""` = the repo's default branch; another build's integration branch stacks
+this project on it, so its diff, slice size and review show only its own work).
 
 ### TODO project (per codebase)
 
@@ -131,22 +155,6 @@ POST /api/projects/todo
 ```
 
 A todo is then a title-only ticket POSTed with that project's key.
-
-### Architect project (one per scan)
-
-An architecture review of a codebase — the projects page's Improve-architecture
-button calls this, and so can an agent. Not idempotent: every call is a fresh
-review (a fresh run is a fresh project). Creates the `architect`-mode project
-plus its `arch:scan` ticket; dispatching that ticket into herdr
-(`/jarchitect-scan TICK-n`) fills the board with graded `hitl` `decision` tickets
-(`arch:candidate`) and publishes the assessment spec doc.
-
-```jsonc
-POST /api/projects/architect
-{ "repo": "~/code/my-repo" }            // must be a real git clone (probed)
-→ 201 { "project": { "key": "PROJ-8", "mode": "architect", ... },
-        "ticket":  { "key": "TICK-31", "labels": ["arch", "arch:scan"], ... } }
-```
 
 ### Predeploy project (a bug sweep before a deploy)
 
@@ -196,10 +204,23 @@ POST /api/tickets
   "assignee": "",                       // free-form name; "" = unassigned
   "labels": ["afk"],                    // tags: exactly one of "afk" | "hitl" (+ optional "prototype"); rest free-form
   "resolution": "",                     // the answer, GFM markdown
-  "blockedBy": ["TICK-3"] }             // ids or KEYS only — unknown refs DROPPED silently
+  "blockedBy": ["TICK-3"],              // ids or KEYS only — unknown refs DROPPED silently
+  "plannedFor": null }                  // ticket-plan drafts only: a build node id in the plan's graph
 ```
 
 `PATCH /api/tickets/:id` — same fields, all optional.
+
+**Drafts.** A ticket with `plannedFor` set is a **ticket-plan draft**: it lives on a Plan
+project, `plannedFor` names a build node of that plan's graph (400 otherwise — make the
+graph first with `POST /api/projects/:id/ticket-plan/graph`), and it is off the frontier and
+never dispatched. Approve (`POST /api/projects/:id/ticket-plan/approve`) moves it into its
+build project and clears `plannedFor`; PATCHing `plannedFor: null` makes it a plain ticket.
+`/api/import` takes `plannedFor` per ticket too.
+
+**Sent back.** A review finding sent back (`POST /api/projects/:id/findings/send-back`)
+carries read-only `sentBack: {ticketId, ticketKey, projectId, at}` — the ticket it became,
+labelled `review:sent-back`: an AFK `bug` on the build a review followed, or a HITL `decision`
+on the plan a plan review read.
 
 **Type vs tags.** `type` is what kind of work the ticket is:
 
@@ -217,9 +238,8 @@ POST /api/tickets
 Agency is a **tag** in `labels`: every ticket carries exactly one of `afk` (an agent can
 take it cold) or `hitl` (needs a human; gets its own herdr tab) — the server adds `afk`
 when neither is sent. `prototype` marks throwaway work that must never ship and
-combines with any type (a wayfinder prototype is `research` + `prototype`). With no
-`type`, the server infers one: `arch:scan` → `research`, `arch:candidate` → `decision`,
-`review:finding` or a predeploy project → `bug`,
+combines with any type (a plan prototype is `research` + `prototype`). With no
+`type`, the server infers one: `review:finding` or a predeploy project → `bug`,
 else `task`. Legacy input — `"type": "AFK" | "HITL"`, `wayfinder:<sub-type>` labels —
 is still accepted and folded into this shape; don't send it.
 
@@ -248,7 +268,7 @@ belongs in `resolution`.
 POST /api/tickets/:id/comments
 { "author": "claude",                   // free-form name; omitted → "anonymous"
   "body": "Started on this — the schema needs a migration first." }  // required, GFM markdown
-→ 201 { "id": "cmt_…", "author": "claude", "body": "…", "createdAt": "…" }
+→ 201 { "id": "0196f3c2-…", "author": "claude", "body": "…", "createdAt": "…" }
 ```
 
 `DELETE /api/tickets/:id/comments/:commentId` removes one comment (`:commentId` is the

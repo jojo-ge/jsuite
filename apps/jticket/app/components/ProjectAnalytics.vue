@@ -40,9 +40,14 @@ const ROLE_LABEL: Record<string, string> = {
   'slice-report': 'slice report',
   'outcome-report': 'outcome report',
   'runplan-build': 'run plan build',
+  'ticketplan-build': 'ticket plan',
   'pr-assess': 'PR assessment',
   worktree: 'worktree',
   tour: 'tour build',
+  review: 'reviewer',
+  'arch-review': 'architecture reviewer',
+  'review-triage': 'review triage',
+  'review-consensus': 'review consensus',
   other: 'other',
 }
 </script>

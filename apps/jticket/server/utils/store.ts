@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { appDataFile } from '@jsuite/data'
+import { journalStoreSave, type JournalProject } from './runJournal'
+import { currentId, findByRef, uuidv7 } from './ids'
 import { isPeerOwned } from './ownership'
 import { cleanPromptOverrides, cleanPromptText, coercePromptMode } from './prompts'
 import { cleanWorktreeGuide, cleanWorktreeLinks } from './worktrees'
@@ -14,10 +16,16 @@ import type { TicketType } from './ticketTypes'
 import type { WorktreeGuide, WorktreeLink } from './worktrees'
 import { coerceAutoLoop, type AutoLoop } from '../../app/utils/autoLoop'
 import { coerceRunPlan, coerceRunPlanBuild, type RunPlan, type RunPlanBuild } from '../../app/utils/runPlan'
-import { coercePrReview, type PrReview } from '../../app/utils/reviewPlan'
+import { coercePrReview, type PrReview } from '../../app/utils/prReview'
+import { coercePlanReview, type PlanReview } from '../../app/utils/planReview'
 import { isRecordOnly, type TicketFinding } from '../../app/utils/reviewFindings'
+import type { TicketSentBack } from '../../app/utils/reviewHandoff'
+import { coerceGraph, seedGraphsFromBlockers, type Graph } from '../../app/utils/graphs'
 
 export type { ProjectShare, ShareSide } from './ownership'
+// Graphs (app/utils/graphs.ts): stored, hand-built chains of plan, build and
+// review projects. Machine-local — never on the share-sync wire.
+export type { Graph, GraphNode, GraphEdge } from '../../app/utils/graphs'
 
 // ── Types ─────────────────────────────────────────────────────────────────
 // 'done' = the work is built and recorded; 'merged' = its local PR has landed
@@ -35,33 +43,35 @@ export type TicketTransfer = '' | 'pending' | 'declined'
 // A local PR's lifecycle. 'conflicted' is a failed merge attempt — the repo was
 // left untouched; rebase the head branch and merge again.
 export type LocalPrStatus = 'open' | 'conflicted' | 'merged' | 'closed'
-// A project is a plain tracker, a wayfinder effort, a codebase's TODO list, an
-// architecture review, a pre-deploy bug sweep, or a PR review. In 'wayfinder'
-// mode the project description is the wayfinder *map* body and its tickets are
+// A project is a plain tracker, a plan, a codebase's TODO list, a pre-deploy
+// bug sweep, or a PR review. In 'plan' mode (called 'wayfinder' before the
+// rename) the project description is the *map* body and its tickets are
 // grouped into frontier / blocked / done. In 'todo' mode the
 // project is its codebase's one running todo list — human-written one-liner
 // tickets exercised with the Grill action (no branches, no PRs); made only by
-// get-or-create (POST /api/projects/todo), one per codebase. In 'architect'
-// mode the project is one architecture scan of its repo (made by POST
-// /api/projects/architect): the arch:scan ticket dispatches /jarchitect-scan,
-// which fills the board with HITL arch:candidate tickets — deepening
-// opportunities whose herdr button dispatches /jarchitect-grill (no branches,
-// no PRs; dispatching the grilling is the triage decision and moves the
-// candidate to done). In 'predeploy' mode every ticket is one suspected bug
+// get-or-create (POST /api/projects/todo), one per codebase. In 'predeploy'
+// mode every ticket is one suspected bug
 // standing between the repo and a deploy: its herdr button dispatches
 // /jreproduce, which reproduces the bug in a throwaway worktree, records the
 // failing test and the verdict on the ticket, and never implements the fix (no
 // branches, no PRs — the worktree is torn down when it finishes).
 // In 'prreview' mode the project reviews one GitHub pull request
 // (`prReview.pr`) and never changes it: its integration branch is a local,
-// never-pushed copy of the PR head (jreview/pr-<n>), its tickets are checks run
-// against that head (/jpr-check), and its own review plan — not a run plan —
-// runs the checks and a jReview agreement review (app/utils/reviewPlan.ts).
-export type ProjectMode = 'standard' | 'wayfinder' | 'todo' | 'architect' | 'predeploy' | 'prreview'
+// never-pushed copy of the PR head (jreview/pr-<n>), and its Review tab starts
+// an agreement review of the PR's diff whose findings land on its board as
+// record-only tickets (app/utils/prReview.ts). No run plan, no auto mode.
+// In 'planreview' mode the project reviews one plan project's spec and ticket
+// plan (`planReview.planProjectId`) before its builds run, on the same
+// engine with no diff; its findings are record-only tickets too, and Send
+// back makes them decision tickets on the plan (app/utils/planReview.ts).
+export type ProjectMode = 'standard' | 'plan' | 'todo' | 'predeploy' | 'prreview' | 'planreview'
 
-const PROJECT_MODES: ProjectMode[] = ['wayfinder', 'todo', 'architect', 'predeploy', 'prreview']
+const PROJECT_MODES: ProjectMode[] = ['plan', 'todo', 'predeploy', 'prreview', 'planreview']
 
 export function coerceProjectMode(mode: unknown): ProjectMode {
+  // Plan mode's old name: stores, bundles, peers and API callers from before
+  // the rename still say 'wayfinder'.
+  if (mode === 'wayfinder') return 'plan'
   return PROJECT_MODES.includes(mode as ProjectMode) ? (mode as ProjectMode) : 'standard'
 }
 
@@ -79,6 +89,10 @@ export interface Project {
   // branch that the project's PRs target, and which lands as one PR when the
   // project is done. See server/utils/github.ts.
   integrationBranch: string
+  // The branch the integration branch was cut from and its roll-up PR
+  // targets: '' = the repo's default branch, else another build's integration
+  // branch this one stacks on (app/utils/stacking.ts). Machine-local.
+  integrationBase: string
   // Legacy: starred once put a project on the (removed) Up next page. Kept
   // because sync, import and export still carry it; nothing reads it.
   starred: boolean
@@ -111,10 +125,17 @@ export interface Project {
   // button): set on dispatch, cleared when it reports back or is cancelled.
   // While set, the tab is read-only. Machine-local.
   runPlanBuild?: RunPlanBuild | null
-  // A PR review project's pull request, its assessment, its review plan and
-  // the plan's runs (app/utils/reviewPlan.ts). Absent/null on every other
-  // mode. Machine-local.
+  // A plan project's /jplan-to-jtickets session writing its ticket plan (the
+  // Ticket plan tab's button; app/utils/ticketPlan.ts): set on dispatch,
+  // cleared when it reports back (…/ticket-plan/built) or is cancelled. Same
+  // shape as runPlanBuild. Machine-local.
+  ticketPlanBuild?: RunPlanBuild | null
+  // A PR review project's pull request and the reviews it has started
+  // (app/utils/prReview.ts). Absent/null on every other mode. Machine-local.
   prReview?: PrReview | null
+  // A plan review project's plan and the reviews it has started
+  // (app/utils/planReview.ts). Absent/null on every other mode. Machine-local.
+  planReview?: PlanReview | null
   createdAt: string
   updatedAt: string
 }
@@ -138,7 +159,7 @@ export interface Ticket {
   id: string
   key: string // TICK-1
   title: string
-  description: string // "what to build" / the wayfinder question
+  description: string // "what to build" / a plan ticket's question
   acceptanceCriteria: string[]
   type: TicketType // the main type — see ticketTypes.ts
   status: TicketStatus
@@ -187,8 +208,16 @@ export interface Ticket {
   // Set on a ticket a review finding became (app/utils/reviewFindings.ts): the
   // review and finding it records, where it sits in the code, its scope and
   // verification verdict, and when it was posted to the PR. In a PR review
-  // project such a ticket is record-only — never dispatched.
+  // project every ticket is record-only — never dispatched.
   finding?: TicketFinding
+  // Set on a finding ticket a review's Send back turned into a ticket on the
+  // upstream project (app/utils/reviewHandoff.ts) — the ticket it became.
+  sentBack?: TicketSentBack | null
+  // A draft of its plan project's ticket plan (app/utils/ticketPlan.ts): the
+  // graph node id of the proposed build it will move into on approve. A draft
+  // is record-only — off every frontier, never dispatched. null/absent = a
+  // plain ticket. Machine-local like graphs (never on the sync wire).
+  plannedFor?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -277,7 +306,9 @@ export interface Store {
   // Suite-wide hand-off prompts (GET/PATCH /api/prompts): the layer projects
   // override and the code defaults back. Only overridden kinds are present.
   promptDefaults: PromptOverrides
-  counters: { project: number; ticket: number; doc: number; pr: number }
+  // Graphs of projects (app/utils/graphs.ts) — machine-local, never synced.
+  graphs: Graph[]
+  counters: { project: number; ticket: number; doc: number; pr: number; graph: number }
 }
 
 // ── Persistence ─────────────────────────────────────────────────────────────
@@ -295,7 +326,8 @@ function emptyStore(): Store {
     repos: [],
     shares: [],
     promptDefaults: {},
-    counters: { project: 0, ticket: 0, doc: 0, pr: 0 },
+    graphs: [],
+    counters: { project: 0, ticket: 0, doc: 0, pr: 0, graph: 0 },
   }
 }
 
@@ -313,7 +345,7 @@ type LegacyStore = Partial<Store> & {
 }
 
 // Stores written before the epic layer was removed: tickets adopt their epic's
-// project, and each epic's body (the wayfinder map, or a plain description)
+// project, and each epic's body (a plan's map, or a plain description)
 // is appended to the project description so nothing written there is lost.
 // Runs only while `epics` is present — the first save drops the array, so the
 // fold-in never applies twice.
@@ -340,14 +372,16 @@ export function loadStore(): Store {
     const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8')) as LegacyStore
     migrateEpics(parsed)
     const modeOf = new Map((parsed.projects ?? []).map((p) => [p.id, p.mode]))
-    return {
-      // Projects predating wayfinder mode default to 'standard'; those
+    const store: Store = {
+      // Projects predating plan mode default to 'standard' (and 'wayfinder',
+      // its old name, reads as 'plan'); those
       // predating the GitHub link have no repo and no integration branch.
       projects: (parsed.projects ?? []).map((p) => ({
         ...p,
         mode: coerceProjectMode(p.mode),
         repo: p.repo ?? '',
         integrationBranch: p.integrationBranch ?? '',
+        integrationBase: p.integrationBase ?? '',
         starred: p.starred ?? false,
         position: typeof p.position === 'number' ? p.position : null,
         hidden: p.hidden === true,
@@ -358,7 +392,9 @@ export function loadStore(): Store {
         auto: coerceAutoLoop(p.auto),
         runPlan: coerceRunPlan(p.runPlan),
         runPlanBuild: coerceRunPlanBuild(p.runPlanBuild),
+        ticketPlanBuild: coerceRunPlanBuild(p.ticketPlanBuild),
         prReview: coercePrReview(p.prReview),
+        planReview: coercePlanReview(p.planReview),
       })),
       // Tickets predating the assignee / label / resolution / comment fields get defaults.
       // Tickets already done before completedAt existed fall back to updatedAt —
@@ -387,6 +423,8 @@ export function loadStore(): Store {
         // Tickets predating ownership transfer aren't in one.
         transfer: t.transfer ?? '',
         transferAt: t.transferAt ?? '',
+        // Tickets predating ticket plans are plain tickets.
+        plannedFor: typeof t.plannedFor === 'string' && t.plannedFor ? t.plannedFor : null,
       })),
       // Docs predating the shared-document system carried an inline jdoc body;
       // those were migrated into the shared pool (documentKey references).
@@ -429,21 +467,58 @@ export function loadStore(): Store {
       // Editable global defaults postdate everything else; absent = every kind
       // still falls through to its code default.
       promptDefaults: cleanPromptOverrides(parsed.promptDefaults),
+      // Graphs postdate everything else (absent = seeded once, below).
+      graphs: (Array.isArray(parsed.graphs) ? parsed.graphs : []).map(coerceGraph).filter((g): g is Graph => !!g),
       counters: {
         project: parsed.counters?.project ?? 0,
         ticket: parsed.counters?.ticket ?? 0,
         doc: parsed.counters?.doc ?? 0,
         pr: parsed.counters?.pr ?? 0,
+        graph: parsed.counters?.graph ?? 0,
       },
     }
+    if (!Array.isArray(parsed.graphs)) seedGraphs(store)
+    else if (store.graphs.some((g) => !/^G-\d+$/.test(g.key))) rekeyGraphs(store)
+    return store
   } catch {
     return emptyStore()
   }
 }
 
+// The one-time conversion: a store from before stored graphs gets the graphs
+// the Graphs page used to derive from cross-project blockers, written at once
+// so their ids hold from the first read on. A failed write is retried on the
+// next load (the file still has no `graphs`) and never fails this one.
+function seedGraphs(store: Store): void {
+  const seeded = seedGraphsFromBlockers(store.projects, store.tickets, () => newId('gnode'), now())
+  store.graphs = seeded.map((g) => ({ ...g, id: newId('graph'), key: nextKey(store, 'graph') }))
+  try {
+    saveStore(store)
+  } catch { /* retried on the next load */ }
+}
+
+// A graph without a usable G-n key (hand-made, or written before the counter
+// existed) gets the next one, written at once like the seed.
+function rekeyGraphs(store: Store): void {
+  for (const g of store.graphs) if (!/^G-\d+$/.test(g.key)) g.key = nextKey(store, 'graph')
+  try {
+    saveStore(store)
+  } catch { /* retried on the next load */ }
+}
+
 export function saveStore(store: Store): void {
   mkdirSync(dirname(DATA_FILE), { recursive: true })
+  // The run journal: what changed in each project's loop state since the last
+  // save, appended before the file is replaced (runJournal.ts — never throws).
+  journalStoreSave(store.projects, previousLoopStates)
   writeFileSync(DATA_FILE, JSON.stringify(store, null, 2) + '\n', 'utf8')
+}
+
+/** Each project's loop state as the file on disk has it — what the journal's first diff after a restart compares against. */
+function previousLoopStates(): JournalProject[] {
+  if (!existsSync(DATA_FILE)) return []
+  const parsed = JSON.parse(readFileSync(DATA_FILE, 'utf8')) as LegacyStore
+  return (parsed.projects ?? []).map((p) => ({ id: p.id, key: p.key, repo: p.repo ?? '', auto: coerceAutoLoop(p.auto) }))
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -451,18 +526,21 @@ export function now(): string {
   return new Date().toISOString()
 }
 
-export function newId(prefix: string): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`
+// A bare UUIDv7 (ids.ts). `prefix` named the kind in the ids minted before
+// UUIDs (tick_…); it is kept only so callers read as they always have.
+export function newId(_prefix: string): string {
+  return uuidv7()
 }
 
-const KEY_PREFIX: Record<'project' | 'ticket' | 'doc' | 'pr', string> = {
+const KEY_PREFIX: Record<'project' | 'ticket' | 'doc' | 'pr' | 'graph', string> = {
   project: 'PROJ',
   ticket: 'TICK',
   doc: 'DOC',
   pr: 'PR',
+  graph: 'G',
 }
 
-export function nextKey(store: Store, kind: 'project' | 'ticket' | 'doc' | 'pr'): string {
+export function nextKey(store: Store, kind: 'project' | 'ticket' | 'doc' | 'pr' | 'graph'): string {
   store.counters[kind] += 1
   return `${KEY_PREFIX[kind]}-${store.counters[kind]}`
 }
@@ -496,7 +574,8 @@ export function stampCompletion(ticket: Ticket, nextStatus: TicketStatus, ts: st
 // import both let callers reference projects loosely).
 export function findProjectRef(store: Store, ref: unknown): Project | undefined {
   if (typeof ref !== 'string' || !ref) return undefined
-  return store.projects.find((p) => p.id === ref || p.key === ref || p.title === ref)
+  const id = currentId(ref) // a pre-UUID id still resolves (ids.ts)
+  return store.projects.find((p) => p.id === id || p.key === ref || p.title === ref)
 }
 
 // ── Known repos ─────────────────────────────────────────────────────────────
@@ -566,13 +645,13 @@ export function cleanLabels(v: unknown): string[] {
 export function resolveTicketRefs(store: Store, refs: unknown[]): string[] {
   const out = new Set<string>()
   for (const ref of refs ?? []) {
-    const t = store.tickets.find((x) => x.id === ref || x.key === ref)
+    const t = findByRef(store.tickets, ref)
     if (t) out.add(t.id)
   }
   return [...out]
 }
 
-// ── Derived ticket state (wayfinder) ───────────────────────────────────────
+// ── Derived ticket state (the frontier) ───────────────────────────────────────
 // A ticket is blocked while any ticket it depends on is not yet finished.
 export function ticketIsBlocked(ticket: Ticket, all: Ticket[]): boolean {
   return ticket.blockedBy.some((id) => {
@@ -600,7 +679,8 @@ export function ticketIsFrontier(
   share: ProjectShare | null | undefined,
 ): boolean {
   if (isPeerOwned(ticket, share)) return false
-  return ticket.status === 'todo' && !ticket.assignee && !ticket.transfer && !ticketIsBlocked(ticket, all)
+  // A ticket-plan draft (plannedFor) isn't work yet — the auto loop's world reads this too.
+  return ticket.status === 'todo' && !ticket.assignee && !ticket.transfer && !ticket.plannedFor && !ticketIsBlocked(ticket, all)
 }
 
 // The share a ticket's ownership is judged against — its project's, or null
@@ -614,13 +694,13 @@ export function shareForTicket(
   return store.projects.find((p) => p.id === ticket.projectId)?.share ?? null
 }
 
-// A PR review project's finding ticket: a record of what a review found in
-// someone else's pull request, never takeable work (isRecordOnly). The API's
-// frontier leaves these out — an agent asking for ?frontier=true must not be
+// A PR review project's ticket: a record of someone else's pull request — a
+// finding its review filed, or a note added beside them — never takeable work
+// (isRecordOnly). The API's frontier leaves these out — an agent asking for ?frontier=true must not be
 // handed one — though as a flow state (ticketIsFrontier) they are plain todo.
 export function ticketIsRecordOnly(
   store: { projects: Array<Pick<Project, 'id' | 'mode'>> },
-  ticket: Pick<Ticket, 'projectId' | 'labels' | 'finding'>,
+  ticket: Pick<Ticket, 'projectId' | 'labels' | 'finding' | 'plannedFor'>,
 ): boolean {
   if (!ticket.projectId) return false
   return isRecordOnly(ticket, store.projects.find((p) => p.id === ticket.projectId)?.mode)
@@ -656,7 +736,7 @@ export function byCompletedAtDesc(a: Ticket, b: Ticket): number {
 }
 
 // Order by the numeric suffix of the key (TICK-9 before TICK-10) — the order
-// wayfinder walks the frontier in.
+// /jplan walks the frontier in.
 export function byKeyNumber(a: { key: string }, b: { key: string }): number {
   const n = (k: string) => Number.parseInt(k.split('-')[1] ?? '0', 10)
   return n(a.key) - n(b.key)

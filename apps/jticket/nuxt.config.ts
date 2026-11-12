@@ -20,11 +20,11 @@ export default defineNuxtConfig({
     head: {
       title: 'jTicket',
       meta: [{ name: 'description', content: 'Local projects + tickets tracker' }],
-      link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+      // The tab icon is set in app.vue: it follows the mark picked on /logo.
     },
   },
   ui: {
-    // Slate/indigo, dashboard-functional not flashy.
+    // Ink (zinc, monochrome primary) — see app.config.ts and main.css.
     colorMode: true,
   },
   // Served behind the jSuite Caddy edge at https://jticket.local — allow that

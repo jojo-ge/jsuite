@@ -169,8 +169,8 @@ const px = (n: number) => `${n}px`
           </div>
           <p class="truncate text-[11px] text-muted">{{ n.summary }}</p>
           <div v-if="records[n.index] && !records[n.index]!.skipped && (records[n.index]!.reviewKey || records[n.index]!.archReviewKey || records[n.index]!.fixTickets.length)" class="flex items-center gap-2 text-[10px]">
-            <NuxtLink v-if="records[n.index]!.archReviewKey" :to="reviewPath(records[n.index]!.archReviewKey)" class="text-primary hover:underline" @click.stop>arch</NuxtLink>
-            <NuxtLink v-if="records[n.index]!.reviewKey" :to="reviewPath(records[n.index]!.reviewKey)" class="text-primary hover:underline" @click.stop>review</NuxtLink>
+            <NuxtLink v-if="records[n.index]!.archReviewKey" :to="reviewPath(records[n.index]!.archReviewKey!)" class="text-primary hover:underline" @click.stop>arch</NuxtLink>
+            <NuxtLink v-if="records[n.index]!.reviewKey" :to="reviewPath(records[n.index]!.reviewKey!)" class="text-primary hover:underline" @click.stop>review</NuxtLink>
             <span v-if="records[n.index]!.fixTickets.length" class="text-muted">{{ records[n.index]!.fixTickets.length }} fixed</span>
           </div>
         </div>

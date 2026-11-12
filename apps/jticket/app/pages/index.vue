@@ -27,8 +27,6 @@ const backlog = computed(() => scopedTickets.value.filter((t) => !t.projectId))
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="py-8">
       <!-- Empty state -->
       <div v-if="!projects.length && !scopedTickets.length && !docs.length" class="flex flex-col items-center gap-4 py-24 text-center">
@@ -81,7 +79,7 @@ const backlog = computed(() => scopedTickets.value.filter((t) => !t.projectId))
             <div class="min-w-0">
               <div class="flex items-center gap-2">
                 <span class="font-mono text-xs text-muted">{{ project.key }}</span>
-                <UBadge color="secondary" variant="subtle" size="sm">Project</UBadge>
+                <UBadge color="secondary" variant="subtle" size="sm">{{ projectTypeLabel(project.mode) }}</UBadge>
                 <span class="text-xs text-muted">{{ ticketsForProject(project.id).length }} tickets</span>
               </div>
               <NuxtLink :to="`/projects/${project.key}`" class="group inline-flex items-center gap-1.5">
@@ -101,7 +99,7 @@ const backlog = computed(() => scopedTickets.value.filter((t) => !t.projectId))
           <TicketBoard
             :tickets="ticketsForProject(project.id)"
             :all-tickets="tickets"
-            :wayfinder="project.mode === 'wayfinder'"
+            :plan="project.mode === 'plan'"
             :project="project"
             :body="project.description"
             @new-ticket="openNewTicket(project.id)"

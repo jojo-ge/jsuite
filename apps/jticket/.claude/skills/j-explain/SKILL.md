@@ -1,13 +1,13 @@
 ---
 name: j-explain
-description: Explain something as a blog-style article in jTicket's document reader (formerly jExplain) — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc / to-jspec payloads.
+description: Explain something as a blog-style article in jTicket's document reader (formerly jExplain) — a PR walkthrough, architecture tour, post-mortem, "how does X actually work", or options comparison — built from typed blocks (prose, code, diff, live editable charts, images, steps, compare, timeline, takeaway) and published with explain.py; the reader's per-block notes, screenshots and sketches come back to you. Use when the user says "explain this in jexplain", "explain this as an article", "write this up as a walkthrough/post-mortem", or any explanation that deserves better than terminal markdown. Also the block-vocabulary reference for to-jdoc payloads.
 ---
 
 # j-explain
 
 Explain a concept, a PR, a system, or a decision as a **blog-style article** in jTicket's document reader (`/e/<key>`, the page jExplain used to serve) — rich typed blocks instead of a wall of text, with **live editable charts** (the same charts jTicket's chart editor opens) and per-block notes that come back to you.
 
-The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving articles like these and jTicket docs, all read in jTicket. This skill's block vocabulary is the authoring reference for both — the to-jdoc / to-jspec skills publish the same blocks through jTicket's `/api/docs` when a document belongs on the board.
+The block format here is **the jSuite document system** (`@jsuite/documents`): one shared pool serving articles like these and jTicket docs, all read in jTicket. This skill's block vocabulary is the authoring reference for both — the to-jdoc skill publishes the same blocks through jTicket's `/api/docs` when a document belongs on the board.
 
 Use this when the user asks you to *explain* something and deserves better than terminal markdown: a PR walkthrough, an architecture tour, a "how does X actually work", a post-mortem, a comparison of options.
 
@@ -46,6 +46,7 @@ Standing rules: always set a stable `key` so `--replace` keeps the URL; read not
   "subtitle": "One-sentence standfirst under the title.",
   "kicker": "PR #4821",
   "key": "cache-invalidation-pr-4821",
+  "tags": ["explainer"],
   "glossary": { "TTL": "time-to-live — how long a cache entry survives" },
   "blocks": [ ... ]
 }
@@ -53,6 +54,7 @@ Standing rules: always set a stable `key` so `--replace` keeps the URL; read not
 
 - `key` — stable slug; always set it so `--replace` republishes the same URL.
 - `kicker` — small uppercase context line (PR number, subsystem, "post-mortem").
+- `tags` — always set it: ONE tag saying what kind of document this is. The library (`/e`) lists and searches only `explainer` (how something works, a branch walkthrough), `research` (findings, audits, inventories), `decision` (options weighed, a decision record), `spec`, `proposal` (a plan put forward) — pick the one that fits. Any other kind (`status-report` for a progress write-up, and the machine-written `slice-report`, `outcome-report`, `review-output`) is filed behind the library's **Other kinds** switch; `jt get /api/document-tags` lists the kinds in use, and a new one is not coined without the user asking. A `--replace` that sends no `tags` keeps the one the document had. To re-tag without republishing: `jt patch /api/documents/<key> '{"tags": ["decision"]}'`.
 - `glossary` — term → definition; first occurrence per prose block gets a dotted-underline hover definition. Use for jargon, not for words the user knows.
 
 ## Block vocabulary

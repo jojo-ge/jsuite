@@ -8,7 +8,7 @@ const { render } = useMarkdown()
 <template>
   <figure>
     <h3 v-if="block.title" class="mb-3 text-lg font-semibold">{{ block.title }}</h3>
-    <div class="overflow-x-auto rounded-xl border border-default">
+    <div class="overflow-x-auto rounded-xl border border-default print:overflow-visible">
       <table class="w-full border-collapse text-[15px]">
         <thead>
           <tr class="border-b border-default bg-elevated/60">

@@ -4,7 +4,7 @@ A lean, local task tracker — **projects** and **tickets** with title,
 description, acceptance criteria, and blocked-by edges — plus **docs**, draft
 Confluence-style pages. It is **not connected to Jira or Confluence** and has no
 relation to them. It exists so LLM skills (e.g. Matt Pocock's `to-tickets`, or the
-local `to-jspec`) can author a breakdown or a document *locally first*, for you to
+local `to-jdoc`) can author a breakdown or a document *locally first*, for you to
 review and edit before you author anything to Jira/Confluence by hand.
 
 Built with Nuxt 4 + Nuxt UI 4. Data lives in a single human-editable JSON file at
@@ -28,27 +28,39 @@ pnpm dev          # http://localhost:43000
 | `/codebase` | **Codebase settings** — the selected codebase's worktree guide (how it does worktrees, and the branches connected to one) and its prompt overrides |
 | `/projects` · `/projects/PROJ-1` | Project hub and project detail — the board (frontier cards with their hand-off and herdr buttons), overview, docs, pull requests, agents and loops tabs |
 | `/docs` · `/docs/DOC-1` | Docs list and a doc's block document |
+| `/graphs` · `/graphs/G-1` | **Graphs** — a menu of the codebase's graphs of plan, build and review projects, a card each; a graph's own page draws it, and a node opens its briefing and Move on (see **Graphs** below) |
 | `/api-guide` | Full HTTP API reference, live in the app |
 
 ## Data model
 
 - **Project** — `{ key: "PROJ-1", title, description, mode, repo, integrationBranch }`. Top-level grouping; contains tickets.
-  - `mode`: `standard` (plain tracker) · `wayfinder` (see **Wayfinder mode** below — the `description` *is* the map body) · `todo` (a codebase's todo list, one per repo) · `architect` (one architecture scan) · `predeploy` (suspected bugs reproduced before a deploy). The mode picks which prompt a ticket's herdr hand-off fires — `/jimplement`, `/jwayfinder`, `/jarchitect-*`, `/jreproduce`.
+  - `mode`: `standard` (plain tracker) · `plan` (see **Plan mode** below — the `description` *is* the map body) · `todo` (a codebase's todo list, one per repo) · `predeploy` (suspected bugs reproduced before a deploy) · `prreview` (one GitHub PR, reviewed) · `planreview` (one plan's spec and ticket plan, reviewed before its builds run — `planReview: { planProjectId, runs }`, see **Graphs** below). The two review modes are record-only and live on the Reviews board. The UI shows the mode as the project's **type** and calls `standard` **Build**, `prreview` **Review** and `planreview` **Plan review** (wording only — `app/utils/projectType.ts`). The mode picks which prompt a ticket's herdr hand-off fires — `/jimplement`, `/jplan`, `/jreproduce`.
   - `repo` / `integrationBranch`: the optional GitHub link — see **GitHub** below. Both `""` when unset.
+  - `integrationBase`: the branch the integration branch was cut from and the roll-up PR targets — `""` = the repo's default branch, or another build's integration branch when this build is **stacked** on it (see **Graphs** below).
 - **Ticket** — `{ key: "TICK-1", title, description, acceptanceCriteria[], type, status, projectId, assignee, labels[], resolution, blockedBy[], completedAt }`
   - `projectId`: the parent project; `null` = backlog
-  - `type`: the kind of work — `story` (user-facing slice of value) · `task` (technical work) · `bug` (something broken) · `review` (review code/PR/doc) · `verification` (confirm something works — QA, acceptance, post-deploy check) · `research` (investigate; output is knowledge) · `decision` (a choice to make/grill out) · `docs` (write/refresh documentation). With no `type`, mode labels / the project mode pick one: `arch:scan` → `research`, `arch:candidate` → `decision`, `review:finding` / predeploy projects → `bug`, else `task`.
+  - `type`: the kind of work — `story` (user-facing slice of value) · `task` (technical work) · `bug` (something broken) · `review` (review code/PR/doc) · `verification` (confirm something works — QA, acceptance, post-deploy check) · `research` (investigate; output is knowledge) · `decision` (a choice to make/grill out) · `docs` (write/refresh documentation). With no `type`, mode labels / the project mode pick one: `review:finding` / predeploy projects → `bug`, else `task`.
   - `status`: `todo` · `in_progress` · `done`
-  - `assignee`: free-form name of who is working on it — agents self-assign by name; `""` = unassigned. Filter with `GET /api/tickets?assignee=<name>`. In wayfinder terms, the assignee **is** the claim.
+  - `assignee`: free-form name of who is working on it — agents self-assign by name; `""` = unassigned. Filter with `GET /api/tickets?assignee=<name>`. In plan terms, the assignee **is** the claim.
   - `labels`: free-form strings, plus the **tags**: exactly one of `afk` (agent-runnable) or `hitl` (needs a human; gets its own herdr tab) — the server adds `afk` when neither is sent — and optional `prototype` (throwaway work that must never ship; combines with any type). Filter with `GET /api/tickets?label=<label>`. Legacy writes (`"type": "AFK"|"HITL"`, `wayfinder:<sub-type>` labels) are still accepted and folded into this shape; `./jsuite setup` migrates stored tickets.
   - `resolution`: the answer recorded when the ticket resolves (GFM markdown); `""` until then.
   - `blockedBy`: ids of tickets that must finish first
   - `completedAt`: ISO timestamp of when the ticket last became `done`; `null` while unfinished. **Set by the server on the status change, never by the caller** — PATCHing it is ignored. Re-saving an already-done ticket keeps the original stamp, so fixing a resolution doesn't move it up the `?finished=true` order; moving a ticket out of `done` clears it, and moving it back stamps afresh. Tickets finished before the field existed were backfilled from `updatedAt`.
+  - `plannedFor`: on a Plan project's ticket-plan **draft**, the id of the proposed build node it will move into; `null` on every other ticket. A draft is off the frontier and never dispatched.
+  - `sentBack`: on a review finding sent back to its build, `{ ticketId, ticketKey, projectId, at }` — the fix ticket it became.
   - GET responses also attach derived booleans **`blocked`**, **`claimed`**, **`frontier`** (never persisted). `frontier` means takeable *here*: on a shared project a ticket the peer owns, or one mid-ownership-transfer, is read-only and undispatchable on this machine, so it never reads as frontier.
 Every `description` / `resolution` field is **plain GFM markdown** and is
 rendered as such in the UI (via the shared `@jsuite/documents` renderer). Card
 summaries are the exception — they show a flattened plain-text preview so the
 line clamp stays honest.
+
+- **Graph** — `{ key: "G-1", title, description, repo, nodes[], edges[] }`: plan,
+  build and review projects passed along in order. See **Graphs** below.
+
+- **Ids** — every record above also has an `id`, a bare UUIDv7
+  (`server/utils/ids.ts`) that stored references use; the key is for people.
+  Every `:id` route takes either, and an id from before the UUID migration
+  (`tick_…`) still resolves through `.data/jticket/id-migration.json`.
 
 - **Known repo** — `{ path, slug, defaultBranch, lastUsedAt }`. Not a tracker
   record: the list of clones jTicket has been pointed at, so setting up the next
@@ -96,6 +108,7 @@ See **/api-guide** in the running app. Summary:
 | GET/PATCH/DELETE | `/api/docs/:id` | Read / update / delete a doc (id or key) |
 | GET/POST | `/api/attachments` | List / upload attachments (`{ name, base64 }` or `{ file }`) for ticket markdown |
 | GET | `/api/stream` | SSE — one message per store revision (see **Live updates**) |
+| GET/POST, GET/PATCH/PUT/DELETE | `/api/graphs`, `/api/graphs/:id` | Graphs: list (`?repo=`) / create; one graph (id, `G-n` or a member project key), rename, save its whole shape, delete (see **Graphs**) |
 
 ### Bulk import (recommended for skills)
 
@@ -133,13 +146,14 @@ cursor, and it resets when the server restarts (so a second `hello` means
 "refetch, you may have missed something"). The browser follows this stream and
 refetches, which is why an open board keeps up with an agent working through an
 project without a refresh. Tickets that moved ring themselves for a few seconds and
-raise a toast; the header dot says whether the stream is actually connected.
+raise a toast; the sidebar dot says whether the stream is actually connected.
 
 ## GitHub
 
 A project can point at a **local clone** (`repo` — a path, `~` allowed) and own an **integration branch**: an *empty*
-branch cut from the repo's default branch that the project's PRs target, and
-which lands as one roll-up PR when the project is done. Both are edited on the
+branch cut from its base — the repo's default branch, or the integration branch
+of a build it stacks on — that the project's PRs target, and which lands as one
+roll-up PR when the project is done. Both are edited on the
 project form; nothing here needs a GitHub token — it shells out to the `git` and
 `gh` you already have (`gh auth status`).
 
@@ -208,7 +222,7 @@ on the right one (`app/utils/diffTarget.ts`, `diffTabUrl`):
 
 | Query | Diffs |
 | --- | --- |
-| *(none)* | the project's own branch: the integration branch vs the default branch; a PR review project's `jreview/pr-<n>` vs its base |
+| *(none)* | the project's own branch: the integration branch vs its base — the default branch, or for a stacked build the slice base, so only its own work shows (`target.baseLabel` names the upstream branch); a PR review project's `jreview/pr-<n>` vs its base |
 | `?pr=PR-n` | a local PR: its ticket branch vs the integration branch; once merged, the squash commit vs its parent |
 | `?gh=<n>` | a GitHub PR: its head (fetched into `refs/remotes/jticket/pr-<n>`) vs its base |
 | `?head=…&base=…` | any two refs — a ticket branch with no PR yet (`base` defaults to the integration branch) |
@@ -220,6 +234,17 @@ is one file at a commit, highlighted, for the gaps and the full view. Rows are
 built in `server/utils/diffBuild.ts` (parse-diff) and highlighted in both
 themes by `server/utils/diffHighlight.ts` (the same shiki the documents package
 uses). The PR-list fields `diffUrl` carry these links as jTicket paths.
+
+**File filters and sort.** The file list's chips narrow the diff to kinds of
+file — **Source**, **Tests**, **Docs**, **Config**, **Generated** (lockfiles,
+snapshots, vendored code) and **Assets** — one chip per kind the diff holds,
+any number picked at once (none = everything); the files shown follow the
+chips, not just the list. The order menu sorts by path (git's order) or by line
+churn — **Most churn** (added + removed), **Most added**, **Most removed** — to
+put the most affected files first; the order is remembered per browser. A kind
+is read off the path alone (`fileKind` in `app/utils/diffFiles.ts`): anything
+under a tests directory is a test, and what nothing claims is source. A tour
+stop in a hidden file clears the chips.
 
 **Guided tours.** A target can carry a tour: an overview plus 20–40 ordered
 stops at the lines that matter, for the human reading the diff (nothing hands
@@ -274,7 +299,8 @@ The loop, per ticket:
 5. **Roll up** — the Pull requests tab's *Open roll-up PR* button
    (`POST /api/projects/:id/integration-pr`) pushes the integration branch to
    origin — the only remote write in the flow — and then opens, or finds, the
-   one real GitHub PR, integration → default branch, via `gh`.
+   one real GitHub PR, integration branch → its base (the default branch, or
+   the upstream build's integration branch when stacked), via `gh`.
 
 The project page's *Pull requests* tab shows both lists: **Local pull
 requests** (with per-PR commit fold-outs, merge/close buttons) above **On
@@ -292,7 +318,8 @@ project — and its findings are always tickets on that project's board.
   starts a review on the engine (`POST /api/reviews`'s `createReview`) with
   `project: <KEY>`. The branch
   defaults to the integration branch (a branch only on origin is
-  `origin/<name>`), the target to the branch's PR base else the default branch,
+  `origin/<name>`), the target to the branch's PR base else the default branch
+  (a stacked build's own branch: its slice base, so reviewers read only its work),
   and 1–4 Opus reviewers (default 4) run in herdr, then a triager merges their
   findings. When triage lands, jTicket opens the browser on this tab
   (`?tab=review&review=<key>`).
@@ -321,9 +348,10 @@ project — and its findings are always tickets on that project's board.
   wrong match rewrites another defect's ticket). Record-only means no hand-off: the board lists them under
   *Review findings* with no copy/herdr buttons, the ticket form shows no
   hand-off prompt, they are never frontier (board, `?frontier=true`), Run all
-  and One session leave them out, a review plan refuses one as a check, and
-  every dispatch path answers 409 (`isRecordOnly`). Starting a triage review
-  on a PR review project is refused too — its reviews run from the plan.
+  and One session leave them out, and
+  every dispatch path answers 409 (`isRecordOnly`). A PR review project's
+  Review tab never starts a triage review — Start review there is its PR's
+  agreement review.
 - **Post to PR picks finding tickets** —
   `POST /api/projects/:id/reviews/:key/pr-comments { ticketKeys, body }` posts
   one COMMENT review under your `gh` login: a ticket whose file and line are a
@@ -405,11 +433,12 @@ ticket.prompt (promptMode 'append' | 'replace')     the ticket's own text
         → the built-in text                         app/utils/prompts.ts
 ```
 
-There are fifteen **kinds**, each picked by what fires it — the three
-`standard:*` PR targets of the hand-off picker, the board's `batch` session,
-`wayfinder`, `todo`, `architect:scan` / `architect:grill`, `predeploy`, a PR
-review project's `prcheck` tickets, the project-level `merge` sweep,
-`worktree:connect`, `runplan:build` and `prreview:assess`, and the
+There are twelve **kinds**, each picked by what fires it — the three
+`standard:*` PR targets of the hand-off picker, `standard:decision` (a HITL
+`decision` ticket on a standard board: a `/grilling` interview in its herdr
+pane, no branch and no PR, whatever the picker says), the board's `batch` session,
+`plan`, `todo`, `predeploy`, the project-level `merge` sweep,
+`worktree:connect` and `runplan:build`, and the
 codebase-level `worktree:kickoff` (see **Codebase worktrees**).
 A kind is stored only when overridden, so an untouched jTicket fires exactly
 the strings it always has (`tests/prompts.test.ts` pins them).
@@ -427,11 +456,11 @@ how *this* machine dispatches agents, not what the work is. They never ride the
 sync wire, they don't travel in a project bundle, and they stay editable on
 both sides of a shared project.
 
-## Wayfinder mode
+## Plan mode
 
-Set a project's `mode` to `wayfinder` and it becomes a home for [wayfinder](https://github.com/) maps. The mapping:
+Set a project's `mode` to `plan` and it becomes a home for a plan's map — the way `/jplan` charts work too big for one session. (The mode was called `wayfinder` before the rename; the API still reads that as `plan`.) The mapping:
 
-| Wayfinder concept | jTicket |
+| Plan concept | jTicket |
 | --- | --- |
 | Map | the project's **description** (the map body: Destination / Notes / Decisions / Fog / Out-of-scope) |
 | Ticket | a **ticket** under that project; body = the question |
@@ -442,16 +471,91 @@ Set a project's `mode` to `wayfinder` and it becomes a home for [wayfinder](http
 | Frontier | `GET /api/tickets?projectId=<project>&frontier=true` — todo + all `blockedBy` done + unassigned + takeable on this machine, key-ordered |
 | Resolve | set `status: "done"`, fill **`resolution`**, add a gist to the map's *Decisions so far* |
 
-In the UI, **every** project — wayfinder or standard — renders its tickets grouped into **Frontier · In progress · Not takeable here · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. *Not takeable here* holds the peer's open work and anything frozen mid-ownership-transfer, so it is only ever non-empty on a shared project; empty groups aren't rendered, so a local-only board still reads as the four it always did. What a wayfinder project adds on top is the map body (behind the board's Brief button); every card carries its type badge.
+In the UI, **every** project — plan or standard — renders its tickets grouped into **Frontier · In progress · Not takeable here · Blocked · Resolved**, key-ordered within each group, with frontier tickets ring-highlighted. *Not takeable here* holds the peer's open work and anything frozen mid-ownership-transfer, so it is only ever non-empty on a shared project; empty groups aren't rendered, so a local-only board still reads as the four it always did. What a wayfinder project adds on top is the map body (behind the board's Brief button); every card carries its type badge.
 
-**Authoring a whole map** via `POST /api/import`: give the project `"mode": "wayfinder"` and a map-body `description`, and each ticket its `type` and agency tag — e.g.:
+**Authoring a whole map** via `POST /api/import`: give the project `"mode": "plan"` and a map-body `description`, and each ticket its `type` and agency tag — e.g.:
 
 ```jsonc
 {
-  "projects": [{ "title": "Rive Story Assets", "mode": "wayfinder", "description": "## Destination\n…" }],
+  "projects": [{ "title": "Rive Story Assets", "mode": "plan", "description": "## Destination\n…" }],
   "tickets":  [{ "title": "Choose the runtime", "project": "Rive Story Assets", "type": "research", "labels": ["afk"] }]
 }
 ```
+
+## Graphs
+
+A project is a slice of work a person can review in one sitting; a **graph**
+is how a larger piece of work is cut into such slices and handed along — plan →
+builds → reviews, in any combination (`app/utils/graphs.ts`,
+`server/utils/graphs.ts`). It is stored (`store.graphs`, key `G-n`,
+machine-local — never synced): **nodes**, each a project or a **proposed** one
+(a mode, title and `note`, no project yet), joined by directed, acyclic
+**edges**. A project sits in at most one node of one graph; deleting it turns
+its node back into a proposed one. Cross-project ticket blockers are plain
+ticket facts and make no graph.
+
+- **The pages**: the menu (`/graphs`, `GraphCard.vue`) shows each of the
+  codebase's graphs as a card — its type chain, progress, where it is now, a
+  thumbnail of its shape, when it last changed — and creating a graph starts
+  there. A graph's page (`/graphs/G-n?node=<nodeId>`, `GraphCanvas.vue`; a
+  member project's key and the old `/graphs?g=G-n` redirect to it) draws it in
+  layers and lists every node in detail: each node's type, project status
+  (tickets done/total, running), outcome report, whether it was moved on into,
+  and each build's **slice size** (files, lines added/removed against its
+  base). Create a graph, add a node (an existing project or a proposed one),
+  draw or remove edges, rename, delete (projects are untouched). The
+  whole-shape save (`PUT /api/graphs/:id`) answers `problems` like a run plan.
+- **No hard gates.** Clicking a node opens its **briefing**
+  (`GraphBriefing.vue`, `GET /api/graphs/:id/nodes/:nodeId/briefing`): every
+  upstream's tickets and running work, roll-up PRs and CI, review verdicts and
+  open findings, whether an integration branch is behind its base or has
+  unpushed commits, the base a build would start from — and `flags`, which
+  only warn. A slice over 30 files or 800 lines is flagged large: split it
+  into stacked builds. **Move on** (`POST …/nodes/:nodeId/enter {note?,
+  stackOn?}`) always works and starts nothing: it creates a proposed node's
+  project (a Review node gets the upstream build's open roll-up PR attached),
+  records the stacking choice, and keeps the briefing on the node. A project
+  whose node wasn't entered still runs; its page shows the graph strip
+  (`ProjectGraphStrip.vue`, `GET /api/projects/:id/graph`) and the briefing as
+  a banner with Move on.
+- **Stacked builds.** A build may stack on one upstream build: its
+  `integrationBase` is that build's integration branch, its roll-up PR targets
+  it, and the Diff tab, slice size and Review tab measure from where the two
+  meet, so it shows only its own work. The Overview card's **Sync from
+  upstream** (`POST /api/projects/:id/integration-branch/sync`) fetches and
+  merges the base in locally — never a rebase, never a push; once the upstream
+  was squash-merged it merges what that merged into, makes it the base and
+  retargets the open roll-up PR. A conflict moves nothing and lists the files.
+  `GET /api/projects/:id/integration-branch` is the state behind the card
+  (`app/utils/stacking.ts`, `server/utils/integrationBase.ts`).
+- **Ticket plan.** A Plan project's **Ticket plan** tab
+  (`ProjectTicketPlan.vue`) turns the finished map into builds: **Draft ticket
+  plan** (`POST /api/projects/:id/ticket-plan/build`) dispatches one Fable 5.2
+  `/jplan-to-jtickets` session that writes the spec as a doc, drafts the build
+  tickets on the plan (`plannedFor` = the proposed build node), and proposes
+  the graph's builds — each sized as a reviewable slice — with a Review after
+  each non-trivial one. Drafts are record-only and editable in the tab.
+  **Approve** (`POST …/ticket-plan/approve`) creates the build projects and
+  moves the drafts in; it starts and enters nothing.
+- **Plan review.** A plan review project (mode `planreview`; the create
+  modal's **Plan review** type, `POST /api/projects {mode: "planreview",
+  plan}`, or Move on into a proposed plan review node, which points it at the
+  plan before it) reviews one plan before its builds run. Its Review tab's
+  **Start review** (`POST /api/projects/:id/reviews {reviewers?}`,
+  `startPlanReview` in `server/utils/planReview.ts`) runs one agreement review
+  whose subject is the plan — no branch, worktree or diff: 2–4 reviewers run
+  `/jplan-review` over the plan's map, resolutions, docs, ticket plan and the
+  code, `/jreview-consensus` keeps what they all raised, and the findings land
+  as record-only tickets. It is refused while the ticket plan is being drafted
+  and for a plan with nothing to read. One with no plan yet picks it on its
+  Review tab (`POST /api/projects/:id/plan-review {plan}`).
+- **Send back.** The Review tab's **Send back**
+  (`POST /api/projects/:id/findings/send-back {ticketKeys}`) turns the picked
+  finding tickets into tickets where they get fixed: from a review directly
+  after a build, AFK `bug` tickets on the build; from a plan review, HITL
+  `decision` tickets on its plan, in a graph or not (`review:sent-back`; the
+  finding records it in `sentBack`). Fix or decide them there, then **Rerun
+  review**.
 
 ## Pointing the `to-tickets` skill here
 
@@ -460,11 +564,12 @@ via `POST http://localhost:43000/api/import`** instead of Jira. It maps cleanly:
 skill "tickets" → tickets, "blocked by" → `blockedBy` (by title), AFK/HITL → the `afk`/`hitl` tag in `labels` (plus a `type` per ticket),
 parent → `project`.
 
-## The `to-jspec` skill
+## The `to-jdoc` skill
 
-The companion `/to-jspec` skill (bundled at `.claude/skills/to-jspec`) teaches an LLM to
-draft docs here via `POST /api/docs`, including the block-document format. It pairs
-with Matt Pocock's `/to-spec`, which decides what the document says — `to-jspec` covers how
-it is written and where it lands. Documents are drafts only — review them at
+The companion `/to-jdoc` skill (bundled at `.claude/skills/to-jdoc`) teaches an LLM to
+draft docs here via `POST /api/docs` — a spec, a design note, any page — including the
+block-document format and the format every ticket and project field takes. For a spec it
+pairs with Matt Pocock's `/to-spec`, which decides what the document says — `to-jdoc` covers
+how it is written and where it lands. Documents are drafts only — review them at
 `http://localhost:43000/docs`, then copy into Confluence by hand if and when you want them
 there.

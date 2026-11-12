@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ sharedKey?: string; peerName?: string; ttlMs?: number }>(event).catch(() => undefined)
 
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   const existing = findShare(store, project.id)

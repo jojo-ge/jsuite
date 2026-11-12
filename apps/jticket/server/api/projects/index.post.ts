@@ -1,13 +1,27 @@
 export default defineEventHandler(async (event) => {
   const body = await readBody<Partial<Project>>(event)
+  // A review project made here (the create modal's Review type) has no pull
+  // request yet: its page is the PR picker until one is attached (POST
+  // /api/projects/:id/pr-review {pr}). It needs a repo, not a title — the PR
+  // names it. POST /api/projects/pr-review {repo, pr} makes one with its PR
+  // in a single call.
+  if (coerceProjectMode(body?.mode) === 'prreview') {
+    setResponseStatus(event, 201)
+    return createUnattachedReviewProject({ repo: body.repo, title: body.title, description: body.description })
+  }
+  // A plan review project (the create modal's Plan review type) is made
+  // pointed at its plan — `plan`, a plan project's key or id — in that plan's
+  // codebase. The title is optional: left blank, the plan names it.
+  if (coerceProjectMode(body?.mode) === 'planreview') {
+    const store = loadStore()
+    const plan = planProjectRef(store, (body as { plan?: unknown }).plan)
+    const project = createPlanReviewProject(store, { plan, title: body.title, description: body.description })
+    saveStore(store)
+    setResponseStatus(event, 201)
+    return project
+  }
   if (!body?.title?.trim()) {
     throw createError({ statusCode: 400, statusMessage: 'title is required' })
-  }
-  // A PR review project is only ever made with its pull request attached
-  // (POST /api/projects/pr-review) — one made here would have no prReview and
-  // render a blank Review setup tab.
-  if (coerceProjectMode(body.mode) === 'prreview') {
-    throw createError({ statusCode: 400, statusMessage: 'PR review projects are made with POST /api/projects/pr-review {repo, pr}' })
   }
   const store = loadStore()
   const ts = now()
@@ -19,6 +33,7 @@ export default defineEventHandler(async (event) => {
     mode: coerceProjectMode(body.mode),
     repo: body.repo?.trim() ?? '',
     integrationBranch: body.integrationBranch?.trim() ?? '',
+    integrationBase: '',
     starred: body.starred === true,
     position: null,
     hidden: false,

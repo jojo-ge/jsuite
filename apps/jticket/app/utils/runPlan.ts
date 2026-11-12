@@ -217,8 +217,59 @@ export interface PlanStep {
   groupRunners: Array<Runner | null>
   /** implement: a solo ticket's own model/effort, when it differs from the step's. */
   runners: Record<string, Runner>
+  /**
+   * implement: what whoever built the plan expected of each ticket, by key —
+   * see TicketPrediction. Written by `/jrunplan`; a plan built by hand has
+   * none. The engine never reads it: it is there to be scored against what
+   * the run actually took (the harness capture's run snapshot).
+   */
+  predictions: Record<string, TicketPrediction>
   /** review: the reviewers, and the optional architectural pass before them. */
   review: ReviewSetting
+}
+
+/** How heavy the plan's builder judged a ticket — the weights `/jrunplan` sorts tickets by. */
+export type PlanWeight = 'light' | 'medium' | 'heavy'
+export const PLAN_WEIGHTS: PlanWeight[] = ['light', 'medium', 'heavy']
+export type PlanRisk = 'low' | 'medium' | 'high'
+export const PLAN_RISKS: PlanRisk[] = ['low', 'medium', 'high']
+export const PREDICTION_MINUTES_MAX = 24 * 60
+export const PREDICTION_WHY_MAX = 300
+
+/**
+ * A plan builder's bet on one ticket, recorded before the run so it can be
+ * checked after it: a prediction made up afterwards is worth nothing.
+ */
+export interface TicketPrediction {
+  weight: PlanWeight
+  /** Expected minutes from the ticket being picked up to it being closed. */
+  minutes: number
+  /** How likely a review is to find something wrong in its work. */
+  risk: PlanRisk
+  /** One line: why this weight, and why this runner. */
+  why: string
+}
+
+/** A prediction off the wire — null unless it names a weight, a risk and a positive number of minutes. */
+export function coercePrediction(raw: any): TicketPrediction | null {
+  if (!raw || typeof raw !== 'object') return null
+  const minutes = Math.round(Number(raw.minutes))
+  if (!PLAN_WEIGHTS.includes(raw.weight) || !PLAN_RISKS.includes(raw.risk) || !Number.isFinite(minutes) || minutes < 1) return null
+  return { weight: raw.weight, minutes: Math.min(PREDICTION_MINUTES_MAX, minutes), risk: raw.risk, why: str(raw.why).trim().slice(0, PREDICTION_WHY_MAX) }
+}
+
+/**
+ * The tickets in the plan's implement steps that carry no prediction — of
+ * `open` when given (a finished ticket is skipped by the run, so it needs
+ * none). What `/jrunplan` must fill before it may report the plan built.
+ */
+export function unpredictedTickets(plan: RunPlan, open?: ReadonlySet<string>): string[] {
+  const out: string[] = []
+  for (const s of plan.steps) {
+    if (s.kind !== 'implement') continue
+    for (const k of s.tickets) if (!s.predictions[k] && (!open || open.has(k)) && !out.includes(k)) out.push(k)
+  }
+  return out
 }
 
 export interface RunPlan {
@@ -244,7 +295,7 @@ export function newPlanStep(plan: RunPlan, kind: PlanStepKind, patch: Partial<Pl
   const used = new Set(plan.steps.map((s) => s.id))
   let n = plan.steps.length + 1
   while (used.has(`s${n}`)) n++
-  return { id: `s${n}`, kind, tickets: [], reviewers: PLAN_REVIEWERS_DEFAULT, base: '', note: '', dispatch: null, groups: [], groupRunners: [], runners: {}, review: { ...REVIEW_DEFAULT }, ...patch }
+  return { id: `s${n}`, kind, tickets: [], reviewers: PLAN_REVIEWERS_DEFAULT, base: '', note: '', dispatch: null, groups: [], groupRunners: [], runners: {}, predictions: {}, review: { ...REVIEW_DEFAULT }, ...patch }
 }
 
 const KINDS: PlanStepKind[] = ['implement', 'merge', 'review', 'gate']
@@ -288,6 +339,14 @@ export function coerceRunPlan(raw: any): RunPlan | null {
         if (runner) runners[k] = runner
       }
     }
+    // A prediction belongs to a ticket of the step, grouped or not.
+    const predictions: Record<string, TicketPrediction> = {}
+    if (s.kind === 'implement' && s.predictions && typeof s.predictions === 'object') {
+      for (const [k, p] of Object.entries(s.predictions)) {
+        const prediction = tickets.includes(k) ? coercePrediction(p) : null
+        if (prediction) predictions[k] = prediction
+      }
+    }
     steps.push({
       id,
       kind: s.kind,
@@ -299,6 +358,7 @@ export function coerceRunPlan(raw: any): RunPlan | null {
       groups,
       groupRunners,
       runners,
+      predictions,
       review: s.kind === 'review' ? coerceReview(s.review) : { ...REVIEW_DEFAULT },
     })
   }

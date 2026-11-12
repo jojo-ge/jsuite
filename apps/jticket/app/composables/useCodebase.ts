@@ -12,7 +12,7 @@
 // repoPath — the same rule the server's ?repo= filters apply.
 import type { Project, Ticket } from '~/composables/useTracker'
 import type { PromptOverrides } from '~/utils/prompts'
-import { isReviewProject } from '~/utils/reviewPlan'
+import { isReviewProject } from '~/utils/prReview'
 
 // A codebase's worktree guide and links — see server/utils/worktrees.ts.
 export interface WorktreeGuide {

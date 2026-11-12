@@ -6,8 +6,9 @@
 // run ended (if there was one). Everything reads project.auto, which the
 // server's loop keeps current; nothing here advances the loop.
 import type { LocalPr, Project, Ticket } from '~/composables/useTracker'
+import { localStamp } from '~/composables/useTracker'
 import { AUTO_PHASES, NO_PR_RETRIES, OUTCOME_WORD_LIMIT, REPORT_PHASE, STALL_FORCE_MS, autoPending, effectiveOrchestration, inFlight, orchestratedKeys, type AutoLoop } from '~/utils/autoLoop'
-import { outcomeDocOf } from '~/utils/projectGraphs'
+import { outcomeDocOf } from '~/utils/graphs'
 import { PLAN_MODELS, PLAN_STEP_LABELS, runnerLabel, soloTickets, stepShape } from '~/utils/runPlan'
 
 const props = defineProps<{ project: Project; tickets: Ticket[] }>()
@@ -209,7 +210,7 @@ const prDone = (p: LocalPr) => p.status === 'merged' || p.status === 'closed'
 const endedText = computed(() => {
   const e = auto.value?.ended
   if (!e) return ''
-  const when = new Date(e.at).toLocaleString()
+  const when = localStamp(e.at)
   if (e.reason === 'complete') return `Auto mode finished — no open work left (${when}).${outcomeDoc.value ? '' : ' No outcome report was recorded.'}`
   if (e.reason === 'stopped') return `Auto mode stopped at the end of a ${auto.value?.history.at(-1)?.plan ? 'plan step' : 'loop'}, as asked (${when}).`
   if (e.reason === 'plan-finished') return `The run plan finished (${when}) — open tickets remain; plan the next run in the Run setup tab.`

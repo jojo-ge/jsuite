@@ -164,9 +164,53 @@
 .jx-progress {
   position: fixed;
   top: 0;
-  left: 0;
+  /* Past the host app's sidebar, when it has one (jTicket sets the variable). */
+  left: var(--app-sidebar-w, 0px);
   height: 2px;
   background: var(--ui-primary);
   z-index: 30;
   transition: width 80ms linear;
+}
+
+/* ── Print ─────────────────────────────────────────────────────────────────────
+   The reader's Export PDF is the browser's print-to-PDF. The components carry
+   `print:` utilities that undo the app layout and hide the chrome; these are
+   the rules that have no utility: page margins, what may split across pages,
+   and keeping tints (callouts, highlighted lines) that browsers drop by default. */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+  .jx-progress {
+    display: none;
+  }
+  .jx-article {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Text flows across pages. A chart, image or callout stays whole; code,
+     diffs, tables and lists may split, but only between lines, rows and items. */
+  .jx-article section[data-block='chart'],
+  .jx-article section[data-block='image'],
+  .jx-article section[data-block='callout'],
+  .jx-article section[data-block='code'] figure > div > div,
+  .jx-article section[data-block='diff'] figure > div > div,
+  .jx-article tr,
+  .jx-article li,
+  .jx-article blockquote {
+    break-inside: avoid;
+  }
+  .jx-article h1,
+  .jx-article h2,
+  .jx-article h3,
+  .jx-article h4,
+  .jx-article figcaption {
+    break-after: avoid;
+  }
+  /* An embedded chart prints as the drawing, without the editor's controls. */
+  .jx-article .excalidraw .layer-ui__wrapper,
+  .jx-article .excalidraw .App-menu,
+  .jx-article .excalidraw .FixedSideContainer {
+    display: none !important;
+  }
 }

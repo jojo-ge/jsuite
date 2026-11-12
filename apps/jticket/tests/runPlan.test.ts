@@ -26,7 +26,10 @@ import {
   REVIEW_DEFAULT,
   coerceGroups,
   liveGroups,
+  coercePrediction,
   coerceRunPlan,
+  PREDICTION_MINUTES_MAX,
+  unpredictedTickets,
   dispatchSummary,
   groupRunnerOf,
   groupShares,
@@ -142,6 +145,48 @@ describe('coerceRunPlan / newPlanStep', () => {
   it('mints an unused id', () => {
     expect(newPlanStep(plan(s('s2', 'merge')), 'gate').id).toBe('s3')
     expect(newPlanStep(plan(s('s1', 'merge'), s('s2', 'merge')), 'merge').id).toBe('s3')
+  })
+})
+
+describe('predictions — the builder\'s bet on each ticket', () => {
+  const raw = (predictions: unknown, tickets = ['T-1', 'T-2']) => ({ steps: [{ id: 's1', kind: 'implement', tickets, predictions }, { id: 's2', kind: 'merge', predictions }] })
+
+  it('keeps a well-formed prediction for a ticket of the step, grouped or not', () => {
+    const plan = coerceRunPlan(raw({ 'T-1': { weight: 'heavy', minutes: 90.4, risk: 'high', why: '  new module  ' }, 'T-2': { weight: 'light', minutes: 5, risk: 'low' } }))!
+    expect(plan.steps[0]!.predictions).toEqual({ 'T-1': { weight: 'heavy', minutes: 90, risk: 'high', why: 'new module' }, 'T-2': { weight: 'light', minutes: 5, risk: 'low', why: '' } })
+    expect(plan.steps[1]!.predictions).toEqual({})
+  })
+
+  it('drops one that is malformed or for a ticket the step no longer holds, and caps the rest', () => {
+    const plan = coerceRunPlan(
+      raw({
+        'T-1': { weight: 'huge', minutes: 30, risk: 'low' },
+        'T-2': { weight: 'medium', minutes: 99999, risk: 'medium', why: 'x'.repeat(900) },
+        'T-9': { weight: 'light', minutes: 5, risk: 'low' },
+      }),
+    )!
+    expect(Object.keys(plan.steps[0]!.predictions)).toEqual(['T-2'])
+    expect(plan.steps[0]!.predictions['T-2']).toMatchObject({ minutes: PREDICTION_MINUTES_MAX })
+    expect(plan.steps[0]!.predictions['T-2']!.why).toHaveLength(300)
+    for (const bad of [null, 'x', { weight: 'light', risk: 'low' }, { weight: 'light', minutes: 0, risk: 'low' }, { weight: 'light', minutes: 5 }]) expect(coercePrediction(bad)).toBeNull()
+  })
+
+  it('a step built by hand has none, and a fresh step starts empty', () => {
+    expect(coerceRunPlan(raw(undefined))!.steps[0]!.predictions).toEqual({})
+    expect(newPlanStep({ steps: [] }, 'implement').predictions).toEqual({})
+  })
+
+  it('unpredictedTickets lists the implement tickets still without one — only the open ones when told which are', () => {
+    const plan = coerceRunPlan({
+      steps: [
+        { id: 's1', kind: 'implement', tickets: ['T-1', 'T-2'], predictions: { 'T-1': { weight: 'light', minutes: 5, risk: 'low' } } },
+        { id: 's2', kind: 'merge' },
+        { id: 's3', kind: 'implement', tickets: ['T-3', 'T-4'] },
+      ],
+    })!
+    expect(unpredictedTickets(plan)).toEqual(['T-2', 'T-3', 'T-4'])
+    expect(unpredictedTickets(plan, new Set(['T-1', 'T-3']))).toEqual(['T-3'])
+    expect(unpredictedTickets({ steps: [] })).toEqual([])
   })
 })
 

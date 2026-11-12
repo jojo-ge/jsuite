@@ -117,12 +117,14 @@ onMounted(() => {
   window.addEventListener('paste', onPagePaste)
 })
 onBeforeUnmount(() => window.removeEventListener('paste', onPagePaste))
+
+// Export PDF — the browser's print dialog over the document's print styles,
+// the same as the reader's (/e/<key>).
+const { exporting, exportPdf } = useDocumentExport()
 </script>
 
 <template>
-  <div class="flex h-screen flex-col bg-default">
-    <AppHeader />
-
+  <div class="flex h-screen flex-col bg-default print:block print:h-auto">
     <!-- Not found -->
     <div v-if="!doc" class="flex flex-col items-center gap-4 py-24 text-center">
       <UIcon name="i-lucide-file-x" class="size-12 text-muted" />
@@ -140,7 +142,7 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPagePaste))
 
     <template v-else>
       <!-- Tracker metadata bar -->
-      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-6 py-2">
+      <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-default px-6 py-2 print:hidden">
         <UButton icon="i-lucide-arrow-left" size="xs" color="neutral" variant="ghost" to="/docs" aria-label="All documents" />
         <span class="font-mono text-xs text-muted">{{ doc.key }}</span>
         <UBadge v-if="status" :color="status.color" variant="subtle" size="sm">{{ status.label }}</UBadge>
@@ -160,6 +162,17 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPagePaste))
           variant="ghost"
           label="Notes"
           @click="railOpen = !railOpen"
+        />
+        <UButton
+          v-if="sharedDoc"
+          icon="i-lucide-file-down"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          label="Export PDF"
+          title="Opens the print dialog — choose Save as PDF"
+          :loading="exporting"
+          @click="exportPdf"
         />
         <span v-if="imageError" class="text-xs text-error">{{ imageError }}</span>
         <UButton
@@ -181,7 +194,7 @@ onBeforeUnmount(() => window.removeEventListener('paste', onPagePaste))
       <!-- The shared document, rendered exactly as jExplain renders it. Dropping
            a picture here appends it as an image block (the rail's own drop
            zones take precedence — they prevent default first). -->
-      <div class="flex min-h-0 flex-1 flex-col" @dragover.prevent @drop="onArticleDrop">
+      <div class="flex min-h-0 flex-1 flex-col print:block" @dragover.prevent @drop="onArticleDrop">
         <DocumentArticle v-if="sharedDoc" :doc="sharedDoc" v-model:rail-open="railOpen" />
         <div v-else class="py-16 text-center text-sm text-muted">
           <p>No content yet — this doc's shared document is empty or missing.</p>

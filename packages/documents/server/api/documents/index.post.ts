@@ -1,15 +1,17 @@
 import { docKeyFromTitle, uniqueDocKey, readDoc, writeDoc, type Explainer } from '../../utils/store'
 import { materialiseBlocks, cleanGlossary } from '../../utils/materialise'
+import { cleanTags } from '../../../tags'
 
 /**
  * Create a document in the shared pool. Body: { title, subtitle?, kicker?,
- * blocks, glossary?, key?, replace? }
+ * blocks, glossary?, tags?, key?, replace? }
  *
  * Chart blocks may carry inline `mermaid`; they're materialised into the shared
  * jChart store and stored as { chartKey } references. `replace: true`
  * overwrites the named doc in place (keeping createdAt and its notes sidecar)
- * so a skill can re-publish a revision at the same URL. The returned `path`
- * is the reader route (jTicket's /e/<key>) — the pool's canonical reading surface.
+ * so a skill can re-publish a revision at the same URL — its tags are kept
+ * too, unless the revision sends its own. The returned `path` is the reader
+ * route (jTicket's /e/<key>) — the pool's canonical reading surface.
  */
 export default defineEventHandler(async (event) => {
   const body = (await readBody(event)) ?? {}
@@ -31,8 +33,9 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
     blocks: await materialiseBlocks(key, Array.isArray(body.blocks) ? body.blocks : []),
     glossary: cleanGlossary(body.glossary),
+    tags: body.tags !== undefined ? cleanTags(body.tags) : cleanTags(existing?.tags),
   }
   await writeDoc(key, doc)
 
-  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length }
+  return { key, title, path: `/e/${key}`, blocks: doc.blocks.length, tags: doc.tags }
 })

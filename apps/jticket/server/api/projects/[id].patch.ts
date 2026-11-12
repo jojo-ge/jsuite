@@ -2,7 +2,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<Partial<Project>>(event)
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   // On a shared project the title/description/mode belong to the link creator
@@ -20,7 +20,10 @@ export default defineEventHandler(async (event) => {
     // record (the PR, the plan, the runs) come and go together.
     const mode = coerceProjectMode(body.mode)
     if (mode !== project.mode && (mode === 'prreview' || project.mode === 'prreview')) {
-      throw createError({ statusCode: 400, statusMessage: 'a project cannot be switched into or out of PR review mode — make one with POST /api/projects/pr-review' })
+      throw createError({ statusCode: 400, statusMessage: 'a project cannot become or stop being a review project — make one with POST /api/projects/pr-review {repo, pr}, or POST /api/projects {mode: "prreview", repo} and pick its PR after' })
+    }
+    if (mode !== project.mode && (mode === 'planreview' || project.mode === 'planreview')) {
+      throw createError({ statusCode: 400, statusMessage: 'a project cannot become or stop being a plan review project — make one with POST /api/projects {mode: "planreview", plan: PROJ-n}' })
     }
     project.mode = mode
   }
@@ -50,7 +53,19 @@ export default defineEventHandler(async (event) => {
     if (branch && !isSafeRef(branch)) {
       throw createError({ statusCode: 400, statusMessage: `not a usable branch name: ${branch}` })
     }
+    // A different branch (or none) forgets the old one's base — unless this
+    // same PATCH names the new one's.
+    if (branch !== project.integrationBranch && body.integrationBase === undefined) project.integrationBase = ''
     project.integrationBranch = branch
+  }
+  // The integration branch's base ('' = the default branch, else the build it
+  // stacks on — app/utils/stacking.ts). Recorded, not acted on: nothing is
+  // merged or retargeted here (Sync from upstream does that).
+  if (body.integrationBase !== undefined) {
+    const base = String(body.integrationBase ?? '').trim()
+    if (base && !isSafeRef(base)) throw createError({ statusCode: 400, statusMessage: `not a usable base: ${base}` })
+    if (base && base === project.integrationBranch) throw createError({ statusCode: 400, statusMessage: `a branch cannot be its own base: ${base}` })
+    project.integrationBase = base
   }
   // Hand-off prompt overrides, merged per kind: send a kind to set it, send ''
   // to drop back to the global default. Machine-local like the repo link — no

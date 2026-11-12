@@ -9,6 +9,9 @@
 //   - `git` cuts, pushes and checks the integration branch
 //   - `gh`  lists open PRs and resolves the repo's slug + default branch
 //
+// Every GitHub read a page renders from goes through ghCache.ts: the answer is
+// held and served at once, and refreshed behind the page when it has aged.
+//
 // PRs are matched to a project three ways (see matchProjectPrs): the PR whose
 // HEAD is the integration branch (the project's own roll-up PR), any PR whose
 // BASE is the integration branch, and any PR whose head branch or title names
@@ -19,7 +22,9 @@ import { statSync } from 'node:fs'
 import { promisify } from 'node:util'
 import type { Project, Store } from './store'
 import { assertCommandAllowed } from './sandbox'
+import { forgetGh, ghCached, ghKey, type Cached } from './ghCache'
 import { diffTabUrl } from '../../app/utils/diffTarget'
+import { PR_PAGE_MAX, PR_PAGE_SIZE, prSearchQuery, type PrQuery } from '../../app/utils/prList'
 
 const pExecFile = promisify(execFile)
 
@@ -98,12 +103,29 @@ export interface RepoContext {
   defaultBranch: string
 }
 
+// A repo's slug and default branch all but never change, and `gh repo view`
+// is asked for on nearly every GitHub-touching request (the project panel,
+// each Diff tab load, the repo probe as you type): held ten minutes, served a
+// day while it refreshes. An answer without a slug is gh failing (offline, not
+// logged in) and is never held, so coming back online shows at once.
+const REPO_FRESH_MS = 10 * 60_000
+const REPO_STALE_MS = 24 * 60 * 60_000
+
 /**
  * The repo's slug + default branch. gh is best-effort: without it (offline, not
  * logged in, no GitHub remote) the branch side still works, we just can't build
  * github.com links.
  */
 export async function repoContext(path: string): Promise<RepoContext> {
+  const read = await ghCached(ghKey('repo', path), () => readRepoContext(path), {
+    fresh: REPO_FRESH_MS,
+    stale: REPO_STALE_MS,
+    keep: (ctx) => !!ctx.slug,
+  })
+  return read.value
+}
+
+async function readRepoContext(path: string): Promise<RepoContext> {
   const out = await tryRun('gh', ['repo', 'view', '--json', 'nameWithOwner,defaultBranchRef'], path)
   let slug: string | null = null
   let defaultBranch = ''
@@ -133,6 +155,31 @@ export async function localBranchExists(path: string, branch: string): Promise<b
 export async function remoteBranchExists(path: string, branch: string): Promise<boolean> {
   const out = await tryRun('git', ['ls-remote', '--heads', 'origin', branch], path)
   return !!(out ?? '').trim()
+}
+
+/**
+ * remoteBranchExists for a page to render from: `git ls-remote` is a network
+ * round trip (seconds on a big repo), so the answer is held like a gh read. A
+ * failed ls-remote (offline) answers false and isn't held. Write paths ask
+ * remoteBranchExists itself, and forget this answer when they push
+ * (forgetRepoGithub).
+ */
+export async function remoteBranchKnown(path: string, branch: string, force = false): Promise<Cached<boolean>> {
+  const read = await ghCached(
+    ghKey('remote-branch', path, branch),
+    () => tryRun('git', ['ls-remote', '--heads', 'origin', branch], path),
+    { force, keep: (out) => out !== null },
+  )
+  return { ...read, value: !!(read.value ?? '').trim() }
+}
+
+/**
+ * Drop what is held about a repo's branches and PRs — after jTicket itself
+ * pushed a branch or opened a PR, so the next read shows it.
+ */
+export function forgetRepoGithub(path: string): void {
+  forgetGh(ghKey('remote-branch', path, ''))
+  forgetGh(ghKey('prs', path, ''))
 }
 
 // ── Probing a path ──────────────────────────────────────────────────────────
@@ -251,7 +298,7 @@ export async function listBranches(
 export interface GhPr {
   number: number
   title: string
-  author?: { login?: string } | null
+  author?: { login?: string; name?: string } | null
   headRefName: string
   baseRefName: string
   isDraft: boolean
@@ -264,36 +311,133 @@ export interface GhPr {
   reviewRequests?: { login?: string; slug?: string; name?: string }[]
 }
 
-const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,additions,deletions,reviewDecision,reviewRequests,url'
+// The whole open list, for matching PRs to a project — drafts too, since a
+// project's own PRs are often drafts. Only the cheap fields: asking GitHub
+// for the diff stats and review state of 100 PRs is what took five seconds.
+// The few PRs a project shows get their stats from prDiffStats.
+const PR_FIELDS = 'number,title,author,headRefName,baseRefName,isDraft,updatedAt,url'
 
-// `gh pr list` is a network round-trip and the project page refetches on every
-// live tracker change, so hold the answer briefly per repo. ?force=1 busts it.
-const PR_TTL_MS = 30_000
-const prCache = new Map<string, { at: number; prs: GhPr[] }>()
-
-export async function listOpenPrs(path: string, force = false): Promise<GhPr[]> {
-  const hit = prCache.get(path)
-  if (!force && hit && Date.now() - hit.at < PR_TTL_MS) return hit.prs
-  const out = await run('gh', ['pr', 'list', '--limit', '100', '--json', PR_FIELDS], path)
-  const prs = JSON.parse(out) as GhPr[]
-  prCache.set(path, { at: Date.now(), prs })
-  return prs
+/** Every open PR of the repo (up to 100), held per repo. `force` reads fresh. */
+export function listOpenPrs(path: string, force = false): Promise<Cached<GhPr[]>> {
+  return ghCached(
+    ghKey('prs', path, 'all'),
+    async () => JSON.parse(await run('gh', ['pr', 'list', '--limit', '100', '--json', PR_FIELDS], path)) as GhPr[],
+    { force },
+  )
 }
 
-// The gh login, per repo dir — the same for every repo on one gh auth, but
-// asked in the repo so a host-specific auth answers. Cached for the process.
-const viewerCache = new Map<string, string>()
+async function graphql(path: string, query: string, vars: Record<string, string | number>): Promise<any> {
+  // -f sends a string as it is; -F types it (a number), and would read an
+  // @-prefixed value as a file — so only numbers go through -F.
+  const fields = Object.entries(vars).flatMap(([k, v]) => [typeof v === 'number' ? '-F' : '-f', `${k}=${v}`])
+  return JSON.parse(await run('gh', ['api', 'graphql', '-f', `query=${query}`, ...fields], path)).data
+}
 
-/** Who gh is signed in as ('' when it can't tell). */
-export async function ghViewer(path: string): Promise<string> {
-  const hit = viewerCache.get(path)
-  if (hit !== undefined) return hit
-  let login = ''
-  try {
-    login = (await run('gh', ['api', 'user', '--jq', '.login'], path)).trim()
-  } catch {}
-  if (login) viewerCache.set(path, login)
-  return login
+export type PrDiffStats = Record<number, { additions: number; deletions: number }>
+
+const STATS_MAX = 30
+
+/**
+ * +/− for a handful of PRs, in one call — the stats listOpenPrs leaves out,
+ * asked only for the PRs a project lists. Held per (repo, PR set).
+ */
+export function prDiffStats(path: string, slug: string, numbers: number[], force = false): Promise<Cached<PrDiffStats>> {
+  const ns = [...new Set(numbers.filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b).slice(0, STATS_MAX)
+  const [owner = '', name = ''] = slug.split('/')
+  return ghCached(
+    ghKey('prs', path, 'stats', ns.join(',')),
+    async () => {
+      const stats: PrDiffStats = {}
+      if (!ns.length || !owner || !name) return stats
+      const query = `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { ${ns
+        .map((n) => `p${n}: pullRequest(number: ${n}) { additions deletions }`)
+        .join(' ')} } }`
+      const repo = (await graphql(path, query, { owner, name }))?.repository ?? {}
+      for (const n of ns) if (repo[`p${n}`]) stats[n] = { additions: repo[`p${n}`].additions, deletions: repo[`p${n}`].deletions }
+      return stats
+    },
+    { force },
+  )
+}
+
+// ── Open PRs, a page at a time ──────────────────────────────────────────────
+// The Reviews board's list: one GitHub search (so drafts, "mine" and "asked
+// of me" are GitHub's to filter, and the total is of exactly that), a cursor
+// page at a time. The viewer rides along — one call, not two.
+const PR_SEARCH = `query($q: String!, $n: Int!, $after: String) {
+  viewer { login }
+  search(query: $q, type: ISSUE, first: $n, after: $after) {
+    issueCount
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest {
+      number title url isDraft updatedAt additions deletions reviewDecision headRefName baseRefName
+      author { login ... on User { name } }
+      reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } ... on Team { slug name } } } }
+    } }
+  }
+}`
+
+export interface PrPage {
+  prs: GhPr[]
+  /** How many PRs the search matches in all. */
+  total: number
+  /** Send back as ?cursor= for the next page; null on the last. */
+  nextCursor: string | null
+  /** Who gh is signed in as. */
+  viewer: string
+}
+
+const CURSOR_SHAPE = /^[A-Za-z0-9+/=_-]{1,200}$/
+
+/**
+ * One page of the repo's open PRs under `query`, most recently updated first.
+ * Held per (repo, search, page). `force` reads fresh — and on the first page
+ * drops every held page of the repo, so the pages after it line up with it.
+ */
+export async function searchOpenPrs(
+  path: string,
+  query: PrQuery,
+  opts: { cursor?: string; limit?: number; force?: boolean } = {},
+): Promise<Cached<PrPage>> {
+  const cursor = (opts.cursor ?? '').trim()
+  if (cursor && !CURSOR_SHAPE.test(cursor)) throw createError({ statusCode: 400, statusMessage: 'not a page cursor' })
+  const limit = Math.min(PR_PAGE_MAX, Math.max(1, Math.floor(opts.limit || PR_PAGE_SIZE)))
+  const { slug } = await repoContext(path)
+  if (!slug) throw createError({ statusCode: 500, statusMessage: 'gh could not tell which GitHub repo this clone belongs to' })
+  const q = prSearchQuery(slug, query)
+  if (opts.force && !cursor) forgetGh(ghKey('prs', path, 'page', ''))
+  return ghCached(
+    ghKey('prs', path, 'page', q, limit, cursor),
+    async () => {
+      const data = await graphql(path, PR_SEARCH, { q, n: limit, ...(cursor ? { after: cursor } : {}) })
+      const search = data?.search ?? {}
+      return {
+        prs: (search.nodes ?? []).filter((n: any) => n?.number).map(toGhPr),
+        total: Number(search.issueCount ?? 0),
+        nextCursor: search.pageInfo?.hasNextPage ? String(search.pageInfo.endCursor ?? '') || null : null,
+        viewer: String(data?.viewer?.login ?? ''),
+      }
+    },
+    { force: opts.force },
+  )
+}
+
+function toGhPr(node: any): GhPr {
+  return {
+    number: node.number,
+    title: node.title ?? '',
+    url: node.url ?? '',
+    author: node.author ? { login: node.author.login, name: node.author.name ?? undefined } : null,
+    headRefName: node.headRefName ?? '',
+    baseRefName: node.baseRefName ?? '',
+    isDraft: node.isDraft === true,
+    updatedAt: node.updatedAt ?? '',
+    additions: node.additions,
+    deletions: node.deletions,
+    reviewDecision: node.reviewDecision ?? null,
+    // A team the viewer can't see comes back as null.
+    reviewRequests: (node.reviewRequests?.nodes ?? []).map((r: any) => r?.requestedReviewer).filter((r: any) => r?.login || r?.slug || r?.name),
+  }
 }
 
 // ── Matching PRs to a project ───────────────────────────────────────────────

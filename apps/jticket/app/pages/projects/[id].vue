@@ -25,9 +25,13 @@ const projectDocs = computed(() =>
   project.value ? docs.value.filter((d) => d.projectId === project.value!.id) : [],
 )
 // Every ticket under this project — the header's rollup line and its
-// flow-state bar.
+// flow-state bar. A plan's ticket-plan drafts aren't its work: they sit in
+// the Ticket plan tab until approve moves them into their builds.
 const projectTickets = computed(() =>
-  project.value ? tickets.value.filter((t) => t.projectId === project.value!.id) : [],
+  project.value ? tickets.value.filter((t) => t.projectId === project.value!.id && !isDraftTicket(t)) : [],
+)
+const draftCount = computed(() =>
+  project.value ? tickets.value.filter((t) => t.projectId === project.value!.id && isDraftTicket(t)).length : 0,
 )
 const stats = computed(() => ({
   tickets: projectTickets.value.length,
@@ -47,17 +51,22 @@ const docsView = ref<'rows' | 'chips'>('rows')
 // The page's tabs. The board is the default; the rest is set-once material
 // that used to stack above it. The open tab rides in ?tab= so a reload or a
 // shared link lands on it.
-type ProjectTab = 'board' | 'run' | 'review-setup' | 'overview' | 'docs' | 'diff' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
-const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'review-setup', 'overview', 'docs', 'diff', 'prs', 'review', 'agents', 'loops', 'analytics']
+type ProjectTab = 'board' | 'run' | 'ticket-plan' | 'overview' | 'docs' | 'diff' | 'prs' | 'review' | 'agents' | 'loops' | 'analytics'
+const PROJECT_TABS: ProjectTab[] = ['board', 'run', 'ticket-plan', 'overview', 'docs', 'diff', 'prs', 'review', 'agents', 'loops', 'analytics']
 const router = useRouter()
 const tab = computed<ProjectTab>({
   get: () => {
     const q = String(route.query.tab ?? '')
     // The retired Branches tab: old links land on the Diff tab that replaced it.
     if (q === 'branches') return 'diff'
+    // The retired Review setup tab (a PR review project's review plan): the
+    // review starts from the Review tab now.
+    if (q === 'review-setup') return 'review'
     // A PR review project has no Pull requests tab (see tabItems) —
     // a deep link to one lands on the board instead of rendering it anyway.
     if (project.value?.mode === 'prreview' && q === 'prs') return 'board'
+    // A plan review project reads a plan, not a branch: no Diff, no Pull requests.
+    if (project.value?.mode === 'planreview' && (q === 'prs' || q === 'diff')) return 'board'
     return (PROJECT_TABS as string[]).includes(q) ? (q as ProjectTab) : 'board'
   },
   set: (value) => {
@@ -82,16 +91,17 @@ const tabItems = computed(() => [
   ...(project.value?.mode === 'standard'
     ? [{ label: 'Run setup', value: 'run', icon: 'i-lucide-list-ordered', badge: project.value.runPlan?.steps.length || undefined }]
     : []),
-  // Review setup — a PR review project's own run setup (its review plan; never the Run setup tab).
-  ...(project.value?.mode === 'prreview'
-    ? [{ label: 'Review setup', value: 'review-setup', icon: 'i-lucide-list-checks', badge: project.value.prReview?.plan?.steps.length || undefined }]
+  // Ticket plan — a plan's draft build tickets and the builds and reviews proposed for them.
+  ...(project.value?.mode === 'plan'
+    ? [{ label: 'Ticket plan', value: 'ticket-plan', icon: 'i-lucide-list-tree', badge: draftCount.value || undefined }]
     : []),
   { label: 'Overview', value: 'overview', icon: 'i-lucide-align-left' },
   { label: 'Docs', value: 'docs', icon: 'i-lucide-file-text', badge: projectDocs.value.length || undefined },
   // Diff — the project's branch, a local PR or a GitHub PR, side by side (was jDiff).
-  { label: 'Diff', value: 'diff', icon: 'i-lucide-git-compare' },
+  // A plan review project has no branch: it reads a plan.
+  ...(project.value?.mode === 'planreview' ? [] : [{ label: 'Diff', value: 'diff', icon: 'i-lucide-git-compare' }]),
   // A PR review project's branch is a mirror of someone's PR head — nothing to land on or roll up.
-  ...(project.value?.mode === 'prreview'
+  ...(project.value?.mode === 'prreview' || project.value?.mode === 'planreview'
     ? []
     : [{ label: 'Pull requests', value: 'prs', icon: 'i-lucide-git-pull-request', badge: openPrCount.value || undefined }]),
   { label: 'Review', value: 'review', icon: 'i-lucide-scan-search' },
@@ -160,18 +170,33 @@ const menuItems = computed(() => {
   ]
 })
 
+// A review project made from the create modal has no pull request yet: the
+// page is only the PR picker (OpenPrList's attach mode) until one is picked.
+// `byPr` there needs the repo's other review projects, so a PR that already
+// has one offers to open it instead.
+const needsPr = computed(() => reviewNeedsPr(project.value))
+const repoReviewProjects = computed(() =>
+  projects.value.filter((p) => isReviewProject(p) && p.repo === project.value?.repo),
+)
+const pickerMenuItems = computed(() => {
+  const p = project.value
+  if (!p) return []
+  return [
+    [{ label: 'Edit project', icon: 'i-lucide-pencil', onSelect: () => openEditProject(p) }],
+    [{ label: 'Delete project', icon: 'i-lucide-trash-2', color: 'error' as const, onSelect: removeProject }],
+  ]
+})
+
 async function removeProject() {
   if (!project.value) return
   await onDeleteProject(project.value)
   // onDeleteProject only mutates on confirm; navigate away if it's gone.
-  if (!projects.value.some((p) => p.id === project.value?.id)) navigateTo(project.value.mode === 'prreview' ? '/reviews' : '/projects')
+  if (!projects.value.some((p) => p.id === project.value?.id)) navigateTo(isReviewProject(project.value) ? '/reviews' : '/projects')
 }
 </script>
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader :default-project-id="project?.id ?? null" />
-
     <UContainer class="py-8">
       <!-- Not found -->
       <div v-if="!project" class="flex flex-col items-center gap-4 py-24 text-center">
@@ -183,6 +208,48 @@ async function removeProject() {
         <UButton icon="i-lucide-arrow-left" to="/projects">Back to projects</UButton>
       </div>
 
+      <!-- A review project with no pull request yet: the PR picker and nothing
+           else — no tabs, no board. Picking one attaches it and the full
+           page takes over. -->
+      <template v-else-if="needsPr">
+        <UButton icon="i-lucide-arrow-left" size="sm" color="neutral" variant="ghost" to="/reviews" class="mb-4">
+          All reviews
+        </UButton>
+        <div class="mb-6 flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs text-muted">{{ project.key }}</span>
+              <UBadge color="primary" variant="subtle" size="sm" icon="i-lucide-git-pull-request">
+                {{ projectTypeLabel(project.mode) }}
+              </UBadge>
+              <span class="text-xs text-muted">no pull request yet</span>
+            </div>
+            <h1 class="mt-1 text-3xl font-bold text-balance">{{ project.title }}</h1>
+          </div>
+          <UDropdownMenu :items="pickerMenuItems" :content="{ align: 'end' }">
+            <UButton icon="i-lucide-ellipsis" size="sm" color="neutral" variant="ghost" aria-label="More project actions" />
+          </UDropdownMenu>
+        </div>
+        <!-- Made by moving on into a graph's review: where it sits, and the build whose roll-up PR to pick. -->
+        <ProjectGraphStrip :key="`strip-${project.id}`" :project="project" />
+        <OpenPrList
+          v-if="project.repo"
+          :key="project.repo"
+          :repo="project.repo"
+          :projects="repoReviewProjects"
+          :attach-to="project"
+        />
+        <UAlert
+          v-else
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-folder-git-2"
+          title="This review project has no repo"
+          description="Its pull request is picked from a repo's open PRs — set the repo first."
+          :actions="[{ label: 'Edit project', onClick: () => openEditProject(project!) }]"
+        />
+      </template>
+
       <template v-else>
         <!-- A PR review project's home is the Reviews board, not the projects board. -->
         <UButton
@@ -190,10 +257,10 @@ async function removeProject() {
           size="sm"
           color="neutral"
           variant="ghost"
-          :to="project.mode === 'prreview' ? '/reviews' : '/projects'"
+          :to="isReviewProject(project) ? '/reviews' : '/projects'"
           class="mb-4"
         >
-          {{ project.mode === 'prreview' ? 'All reviews' : 'All projects' }}
+          {{ isReviewProject(project) ? 'All reviews' : 'All projects' }}
         </UButton>
 
         <!-- Project header — identity, progress, and the few actions used
@@ -204,13 +271,13 @@ async function removeProject() {
               <div class="flex items-center gap-2">
                 <span class="font-mono text-xs text-muted">{{ project.key }}</span>
                 <UBadge
-                  v-if="project.mode === 'wayfinder'"
+                  v-if="project.mode === 'plan'"
                   color="primary"
                   variant="subtle"
                   size="sm"
                   icon="i-lucide-compass"
                 >
-                  Wayfinder
+                  {{ projectTypeLabel(project.mode) }}
                 </UBadge>
                 <UBadge
                   v-else-if="project.mode === 'todo'"
@@ -220,15 +287,6 @@ async function removeProject() {
                   icon="i-lucide-list-todo"
                 >
                   TODO list
-                </UBadge>
-                <UBadge
-                  v-else-if="project.mode === 'architect'"
-                  color="info"
-                  variant="subtle"
-                  size="sm"
-                  icon="i-lucide-drafting-compass"
-                >
-                  Architect
                 </UBadge>
                 <UBadge
                   v-else-if="project.mode === 'predeploy'"
@@ -246,9 +304,18 @@ async function removeProject() {
                   size="sm"
                   icon="i-lucide-git-pull-request"
                 >
-                  PR review
+                  {{ projectTypeLabel(project.mode) }}
                 </UBadge>
-                <UBadge v-else color="secondary" variant="subtle" size="sm">Project</UBadge>
+                <UBadge
+                  v-else-if="project.mode === 'planreview'"
+                  color="primary"
+                  variant="subtle"
+                  size="sm"
+                  icon="i-lucide-scan-search"
+                >
+                  {{ projectTypeLabel(project.mode) }}
+                </UBadge>
+                <UBadge v-else color="secondary" variant="subtle" size="sm">{{ projectTypeLabel(project.mode) }}</UBadge>
                 <span class="text-xs text-muted">{{ stats.done }}/{{ stats.tickets }} tickets done</span>
               </div>
               <h1 class="mt-1 text-3xl font-bold text-balance">{{ project.title }}</h1>
@@ -284,6 +351,9 @@ async function removeProject() {
           />
         </div>
 
+        <!-- Its graph: before/after links, and the not-yet-moved-on briefing -->
+        <ProjectGraphStrip :key="project.id" :project="project" />
+
         <!-- Auto mode's loop — phase, what it's waiting on, the stop button -->
         <AutoLoopPanel :project="project" :tickets="projectTickets" />
 
@@ -302,7 +372,7 @@ async function removeProject() {
             v-else
             :tickets="projectTickets"
             :all-tickets="tickets"
-            :wayfinder="project.mode === 'wayfinder'"
+            :plan="project.mode === 'plan'"
             :project="project"
             :body="project.description"
             lean
@@ -312,7 +382,7 @@ async function removeProject() {
           />
         </template>
 
-        <!-- Overview — the description (a wayfinder project's map), then the
+        <!-- Overview — the description (a plan project's map), then the
              integration branch: cut or set it, and connect its worktree -->
         <section v-else-if="tab === 'overview'" class="space-y-8">
           <div v-if="renderedDescription" class="jx-prose max-w-3xl" v-html="renderedDescription" />
@@ -322,7 +392,7 @@ async function removeProject() {
               Add a description
             </UButton>
           </div>
-          <ProjectIntegrationBranch v-if="project.mode !== 'prreview'" :project="project" @configure="openEditProject(project)" />
+          <ProjectIntegrationBranch v-if="!isReviewProject(project)" :project="project" @configure="openEditProject(project)" />
         </section>
 
         <!-- Documents — compact rows or chips; a click previews the doc -->
@@ -439,16 +509,11 @@ async function removeProject() {
 
         <ProjectAnalytics v-else-if="tab === 'analytics'" :project="project" />
 
-        <!-- Review setup — a PR review project's review plan and its runs -->
-        <PrReviewSetup
-          v-else-if="tab === 'review-setup' && project.mode === 'prreview' && project.prReview"
-          :project="project"
-          :tickets="projectTickets"
-          @open-review="(key: string) => router.replace({ query: { ...route.query, tab: 'review', review: key } })"
-        />
-
         <!-- Run setup — the human's own run plan for auto mode -->
         <RunSetup v-else-if="tab === 'run' && project.mode === 'standard'" :project="project" :tickets="projectTickets" :all-tickets="tickets" />
+
+        <!-- Ticket plan — a plan's drafts grouped by proposed build, and Approve -->
+        <ProjectTicketPlan v-else-if="tab === 'ticket-plan' && project.mode === 'plan'" :project="project" />
       </template>
     </UContainer>
 

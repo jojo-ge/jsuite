@@ -4,6 +4,7 @@
 // lightweight reader — no notes rail, no scroller — so a graph's reports
 // stack down one page. The full doc (notes, editing) is a click away.
 import type { Doc } from '~/composables/useTracker'
+import { localStamp } from '~/composables/useTracker'
 import type { Block, Explainer } from '@jsuite/documents/types'
 
 const props = defineProps<{ doc: Doc }>()
@@ -38,7 +39,7 @@ const componentFor = (b: Block) =>
     <div class="mb-4 flex items-center gap-2 text-xs text-muted">
       <UIcon name="i-lucide-file-check-2" class="size-4 text-success" />
       <NuxtLink :to="`/docs/${doc.key}`" class="font-mono hover:underline">{{ doc.key }}</NuxtLink>
-      <span>· updated {{ new Date(doc.updatedAt).toLocaleString() }}</span>
+      <span>· updated {{ localStamp(doc.updatedAt) }}</span>
     </div>
     <div v-if="blocks.length" class="space-y-6">
       <component :is="componentFor(block)" v-for="block in blocks" :key="block.id" :block="block" />

@@ -6,7 +6,8 @@
 import type { Ticket } from '~/composables/useTracker'
 import type { Finding } from '~/utils/reviewTypes'
 
-const props = defineProps<{ finding: Finding; selectable: boolean; ticket?: Ticket | null }>()
+// `sentBack` is the ticket a Send back turned the finding's ticket into, on the build before the review.
+const props = defineProps<{ finding: Finding; selectable: boolean; ticket?: Ticket | null; sentBack?: Ticket | null }>()
 const posted = computed(() => !!(props.ticket?.finding?.postedAt ?? props.finding.postedAt))
 const selected = defineModel<boolean>('selected', { default: true })
 
@@ -66,6 +67,18 @@ const severityColor = (s: Finding['severity']) =>
             <span class="font-mono">{{ finding.ticketKey }}</span>
             <UBadge v-if="ticket" :color="STATUS_META[ticket.status].color" variant="subtle" size="sm">
               {{ STATUS_META[ticket.status].label }}
+            </UBadge>
+          </NuxtLink>
+          <NuxtLink
+            v-if="sentBack"
+            :to="`/tickets/${sentBack.key}`"
+            class="flex items-center gap-1.5 text-default hover:underline"
+            :class="finding.ticketKey ? '' : 'ml-auto'"
+          >
+            <UIcon name="i-lucide-undo-2" class="size-3.5 text-muted" />
+            <span>sent back as <span class="font-mono">{{ sentBack.key }}</span></span>
+            <UBadge :color="STATUS_META[sentBack.status].color" variant="subtle" size="sm">
+              {{ STATUS_META[sentBack.status].label }}
             </UBadge>
           </NuxtLink>
         </p>

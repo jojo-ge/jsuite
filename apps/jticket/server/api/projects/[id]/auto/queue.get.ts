@@ -8,7 +8,7 @@ export default defineEventHandler((event) => {
   const q = getQuery(event)
   const n = q.orchestrator === undefined || q.orchestrator === '' ? undefined : Number(q.orchestrator)
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   return orchestratorQueue(store, project, n)
 })

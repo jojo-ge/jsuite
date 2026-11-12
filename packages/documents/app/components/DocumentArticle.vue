@@ -202,9 +202,12 @@ defineExpose({ writtenCount, copyNotes })
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1">
-    <main ref="scroller" class="scroll-thin min-w-0 flex-1 overflow-y-auto" @scroll.passive="onScroll">
-      <article class="mx-auto max-w-[760px] px-6 py-12 pb-24">
+  <!-- print: classes undo the app layout (a fixed-height column that scrolls
+       inside) so the article flows across pages, and drop everything that is
+       not the article — see the print rules in documents.css. -->
+  <div class="flex min-h-0 flex-1 print:block">
+    <main ref="scroller" class="scroll-thin min-w-0 flex-1 overflow-y-auto print:overflow-visible" @scroll.passive="onScroll">
+      <article class="jx-article mx-auto max-w-[760px] px-6 py-12 pb-24 print:max-w-none print:p-0">
         <header class="mb-10">
           <p v-if="doc.kicker" class="mb-2 text-[12px] font-semibold uppercase tracking-widest text-primary">
             {{ doc.kicker }}
@@ -225,9 +228,10 @@ defineExpose({ writtenCount, copyNotes })
             v-for="(block, i) in blocks"
             :id="`block-${block.id}`"
             :key="block.id"
+            :data-block="block.type"
             class="group/block relative"
           >
-            <div class="absolute -left-11 top-0 hidden h-full sm:block">
+            <div class="absolute -left-11 top-0 hidden h-full sm:block print:hidden">
               <UButton
                 :icon="noteCountByBlock.get(block.id) ? 'i-lucide-message-square-text' : 'i-lucide-message-square-plus'"
                 :color="noteCountByBlock.get(block.id) ? 'primary' : 'neutral'"
@@ -245,7 +249,7 @@ defineExpose({ writtenCount, copyNotes })
       </article>
     </main>
 
-    <aside v-if="railOpen" class="flex w-[340px] shrink-0 flex-col border-l border-default">
+    <aside v-if="railOpen" class="flex w-[340px] shrink-0 flex-col border-l border-default print:hidden">
       <NotesRail
         ref="rail"
         v-model:general="general"

@@ -1,3 +1,4 @@
+import { REVIEW_OUTPUT_TAG } from '../../app/utils/documentLibrary'
 import type { Review } from '../../app/utils/reviewTypes'
 import { pendingReportKeys, reviewSweepDue, settleReviewers } from '../utils/reviewWatch'
 
@@ -53,7 +54,14 @@ export default defineNitroPlugin((nitroApp) => {
     // Look the reports up outside the serialised update; the update re-reads
     // the review and settles only reviewers still waiting.
     const landed = new Set<string>()
-    for (const docKey of pendingReportKeys(seen)) if (await readDoc(docKey)) landed.add(docKey)
+    for (const docKey of pendingReportKeys(seen)) {
+      const report = await readDoc(docKey)
+      if (!report) continue
+      landed.add(docKey)
+      // File it as a review output whatever the reviewer's skill tagged it, so
+      // it stays out of the document library until asked for.
+      if (!report.tags?.includes(REVIEW_OUTPUT_TAG)) await setDocTags(docKey, [REVIEW_OUTPUT_TAG])
+    }
     let fireTriage = false
     await updateReview(seen.key, (review) => {
       const step = settleReviewers(review, landed, new Date().toISOString())

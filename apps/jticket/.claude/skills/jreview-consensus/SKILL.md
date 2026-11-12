@@ -1,6 +1,6 @@
 ---
 name: jreview-consensus
-description: Close a consensus review run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review plan), verify them adversarially, judge approvability and hand them back as findings, which jTicket files on the PR review project as record-only tickets.
+description: Close a consensus review run — file the findings every reviewer agreed on as jTicket tickets; or, for an agreement review (a PR review project's), verify them adversarially, judge approvability and hand them back as findings, which jTicket files on the PR review project as record-only tickets.
 argument-hint: "[KEY]"
 disable-model-invocation: true
 ---
@@ -25,7 +25,7 @@ kinds differ in who files them and what the tickets are for:
 
 | | **Consensus review** (`consensus` is set) | **Agreement review** (`agreement` is set) |
 | --- | --- | --- |
-| Who asked | jTicket's auto loop or a run plan — the diff is this loop's own changes | a PR review project's review plan — the diff is someone else's pull request |
+| Who asked | jTicket's auto loop or a run plan — the diff is this loop's own changes | a PR review project's Review tab — the diff is someone else's pull request |
 | You run on | Sonnet 5 — match and file, don't re-review | Opus 5.5 — you also verify each finding and judge approvability |
 | Follow | §2 (or §2a) → §3 → §4 | §A, in place of §2a–§4 |
 | Tickets | **you** file one per agreed finding (§3) — work the loop implements next, or the human decides on | **jTicket** files one per finding you hand back (§A5) — record-only, never dispatched, nothing is fixed. You file none |
@@ -40,8 +40,9 @@ jt get /api/reviews/<key>
 
 Gives `repoPath`, `base`, `branch`, `reviewers[]` (`n`, `docKey`, `status`),
 `consensus` (`projectKey`, `loop`) — or, instead, `agreement` (`loop`) with
-`project`, `pr`, `verify`, `context` (`brief`, `checks`) and
-`triage.docKey`: an agreement review, §A — and `pass` — `consensus` (or unset) for
+`project`, `pr`, `verify` and
+`triage.docKey`: an agreement review, §A; with `subject` (`kind: plan`,
+`projectKey`) as well it is a **plan review** — §A with §P's changes — and `pass` — `consensus` (or unset) for
 the regular run, or `architecture`: ONE reviewer ran the `/jarch-review`
 skill and the rules in §2a apply instead of §2. Every reviewer is `done` —
 read each report:
@@ -220,7 +221,8 @@ matches by title and file on its own; your `ticketKey` is for the ones only
 a reader can tell are the same.) Never close, edit or comment on those
 tickets yourself.
 
-**Checks.** Read each ticket in `context.checks` (`jt show <key>` — the
+**Checks.** Only when the review carries `context.checks` (most don't):
+read each ticket in it (`jt show <key>` — the
 resolution opens with `**Verdict:** pass | fail | concern | inconclusive`). A
 `fail` (or a `concern` with concrete evidence) is a finding in its own right,
 needing no reviewer's agreement — category `check`, `reviewers: []`, its
@@ -278,6 +280,8 @@ j-explain payload (block vocabulary in the `j-explain` skill), key =
 
 - kicker `Review · consensus`; title `PR #<n> — <verdict>`; subtitle
   "<considered> raised → <kept> agreed<, R refuted>".
+- `"tags": ["review-output"]`, exactly — it keeps review write-ups out of the
+  document library until someone asks for them.
 - `callout` id `assessment` (tone `success` for the approve verdicts,
   `warning` otherwise): the summary and blockers.
 - One `callout` per kept finding, ids `f1`… in POST order, titled
@@ -289,7 +293,7 @@ j-explain payload (block vocabulary in the `j-explain` skill), key =
 ### A5. Hand back — last
 
 Write the JSON to a file and POST it — this flips the review to *triaged*,
-which is what the review plan waits on:
+which is what the project's Review tab waits on:
 
 ```json
 {
@@ -336,3 +340,34 @@ Then reply with one line —
 "N raised → M agreed → K verified (R refuted) · <verdict> · tickets …" plus the
 review's URL — and stop. The POST opens the project's Review tab; the review
 watcher closes this pane.
+
+## P. A plan review — §A over a plan, not a diff
+
+`subject.kind` is `plan`: the reviewers ran `/jplan-review` over the plan
+project `subject.projectKey` — its map, decisions, spec and ticket plan — and
+the code. There is no diff, no branch and no PR (`branch`, `base` are empty,
+`pr` is null). Follow §A with these changes:
+
+- **Where you are.** Your cwd is the codebase's main checkout. Read files and
+  run read-only git commands only — you and the verifiers write nothing
+  there: no throwaway tests, no scratch files.
+- **A1.** "The same place" is the same build, ticket, decision or spec
+  section. Check an agreed finding against the plan itself — `jt get
+  /api/projects/<subject.projectKey>/ticket-plan`, `jt show <key>`, the
+  plan's docs — and the code; drop it only when they show it plainly wrong.
+  Leave `scope` out.
+- **A2.** The verifier's claim is about the plan: "A review of the jTicket
+  plan `<subject.projectKey>` (read it with `jt`: the project, its tickets
+  and resolutions, its docs, `jt get /api/projects/<key>/ticket-plan`) claims
+  **[<severity>] <title>** — <summary>. Your job is to REFUTE it against the
+  plan and the code in `<absolute cwd>`, read-only: …" — then the same three
+  reply lines.
+- **A3.** The verdict is about running the builds as planned: the same
+  table, with "in-scope" read as every finding.
+- **A4.** Title `<projectKey> plan — <verdict>`; each finding callout's Where
+  is the build, ticket, decision or section it concerns.
+- **A5.** Each finding's title names the build, ticket or decision it
+  concerns. Send `file`/`line` only for a finding about code. jTicket files
+  the findings on the plan review project (`project`) as record-only
+  tickets; the human sends the ones they pick back to the plan as decision
+  tickets — nothing goes onto the plan from you.

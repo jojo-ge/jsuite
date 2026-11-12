@@ -1,12 +1,12 @@
 export default defineAppConfig({
   ui: {
-    // Primary is the mark's periwinkle (see main.css @theme) so buttons, active
-    // nav and links are the same blue as the icon. Success/warning/error keep
-    // their own hues — the board leans on green-means-done, so primary must not
-    // be green.
+    // Ink: primary and neutral are the same zinc scale, and main.css pins
+    // --ui-primary to its darkest step (lightest in dark mode) — buttons,
+    // active nav and the frontier are ink, never a hue. Success/info/warning/
+    // error keep their own hues: colour on a page only ever means status.
     colors: {
-      primary: 'periwinkle',
-      neutral: 'slate',
+      primary: 'zinc',
+      neutral: 'zinc',
     },
   },
 })

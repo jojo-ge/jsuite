@@ -39,7 +39,7 @@ const gutterWidth = computed(() => String(start.value + lines.value.length - 1).
       </span>
     </figcaption>
 
-    <div class="overflow-x-auto bg-default py-3 font-mono text-[13px] leading-relaxed">
+    <div class="overflow-x-auto bg-default py-3 font-mono text-[13px] leading-relaxed print:overflow-visible">
       <template v-for="(line, i) in lines" :key="i">
         <div
           class="flex px-4"
@@ -49,7 +49,7 @@ const gutterWidth = computed(() => String(start.value + lines.value.length - 1).
             class="mr-4 shrink-0 select-none text-right text-dimmed/60"
             :style="{ width: `${gutterWidth}ch` }"
           >{{ start + i }}</span>
-          <span class="whitespace-pre"><template v-for="(t, j) in line.tokens" :key="j"><span :style="t.color ? { color: t.color } : undefined">{{ t.content }}</span></template>&#8203;</span>
+          <span class="whitespace-pre print:min-w-0 print:whitespace-pre-wrap print:[overflow-wrap:anywhere]"><template v-for="(t, j) in line.tokens" :key="j"><span :style="t.color ? { color: t.color } : undefined">{{ t.content }}</span></template>&#8203;</span>
         </div>
 
         <div

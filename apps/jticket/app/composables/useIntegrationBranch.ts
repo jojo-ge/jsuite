@@ -19,13 +19,17 @@ export function useIntegrationBranch() {
     revision.value++
   }
 
-  /** POST the integration-branch endpoint; toasts either way. Returns true on success. */
-  async function createBranch(projectId: string, branch?: string): Promise<boolean> {
+  /**
+   * POST the integration-branch endpoint; toasts either way. Returns true on
+   * success. `base` stacks the new branch on another build's integration
+   * branch; omitted, it is cut from the default branch.
+   */
+  async function createBranch(projectId: string, branch?: string, base?: string): Promise<boolean> {
     creating.value = projectId
     try {
       const res = await $fetch<{ branch: string; base: string; created: boolean }>(
         `/api/projects/${projectId}/integration-branch`,
-        { method: 'POST', body: { branch: branch?.trim() || undefined } },
+        { method: 'POST', body: { branch: branch?.trim() || undefined, base: base?.trim() || undefined } },
       )
       toast.add({
         title: res.created ? `Cut ${res.branch}` : `Adopted ${res.branch}`,
@@ -55,6 +59,10 @@ export function useIntegrationBranch() {
   return { creating, revision, invalidate, createBranch }
 }
 
+// `message` before `statusMessage`: a route that throws createError({ message })
+// — the whole review engine does — gets Nitro's generic "Server Error" as its
+// statusMessage, while h3 copies a lone statusMessage into message. So message
+// is the specific text either way.
 export function branchErrorText(err: any): string {
-  return String(err?.data?.statusMessage ?? err?.data?.message ?? err?.statusMessage ?? err?.message ?? err)
+  return String(err?.data?.message || err?.data?.statusMessage || err?.statusMessage || err?.message || err)
 }

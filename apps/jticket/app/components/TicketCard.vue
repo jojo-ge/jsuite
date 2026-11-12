@@ -4,7 +4,6 @@ import type { Ticket } from '~/composables/useTracker'
 const props = defineProps<{
   ticket: Ticket
   tickets: Ticket[]
-  architect?: boolean
   // Hand-off controls (copy the command / run it in herdr), shown on frontier
   // cards when the board around this card supplies them. The card stays
   // presentational: the board owns the dispatch state and handles the events,
@@ -48,15 +47,9 @@ const transferBadge = computed(() => {
 })
 
 const blocked = computed(() => isBlocked(props.ticket, props.tickets))
-// Frontier highlighting is independent of wayfinder mode — every board groups by
+// Frontier highlighting is independent of plan mode — every board groups by
 // flow state, so the takeable edge is worth ringing everywhere.
 const frontier = computed(() => isFrontier(props.ticket, props.tickets, project.value))
-// Architect candidates carry the scan's judgment as labels; the badges are how
-// "really worth working on" reads at a glance. Gated on the mode, since only
-// architect boards carry these labels.
-const archStrength = computed(() => (props.architect ? archTag(props.ticket) : null))
-const archMeta = computed(() => (archStrength.value ? ARCH_TAG_META[archStrength.value] : null))
-const topPick = computed(() => props.architect && isArchTopPick(props.ticket))
 const status = computed(() => STATUS_META[props.ticket.status])
 
 const blockers = computed(() =>
@@ -72,7 +65,7 @@ const doneCount = computed(() => props.ticket.acceptanceCriteria.length)
 // stays news.
 const ring = computed(() => {
   if (moved.value) return 'ring-2 ring-info jt-moved'
-  return frontier.value ? 'ring-2 ring-primary/60' : ''
+  return frontier.value ? 'ring-2 ring-primary' : ''
 })
 </script>
 
@@ -97,12 +90,6 @@ const ring = computed(() => {
           <TicketTypeIcon :type="ticket.type" label />
           <span class="font-mono text-xs text-muted">{{ ticket.key }}</span>
           <TicketTags :ticket="ticket" />
-          <UBadge v-if="topPick" color="primary" variant="solid" size="sm" icon="i-lucide-star">
-            Top pick
-          </UBadge>
-          <UBadge v-if="archMeta" :color="archMeta.color" variant="subtle" size="sm" :icon="archMeta.icon">
-            {{ archMeta.label }}
-          </UBadge>
           <UBadge v-if="peerName" color="secondary" variant="subtle" size="sm" icon="i-lucide-users-round">
             {{ peerName }}
           </UBadge>

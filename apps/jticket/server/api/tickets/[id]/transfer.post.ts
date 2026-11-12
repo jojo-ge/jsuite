@@ -6,7 +6,7 @@
 export default defineEventHandler((event) => {
   const id = getRouterParam(event, 'id')
   const store = loadStore()
-  const ticket = store.tickets.find((t) => t.id === id || t.key === id)
+  const ticket = findByRef(store.tickets, id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
   const project = store.projects.find((p) => p.id === ticket.projectId)
 

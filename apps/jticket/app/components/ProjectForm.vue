@@ -10,7 +10,7 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ saved: [] }>()
 
-const { createProject, updateProject } = useTracker()
+const { createProject, updateProject, projects } = useTracker()
 
 // Codebase-first: a new project belongs to the selected codebase, so its repo
 // is prefilled and shown as a static row. "Use a different repo" opens the
@@ -22,16 +22,29 @@ const showRepoField = computed(() => !!props.project || customRepo.value || !sel
 // The TODO project is made only by POST /api/projects/todo (one per codebase),
 // so the mode is locked when editing it and never offered when creating.
 const isTodoProject = computed(() => props.project?.mode === 'todo')
-// Architect projects are made only by the projects page's Improve-architecture
-// button (POST /api/projects/architect) — same deal: render the value when
-// editing one, never offer it as a choice.
-const isArchitectProject = computed(() => props.project?.mode === 'architect')
-// A PR review project is made by POST /api/projects/pr-review (make-jreview-project) — its mode is fixed.
+// A review project's mode is fixed once made: nothing becomes or stops being one.
 const isPrReviewProject = computed(() => props.project?.mode === 'prreview')
+const isPlanReviewProject = computed(() => props.project?.mode === 'planreview')
 
 const form = reactive({ title: '', description: '', mode: 'standard' as ProjectMode, repo: '', integrationBranch: '' })
 const saving = ref(false)
-const canSave = computed(() => !!form.title.trim())
+// A new review project is made without its pull request — the project page
+// is a PR picker until one is attached. So it needs a repo (whose open PRs
+// the picker lists) rather than a title: left blank, the PR names it.
+const creatingReview = computed(() => !props.project && form.mode === 'prreview')
+// Its branch is the PR head's local mirror, set when the PR is attached —
+// never typed in.
+const awaitingPr = computed(() => form.mode === 'prreview' && !props.project?.prReview)
+// A new plan review project is made pointed at its plan: it needs the plan,
+// not a title (left blank, the plan names it) — its repo is the plan's.
+const creatingPlanReview = computed(() => !props.project && form.mode === 'planreview')
+const planChoice = ref('')
+const planItems = computed(() =>
+  projects.value
+    .filter((p) => p.mode === 'plan' && (!selectedPath.value || p.repoPath === selectedPath.value))
+    .map((p) => ({ label: `${p.key} · ${p.title}`, value: p.key })),
+)
+const canSave = computed(() => (creatingPlanReview.value ? !!planChoice.value : creatingReview.value ? !!form.repo.trim() : !!form.title.trim()))
 
 // ── The repo field ──
 // Three ways in, cheapest first: pick one you've used before, browse to it with
@@ -109,15 +122,15 @@ function slugForBranch(title: string): string {
 }
 
 const modeOptions = computed(() => [
-  { label: 'Standard — plain tracker', value: 'standard' },
-  { label: 'Wayfinder — the description is a map, tickets have a frontier', value: 'wayfinder' },
+  { label: 'Build — plain tracker', value: 'standard' },
+  { label: 'Plan — the description is a map, tickets have a frontier', value: 'plan' },
   { label: 'Predeploy — tickets are suspected bugs, reproduced (never fixed) with /jreproduce', value: 'predeploy' },
   // Only so the locked select on the TODO project can render its own value —
   // never offered as a choice (the select is disabled whenever this applies).
   ...(isTodoProject.value ? [{ label: "TODO — the codebase's todo list (one per codebase, auto-created)", value: 'todo' }] : []),
-  // Same: only so an architect project's select can render its own value.
-  ...(isArchitectProject.value ? [{ label: 'Architect — one architecture scan; tickets are graded deepening candidates', value: 'architect' }] : []),
-  ...(isPrReviewProject.value ? [{ label: 'PR review — reviews one GitHub pull request; tickets are checks run with /jpr-check', value: 'prreview' }] : []),
+  // Offered when creating; on an existing project only so its locked select can render.
+  ...(!props.project || isPrReviewProject.value ? [{ label: 'Review — reviews one GitHub pull request, never changes it', value: 'prreview' }] : []),
+  ...(!props.project || isPlanReviewProject.value ? [{ label: "Plan review — reviews one plan's spec and ticket plan before its builds run", value: 'planreview' }] : []),
 ])
 
 function reset() {
@@ -127,6 +140,7 @@ function reset() {
   // A new project starts in the selected codebase.
   form.repo = props.project?.repo ?? selectedPath.value ?? ''
   form.integrationBranch = props.project?.integrationBranch ?? ''
+  planChoice.value = ''
 }
 reset()
 
@@ -141,8 +155,19 @@ async function save() {
       await $fetch('/api/repos', { method: 'POST', body: { path: probe.value.path } }).catch(() => {})
     }
     if (props.project) await updateProject(props.project.id, { ...form })
-    else await createProject({ ...form })
+    else if (creatingPlanReview.value) {
+      const created = await createProject({ title: form.title, mode: form.mode, plan: planChoice.value } as Partial<Project>)
+      // Plan reviews live on the Reviews board — go straight to its Review tab.
+      await navigateTo(`/projects/${created.key}?tab=review`)
+    } else if (creatingReview.value) {
+      const created = await createProject({ title: form.title, mode: form.mode, repo: form.repo })
+      // Review projects aren't on the projects board — go straight to its PR picker.
+      await navigateTo(`/projects/${created.key}`)
+    } else await createProject({ ...form })
     emit('saved')
+  } catch (err: any) {
+    if (!creatingReview.value && !creatingPlanReview.value) throw err
+    useToast().add({ title: "Couldn't create the review project", description: errorText(err), color: 'error', icon: 'i-lucide-triangle-alert' })
   } finally {
     saving.value = false
   }
@@ -153,28 +178,40 @@ defineExpose({ save, reset, saving, canSave })
 
 <template>
   <div class="space-y-4">
-    <UFormField label="Title" required>
-      <UInput v-model="form.title" placeholder="Project name" class="w-full" :autofocus="autofocus" />
+    <UFormField label="Title" :required="!creatingReview && !creatingPlanReview">
+      <UInput
+        v-model="form.title"
+        :placeholder="creatingReview ? 'Leave blank to name it after the pull request' : creatingPlanReview ? 'Leave blank to name it after the plan' : 'Project name'"
+        class="w-full"
+        :autofocus="autofocus"
+      />
     </UFormField>
-    <UFormField label="Description">
+    <UFormField v-if="!creatingReview && !creatingPlanReview" label="Description">
       <UTextarea v-model="form.description" :rows="4" placeholder="What this project covers…" class="w-full" />
     </UFormField>
     <UFormField
-      label="Mode"
+      label="Type"
       :help="isTodoProject
-        ? 'The TODO project is auto-created, one per codebase — its mode is fixed.'
-        : 'Wayfinder projects treat the description as a map and surface a takeable frontier of tickets.'"
+        ? 'The TODO project is auto-created, one per codebase — its type is fixed.'
+        : creatingReview
+          ? 'Created without a pull request: its page opens on a picker of the open PRs in its repo, and the one you pick is what it reviews.'
+          : creatingPlanReview
+            ? 'Its reviewers read the plan you pick — map, decisions, spec and ticket plan — and the code, and never change either. It lives on the Reviews board.'
+            : 'Plan projects treat the description as a map and surface a takeable frontier of tickets.'"
     >
-      <USelect v-model="form.mode" :items="modeOptions" :disabled="isTodoProject || isPrReviewProject" class="w-full" />
+      <USelect v-model="form.mode" :items="modeOptions" :disabled="isTodoProject || isPrReviewProject || isPlanReviewProject" class="w-full" />
+    </UFormField>
+    <UFormField v-if="creatingPlanReview" label="Plan to review" required :help="planItems.length ? '' : 'This codebase has no plan projects yet.'">
+      <USelect v-model="planChoice" :items="planItems" value-key="value" placeholder="Pick a plan project" class="w-full" />
     </UFormField>
 
     <!-- GitHub link. Optional: with a repo the project view lists the project's
          open PRs and can cut its integration branch. -->
-    <div class="space-y-4 border-t border-default pt-4">
+    <div v-if="!creatingPlanReview" class="space-y-4 border-t border-default pt-4">
       <div class="flex items-center gap-2">
         <UIcon name="i-lucide-github" class="size-4 text-muted" />
         <span class="text-xs font-semibold uppercase tracking-wide text-muted">GitHub</span>
-        <span class="text-xs text-muted">optional</span>
+        <span class="text-xs text-muted">{{ creatingReview ? 'required — the pull request is picked from this repo' : 'optional' }}</span>
       </div>
       <!-- Codebase-first: a new project lands in the selected codebase. The
            full repo field stays one click away for the odd project that
@@ -239,6 +276,7 @@ defineExpose({ save, reset, saving, canSave })
         </UTooltip>
       </div>
       <UFormField
+        v-if="!awaitingPr && form.mode !== 'planreview'"
         label="Integration branch"
         help="The branch this project's PRs target. Leave blank to cut or pick one from the project page."
       >

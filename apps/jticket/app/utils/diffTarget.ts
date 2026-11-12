@@ -4,7 +4,8 @@
 //
 // A target is one of:
 //   - the project's own branch (no params): a standard project's integration
-//     branch vs the default branch; a PR review project's `jreview/pr-<n>` vs
+//     branch vs its base (the default branch, or where it meets the build it
+//     stacks on — server/utils/integrationBase.ts); a PR review project's `jreview/pr-<n>` vs
 //     its base
 //   - a local PR (`pr=PR-n`): its ticket branch vs the integration branch, or
 //     once merged the exact squash diff (parent → commit)
@@ -27,9 +28,13 @@ export function diffTabUrl(project: string, target: DiffTargetQuery = {}): strin
   return `/projects/${encodeURIComponent(project)}?${q.toString()}`
 }
 
+// A number counts too: a query string only ever carries strings, but the tour
+// routes read the same target from a JSON body, where `{"gh": 123}` is the
+// natural spelling — and reading that as '' would silently mean "the project's
+// own branch".
 const first = (v: unknown): string => {
   const x = Array.isArray(v) ? v[0] : v
-  return typeof x === 'string' ? x.trim() : ''
+  return typeof x === 'string' ? x.trim() : typeof x === 'number' && Number.isFinite(x) ? String(x) : ''
 }
 
 /** A route/HTTP query → the target it names. Anything malformed reads as "the project's own branch". */

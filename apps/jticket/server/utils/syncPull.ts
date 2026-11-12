@@ -2,6 +2,7 @@ import type { ChannelManager } from './syncChannel'
 import { useChannelManager } from './syncChannel'
 import type { Store } from './store'
 import { loadStore } from './store'
+import { findByRef } from './ids'
 import { pullRoom, shareIsExpired } from './shares'
 import { performSyncApply } from './syncIo'
 import type { SyncChangeSummary, SyncSnapshot } from './sync'
@@ -92,7 +93,7 @@ export function createSyncPuller(options: SyncPullerOptions): SyncPuller {
 
   function start(projectRef: string): PullAttemptView {
     const store = loadState()
-    const project = store.projects.find((p) => p.id === projectRef || p.key === projectRef)
+    const project = findByRef(store.projects, projectRef)
     if (!project) throw new PullStartError('project not found', 404)
     const share = store.shares.find((s) => s.projectId === project.id)
     if (!share) throw new PullStartError('project is not shared', 409)

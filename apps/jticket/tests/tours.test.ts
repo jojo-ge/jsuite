@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
 import { describe, expect, it } from 'vitest'
 import { diffGaps, gapForLine } from '../app/utils/diffGaps'
-import { stopFromQuery, tourKeyFor } from '../app/utils/tour'
+import { stopFromQuery, tourIsStale, tourKeyFor } from '../app/utils/tour'
 import { cleanTour, MAX_DETAIL_STOPS } from '../server/utils/tourArtifact'
 import { clearTourJob, getTourJob, recordTourFailure, registerTourJob, tourFailure, TOUR_STALE_MS } from '../server/utils/tourJobs'
 import { loadTour, saveTour } from '../server/utils/tourStore'
@@ -165,6 +165,34 @@ describe('the session’s hand-back', () => {
     expect(saveTourArtifact(ctx(key), many(3))).toMatchObject({ saved: 'tour', key, stops: 3 })
     expect(loadTour(REPO, key, 'detail')?.tour.stops).toHaveLength(3)
     expect(getTourJob(REPO, key)).toBeNull()
+  })
+
+  it('records the head the tour was written against — the session’s, else the job’s — so the tab can tell it is stale', () => {
+    const A = 'a'.repeat(40)
+    const B = 'b'.repeat(40)
+    const view = (key: string) => tourView(ctx(key))
+
+    // The session says which commit it read.
+    const said = freshTarget()
+    registerTourJob({ repo: REPO, key: said, startedAt: Date.now(), agent: 'a', tabId: 't', headOid: A })
+    saveTourArtifact(ctx(said), many(2), B.toUpperCase())
+    expect(view(said).headOid).toBe(B)
+
+    // It doesn't (or sends junk): the head the job was dispatched with.
+    const fromJob = freshTarget()
+    registerTourJob({ repo: REPO, key: fromJob, startedAt: Date.now(), agent: 'a', tabId: 't', headOid: A })
+    saveTourArtifact(ctx(fromJob), many(2), 'HEAD')
+    expect(view(fromJob).headOid).toBe(A)
+
+    // Neither (the job was lost to a restart): unknown, which is never stale.
+    const unknown = freshTarget()
+    saveTourArtifact(ctx(unknown), many(2))
+    expect(view(unknown).headOid).toBe('')
+
+    expect(tourIsStale(A, A)).toBe(false)
+    expect(tourIsStale(A, B)).toBe(true)
+    expect(tourIsStale('', B)).toBe(false)
+    expect(tourIsStale(A, undefined)).toBe(false)
   })
 
   it('a bad artifact saves nothing and leaves the run live', () => {

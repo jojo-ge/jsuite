@@ -33,12 +33,14 @@ jTicket's features, by where they live:
 
 | Feature | Where | Drive it with |
 | --- | --- | --- |
-| Board, local PRs, Today, Graphs, Analytics | `/`, `/projects/KEY`, `/today`, `/graphs`, `/analytics` | `jt`, `to-jticket`, `jimplement`, `jwayfinder` |
+| Board, local PRs, Today, Analytics | `/`, `/projects/KEY`, `/today`, `/analytics` | `jt`, `to-jticket`, `jimplement`, `jplan` |
+| Graphs — large work cut into reviewable slices, handed plan → builds → reviews; stacked builds | `/graphs`; a Plan project's **Ticket plan** tab; a build's integration-branch card; a review's **Send back** | `jplan-to-jtickets` |
 | Auto mode (the jButton) and run plans | a project's board and **Run setup** tab | `jorchestrate`, `jrunplan`, `jslice-report` |
-| Documents | `/e` (library), `/e/<key>` (reader); a project's **Docs** tab | `j-explain`, `to-jspec`, `to-jdoc` |
+| Documents | `/e` (library), `/e/<key>` (reader); a project's **Docs** tab | `j-explain`, `to-jdoc` |
 | Charts | `/charts`, `/charts/<key>` (editor; `/c/<key>` is an alias) | `j-chart` |
 | Reviews of a project's branch | a project's **Review** tab; the room `/reviews/<key>` (`/r/<key>` alias) | `jreview-report`, `jreview-triage`, `jreview-consensus`, `jarch-review` |
-| PR review projects | the **Reviews** board (`/reviews`), with the codebase's open PRs | `make-jreview-project`, `jreview-assess`, `jpr-check` |
+| PR review projects | the **Reviews** board (`/reviews`), with the codebase's open PRs | `jreview-report`, `jreview-consensus` |
+| Plan review projects (mode `planreview`) — a plan's spec and ticket plan reviewed before its builds run | the **Reviews** board; the create modal's **Plan review** type, or a plan review node in a graph | `jplan-review`, `jreview-report`, `jreview-consensus` |
 | Diff and tours | a project's **Diff** tab | `jdiff-tour` |
 
 `apps/jticket/README.md` covers each feature in depth; the root `CLAUDE.md`
@@ -130,11 +132,20 @@ The directories keep the names of the apps that once owned them:
 
 | directory | state |
 | --- | --- |
-| `.data/jticket/` | `jticket.json` (the store — API-only, never hand-edited) + `attachments/`, `sessions.json` (the analytics ledger), `sync.json` |
+| `.data/jticket/` | `jticket.json` (the store — API-only, never hand-edited; projects, tickets, docs, PRs and graphs) + `attachments/`, `sessions.json` (the analytics ledger), `harness/` (the run journal, session digests and run snapshots — see CLAUDE.md), `sync.json`, `id-migration.json` (old → new ids, below) |
 | `.data/jexplain/` | the document pool: `<key>.json` (+ `.notes.json`) — every jTicket doc, review report and explainer |
 | `.data/jchart/` | the chart pool: `<key>.json` (+ `.notes.json`) — the chart editor and every document's chart blocks |
 | `.data/jreview/` | `<key>.json` per review: reviewer/triage dispatch state and the findings (the reports themselves are documents in the pool) |
 | `.data/jdiff/` | `tours.json` and `failures.json` — the Diff tab's tours |
+
+Every entity's `id` is a bare UUIDv7 (time-ordered, `apps/jticket/server/utils/ids.ts`),
+so stores from different machines never clash; keys (`TICK-n`, `PROJ-n`, `G-n`)
+are for people. The older prefixed ids (`tick_…`) were rewritten once, across
+every file in `.data`, by `POST /api/admin/migrate-ids` (`{"dryRun": true}`
+reports without writing). It first copies `.data` to `.data.backup-ids-<stamp>`
+beside it — to undo, stop jTicket, swap that copy in for `.data`, and start —
+and keeps old → new in `.data/jticket/id-migration.json`, so a legacy id in a
+link or prompt still resolves. Shares made before the migration must be re-made.
 
 ## @jsuite/charting
 
@@ -200,8 +211,7 @@ claude sequence in it to make the sequence atomic. Every CLI call has a
 timeout (30s default). Plain ESM, no layer; failures throw `HerdrError` with
 an HTTP-ish `statusCode` and herdr's error `code`.
 jTicket dispatches every session through it — ticket work, loops, merges,
-reports, reviewers and their triage/consensus sessions, PR-review assessors
-and checks, and Diff-tab tours — via `apps/jticket/server/utils/herdr.ts`,
+reports, reviewers and their triage/consensus sessions, and Diff-tab tours — via `apps/jticket/server/utils/herdr.ts`,
 which adds the sandbox guards.
 
 Every call runs in the herdr session **`jticket`** (`herdrSessionName()`;
@@ -267,11 +277,10 @@ small WebSocket broadcast server with the same topic fan-out semantics, and
 ## jSkills
 
 jTicket owns its Claude skills in `apps/jticket/.claude/skills`: the board's
-(`to-jticket`, `to-jspec`, `to-jdoc`, `jwayfinder`, `jimplement`,
-`jorchestrate`, `jrunplan`, `jslice-report`, `jarchitect-scan`,
-`jarchitect-grill`, `jreproduce`), documents' and charts' (`j-explain`,
-`j-chart`), reviews' (`jreview-report`, `jreview-triage`, `jreview-consensus`,
-`jarch-review`, `make-jreview-project`, `jreview-assess`, `jpr-check`) and the
+(`to-jticket`, `to-jdoc`, `jplan`, `jimplement`,
+`jorchestrate`, `jrunplan`, `jslice-report`, `jreproduce`), documents' and
+charts' (`j-explain`, `j-chart`), reviews' (`jreview-report`, `jreview-triage`, `jreview-consensus`,
+`jarch-review`) and the
 Diff tab's (`jdiff-tour`). Suite-level skills live in `.claude/skills/` at the
 repo root: `jsuite` is the map — what each jTicket feature does and which
 feature/skill a request routes to.

@@ -41,6 +41,17 @@ You are cd'd into the repo. For each open ticket, find the code it touches
 which tickets share an area and how heavy each is. Read the spec docs the
 project links; a slice report from an earlier run says what already exists.
 
+How long tickets have actually taken in this codebase is measured — read it
+before you predict anything (§2):
+
+```bash
+REPO=$(jt project $P | jq -r '.repo | @uri')
+jt get "/api/analytics?repo=$REPO" | jq 'def m: (. // 0) / 60000 | round; {all: (.summary | {tickets, medianMinutes: (.medianToCloseMs | m), p90Minutes: (.p90ToCloseMs | m)}), byType: [.byType[] | {key, tickets, medianMinutes: (.medianToCloseMs | m), p90Minutes: (.p90ToCloseMs | m)}], byModel: [.byModel[] | {key, tickets, medianMinutes: (.medianToCloseMs | m)}]}'
+```
+
+Minutes are picked up → closed. A codebase with no history answers zeros —
+then the weights are all you have.
+
 Done when, for every open AFK ticket, you can say: its weight, its area, its
 open blockers, and what it unblocks.
 
@@ -67,6 +78,23 @@ Two groups may run side by side in one step — a box of light tickets on a
 cheap runner beside a box of medium ones — each group carrying its own model
 and effort (`groupRunners`). Keep one orchestrator's share to roughly eight
 tickets at most; a longer list is split over consecutive steps.
+
+**Every weight is a prediction, and you write it down.** After the run, each
+ticket's prediction is scored against what it took — that is how the plans
+this skill builds get better — so every open ticket you place carries one in
+its step's `predictions` (§4):
+
+| Field | What you commit to |
+| --- | --- |
+| `weight` | `light`, `medium` or `heavy` — the table above |
+| `minutes` | picked up → closed, one number. Start from the codebase's measured median for that kind of ticket (§1) and move it for this ticket's reach |
+| `risk` | `low`, `medium` or `high` — how likely the review is to find something wrong in its work |
+| `why` | one line: what made it that weight, and why that runner |
+
+Commit to the number you believe: a prediction parked at the median for every
+ticket says nothing when the run is measured.
+
+Done when every open ticket you will place has all four.
 
 ## 3. Shape the steps
 
@@ -138,7 +166,12 @@ and `kind`; the rest by kind:
   "dispatch": { "mode": "orchestrated", "model": "opus", "effort": "high", "budget": 2, "orchestrators": 1 },
   "groups": [["TICK-7", "TICK-8", "TICK-9", "TICK-10"]],   // the orchestrator's group: 4+ tickets, budget 2
   "groupRunners": [{ "model": "sonnet", "effort": "low" }], // per group; null = the step's dispatch
-  "runners": { "TICK-12": { "model": "fable", "effort": "high" } }   // a solo ticket's own model/effort
+  "runners": { "TICK-12": { "model": "fable", "effort": "high" } },  // a solo ticket's own model/effort
+  "predictions": {                                            // one per open ticket of the step, grouped or solo (§2)
+    "TICK-12": { "weight": "heavy", "minutes": 45, "risk": "high", "why": "reshapes the store contract three modules read; needs judgment, so Fable" },
+    "TICK-7":  { "weight": "light", "minutes": 6,  "risk": "low",  "why": "copy change in one component; Sonnet low under the orchestrator" }
+    // … and TICK-13, -14, -15, -8, -9, -10
+  }
   // TICK-12, -13, -14 start with the orchestrator; TICK-15 starts when one of them finishes
 }
 { "id": "s2", "kind": "implement",                           // ORCHESTRATORS ONLY: two groups, nothing solo beside them
@@ -183,6 +216,9 @@ merge — so don't rebuild a plan just because part of it already ran.
 ```bash
 jt post /api/projects/$P/run-plan/built '{"summary": "<one line: N steps, how the reviews are placed, anything left out>"}'
 ```
+
+It answers 400 naming every open ticket that still has no prediction: add
+them to their steps' `predictions`, PUT, and report again.
 
 This unlocks the tab. Then reply with a few lines — the steps in order, each
 with its shape (own agents / mixed / two orchestrators), who runs what and

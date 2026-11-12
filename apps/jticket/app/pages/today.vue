@@ -2,7 +2,9 @@
 // Today: what's on my plate across the codebase, one screen. Waiting on me
 // (HITL tickets, PRs asking for my review), what's being built (claimed
 // tickets, running auto loops), my PRs' CI, and the TODO inbox that /idea and
-// /bug capture into.
+// /bug capture into. The GitHub half loads after the page (client-only, from
+// the server's cache), leaves drafts out unless asked, and settles by itself
+// when the cached answer was aged; the GitHub button reads it fresh.
 import type { Ticket } from '~/composables/useTracker'
 
 useHead({ title: 'Today' })
@@ -12,11 +14,37 @@ const { boardProjects: scopedProjects, boardTickets: scopedTickets, todoProject,
 const { openEditTicket } = useTrackerModals()
 
 interface Pr { number: number; title: string; url: string; isDraft: boolean; author?: string; reviewDecision?: string; ci?: { state: string; failed: number; pending: number; total: number } }
-const { data: gh, pending: ghLoading, refresh: refreshGh } = useFetch<{ error: string; mine: Pr[]; reviewRequested: Pr[] }>('/api/today/github', {
-  query: computed(() => ({ repo: selectedPath.value ?? '' })),
+const showDrafts = ref(false)
+// The refresh button's one forced read: set for the next request only, so
+// later refetches go back to the cache.
+let forceNext = false
+const { data: gh, status: ghStatus, refresh: refetchGh } = useFetch<{ error: string; mine: Pr[]; reviewRequested: Pr[]; fetchedAt: string; refreshing: boolean }>('/api/today/github', {
+  query: computed(() => ({ repo: selectedPath.value ?? '', ...(showDrafts.value ? { drafts: 1 } : {}) })),
   immediate: !!selectedPath.value,
-  watch: [selectedPath],
+  lazy: true,
+  server: false,
+  onRequest({ options }) {
+    if (!forceNext) return
+    forceNext = false
+    options.query = { ...options.query, force: 1 }
+  },
 })
+// The server never fetches this, so nothing spins until the page is mounted
+// (a spinner on first render would not match the server's HTML).
+const mounted = ref(false)
+onMounted(() => { mounted.value = true })
+const ghLoading = computed(() => mounted.value && (ghStatus.value === 'pending' || !!gh.value?.refreshing))
+function refreshGh() {
+  forceNext = true
+  return refetchGh()
+}
+useRefetchWhileRefreshing(gh, () => refetchGh())
+
+const now = ref(new Date())
+let tick: ReturnType<typeof setInterval> | undefined
+onMounted(() => { tick = setInterval(() => { now.value = new Date() }, 60_000) })
+onUnmounted(() => { if (tick) clearInterval(tick) })
+watch(gh, () => { now.value = new Date() })
 
 const projectKey = computed(() => new Map(scopedProjects.value.map((p) => [p.id, p.key])))
 const work = computed(() => scopedTickets.value.filter((t) => t.projectId !== todoProject.value?.id))
@@ -42,18 +70,20 @@ const label = (t: Ticket) => `${t.key}${t.projectId ? ` · ${projectKey.value.ge
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="py-8">
       <div class="mb-6 flex items-end justify-between gap-4">
         <div>
           <h1 class="text-2xl font-bold">Today</h1>
           <p class="text-sm text-muted">What needs me, what's running, and what's in the inbox.</p>
         </div>
-        <UButton icon="i-lucide-refresh-cw" variant="ghost" color="neutral" size="sm" :loading="ghLoading" @click="refreshGh()">GitHub</UButton>
+        <div v-if="selectedPath" class="flex items-center gap-3">
+          <span v-if="gh?.fetchedAt" class="text-xs text-muted">{{ gh.refreshing ? 'updating…' : `updated ${fetchedAgo(gh.fetchedAt, now)}` }}</span>
+          <UCheckbox v-model="showDrafts" label="drafts" class="text-sm text-muted" title="Include draft PRs" />
+          <UButton icon="i-lucide-refresh-cw" variant="ghost" color="neutral" size="sm" :loading="ghLoading" title="Read GitHub now" @click="refreshGh()">GitHub</UButton>
+        </div>
       </div>
 
-      <p v-if="!selectedPath" class="text-sm text-muted">Pick a codebase in the header first.</p>
+      <p v-if="!selectedPath" class="text-sm text-muted">Pick a codebase in the sidebar first.</p>
 
       <div v-else class="grid gap-6 lg:grid-cols-2">
         <!-- Waiting on me -->
@@ -101,7 +131,8 @@ const label = (t: Ticket) => `${t.key}${t.projectId ? ` · ${projectKey.value.ge
                 <UBadge v-else-if="pr.reviewDecision === 'CHANGES_REQUESTED'" size="sm" variant="subtle" color="error">changes</UBadge>
               </a>
             </li>
-            <li v-if="!ghLoading && !byCi.length && !gh?.error" class="text-muted">No open PRs.</li>
+            <li v-if="!gh && ghLoading" class="text-muted">Loading from GitHub…</li>
+            <li v-else-if="!byCi.length && !gh?.error" class="text-muted">No open PRs{{ showDrafts ? '' : ' out of draft' }}.</li>
           </ul>
         </section>
 

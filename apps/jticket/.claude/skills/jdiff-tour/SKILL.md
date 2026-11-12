@@ -51,6 +51,7 @@ without reading the code is a defect.
 ```bash
 jt post /api/projects/<project>/diff/tour/artifact - <<'JSON'
 { <target fields, e.g. "pr": "PR-12">,
+  "head": "<the head= commit you were given, in full>",
   "artifact": {
     "overview": "<2-4 short paragraphs of markdown: what the change does, how it is structured, and what this walk covers that a first read would miss>",
     "stops": [
@@ -73,6 +74,9 @@ JSON
   numbers): the Diff tab expands the hidden context to show them.
 - Line numbers are real: count them from the hunk headers or read the file at
   `<head>`.
+
+- `"head"` is how the Diff tab knows which commit the tour describes: when
+  the target moves on, it warns the reader the tour is out of date.
 
 A 400 names what was wrong with the shape; fix it and POST again.
 

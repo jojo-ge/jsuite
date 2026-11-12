@@ -75,6 +75,7 @@ export function isReadOnlyCommand(cmd: string, args: readonly string[]): boolean
   }
   if (bin === 'gh') {
     if (args[0] === 'api') {
+      if (args[1] === 'graphql') return isGraphqlRead(args.slice(2))
       // gh api is a GET unless a method is named or a field is sent (fields make it a POST).
       const method = args.find((a, i) => args[i - 1] === '-X' || args[i - 1] === '--method' || a.startsWith('--method='))
       const m = (method?.replace('--method=', '') ?? '').toUpperCase()
@@ -84,6 +85,26 @@ export function isReadOnlyCommand(cmd: string, args: readonly string[]): boolean
     return GH_READ.has(`${args[0] ?? ''} ${args[1] ?? ''}`)
   }
   return false
+}
+
+/**
+ * `gh api graphql` always POSTs, so its fields say nothing about writing: it
+ * reads when its one document is a `query` — sent inline, never from a file
+ * or stdin, with every other argument a plain variable or `--jq`.
+ */
+function isGraphqlRead(rest: string[]): boolean {
+  const documents: string[] = []
+  for (let i = 0; i < rest.length; i += 2) {
+    const flag = rest[i]!
+    const value = rest[i + 1]
+    if (value === undefined) return false
+    if (flag === '--jq' || flag === '-q') continue
+    if (!['-f', '-F', '--field', '--raw-field'].includes(flag)) return false
+    // -F/--field would read "@file" (or stdin) in place of the value.
+    if ((flag === '-F' || flag === '--field') && value.slice(value.indexOf('=') + 1).startsWith('@')) return false
+    if (value.startsWith('query=')) documents.push(value.slice('query='.length))
+  }
+  return documents.length === 1 && /^\s*query\b/.test(documents[0]!) && !/\b(mutation|subscription)\b/.test(documents[0]!)
 }
 
 /** JTICKET_SANDBOX_REPOS (colon-separated absolute paths), cleaned. */

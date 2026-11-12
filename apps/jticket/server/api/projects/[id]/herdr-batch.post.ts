@@ -19,11 +19,11 @@ export default defineEventHandler(async (event) => {
   if (!refs.length) throw createError({ statusCode: 400, statusMessage: 'tickets is required — the keys to work, in order' })
 
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   const tickets = refs.map((ref) => {
-    const t = store.tickets.find((x) => x.id === ref || x.key === ref)
+    const t = findByRef(store.tickets, ref)
     if (!t) throw createError({ statusCode: 404, statusMessage: `ticket not found: ${ref}` })
     return t
   })

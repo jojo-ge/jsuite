@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   if (!prompt) throw createError({ statusCode: 400, statusMessage: 'prompt is required' })
 
   const store = loadStore()
-  const ticket = store.tickets.find((t) => t.id === id || t.key === id)
+  const ticket = findByRef(store.tickets, id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
   // Auto mode owns every AFK ticket of its project; HITL tickets are still the
   // human's to dispatch — the loop never does.

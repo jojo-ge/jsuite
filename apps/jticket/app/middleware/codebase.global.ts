@@ -16,6 +16,8 @@ export default defineNuxtRouteMiddleware((to) => {
   // A review's page (/reviews/<key>, and /r/<key> — the old jreview.local
   // path): ticket descriptions, reports and the review hand-off link there.
   if (to.path.startsWith('/reviews/') || to.path.startsWith('/r/')) return
+  // The mark switcher is about the app, not a codebase.
+  if (to.path === '/logo') return
   const selected = useCookie<string | null>('jticket-codebase')
   if (!selected.value) return navigateTo('/codebases')
 })

@@ -37,6 +37,7 @@ export default defineEventHandler(async (event) => {
     mode: 'standard',
     repo: '',
     integrationBranch: '',
+    integrationBase: '',
     starred: false,
     position: null,
     hidden: false,

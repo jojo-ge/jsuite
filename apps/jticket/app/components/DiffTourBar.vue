@@ -28,7 +28,7 @@ const lines = computed(() => (props.stop.endLine > props.stop.line ? `${props.st
 
 <template>
   <div
-    class="fixed bottom-4 left-1/2 z-30 w-[min(680px,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-primary bg-default px-4 py-3 text-sm shadow-2xl"
+    class="fixed bottom-4 left-[calc(50%+var(--app-sidebar-w,0px)/2)] z-30 w-[min(680px,calc(100vw-var(--app-sidebar-w,0px)-2rem))] -translate-x-1/2 rounded-xl border border-primary bg-default px-4 py-3 text-sm shadow-2xl"
     role="dialog"
     aria-label="Guided tour"
   >

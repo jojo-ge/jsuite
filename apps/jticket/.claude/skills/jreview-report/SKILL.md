@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 You are one of several reviewer sessions in a jTicket review. You have just run a code
 review (the global `/code-review` skill, or `/jarch-review` on an architecture
-pass).
+pass) — or, on a plan review, `/jplan-review` over a plan, with no diff.
 This skill turns that review into a **document** at the exact key the review
 watcher is waiting for. The watcher polls the shared document pool: **the moment a
 document exists at `doc=`, this reviewer counts as finished**, and when every
@@ -67,6 +67,11 @@ TAKEAWAYS
 ```
 
 List findings most severe first.
+
+**A plan review** (`BASE: plan <PROJ-n>`): there is no diff. `where:` names the
+build, ticket, decision or spec section a finding concerns (or `path:line` when
+it is about code), `quote:` takes only `path:start-end`, and there is no
+`scope:` line.
 
 `APPROVAL` (PR reviews only) is your call on merging the PR as it stands:
 `approve` — nothing worth holding it for; `approve-with-nits` — only

@@ -1,5 +1,6 @@
-// Cut the project's integration branch: an EMPTY branch off the repo's default
-// branch (identical to it at creation), pushed to origin so the project's PRs
+// Cut the project's integration branch: an EMPTY branch off its base — the
+// repo's default branch, or the integration branch of the build it stacks on
+// (identical to it at creation) — pushed to origin so the project's PRs
 // can target it. The branch name is recorded on the project, which is what
 // makes GET /api/projects/:id/github able to find the project's PRs.
 //
@@ -9,23 +10,28 @@
 //
 // Body: { branch?: string, base?: string }  (both optional)
 //   branch — defaults to 'proj/<KEY>-<title-slug>'
-//   base   — defaults to the repo's default branch
+//   base   — defaults to the repo's default branch; another build's
+//            integration branch stacks this project on it. Recorded as
+//            project.integrationBase ('' = default) — see app/utils/stacking.ts
 import { diffTabUrl } from '../../../../app/utils/diffTarget'
+import { normalizeBase } from '../../../../app/utils/stacking'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<{ branch?: string; base?: string }>(event)
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   const path = resolveRepoDir(project.repo)
+  const previousBranch = project.integrationBranch.trim()
   const branch = (body?.branch ?? '').trim() || project.integrationBranch.trim() || suggestBranchName(project)
   if (!isSafeRef(branch)) throw createError({ statusCode: 400, statusMessage: `not a usable branch name: ${branch}` })
 
   const ctx = await repoContext(path)
   const base = (body?.base ?? '').trim() || ctx.defaultBranch
   if (!isSafeRef(base)) throw createError({ statusCode: 400, statusMessage: `not a usable base: ${base}` })
+  if (base === branch) throw createError({ statusCode: 400, statusMessage: `a branch cannot be its own base: ${base}` })
 
   const hadLocal = await localBranchExists(path, branch)
   const hadRemote = await remoteBranchExists(path, branch)
@@ -44,8 +50,17 @@ export default defineEventHandler(async (event) => {
   }
 
   project.integrationBranch = branch
+  // The base is what the roll-up PR targets and every "this project's work"
+  // diff measures from ('' = the default branch). Recorded when cut, or when
+  // the caller names one; adopting a branch with no base given keeps what was
+  // recorded for that same branch, else resets to the default.
+  if (body?.base?.trim() || !hadLocal && !hadRemote) project.integrationBase = normalizeBase(base, ctx.defaultBranch)
+  else if (branch !== previousBranch) project.integrationBase = ''
   project.updatedAt = now()
   saveStore(store)
+  // The branch may be on origin now: the GitHub panel must not answer from
+  // what it held before the push.
+  forgetRepoGithub(path)
 
   return {
     branch,

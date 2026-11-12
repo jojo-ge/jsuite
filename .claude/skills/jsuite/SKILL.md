@@ -30,28 +30,37 @@ too. Plain HTTP on a `.local` name returns a 400.
 
 ## Routing a request
 
+The UI names a project's type, not its mode: a `standard` project reads
+**Build** and a `prreview` (PR review) project reads **Review** — so "a build
+project" means mode `standard` and "a review project" mode `prreview`. Only
+the wording differs: the stored modes, the API and the prompt kinds keep
+their names. A **Plan** project is mode `plan`, and a **Plan review** project
+mode `planreview`.
+
 | The user wants… | Use |
 | --- | --- |
 | break a plan/spec into tickets, query or update the board | `to-jticket` (drives :43000 through the `jt` CLI) |
-| write a spec / design doc for review (block document) | `to-jspec` |
-| draft a doc page locally on the board | `to-jdoc` |
-| plan work too big for one session | `jwayfinder` |
+| write a spec, design doc or any page onto the board for review (block document); the format every ticket and project field takes | `to-jdoc` (it absorbed `to-jspec`) |
+| plan work too big for one session | `jplan` (a **Plan** project — mode `plan`; called wayfinder / `jwayfinder` before the rename) |
 | execute already-ticketed work | `jimplement` (claim, build, local PR, record the outcome) |
 | a rich explainer / walkthrough / post-mortem | `j-explain` → read at `https://jticket.local/e/<key>`; every document is listed at `/e` |
 | a diagram the human can edit and annotate | `j-chart` → the editor at `https://jticket.local/charts/<key>` |
-| be grilled about a plan | `grilling` in the terminal — always; a HITL grilling ticket's herdr button dispatches it into its own tab |
+| be grilled about a plan | `grilling` in the terminal — always; a todo's **Grill** button, and the herdr button on a HITL `decision` ticket of a standard project, dispatch it into its own tab (prompt kinds `todo`, `standard:decision`; no branch, no PR) |
 | a thorough multi-reviewer review of a project's branch, findings → tickets | the project's **Review** tab (`POST /api/projects/:id/reviews`): 4 Opus 5.5 reviewers on the global `/code-review` (`jreview-report`), then `jreview-triage`; the human files the picked findings as tickets in that project. The room is `/reviews/<key>` |
-| review someone's GitHub PR, reviewers sized to it, findings → post to the PR | the **Reviews** board (`/reviews`): its **Open PRs** list's **Review this PR**, or skill `make-jreview-project N` in the repo → a **PR review project** (mode `prreview`): Fable 5.2 `/jreview-assess` picks 2–4 reviewers + one shared brief + optional `/jpr-check` checks into the project's own **review plan** (Review setup tab — not Run setup); an agreement review (consensus + adversarial verification + approvability) files each finding as a record-only ticket on the project; the Review tab's **Post to PR** sends the picked finding tickets as a COMMENT review under your gh auth (never an approval) and **Rerun review** re-runs on the new head |
-| read a diff — integration branch, a local PR, a GitHub PR, two refs — or a guided tour of it | the project's **Diff** tab (`/projects/KEY?tab=diff`, `&pr=PR-n` / `&gh=N` / `&head=&base=`); **Build tour** dispatches one Opus `/jdiff-tour` session. Tours are for humans, never handed to reviewers |
+| review someone's GitHub PR with several reviewers, findings → post to the PR | the **Reviews** board (`/reviews`): its **Open PRs** list's **Make review project** (makes the project only — the human presses **Start review** on its Review tab), or the create modal's **Review** type (a review project with no PR yet — its page is a picker of the repo's open PRs until one is picked: `POST /api/projects/:id/pr-review {pr}`) → a **PR review project** (mode `prreview`): Start review re-fetches the PR head and runs one agreement review — 2–4 reviewers, then consensus + adversarial verification + approvability + a summary — which files each finding as a record-only ticket on the project; the Review tab's **Post to PR** sends the picked finding tickets, with the summary, as a COMMENT review under your gh auth (never an approval) and **Rerun review** reviews the new head |
+| read a diff — integration branch, a local PR, a GitHub PR, two refs — or a guided tour of it | the project's **Diff** tab (`/projects/KEY?tab=diff` — the integration branch against its base, so a stacked build shows only its own work; `&pr=PR-n` / `&gh=N` / `&head=&base=`); **Build tour** dispatches one Opus `/jdiff-tour` session. Tours are for humans, never handed to reviewers |
 | a few small tasks/decision tickets in ONE session ("run these together") | jTicket board: tick 2+ frontier cards → **One session** — one claude session, tickets in key order, each on its own hand-off; prompt kind `batch` (overridable per project/codebase/global); no claims, budget or subagents; HITL asks in that pane; 409 under auto mode unless every ticket is HITL (`POST /api/projects/:id/herdr-batch`) |
-| a project's integration branch — cut/set it, connect a worktree, open the roll-up PR | the **Overview** tab (integration-branch card, Connect worktree) and the **Pull requests** tab (roll-up PR, `POST …/integration-pr`) |
+| a project's integration branch — cut/set it, stack a build on another, sync from upstream, connect a worktree, open the roll-up PR | the **Overview** tab (integration-branch card: base picker, **Sync from upstream** — `POST /api/projects/:id/integration-branch/sync`, a local merge, never a rebase or push — Connect worktree) and the **Pull requests** tab (roll-up PR to the project's base, `POST …/integration-pr`) |
 | what needs me today — HITL waiting, review requests, my PRs' CI, what's building, the TODO inbox | jTicket's **Today** page (`/today`; `GET /api/today/github?repo=`; TODO project via `POST /api/projects/todo`) |
 | run a project hands-off: implement → merge → review → fix loops | the project's **jButton** (auto mode; `POST /api/projects/:id/auto`) — see below |
 | run exactly one loop, or one loop over ticked tickets | board **Loop frontier / Loop selected** (`{enabled: true, once: true, tickets?: [keys]}`) |
 | a hand-built sequence — which tickets go together, who runs each, where merges/reviews/gates sit | the project's **Run setup** tab (run plan, board or graph view) — **Build with Fable** drafts it, **Start plan** runs it; see below |
-| see how projects lead into each other and what each delivered | jTicket **Graphs** page (`/graphs`; ids `G-<KEY>`; `GET /api/graphs`, `GET /api/graphs/G-KEY` — a member project key works too) |
+| cut large work into reviewable slices handed plan → builds → reviews; how projects lead into each other; **Move on** to the next one | jTicket **Graphs** (`/graphs` menu, one graph at `/graphs/G-n`): stored, hand-built graphs of plan/build/review nodes (proposed ones have no project yet). `GET /api/graphs?repo=`, `GET /api/graphs/G-n` (a member project key works too); no hard gates — a briefing with warning `flags` before each node, and Move on (`POST /api/graphs/:id/nodes/:nodeId/enter`) always works and starts nothing |
+| turn a finished plan into build tickets and a proposed graph | a Plan project's **Ticket plan** tab: **Draft ticket plan** dispatches `jplan-to-jtickets` (spec doc, draft tickets with `plannedFor`, proposed builds and reviews sized as reviewable slices); **Approve** makes the build projects and moves the drafts in (`POST /api/projects/:id/ticket-plan/approve`) |
+| review a plan before it is built — spec against the code, missing decisions, builds sized as reviewable slices | a **Plan review** project (mode `planreview`; the create modal's Plan review type, `POST /api/projects {mode: "planreview", plan}`, or Move on into a plan review node): its Review tab's **Start review** (`POST /api/projects/:id/reviews`) runs one agreement review of the plan — no diff — with each reviewer on `jplan-review`; findings are record-only tickets on it. Lives on the Reviews board |
+| send review findings back to where they get fixed | the review project's Review tab → **Send back** (`POST /api/projects/:id/findings/send-back {ticketKeys}`): a review after a build in a graph files AFK `bug` tickets on that build; a plan review files HITL `decision` tickets on its plan; then **Rerun review** |
 | how long tickets take / what they cost, per ticket, project or across projects; verification time, whole-suite vs filtered runs, orchestrator overhead | project **Analytics** tab (`GET /api/projects/:id/analytics`) and the **Analytics** page (`/analytics`; `GET /api/analytics?repo=&from=&to=&rows=1`) — passive, read off claude transcripts via the session ledger; `POST /api/analytics/backfill {project?}` adds older sessions |
-| find + triage deepening opportunities in a codebase | jTicket Improve-architecture button (`POST /api/projects/architect`; tickets run `jarchitect-scan` / `jarchitect-grill`) |
+| how a run went and what got in the way — nudges, pauses, forced closes, tool errors, refused API calls, human interventions, which ticket a review finding came from | **harness capture** (no page yet; mechanical, kept in `.data/jticket/harness/`): the run journal `GET /api/harness/journal?project=&run=&kind=`, runs and their snapshots `GET /api/harness/runs` / `GET /api/harness/runs/:id`, session digests with friction `GET /api/harness/sessions?project=&repo=&role=&harness=&full=1`; `POST /api/harness/capture {force?}` freezes what is ready now |
 | worktrees — how a codebase makes/sets up/tears down worktrees; connect an integration branch to one | Codebase settings (`/codebase`) → Worktrees: kickoff dispatches `worktree:kickoff`, the agent PUTs the guide to `/api/repos/worktree?repo=`; Connect worktree dispatches `worktree:connect` → `POST /api/projects/:id/worktree` (re-checked against `git worktree list`). Every worktree consumer GETs the guide first |
 | check whether a suspected bug is real before a deploy | a predeploy-mode jTicket project; its tickets dispatch `jreproduce` (failing test + verdict on the ticket, never a fix) |
 | share/sync a jTicket project with a coworker | the project page's Share panel; one-time setup `packages/relay/wizard.sh` |
@@ -80,8 +89,15 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   worktree still holding the merged branch). No push; the **Diff** tab renders
   the diff. Only the integration branch reaches origin, through the roll-up PR
   on the **Pull requests** tab (`POST …/integration-pr` pushes, then opens or
-  finds the integration → default PR). The Overview tab cuts or sets the
+  finds the integration → base PR). The Overview tab cuts or sets the
   integration branch and connects its worktree.
+- **Stacked builds** — `project.integrationBase` is the branch a build was cut
+  from and its roll-up PR targets (`''` = the default branch, else another
+  build's integration branch; at most one upstream). A stacked build shows only
+  its own work — Diff tab, slice size, Review tab measure from where it meets
+  the upstream. **Sync from upstream** merges the base in locally (upstream
+  squash-merged → what it merged into becomes the base and the roll-up PR is
+  retargeted); a conflict answers `ok: false` with nothing moved.
 - **Today** (`/today`) — HITL tickets waiting, PRs asking for my review, what's
   building (in-progress AFK tickets, running loops), my PRs' CI rolled up via
   `gh`, and the codebase's TODO inbox (its todo-mode project).
@@ -137,9 +153,29 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   engine starts the next own-agent ticket as a session frees. A review's fix
   tickets go out 3 at a time; a merge sweep, review or report that goes
   silent (45 min; reviews 90) pauses the run — Retry step re-runs it.
-- **Graphs** (`/graphs`) — cross-project blocked-by edges link projects into
-  graphs named "first → last" with each project's status and outcome report.
-  Display only; id `G-<KEY>`.
+- **Graphs** (`/graphs`) — how a large piece of work is cut into slices a
+  person can review in one sitting and handed along: a stored graph (`G-n`) of
+  plan, build and review nodes joined by directed edges, any mix, a project in
+  at most one node; a **proposed** node has no project yet. Each node shows its
+  project's progress and outcome report, and each build its slice size
+  (flagged past 30 files or 800 lines — split it into stacked builds). **No
+  hard gates**: before each node is a briefing over all its upstreams (tickets,
+  running work, roll-up PRs and CI, review verdicts, the base) whose `flags`
+  only warn; **Move on** always works, creates a proposed node's project (a
+  Review node gets the build's open roll-up PR attached) and starts nothing.
+  The project page shows the graph strip, and the briefing as a banner until
+  its node is entered. Machine-local; cross-project blockers make no graph.
+- **Ticket plan** (Plan projects' tab) — **Draft ticket plan** runs one Fable
+  5.2 `/jplan-to-jtickets` session: the spec as a doc, draft build tickets on
+  the plan (`plannedFor` = a proposed build node; record-only, off the
+  frontier), and the proposed builds and reviews in the plan's graph.
+  **Approve** creates the build projects and moves the drafts in; it starts
+  and enters nothing.
+- **Send back** — a review project directly after a build in a graph sends
+  picked findings back as AFK `bug` tickets on that build; a plan review sends
+  them to its plan as HITL `decision` tickets, in a graph or not
+  (`ticket.sentBack` records where each went); fix or decide there, then
+  Rerun review.
 - **Analytics** (`/analytics`, and a project's Analytics tab) — session
   timing and cost per ticket, measured passively: dispatches run claude with
   `--session-id` and log it to `.data/jticket/sessions.json`; the transcript
@@ -147,10 +183,8 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   verification runs (category + whole/filtered scope), PR time and token
   cost. Orchestrations are measured whole and per inner ticket. Agents report
   nothing; `POST /api/analytics/backfill` matches older transcripts to tickets.
-- **Architect-mode projects** (`/jarchitect-scan` fills graded HITL `decision`
-  candidates + an assessment spec; `/jarchitect-grill` answers go/no-go in a
-  herdr pane) and **predeploy-mode projects** (`/jreproduce`: failing test +
-  verdict `reproduced`/`flaky`/`not-reproduced`/`already-fixed`/`invalid`, no fix).
+- **Predeploy-mode projects** (`/jreproduce`: failing test + verdict
+  `reproduced`/`flaky`/`not-reproduced`/`already-fixed`/`invalid`, no fix).
 - **Codebase settings** (`/codebase`) — prompt overrides (ticket → project →
   codebase → global → built-in) and the **worktree guide**; agents take its
   cheapest fitting form (slim/test-only) and tear down once the PR is open.
@@ -163,7 +197,11 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   steps, compare, timeline, takeaway, glossary) in one pool,
   `.data/jexplain/`, served at `/api/documents`. A doc record
   (`/api/docs/DOC-n`) wraps one by its `documentKey`. The reader is
-  `/e/<key>` (per-block notes rail, "Copy notes for Claude"), the library `/e`.
+  `/e/<key>` (per-block notes rail, "Copy notes for Claude", tags, **Export
+  PDF**), the library `/e` (full-text search, kind chips). Every document is
+  published with one tag, its kind; the library lists and searches only
+  `explainer`, `research`, `decision`, `spec` and `proposal` — reports and
+  review outputs wait for its **Other kinds** switch.
 - **Charts** — Claude pushes Mermaid (`j-chart`, `chart.py`); jTicket lays it
   out as an Excalidraw scene; the human redraws and pins shape notes in the
   editor (`/charts/<key>`, list `/charts`); Claude reads scene + notes back off
@@ -183,10 +221,13 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   runs one reviewer on `/jarch-review`. The room `/reviews/<key>` shows any
   review live. State `.data/jreview/`.
 - **PR review projects and the Reviews board** — mode `prreview`, one GitHub
-  PR, reviewed and never changed. They leave the projects board, Today and
-  Graphs for the **Reviews** board (`/reviews`), which also lists the
-  codebase's open PRs (`GET /api/repos/prs?repo=`). Their review plan
-  (checks → gate? → one review step) runs an **agreement review**: reviewers
+  PR, reviewed and never changed. They leave the projects board and Today for
+  the **Reviews** board (`/reviews`; one in a graph also appears there as a
+  Review node), which also lists the
+  codebase's open PRs a page at a time (`GET /api/repos/prs?repo=`; drafts left
+  out unless `&drafts=1`). The project's Review tab's **Start review**
+  (`POST /api/projects/:id/reviews {reviewers?}`, 2–4) re-fetches the PR head
+  and runs an **agreement review**: reviewers
   use the codebase's own review skill when it has one, an Opus 5.5
   `/jreview-consensus` keeps what every reviewer raised, adversarially verifies
   each (`verify`), judges approvability and hands findings + `assessment`
@@ -194,18 +235,28 @@ stdin). Never hand-built `curl`, never edit `.data/jticket/jticket.json`.
   (`review:finding`; never frontier, never dispatchable; reruns update the
   matching ticket). Post to PR (human-only) posts the picked finding tickets
   as one COMMENT review — never an approval.
+- **Plan review projects** — mode `planreview`, one plan project
+  (`project.planReview = {planProjectId, runs}`), reviewed before its builds
+  run and never changed; on the Reviews board with the PR reviews. Start review
+  runs the same agreement review with the plan as its subject (no branch,
+  worktree or diff): reviewers run `/jplan-review` in the main checkout over
+  the plan's map, resolutions, docs and ticket plan and the code, then
+  `/jreview-consensus`; findings are record-only tickets. Refused (409) while
+  the plan's ticket plan is being drafted, or for a plan with no ticket plan
+  and no docs. One made with no plan picks it on its Review tab
+  (`POST /api/projects/:id/plan-review {plan}`).
 - **Diff tab and tours** — side-by-side, server-highlighted rows, expandable
   context, full-file view, for the project's own branch or a `?pr=` / `?gh=` /
-  `?head=&base=` target. **Build tour** dispatches one Opus `/jdiff-tour`
+  `?head=&base=` target. The file list's chips show only some kinds of file
+  (source, tests, docs, config, generated, assets) and its order menu sorts by
+  path or line churn. **Build tour** dispatches one Opus `/jdiff-tour`
   session that posts its stops back; the floating tour bar walks them
   (`?stop=i` deep links). Tours live in `.data/jdiff/tours.json`.
 
-Skills (all in `apps/jticket/.claude/skills`): `to-jticket`, `to-jspec`,
-`to-jdoc`, `jwayfinder`, `jimplement`, `jorchestrate`, `jarchitect-scan`,
-`jarchitect-grill`, `jreproduce`, `jslice-report`, `jrunplan`, `j-explain`,
+Skills (all in `apps/jticket/.claude/skills`): `to-jticket`,
+`to-jdoc`, `jplan`, `jplan-to-jtickets`, `jimplement`, `jorchestrate`, `jreproduce`, `jslice-report`, `jrunplan`, `j-explain`,
 `j-chart`, `jdiff-tour`, `jreview-report`, `jreview-triage`,
-`jreview-consensus`, `jarch-review`, `make-jreview-project`,
-`jreview-assess`, `jpr-check`.
+`jreview-consensus`, `jarch-review`, `jplan-review`.
 
 ## How it fits together
 
@@ -215,6 +266,9 @@ Skills (all in `apps/jticket/.claude/skills`): `to-jticket`, `to-jspec`,
 - **One state directory**: `$(jsuite root)/.data/` (gitignored) via
   `@jsuite/data` (`appDataDir`/`appDataFile`); the subdirectories keep the
   retired apps' names (`jticket`, `jexplain`, `jchart`, `jreview`, `jdiff`).
+  Entity ids are UUIDv7s; keys (`TICK-n`, `PROJ-n`, `G-n`) are what you use. A
+  pre-UUID id (`tick_…`) still resolves, through the one-off migration's map
+  `.data/jticket/id-migration.json`.
 - **One document pool and one chart pool**: `@jsuite/documents` (extends
   `@jsuite/charting`) serves `/api/documents` over `.data/jexplain/` and
   `/api/charts` over `.data/jchart/`.
@@ -222,8 +276,7 @@ Skills (all in `apps/jticket/.claude/skills`): `to-jticket`, `to-jspec`,
   `acquirePackedPane`, `startClaudeIn`) dispatches whole terminal claude
   sessions — panes packed 2×2 per tab, model/effort via agent args — for
   everything jTicket runs: ticket work, loops, batches, merges, worktree
-  prompts, slice/outcome reports, reviewers, triage and consensus, PR-review
-  assessors and checks, tours. Nothing runs a headless claude. Every pane
+  prompts, slice/outcome reports, reviewers, triage and consensus, tours. Nothing runs a headless claude. Every pane
   lives in the herdr session `jticket` (never herdr's default session;
   `HERDR_SESSION` overrides, the sandbox uses `jsuite-sandbox`) — watch it
   with `herdr session attach jticket`.

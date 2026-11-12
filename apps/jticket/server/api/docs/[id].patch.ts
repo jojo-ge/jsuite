@@ -2,12 +2,14 @@
 // update the record; content fields (blocks, glossary, subtitle, kicker)
 // rewrite the backing shared document in place — same replace semantics as
 // POST /api/documents with replace:true (createdAt and the notes sidecar
-// survive). `documentKey` relinks the record to a different shared document.
+// survive, and so do its tags). `documentKey` relinks the record to a
+// different shared document. `tags` re-tags the backing document (the library's
+// tags — not `labels`) without counting as a content revision.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody(event)
   const store = loadStore()
-  const doc = store.docs.find((d) => d.id === id || d.key === id)
+  const doc = findByRef(store.docs, id)
   if (!doc) throw createError({ statusCode: 404, statusMessage: 'doc not found' })
 
   // The peer's half of a shared project is read-only here — sync is the only
@@ -74,8 +76,10 @@ export default defineEventHandler(async (event) => {
           ? await materialiseBlocks(doc.documentKey, Array.isArray(body.blocks) ? body.blocks : [])
           : (existing?.blocks ?? []),
       glossary: body.glossary !== undefined ? cleanGlossary(body.glossary) : (existing?.glossary ?? {}),
+      tags: existing?.tags,
     })
   }
+  if (body.tags !== undefined) await setDocTags(doc.documentKey, body.tags)
 
   doc.updatedAt = now()
   saveStore(store)

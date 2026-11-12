@@ -34,7 +34,7 @@ finding, which is the entire deliverable.
 Every jTicket call goes through `jt` (on PATH after `./jsuite setup`; else
 `bin/jt` in the jSuite checkout; `jt help`), never hand-built `curl`.
 API reference: the `to-jticket` skill's [reference/api.md](../to-jticket/reference/api.md).
-Markdown dialect for anything you write into a resolution or doc: the `to-jspec` skill.
+Markdown dialect for anything you write into a resolution or doc: the `to-jdoc` skill.
 
 ## 1. Read the report cold
 
@@ -193,7 +193,7 @@ the project and link it from the resolution:
 ```bash
 jt post /api/docs - <<'JSON'
 { "title": "TICK-n — <bug title> — reproduction", "project": "<PROJ-key>",
-  "labels": ["predeploy", "predeploy:repro", "TICK-n"], "status": "draft", "kicker": "REPRO", "blocks": [ … ] }
+  "labels": ["predeploy", "predeploy:repro", "TICK-n"], "tags": ["reproduction"], "status": "draft", "kicker": "REPRO", "blocks": [ … ] }
 JSON
 ```
 

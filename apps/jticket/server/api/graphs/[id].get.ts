@@ -1,7 +1,9 @@
-// A graph by its id (G-KEY, any case) or by the key of any project in it.
-export default defineEventHandler((event) => {
-  const ref = String(getRouterParam(event, 'id')).toUpperCase()
-  const graph = graphsView(loadStore()).find((g) => g.id === ref || g.projects.some((p) => p.key.toUpperCase() === ref))
-  if (!graph) throw createError({ statusCode: 404, statusMessage: 'graph not found' })
-  return graph
+// One graph — by its id, its key (G-3, any case), or the key of a project in
+// it (the old derived ids, G-<project key>, still resolve). The single-graph
+// view adds each build node's slice size (time-boxed: 'unknown' rather than a
+// wait) and the briefing each node was entered with.
+export default defineEventHandler(async (event) => {
+  const store = loadStore()
+  const graph = findGraph(store, getRouterParam(event, 'id'))
+  return graphView(store, graph, { slices: await graphSlices(store, graph), records: true })
 })

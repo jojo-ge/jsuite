@@ -32,5 +32,9 @@ export function modelIdFor(model: PlanModel): string {
 export const RUNPLAN_MODEL = process.env.JTICKET_RUNPLAN_MODEL?.trim() || 'claude-fable-5-2'
 export const RUNPLAN_EFFORT = process.env.JTICKET_RUNPLAN_EFFORT?.trim() || 'high'
 
+/** A plan project's Ticket plan button — Fable 5.2 at high effort: it cuts a whole plan into reviewable builds, judgment all the way down. */
+export const TICKETPLAN_MODEL = process.env.JTICKET_TICKETPLAN_MODEL?.trim() || 'claude-fable-5-2'
+export const TICKETPLAN_EFFORT = process.env.JTICKET_TICKETPLAN_EFFORT?.trim() || 'high'
+
 /** The Diff tab's Build tour — the latest Opus: it reads the whole change and writes 20–40 notes on its logic. */
 export const TOUR_MODEL = process.env.JTICKET_TOUR_MODEL?.trim() || 'claude-opus-5-5'

@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, mkdir, rm, stat } from 'node:fs/promises'
+import { readFile, writeFile, readdir, mkdir, rename, rm, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { appDataDir } from '@jsuite/data'
@@ -71,6 +71,23 @@ async function ensureDir() {
   if (!existsSync(DATA_DIR)) await mkdir(DATA_DIR, { recursive: true })
 }
 
+// Saves land whole or not at all: write a sibling temp file, then rename it
+// over the target. The editor autosaves the canvas and the title from separate
+// timers, and two plain writeFile calls on one path can interleave — a shorter
+// write finishing inside a longer one left valid JSON followed by the longer
+// file's tail, which no reader could parse (16 charts were lost to it).
+let tmpSeq = 0
+async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+  const tmp = `${path}.${process.pid}.${++tmpSeq}.tmp`
+  try {
+    await writeFile(tmp, JSON.stringify(value, null, 2) + '\n', 'utf8')
+    await rename(tmp, path)
+  } catch (err) {
+    await rm(tmp, { force: true })
+    throw err
+  }
+}
+
 const chartPath = (key: string) => join(DATA_DIR, sanitizeKey(key) + '.json')
 const notesPath = (key: string) => join(DATA_DIR, sanitizeKey(key) + '.notes.json')
 
@@ -115,7 +132,7 @@ export async function readChart(key: string): Promise<Chart | null> {
 
 export async function writeChart(key: string, chart: Chart): Promise<void> {
   await ensureDir()
-  await writeFile(chartPath(key), JSON.stringify(chart, null, 2) + '\n', 'utf8')
+  await writeJsonAtomic(chartPath(key), chart)
 }
 
 export async function deleteChart(key: string): Promise<void> {
@@ -140,7 +157,7 @@ export async function readNotes(key: string): Promise<ChartNotes> {
 
 export async function writeNotes(key: string, notes: ChartNotes): Promise<void> {
   await ensureDir()
-  await writeFile(notesPath(key), JSON.stringify(notes, null, 2) + '\n', 'utf8')
+  await writeJsonAtomic(notesPath(key), notes)
 }
 
 export async function listCharts(): Promise<ChartMeta[]> {

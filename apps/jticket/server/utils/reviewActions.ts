@@ -24,6 +24,7 @@ import {
   type ReviewContext,
   type ReviewEffort,
   type ReviewPass,
+  type ReviewSubject,
 } from '../../app/utils/reviewTypes'
 import { findingsForTickets, reviewProjectProblem } from '../../app/utils/reviewFindings'
 import { readReview, uniqueReviewKey, updateReview, writeReview } from './reviewStore'
@@ -76,6 +77,7 @@ export interface CreateReviewInput {
   pr?: unknown
   agreement?: { loop?: unknown } | null
   verify?: unknown
+  subject?: { kind?: unknown; projectKey?: unknown } | null
 }
 
 /**
@@ -106,6 +108,12 @@ export interface CreateReviewInput {
  *   what the reviewers read first: jTicket docs, and an earlier review of the
  *   same diff whose findings are already fixed.
  *
+ * - `subject` — { kind: 'plan', projectKey }: a plan review (a plan review
+ *   project's) — what is read is that plan project's map, decisions, spec and
+ *   ticket plan, not a diff. No branch, base, PR or worktree: `branch`/`base`
+ *   are recorded '' and every session runs in the codebase's main checkout,
+ *   where the reviewers read the code read-only. Needs `agreement`.
+ *
  * - `branch` — what to review (default: whatever is checked out). A branch
  *   that isn't checked out is reviewed in a detached worktree, so the human's
  *   checkout is never touched — under the codebase's worktree root when its
@@ -134,20 +142,36 @@ export async function createReview(body: CreateReviewInput): Promise<{ key: stri
   }
   await assertGitRepo(repoPath)
 
-  const checkedOut = await currentBranch(repoPath)
-  const branch = await requireRef(repoPath, String(body.branch ?? '').trim() || checkedOut || 'HEAD', 'branch')
+  // A plan review reads a plan, not a diff: nothing below about branches applies.
+  let subject: ReviewSubject | undefined
+  if (body.subject !== undefined && body.subject !== null) {
+    const projectKey = String(body.subject?.projectKey ?? '').trim()
+    if (body.subject?.kind !== 'plan' || !PROJECT_KEY_SHAPE.test(projectKey)) {
+      throw createError({ statusCode: 400, message: "subject must be { kind: 'plan', projectKey: PROJ-n } — the plan project under review" })
+    }
+    const plan = loadStore().projects.find((p) => p.key === projectKey)
+    if (!plan) throw createError({ statusCode: 400, message: `plan project ${projectKey} not found` })
+    if (plan.mode !== 'plan') throw createError({ statusCode: 400, message: `${projectKey} is not a plan project — a plan review reads a plan` })
+    if (body.branch || body.base || body.pr) throw createError({ statusCode: 400, message: 'a plan review reads no diff — drop branch, base and pr' })
+    subject = { kind: 'plan', projectKey, title: plan.title.slice(0, 200) }
+  }
+
+  const checkedOut = subject ? '' : await currentBranch(repoPath)
+  const branch = subject ? '' : await requireRef(repoPath, String(body.branch ?? '').trim() || checkedOut || 'HEAD', 'branch')
   const prNumber = body.pr === undefined || body.pr === null || body.pr === '' ? 0 : Number(body.pr)
   if (prNumber && !(Number.isInteger(prNumber) && prNumber > 0)) throw createError({ statusCode: 400, message: 'pr must be a PR number' })
-  const pr: PullRequest | null = prNumber ? await prByNumber(repoPath, prNumber) : await prForBranch(repoPath, branch)
+  const pr: PullRequest | null = subject ? null : prNumber ? await prByNumber(repoPath, prNumber) : await prForBranch(repoPath, branch)
 
-  let base = String(body.base ?? '').trim()
-  if (base) {
+  let base = subject ? '' : String(body.base ?? '').trim()
+  if (subject) {
+    // no target: there is no diff
+  } else if (base) {
     await requireRef(repoPath, base, 'target')
   } else {
     base = (pr && (await resolveBranchName(repoPath, pr.baseRefName))) || (await defaultBase(repoPath))
     if (!base) throw createError({ statusCode: 400, message: `could not pick a target in ${repoPath} — choose one` })
   }
-  if (base === branch) throw createError({ statusCode: 400, message: `branch and target are both ${branch}` })
+  if (!subject && base === branch) throw createError({ statusCode: 400, message: `branch and target are both ${branch}` })
 
   const count = body.reviewers === undefined ? DEFAULT_REVIEWERS : Number(body.reviewers)
   if (!Number.isInteger(count) || count < 1 || count > MAX_REVIEWERS) {
@@ -183,6 +207,7 @@ export async function createReview(body: CreateReviewInput): Promise<{ key: stri
     const loop = Number(body.agreement?.loop)
     agreement = Number.isInteger(loop) && loop > 0 ? { loop } : {}
   }
+  if (subject && !agreement) throw createError({ statusCode: 400, message: 'a plan review is an agreement review — send agreement too' })
   const verify = body.verify === true && !!(consensus || agreement)
 
   let pass: ReviewPass | undefined
@@ -216,14 +241,16 @@ export async function createReview(body: CreateReviewInput): Promise<{ key: stri
   }
 
   const repoName = basename(repoPath)
-  const title = String(body.title ?? '').trim() || `${repoName} · ${pr ? `#${pr.number} ` : ''}${branch}`
+  const title = String(body.title ?? '').trim() || (subject ? `${repoName} · plan ${subject.projectKey}` : `${repoName} · ${pr ? `#${pr.number} ` : ''}${branch}`)
   const key = await uniqueReviewKey(title)
 
-  const inPlace = branch === 'HEAD' || branch === checkedOut
+  // A plan review's sessions read the code where the codebase is checked out
+  // — no worktree to cut (and none for the watcher to remove).
+  const inPlace = !!subject || branch === 'HEAD' || branch === checkedOut
   const guide = inPlace ? null : codebaseWorktreeGuide(await mainCheckout(repoPath))
-  const workdir = inPlace ? repoPath : await addReviewWorktree(repoPath, key, branch, guide?.root)
+  const workdir = subject ? await mainCheckout(repoPath) : inPlace ? repoPath : await addReviewWorktree(repoPath, key, branch, guide?.root)
 
-  const headSha = await commitOf(repoPath, branch)
+  const headSha = subject ? '' : await commitOf(repoPath, branch)
   const now = new Date().toISOString()
   const review: Review = {
     format: 'j-review',
@@ -233,6 +260,7 @@ export async function createReview(body: CreateReviewInput): Promise<{ key: stri
     repoPath,
     branch,
     pr,
+    ...(subject ? { subject } : {}),
     base,
     workdir,
     worktree: !inPlace,

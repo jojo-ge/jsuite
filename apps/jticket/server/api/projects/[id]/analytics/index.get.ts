@@ -3,7 +3,7 @@
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   const data = await buildAnalytics(store, { projectIds: new Set([project.id]) })
   return { project: project.key, generatedAt: data.generatedAt, ledger: data.ledger, ...rollup(data), tickets: data.tickets, orchestrations: data.orchestrations, jobs: data.jobs, heavyRuns: data.heavyRuns }

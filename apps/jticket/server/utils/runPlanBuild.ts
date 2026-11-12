@@ -6,10 +6,11 @@
 // `project.runPlanBuild` marks the plan as the agent's: the tab is read-only
 // and a second Build is refused. Cancel closes its pane and clears the mark.
 import type { Project, Store } from './store'
+import { projectTypeNoun } from '../../app/utils/projectType'
 
 /** Why a build can't start — null when it can. */
 export function runPlanBuildBlocker(project: Project): string | null {
-  if (project.mode !== 'standard') return `run plans drive standard projects — ${project.key} is a ${project.mode} project`
+  if (project.mode !== 'standard') return `run plans drive build projects — ${project.key} is a ${projectTypeNoun(project.mode)} project`
   if (!project.repo.trim()) return `${project.key} has no repo — set one on the project first; the builder reads its code`
   if (project.share && project.share.side !== 'creator') return `${project.key} is shared with you — only its creator's side can plan its runs`
   if (project.auto?.enabled) return `${project.key} is in auto mode — turn it off (or Unlock & stop its plan) before building a new plan`

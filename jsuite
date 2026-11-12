@@ -59,7 +59,7 @@ DOMAINS=(jsuite.local jticket.local jexplain.local jreview.local jchart.local)
 # installs this table's apps/jticket row through `./jsuite skills`.
 SKILLS_MANIFEST=(
   ".|jsuite"
-  "apps/jticket|jimplement jorchestrate jwayfinder to-jticket to-jspec to-jdoc jarchitect-scan jarchitect-grill jreproduce jslice-report jrunplan j-explain j-chart jdiff-tour jreview-report jreview-triage jreview-consensus jarch-review make-jreview-project jreview-assess jpr-check"
+  "apps/jticket|jimplement jorchestrate jplan jplan-to-jtickets to-jticket to-jdoc jreproduce jslice-report jrunplan j-explain j-chart jdiff-tour jreview-report jreview-triage jreview-consensus jarch-review jplan-review"
 )
 POCOCK_SOURCE="mattpocock/skills"
 
@@ -403,10 +403,9 @@ cmd_sandbox() {
   if [[ $fresh == 1 || ! -d "$data" ]]; then
     bold "copying $src -> $data"
     rm -rf "$data"; mkdir -p "$data"
-    # Caches are rebuilt on demand; the relay config would join live shares'
-    # channels; the herdr lock belongs to the live dispatchers.
+    # The relay config would join live shares' channels; the herdr lock
+    # belongs to the live dispatchers.
     rsync -a \
-      --exclude 'jdiff/diff-cache/' --exclude 'jdiff/pr-list-cache/' \
       --exclude 'herdr/' --exclude 'jticket/sync.json' \
       --exclude 'jticket/sandbox-session-settings.json' \
       "$src/" "$data/"

@@ -31,23 +31,25 @@ const importExample =`curl -s http://localhost:43000/api/import \\
 const endpoints = [
   { m: 'GET', p: '/api/projects', d: 'List projects (?repo= narrows to one codebase — path, ~/…, or slug); rows carry derived repoPath' },
   { m: 'POST', p: '/api/projects/todo', d: "Get-or-create a codebase's TODO project { repo } — idempotent, one todo-mode project per codebase" },
-  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch?, starred? } — starred is legacy and read by nothing' },
+  { m: 'POST', p: '/api/projects', d: 'Create a project { title, description, mode?, repo?, integrationBranch?, starred? } — starred is legacy and read by nothing; mode "planreview" takes { plan: PROJ-n } instead of a repo' },
   { m: 'GET', p: '/api/projects/:id', d: 'Get one project (id or key) + its tickets' },
   { m: 'PATCH', p: '/api/projects/:id', d: "Update a project; `prompts` merges per kind (a kind set to '' falls back to the global default). `hidden: true` parks it in the projects page's Project backlog (view only — tickets and loops carry on); `position` is its place in the manual order (null = never placed, sorts first)" },
   { m: 'PUT', p: '/api/projects/order', d: 'Renumber the projects page order { ids: [top, …] } — each named project gets position = its index; others keep theirs' },
   { m: 'DELETE', p: '/api/projects/:id', d: 'Delete a project (its tickets become unassigned)' },
   { m: 'GET', p: '/api/projects/:id/export', d: 'Download a shareable bundle (tickets, docs, charts, attachments)' },
   { m: 'POST', p: '/api/projects/import', d: 'Recreate a project from an exported bundle' },
-  { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch, local PRs (with commits) and matching GitHub PRs (?force=1 skips the 30s cache)" },
-  { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it' },
+  { m: 'GET', p: '/api/projects/:id/github', d: "The project's repo, integration branch, local PRs (with commits) and matching GitHub PRs — the GitHub side comes from a cache and `refreshing` says a fresher copy is on its way (?force=1 reads GitHub now)" },
+  { m: 'POST', p: '/api/projects/:id/integration-branch', d: 'Cut (or adopt) the empty integration branch { branch?, base? } and push it — base records integrationBase (another build\'s integration branch stacks this one on it)' },
+  { m: 'GET', p: '/api/projects/:id/integration-branch', d: 'The integration branch against its base: base, ahead/behind, unpushed, upstream merged?, what Sync would do, slice size (?force=1 re-asks origin and gh)' },
+  { m: 'POST', p: '/api/projects/:id/integration-branch/sync', d: 'Sync from upstream: fetch, merge the base in locally (never rebase, never push); upstream squash-merged → its target becomes the base and the roll-up PR is retargeted. Conflict → ok: false, nothing moved' },
   { m: 'GET', p: '/api/projects/:id/diff', d: "The Diff tab's side-by-side rows, highlighted: the project's branch, ?pr=PR-n, ?gh=<n>, or ?head=&base=" },
   { m: 'GET', p: '/api/projects/:id/diff/file', d: 'One file at a commit, highlighted line by line (?oid=&path=) — the Diff tab\'s gaps and full view' },
-  { m: 'GET', p: '/api/projects/:id/diff/tour', d: "A Diff tab target's guided tour and its build state (same target params) → { key, tour, variant, createdAt, job, failure }" },
+  { m: 'GET', p: '/api/projects/:id/diff/tour', d: "A Diff tab target's guided tour and its build state (same target params) → { key, tour, createdAt, headOid, job, failure }" },
   { m: 'POST', p: '/api/projects/:id/diff/tour', d: 'Build tour: one Opus /jdiff-tour session in a new --no-focus herdr tab (body = the target); attaches to a live run' },
   { m: 'DELETE', p: '/api/projects/:id/diff/tour', d: 'Cancel a Build tour run (esc to its session; the pane stays)' },
   { m: 'POST', p: '/api/projects/:id/diff/tour/artifact', d: "The /jdiff-tour session's tour: { ...target, artifact: { overview, stops } } — saved as the target's detail tour" },
   { m: 'POST', p: '/api/projects/:id/diff/tour/complete', d: "The /jdiff-tour session's sign-off: { ...target, failures?: [{ message }] }" },
-  { m: 'POST', p: '/api/projects/:id/integration-pr', d: 'Push, then open (or find) the roll-up PR on GitHub via gh: integration → default branch — the only remote write in the local-PR flow' },
+  { m: 'POST', p: '/api/projects/:id/integration-pr', d: 'Push, then open (or find) the roll-up PR on GitHub via gh: integration branch → its base (the default branch, or the upstream build\'s branch when stacked) — the only remote write in the local-PR flow' },
   { m: 'GET', p: '/api/projects/:id/branches', d: 'Branches in the project\'s repo, local + origin (?q= search, ?fetch=1 pulls origin first)' },
   { m: 'GET', p: '/api/prs', d: 'List local PRs (?projectId= &repo= &ticket= &status=open|conflicted|merged|closed)' },
   { m: 'POST', p: '/api/prs', d: 'Open a local PR { ticket, title?, description?, headBranch?, baseBranch? } — one per ticket' },
@@ -84,8 +86,27 @@ const endpoints = [
   { m: 'POST', p: '/api/tickets/:id/comments', d: 'Add a comment { author, body }' },
   { m: 'DELETE', p: '/api/tickets/:id/comments/:cid', d: 'Delete one comment' },
   { m: 'POST', p: '/api/import', d: 'Bulk-create a whole breakdown at once' },
-  { m: 'GET', p: '/api/graphs', d: 'Every project graph (projects linked by cross-project blockers): id G-KEY, name, projects (key, layer, tickets finished, outcomeDoc), links with the ticket pairs behind them' },
-  { m: 'GET', p: '/api/graphs/:id', d: 'One graph — by its id (G-KEY, any case) or the key of any project in it' },
+  { m: 'GET', p: '/api/graphs?repo=', d: 'Stored graphs of plan, build and review projects: key G-n, name, nodes (mode, project, state, layer, tickets, outcomeDoc), edges, problems' },
+  { m: 'POST', p: '/api/graphs', d: '{title, repo, description?, nodes?, edges?} → {graph, problems}' },
+  { m: 'GET', p: '/api/graphs/:id', d: 'One graph — by id, key (G-n, any case) or the key of a project in it; adds each build node\'s slice size and the briefing each node was entered with' },
+  { m: 'PATCH', p: '/api/graphs/:id', d: '{title?, description?, repo?} — rename' },
+  { m: 'PUT', p: '/api/graphs/:id', d: 'Whole shape {nodes, edges} — saved as sent, answered {graph, problems} (cycle, project in two nodes/graphs, bad stackOn)' },
+  { m: 'DELETE', p: '/api/graphs/:id', d: 'Delete the graph; its projects are untouched' },
+  { m: 'POST', p: '/api/graphs/:id/nodes', d: '{projectId} or {mode, title, note?}, plus {after?: [nodeId], stackOn?} — add one node' },
+  { m: 'GET', p: '/api/graphs/:id/nodes/:nodeId/briefing', d: 'What stands before a node: each upstream\'s state, roll-up PRs, reviews, slice size, base — and flags. Never a gate. ?stackOn= previews a base' },
+  { m: 'POST', p: '/api/graphs/:id/nodes/:nodeId/enter', d: 'Move on {note?, stackOn?}: creates a proposed node\'s project, records the base, keeps the briefing. Starts nothing' },
+  { m: 'GET', p: '/api/projects/:id/graph', d: 'The graph and node a project sits in, with the projects before and after it' },
+  { m: 'GET', p: '/api/projects/:id/ticket-plan', d: "A plan project's ticket plan: its graph, the proposed builds with their drafts (tickets with plannedFor), the reviews after them, problems" },
+  { m: 'POST', p: '/api/projects/:id/ticket-plan/graph', d: "Get-or-create the plan's graph → {graph, planNodeId, created}" },
+  { m: 'POST', p: '/api/projects/:id/ticket-plan/build', d: 'Draft ticket plan: one Fable /jplan-to-jtickets session (prompt kind ticketplan:build) — spec doc, drafts, proposed builds and reviews' },
+  { m: 'DELETE', p: '/api/projects/:id/ticket-plan/build', d: 'Cancel that session (what it drafted stays)' },
+  { m: 'POST', p: '/api/projects/:id/ticket-plan/built', d: 'The session reports back {summary?}' },
+  { m: 'POST', p: '/api/projects/:id/ticket-plan/approve', d: 'Approve {nodes?}: each build node with drafts gets its project and its drafts move in. Starts and enters nothing' },
+  { m: 'GET', p: '/api/projects/:id/findings/send-back', d: 'Where a review project\'s findings would go back to → {offered, why, graph, target, candidates, ticketType} (?to=PROJ-n picks the build)' },
+  { m: 'POST', p: '/api/projects/:id/findings/send-back', d: 'Send back {ticketKeys, to?}: a review after a build in a graph → AFK bugs on the build; a plan review → HITL decisions on its plan → {target, sent, already, refused}; 409 when not offered' },
+  { m: 'POST', p: '/api/projects/:id/plan-review', d: 'A plan review project: pick its plan {plan} — starts nothing; 409 once it has reviewed another plan that still exists' },
+  { m: 'POST', p: '/api/projects/:id/reviews', d: 'Start a review — {branch?, base?, reviewers?}; on a PR or plan review project {reviewers?} (2–4, default 3) starts its one agreement review' },
+  { m: 'POST', p: '/api/admin/migrate-ids', d: 'The one-off move of pre-UUID ids to UUIDv7 across .data {dryRun?} — backs .data up first; a second run is a no-op' },
   { m: 'GET', p: '/api/docs', d: 'List docs (?projectId= &repo= &status= &label=)' },
   { m: 'POST', p: '/api/docs', d: 'Create a doc { title, blocks?|documentKey?, project?, labels?, status? }' },
   { m: 'GET', p: '/api/docs/:id', d: 'Get one doc (id or key)' },
@@ -251,9 +272,6 @@ const methodColor: Record<string, string> = {
           <UButton icon="i-lucide-arrow-left" color="neutral" variant="ghost" to="/">Board</UButton>
           <h1 class="text-lg font-semibold">API guide</h1>
         </div>
-        <!-- The one page without AppHeader still surfaces pending pull
-             approvals — they must be noticeable from any page. -->
-        <SyncPullIndicator />
       </UContainer>
     </header>
 
@@ -452,11 +470,11 @@ const methodColor: Record<string, string> = {
 
       <section>
         <h2 class="mb-2 flex items-center gap-2 text-base font-semibold">
-          <UIcon name="i-lucide-compass" class="size-4 text-primary" />Wayfinder mode
+          <UIcon name="i-lucide-compass" class="size-4 text-primary" />Plan mode
         </h2>
         <p class="mb-3 text-sm text-muted">
-          Set a project's <code>mode</code> to <code>wayfinder</code> and the project is a
-          <strong>map</strong> — its description is the map body. Tickets are wayfinder
+          Set a project's <code>mode</code> to <code>plan</code> and the project is a
+          <strong>map</strong> — its description is the map body. Tickets are plan
           tickets — sub-type via <code>type</code>: <code>research</code>, <code>research</code> + the
           <code>prototype</code> tag, <code>decision</code> (a grilling) or <code>task</code> —
           claim by setting <code>assignee</code>, resolve by setting <code>status: done</code> + <code>resolution</code>.

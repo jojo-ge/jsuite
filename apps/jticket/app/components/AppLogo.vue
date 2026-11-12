@@ -1,25 +1,35 @@
 <script setup lang="ts">
-// The jTicket mark: three descending bars — work burning down — on the dark
-// plate. Same geometry as public/favicon.svg, so the tab icon and the header
-// are one mark; edit both together.
-withDefaults(defineProps<{ size?: number }>(), { size: 32 })
+// The jTicket mark. Which mark is the browser's pick (useLogo, chosen on
+// /logo) unless `mark` names one — the gallery shows them all. The drawings
+// and their colours live in app/utils/logos.ts; the tab icon is the same
+// drawing with the same colours written in (logoFavicon, set in app.vue).
+//
+// A mark has no plate: it sits straight on whatever is behind it, in its own
+// two colours, which are mid-toned so they hold on the light and dark themes
+// alike. It is the one place in the app where colour is not a status.
+const props = withDefaults(defineProps<{ size?: number; mark?: string; label?: string }>(), {
+  size: 32,
+  mark: undefined,
+  label: 'jTicket',
+})
+
+const { mark: picked } = useLogo()
+const shown = computed(() => (props.mark ? findLogo(props.mark) : picked.value))
 </script>
 
 <template>
   <svg
     :width="size"
     :height="size"
-    viewBox="0 0 32 32"
+    :viewBox="LOGO_VIEWBOX"
     xmlns="http://www.w3.org/2000/svg"
-    role="img"
-    aria-label="jTicket"
+    :role="label ? 'img' : undefined"
+    :aria-label="label || undefined"
+    :aria-hidden="label ? undefined : 'true'"
     class="shrink-0"
+    :style="{ color: shown.colors.main, '--logo-accent': shown.colors.accent, '--logo-on': LOGO_ON }"
   >
-    <rect width="32" height="32" rx="8" fill="var(--color-jticket-ink)" />
-    <g fill="var(--color-periwinkle-400)">
-      <rect x="6" y="8" width="5" height="16" rx="2" />
-      <rect x="13.5" y="8" width="5" height="11" rx="2" opacity=".8" />
-      <rect x="21" y="8" width="5" height="7" rx="2" opacity=".55" />
-    </g>
+    <!-- eslint-disable-next-line vue/no-v-html — the body is a constant from logos.ts, never user input -->
+    <g fill="currentColor" v-html="shown.body" />
   </svg>
 </template>

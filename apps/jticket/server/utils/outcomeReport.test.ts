@@ -9,7 +9,7 @@ describe('outcomeReportPrompt', () => {
     expect(prompt).not.toContain('\n')
     expect(prompt).toContain('at most 500 words')
     expect(prompt).toContain('PR-3 abcdef123456 "Cast list"')
-    expect(prompt).toContain('POST http://localhost:43000/api/docs with {"title": "PROJ-7 outcome report — Hollywood A", "project": "PROJ-7", "labels": ["outcome"]')
+    expect(prompt).toContain('POST http://localhost:43000/api/docs with {"title": "PROJ-7 outcome report — Hollywood A", "project": "PROJ-7", "labels": ["outcome"], "tags": ["outcome-report"]')
     expect(prompt).toContain('POST http://localhost:43000/api/projects/PROJ-7/auto/outcome-report')
   })
 

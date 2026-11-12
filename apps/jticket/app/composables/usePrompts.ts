@@ -14,8 +14,8 @@ export function usePrompts() {
   const defaults = useState<PromptOverrides>('jticket-prompt-defaults', () => ({}))
   const loaded = useState<boolean>('jticket-prompt-defaults-loaded', () => false)
   const requested = useState<boolean>('jticket-prompt-defaults-requested', () => false)
-  // The codebase layer rides on the codebase list the header already loads;
-  // a page without the header still gets it, once.
+  // The codebase layer rides on the codebase list the sidebar already loads;
+  // anything that renders without it still gets it, once.
   const { codebases, refreshCodebases, codebaseOf } = useCodebase()
   const codebasesRequested = useState<boolean>('jticket-prompt-codebases-requested', () => false)
 

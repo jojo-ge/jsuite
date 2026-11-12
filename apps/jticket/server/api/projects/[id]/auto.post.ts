@@ -50,7 +50,7 @@ export default defineEventHandler(async (event) => {
       continue?: unknown
     }>(event)) ?? {}
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   // Already on: a second Start (a double click, two tabs) must not restart or

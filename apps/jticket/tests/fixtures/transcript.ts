@@ -32,9 +32,9 @@ export class TranscriptBuilder {
     return this.push({ type: 'user', timestamp: at, message: { role: 'user', content: text } })
   }
 
-  /** A human's later turn, or injected text (a notification, a reminder). */
-  userText(at: string, text: string) {
-    return this.push({ type: 'user', timestamp: at, message: { role: 'user', content: [{ type: 'text', text }] } })
+  /** A human's later turn, or injected text (a notification, a reminder). `extra` adds line fields — `isMeta`, `origin`. */
+  userText(at: string, text: string, extra: Record<string, unknown> = {}) {
+    return this.push({ type: 'user', timestamp: at, ...extra, message: { role: 'user', content: [{ type: 'text', text }] } })
   }
 
   /** An assistant message — text and/or tool calls — with usage. `repeat` re-emits the line as streaming does. */

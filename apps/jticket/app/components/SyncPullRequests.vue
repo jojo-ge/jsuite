@@ -2,7 +2,7 @@
 // The serving side's pending pull approvals for one project (jTicket sync,
 // DOC-30): every pull is approved by a human, per pull. Polling and the
 // requester-name rule (project.share.peerName, never wire text) live in
-// usePendingPulls, shared with the header's global indicator.
+// usePendingPulls, shared with the sidebar's global indicator.
 const props = defineProps<{ projectId: string }>()
 
 const toast = useToast()

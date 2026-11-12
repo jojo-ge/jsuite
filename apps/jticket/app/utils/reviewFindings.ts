@@ -17,6 +17,7 @@
 // Pure: no Nuxt, no I/O — tests/reviewFindings.test.ts. The store side is
 // server/utils/reviewTickets.ts.
 import type { Finding, Review, Severity } from './reviewTypes'
+import { draftError, isDraftTicket } from './ticketPlan'
 
 /** The label every finding ticket carries. */
 export const FINDING_LABEL = 'review:finding'
@@ -44,24 +45,35 @@ export interface TicketFinding {
   withdrawnAt?: string
 }
 
-type Labelled = { labels: readonly string[]; finding?: unknown }
+type Labelled = { labels: readonly string[]; finding?: unknown; plannedFor?: string | null }
 
 /** A ticket a review finding became. */
 export const isFindingTicket = (t: Labelled) => !!t.finding || t.labels.includes(FINDING_LABEL)
 
 /**
- * The record-only rule: a finding ticket in a PR review project is a record of
- * something found in someone else's pull request — it has no herdr hand-off,
- * and nothing (a button, Run all, One session, the review plan) ever
- * dispatches it, least of all as a `/jpr-check`.
+ * The record-only rule: a PR review project reviews someone else's pull
+ * request (a plan review project, a plan before it runs), so every ticket on it is a record — a finding the review filed, or
+ * a note the human added beside them — never work. It has no herdr hand-off,
+ * and nothing (a button, Run all, One session) ever dispatches it. A finding
+ * ticket in any other project is a bug an agent fixes.
+ * A plan's ticket-plan draft (app/utils/ticketPlan.ts) is held to the same
+ * rule until approve moves it into its build project.
  */
-export const isRecordOnly = (t: Labelled, projectMode: string | null | undefined) => projectMode === 'prreview' && isFindingTicket(t)
+export const isRecordOnly = (t: Labelled, projectMode: string | null | undefined) => isDraftTicket(t) || isRecordOnlyMode(projectMode)
+
+/** The modes whose every ticket is a record: a PR review's (someone else's pull request) and a plan review's (a plan, before its builds run). */
+export const isRecordOnlyMode = (mode: string | null | undefined) => mode === 'prreview' || mode === 'planreview'
 
 /** Why a ticket can't be dispatched — it is record-only — or '' when the rule doesn't apply. */
 export function recordOnlyError(ticket: Labelled & { key: string }, project: { key: string; mode?: string | null } | null | undefined): string {
-  return isRecordOnly(ticket, project?.mode)
-    ? `${ticket.key} is a review finding on ${project!.key} — a record of what the review found in the pull request, not work: it has no hand-off and is never dispatched`
-    : ''
+  if (!isRecordOnly(ticket, project?.mode)) return ''
+  if (isDraftTicket(ticket)) return draftError(ticket, project)
+  const plan = project?.mode === 'planreview'
+  return isFindingTicket(ticket)
+    ? `${ticket.key} is a review finding on ${project!.key} — a record of what the review found in the ${plan ? 'plan' : 'pull request'}, not work: it has no hand-off and is never dispatched${plan ? ' (Send back makes it a decision ticket on the plan)' : ''}`
+    : plan
+      ? `${ticket.key} is a note on ${project!.key}, a plan review project — its tickets record what the review found in a plan, they are not work: it has no hand-off and is never dispatched`
+      : `${ticket.key} is a note on ${project!.key}, a PR review project — its tickets record someone else's pull request, they are not work: it has no hand-off and is never dispatched`
 }
 
 /** The project a review belongs to — the one its findings are tickets on. */

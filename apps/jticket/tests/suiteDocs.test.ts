@@ -161,7 +161,7 @@ describe('the suite docs name only what exists', () => {
     // The jsuite skill's list is the whole of what jTicket owns.
     const listed = [...list.matchAll(/`([a-z][a-z0-9-]*)`/g)].map((m) => m[1]).sort()
     const jticketOwned = readdirSync(join(APP, '.claude', 'skills'))
-      .filter((d) => existsSync(join(APP, '.claude', 'skills', d, 'SKILL.md')) && d !== 'find-skills')
+      .filter((d) => existsSync(join(APP, '.claude', 'skills', d, 'SKILL.md')))
       .sort()
     expect(listed).toEqual(jticketOwned)
   })

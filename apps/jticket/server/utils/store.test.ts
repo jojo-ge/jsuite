@@ -107,18 +107,19 @@ describe('shareForTicket', () => {
   })
 })
 
-describe('record-only finding tickets', () => {
-  // TICK-944: a PR review project's finding ticket records what a review found
-  // in someone else's pull request — the API's frontier never offers it.
+describe('record-only tickets', () => {
+  // TICK-944: a PR review project's tickets record someone else's pull request
+  // — what a review found, or a note added beside it — so the API's frontier
+  // never offers one.
   const projects = [
     { id: 'p1', mode: 'prreview' as const },
     { id: 'p2', mode: 'standard' as const },
   ]
   const record = ticket({ labels: ['hitl', 'review:finding'], finding: { review: 'run-1', id: 'f1', severity: 'high', category: 'correctness' } })
 
-  it('is a finding ticket of a PR review project, and nothing else', () => {
+  it('is every ticket of a PR review project, and nothing else', () => {
     expect(ticketIsRecordOnly({ projects }, record)).toBe(true)
-    expect(ticketIsRecordOnly({ projects }, ticket({ labels: ['afk', 'pr:check'] }))).toBe(false)
+    expect(ticketIsRecordOnly({ projects }, ticket({ labels: ['afk'] }))).toBe(true)
     expect(ticketIsRecordOnly({ projects }, { ...record, projectId: 'p2' })).toBe(false)
     expect(ticketIsRecordOnly({ projects }, { ...record, projectId: null })).toBe(false)
   })

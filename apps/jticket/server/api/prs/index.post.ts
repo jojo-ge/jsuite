@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
 
   const store = loadStore()
   const ref = body?.ticket ?? body?.ticketId
-  const ticket = store.tickets.find((t) => t.id === ref || t.key === ref)
+  const ticket = findByRef(store.tickets, ref)
   if (!ticket) throw createError({ statusCode: 400, statusMessage: `unknown ticket: ${ref}` })
   const project = store.projects.find((p) => p.id === ticket.projectId)
   if (!project) throw createError({ statusCode: 400, statusMessage: `${ticket.key} has no project — local PRs live under a project's repo` })

@@ -60,6 +60,14 @@ describe('isReadOnlyCommand', () => {
     expect(isReadOnlyCommand('gh', ['api', '--method=PATCH', 'x'])).toBe(false)
     expect(isReadOnlyCommand('gh', ['api', 'repos/o/r/pulls/1/reviews', '-f', 'event=COMMENT'])).toBe(false)
     expect(isReadOnlyCommand('gh', ['api', 'repos/o/r/pulls/1/reviews', '--input', '-'])).toBe(false)
+    // graphql always POSTs: a `query` document reads, anything else doesn't.
+    const search = 'query($q: String!, $n: Int!) { search(query: $q, type: ISSUE, first: $n) { issueCount } }'
+    expect(isReadOnlyCommand('gh', ['api', 'graphql', '-f', `query=${search}`, '-f', 'q=repo:o/r is:pr', '-F', 'n=25'])).toBe(true)
+    expect(isReadOnlyCommand('gh', ['api', 'graphql', '-f', 'query=mutation { addStar(input: {starrableId: "x"}) { clientMutationId } }'])).toBe(false)
+    expect(isReadOnlyCommand('gh', ['api', 'graphql', '-f', `query=${search} mutation M { x }`])).toBe(false)
+    expect(isReadOnlyCommand('gh', ['api', 'graphql', '-F', 'query=@doc.graphql'])).toBe(false)
+    expect(isReadOnlyCommand('gh', ['api', 'graphql', '--input', '-'])).toBe(false)
+    expect(isReadOnlyCommand('gh', ['api', 'graphql', '-f', 'q=x'])).toBe(false)
   })
 
   it('refuses commands it does not know', () => {

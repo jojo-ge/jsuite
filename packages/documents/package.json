@@ -8,6 +8,7 @@
   "exports": {
     ".": "./nuxt.config.ts",
     "./types": "./types.ts",
+    "./tags": "./tags.ts",
     "./store": "./server/utils/store.ts",
     "./media": "./server/utils/media.ts",
     "./package.json": "./package.json"

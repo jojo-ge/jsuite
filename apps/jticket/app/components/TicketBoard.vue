@@ -3,8 +3,8 @@
 //   Board  — frontier-first: Frontier, In progress and Next frontier as cards,
 //            Blocked + Resolved folded into condensed rows. The default.
 //   Digest — every ticket as one dense table row; frontier pinned + tinted.
-//   Graph  — the dependency graph (see WayfinderMap), on every project mode;
-//            only a wayfinder project's graph also draws the map body's fog
+//   Graph  — the dependency graph (see PlanMap), on every project mode;
+//            only a plan project's graph also draws the map body's fog
 //            and destination.
 // A recap banner (flow-state counts) sits above all three and carries a badge
 // that opens the project's body — the map (destination / decisions / fog) or a
@@ -15,8 +15,8 @@ import type { Project, ProjectMode, Ticket, TicketBucket } from '~/composables/u
 const props = defineProps<{
   tickets: Ticket[]
   allTickets: Ticket[]
-  wayfinder?: boolean
-  // The project description — the map body on a wayfinder project.
+  plan?: boolean
+  // The project description — the map body on a plan project.
   body?: string
   // The project these tickets belong to. When given, the board grows the
   // hand-off controls: a run-all into herdr, per-card copy/dispatch buttons,
@@ -35,7 +35,7 @@ const emit = defineEmits<{
 
 const { render: renderMd } = useMarkdown()
 const renderedBody = computed(() => (props.body?.trim() ? renderMd(props.body) : ''))
-const bodyLabel = computed(() => (props.wayfinder ? 'Map — destination, decisions & fog' : 'Description'))
+const bodyLabel = computed(() => (props.plan ? 'Map — destination, decisions & fog' : 'Description'))
 const bodyModalOpen = ref(false)
 
 type ViewMode = 'board' | 'digest' | 'map'
@@ -44,7 +44,7 @@ const viewOptions = [
   { key: 'board' as const, label: 'Board', icon: 'i-lucide-layout-list' },
   { key: 'digest' as const, label: 'Digest', icon: 'i-lucide-table-2' },
   // The graph rendering of the tickets. Labelled "Graph" (not "Map") so "Map"
-  // only ever means a wayfinder project's body text.
+  // only ever means a plan project's body text.
   { key: 'map' as const, label: 'Graph', icon: 'i-lucide-workflow' },
 ]
 
@@ -62,10 +62,10 @@ type BucketKey = TicketBucket
 // Everywhere else (digest, graph, project bars) a next-frontier ticket is still
 // just blocked; see isNextFrontier.
 // `records` is the board's own group, not a flow state: a PR review project's
-// open finding tickets (isRecordOnly). They record what a review found in
-// someone else's pull request — nothing to take, run or hand off — so they are
-// kept out of the frontier and every run control, and shown as cards of their
-// own with no hand-off.
+// open tickets (isRecordOnly) — the findings its review filed, and any note
+// added beside them. They record someone else's pull request — nothing to
+// take, run or hand off — so they are kept out of the frontier and every run
+// control, and shown as cards of their own with no hand-off.
 type GroupKey = BucketKey | 'next' | 'records'
 const BUCKET_ORDER: BucketKey[] = ['frontier', 'claimed', 'notTakeable', 'blocked', 'done']
 const GROUP_ORDER: GroupKey[] = ['frontier', 'claimed', 'records', 'notTakeable', 'next', 'blocked', 'done']
@@ -77,18 +77,20 @@ const BUCKET_META: Record<GroupKey, { label: string; icon: string; dot: string; 
   // anything frozen mid-transfer. Muted like Blocked: it is not yours to act
   // on, and the card underneath already says whose it is.
   notTakeable: { label: 'Not takeable here', icon: 'i-lucide-user-lock', dot: 'bg-warning', text: 'text-warning', hint: 'the peer’s, or frozen mid-transfer' },
-  records: { label: 'Review findings', icon: 'i-lucide-scan-search', dot: 'bg-warning', text: 'text-warning', hint: 'records of what the review found — nothing to run; post them to the PR from the Review tab' },
+  records: { label: 'Review records', icon: 'i-lucide-scan-search', dot: 'bg-warning', text: 'text-warning', hint: 'what the review found, and any note beside it — nothing to run; post findings to the PR from the Review tab' },
   next: { label: 'Next frontier', icon: 'i-lucide-flag-triangle-right', dot: 'bg-secondary', text: 'text-secondary', hint: 'unblocked by what’s running' },
   blocked: { label: 'Blocked', icon: 'i-lucide-lock', dot: 'bg-error', text: 'text-error', hint: 'waiting on a blocker' },
   done: { label: 'Resolved', icon: 'i-lucide-check', dot: 'bg-success', text: 'text-success', hint: 'decided' },
 }
 
 // An open finding ticket of a PR review project — a record, never work.
-const isRecord = (t: Ticket) => isRecordOnly(t, props.project?.mode) && !isFinished(t.status)
+// A plan's ticket-plan drafts (isDraftTicket) aren't on the board at all:
+// they live in the plan's Ticket plan tab until approve moves them out.
+const isRecord = (t: Ticket) => !isDraftTicket(t) && isRecordOnly(t, props.project?.mode) && !isFinished(t.status)
 const records = computed(() => props.tickets.filter(isRecord).sort(byKey))
 const bucketed = computed(() => {
   const groups: Record<BucketKey, Ticket[]> = { frontier: [], claimed: [], notTakeable: [], blocked: [], done: [] }
-  for (const t of props.tickets) if (!isRecord(t)) groups[bucketOf(t, props.allTickets, props.project)].push(t)
+  for (const t of props.tickets) if (!isRecord(t) && !isDraftTicket(t)) groups[bucketOf(t, props.allTickets, props.project)].push(t)
   for (const g of Object.values(groups)) g.sort(byKey)
   return groups
 })
@@ -171,14 +173,6 @@ function toggleFold(key: GroupKey) {
 
 function blockersOf(t: Ticket) {
   return t.blockedBy.map((id) => props.allTickets.find((x) => x.id === id)).filter((x): x is Ticket => !!x)
-}
-function archOf(t: Ticket) {
-  return mode.value === 'architect' ? archTag(t) : null
-}
-// A done candidate stays re-grillable — dispatching was the triage decision,
-// so "run it again" is the one control a resolved architect row keeps.
-function regrillable(t: Ticket) {
-  return mode.value === 'architect' && isArchCandidate(t) && !!props.project && herdrUp.value
 }
 function stateOf(t: Ticket): GroupKey {
   return isRecord(t) ? 'records' : bucketOf(t, props.allTickets, props.project)
@@ -334,7 +328,7 @@ function dispatchFor(t: Ticket) {
         <span :class="counts.claimed ? 'text-info' : 'text-muted'">{{ counts.claimed }} in progress</span>
         <span class="text-muted">·</span>
         <template v-if="counts.records">
-          <span class="text-warning">{{ counts.records }} review {{ counts.records === 1 ? 'finding' : 'findings' }}</span>
+          <span class="text-warning">{{ counts.records }} review {{ counts.records === 1 ? 'record' : 'records' }}</span>
           <span class="text-muted">·</span>
         </template>
         <template v-if="counts.notTakeable">
@@ -418,14 +412,14 @@ function dispatchFor(t: Ticket) {
         <HerdrTabChips v-if="project && !lean" :project="project" />
         <UButton
           v-if="renderedBody && !lean"
-          :icon="wayfinder ? 'i-lucide-book-open' : 'i-lucide-align-left'"
+          :icon="plan ? 'i-lucide-book-open' : 'i-lucide-align-left'"
           trailing-icon="i-lucide-maximize-2"
           size="xs"
           color="primary"
           variant="soft"
           @click="bodyModalOpen = true"
         >
-          {{ wayfinder ? 'Brief' : 'Description' }}
+          {{ plan ? 'Brief' : 'Description' }}
         </UButton>
         <UFieldGroup v-if="tickets.length" size="xs">
           <UButton
@@ -447,9 +441,9 @@ function dispatchFor(t: Ticket) {
       No tickets in this project yet.
     </p>
 
-    <WayfinderMap
+    <PlanMap
       v-else-if="view === 'map'"
-      :body="wayfinder ? (props.body ?? '') : ''"
+      :body="plan ? (props.body ?? '') : ''"
       :tickets="tickets"
       :all-tickets="allTickets"
       :project="project"
@@ -469,8 +463,6 @@ function dispatchFor(t: Ticket) {
         <span class="size-2 shrink-0 rounded-full" :class="BUCKET_META[stateOf(t)].dot" />
         <TicketTypeIcon :type="t.type" size="xs" />
         <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
-        <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
-        <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
         <span class="truncate" :class="stateOf(t) === 'frontier' ? 'font-medium' : ''">{{ t.title }}</span>
         <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
         <TicketTags :ticket="t" hide-afk />
@@ -516,7 +508,6 @@ function dispatchFor(t: Ticket) {
               :key="t.id"
               :ticket="t"
               :tickets="allTickets"
-              :architect="mode === 'architect'"
               :dispatch="g.key !== 'next' && g.key !== 'records' && project ? dispatchFor(t) : null"
               :selectable="g.key === 'frontier' && !!project && herdrUp"
               :selected="picked.has(t.id)"
@@ -549,9 +540,9 @@ function dispatchFor(t: Ticket) {
                 <span class="font-semibold">{{ sec.label }}</span>
                 <span class="text-muted">{{ sec.tickets.length }} · {{ sec.hint }}</span>
               </div>
-              <!-- A div, not a button: the done rows of an architect board nest a
-                   re-grill UButton, and the HTML parser closes a <button> at any
-                   nested one (which would break hydration). -->
+              <!-- A div, not a button: the rows nest a pause UButton, and the HTML
+                   parser closes a <button> at any nested one (which would break
+                   hydration). -->
               <div
                 v-for="t in sec.tickets"
                 :key="t.id"
@@ -565,23 +556,8 @@ function dispatchFor(t: Ticket) {
                 <span class="size-1.5 shrink-0 rounded-full" :class="g.dot" />
                 <TicketTypeIcon :type="t.type" size="xs" />
                 <span class="w-16 shrink-0 font-mono text-xs text-muted">{{ t.key }}</span>
-                <UIcon v-if="mode === 'architect' && isArchTopPick(t)" name="i-lucide-star" class="size-3.5 shrink-0 text-primary" />
-                <UIcon v-if="archOf(t)" :name="ARCH_TAG_META[archOf(t)!].icon" class="size-3.5 shrink-0 text-muted" />
                 <span class="truncate text-sm">{{ t.title }}</span>
                 <UBadge v-if="t.status === 'merged'" color="secondary" variant="subtle" size="sm" class="shrink-0" icon="i-lucide-git-merge">Merged</UBadge>
-                <!-- Re-grill: a triaged candidate can be sent back to the interview -->
-                <UTooltip v-if="g.key === 'done' && regrillable(t)" text="Run the grilling again in herdr">
-                  <UButton
-                    icon="i-lucide-terminal"
-                    color="neutral"
-                    variant="ghost"
-                    size="xs"
-                    class="ml-auto shrink-0"
-                    :loading="dispatching === t.id"
-                    :aria-label="`Re-run ${t.key}'s grilling in herdr`"
-                    @click.stop="dispatchTicket(t, mode)"
-                  />
-                </UTooltip>
                 <template v-if="g.key === 'blocked' && blockersOf(t).length">
                   <span class="ml-auto shrink-0 text-xs text-muted">blocked by</span>
                   <UBadge

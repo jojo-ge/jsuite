@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ force?: boolean }>(event).catch(() => ({}) as { force?: boolean })
 
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
 
   const list = await herdrJson(['workspace', 'list'])

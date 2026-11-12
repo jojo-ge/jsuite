@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   if (!prompt) throw createError({ statusCode: 400, statusMessage: 'prompt is required' })
 
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   if (project.auto?.enabled) {
     throw createError({ statusCode: 409, statusMessage: 'auto mode is driving this project — it runs its own merge sweeps' })

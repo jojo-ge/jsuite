@@ -61,8 +61,15 @@ export interface TranscriptUsage {
 
 export interface TranscriptTurn {
   at: string
-  /** 'human' = typed/injected prompt text; 'notification' = a task-notification the harness injected. */
-  kind: 'human' | 'notification'
+  /**
+   * 'human' = prompt text someone typed (the dispatch prompt, a later turn, an
+   * interrupt — and the auto loop's nudge, which is typed into the pane);
+   * 'notification' = a task-notification the harness injected; 'agent' = a
+   * message another session sent (a subagent reporting to its orchestrator, a
+   * coordinator replying). A skill's body, injected when the session invokes
+   * it, is nobody's turn and is not recorded.
+   */
+  kind: 'human' | 'notification' | 'agent'
   text: string
 }
 
@@ -86,6 +93,8 @@ export interface TranscriptSession {
   subagents: TranscriptSubagent[]
   /** Lines the reader could not parse as JSON (a torn tail, usually). */
   badLines: number
+  /** Times the context was compacted mid-session (the harness's compact_boundary lines). */
+  compactions?: number
 }
 
 export interface TranscriptSubagent extends TranscriptSession {
@@ -244,6 +253,7 @@ export function parseTranscript(text: string, meta: { id: string; path: string }
   const assistantAts: string[] = []
   let firstPrompt = ''
   let badLines = 0
+  let compactions = 0
   let msgSeq = 0
 
   for (const raw of text.split('\n')) {
@@ -263,6 +273,7 @@ export function parseTranscript(text: string, meta: { id: string; path: string }
       if (ts > endedAt) endedAt = ts
     }
     if (!cwd && typeof ev.cwd === 'string') cwd = ev.cwd
+    if (ev.type === 'system' && ev.subtype === 'compact_boundary') compactions++
     const msg = ev.message
     if (ev.type === 'assistant' && msg && typeof msg === 'object') {
       if (ts > lastAssistantAt) lastAssistantAt = ts
@@ -299,8 +310,10 @@ export function parseTranscript(text: string, meta: { id: string; path: string }
     }
     if (ev.type === 'user' && msg && typeof msg === 'object') {
       const content = msg.content
+      // The harness marks what it wrote itself (`isMeta`) and what a peer session sent.
+      const from: TurnSource = { meta: ev.isMeta === true, peer: ev.origin?.kind === 'peer' }
       if (typeof content === 'string') {
-        noteUserText(content, ts, turns)
+        noteUserText(content, ts, turns, from)
         if (!firstPrompt) firstPrompt = content.slice(0, PROMPT_MAX)
         continue
       }
@@ -323,7 +336,7 @@ export function parseTranscript(text: string, meta: { id: string; path: string }
             if (m) call.agentId = m[1]!
           }
         } else if (block.type === 'text' && typeof block.text === 'string') {
-          noteUserText(block.text, ts, turns)
+          noteUserText(block.text, ts, turns, from)
           if (!firstPrompt && !block.text.startsWith('<')) firstPrompt = block.text.slice(0, PROMPT_MAX)
           // A finished background task: the notification names the tool call it closes.
           const m = /<task-notification>[\s\S]*?<tool-use-id>([^<]+)<\/tool-use-id>/.exec(block.text)
@@ -373,10 +386,22 @@ export function parseTranscript(text: string, meta: { id: string; path: string }
     turns,
     subagents: [],
     badLines,
+    compactions,
   }
 }
 
-function noteUserText(text: string, at: string, turns: TranscriptTurn[]) {
+interface TurnSource {
+  /** The line is marked `isMeta` — text the harness wrote, not a person. */
+  meta: boolean
+  /** The line's origin is another session. */
+  peer: boolean
+}
+
+// What the same lines look like in transcripts from before the harness marked them.
+const AGENT_MESSAGE = /^(Another Claude session sent a message|The coordinator sent a message)/
+const SKILL_BODY = /^Base directory for this skill:/
+
+function noteUserText(text: string, at: string, turns: TranscriptTurn[], from: TurnSource = { meta: false, peer: false }) {
   const t = text.trim()
   if (!t) return
   if (t.startsWith('<task-notification>')) {
@@ -385,6 +410,13 @@ function noteUserText(text: string, at: string, turns: TranscriptTurn[]) {
   }
   // Harness-injected context (system reminders, command outputs) is not a human turn.
   if (/^<(system-reminder|local-command|command-name|bash-input|bash-stdout)/.test(t)) return
+  // Another session's message is traffic between agents, not a human stepping in.
+  if (from.peer || AGENT_MESSAGE.test(t)) {
+    turns.push({ at, kind: 'agent', text: t.slice(0, 400) })
+    return
+  }
+  // A skill's body (or anything else the harness wrote as a user line) is nobody's turn.
+  if (from.meta || SKILL_BODY.test(t)) return
   turns.push({ at, kind: 'human', text: t.slice(0, 400) })
 }
 

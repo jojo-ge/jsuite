@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { deleteDocumentPrompt, filterLibrary, libraryEntries, readerPath, trackerDocFor } from '../app/utils/documentLibrary'
+import { LIBRARY_KINDS } from '@jsuite/documents/tags'
+import { DOCUMENT_KIND_META, deleteDocumentPrompt, documentKindMeta, filterLibrary, libraryEntries, libraryTags, readerPath, showsEverything, toggleTag, trackerDocFor } from '../app/utils/documentLibrary'
 
 const meta = (key: string, title: string, extra: Record<string, unknown> = {}) => ({
   key,
@@ -9,6 +10,7 @@ const meta = (key: string, title: string, extra: Record<string, unknown> = {}) =
   blockCount: 1,
   chartCount: 0,
   noteCount: 0,
+  tags: [] as string[],
   ...extra,
 })
 
@@ -73,5 +75,81 @@ describe('deleteDocumentPrompt', () => {
   it('names the DOC-n the delete would leave empty', () => {
     expect(deleteDocumentPrompt('Cart spec', 'DOC-4')).toContain('DOC-4 wraps it')
     expect(deleteDocumentPrompt('Essay', null)).not.toContain('wraps')
+  })
+})
+
+describe('filterLibrary — tags and the kinds the library lists', () => {
+  const entries = libraryEntries(
+    [
+      meta('jreview-1', 'PR #12 — reviewer 1', { tags: ['review-output'] }),
+      meta('slice-3', 'PROJ-1 slice report · before step 3', { tags: ['slice-report'] }),
+      meta('spec', 'Cart refresh spec', { tags: ['spec'] }),
+      meta('essay', 'How caching works', { tags: ['explainer'] }),
+      meta('old', 'Written before tags', { tags: undefined }),
+    ],
+    [],
+  )
+  const keys = (out: { key: string }[]) => out.map((e) => e.key)
+
+  it('lists the library kinds and anything not yet tagged; the rest waits to be asked for', () => {
+    expect(keys(filterLibrary(entries, ''))).toEqual(['spec', 'essay', 'old'])
+    expect(keys(filterLibrary(entries, '', { all: true }))).toEqual(['jreview-1', 'slice-3', 'spec', 'essay', 'old'])
+  })
+  it('keeps the other kinds out of search too, until asked', () => {
+    expect(keys(filterLibrary(entries, 'reviewer'))).toEqual([])
+    expect(keys(filterLibrary(entries, 'slice'))).toEqual([])
+    expect(keys(filterLibrary(entries, 'reviewer', { all: true }))).toEqual(['jreview-1'])
+  })
+  it('picking a tag outside the library kinds asks for them', () => {
+    expect(showsEverything({ tags: ['spec'] })).toBe(false)
+    expect(showsEverything({ tags: ['slice-report'] })).toBe(true)
+    expect(keys(filterLibrary(entries, '', { tags: ['review-output'] }))).toEqual(['jreview-1'])
+  })
+  it('a document must carry every picked tag', () => {
+    expect(keys(filterLibrary(entries, '', { tags: ['spec'] }))).toEqual(['spec'])
+    expect(keys(filterLibrary(entries, '', { tags: ['spec', 'explainer'] }))).toEqual([])
+  })
+  it('a query matches a tag', () => {
+    expect(keys(filterLibrary(entries, 'explainer'))).toEqual(['essay'])
+  })
+  it('keeps a document the full-text search matched, still under the tag and kind rules', () => {
+    const contentHits = new Set(['essay', 'jreview-1'])
+    expect(keys(filterLibrary(entries, 'redis', { contentHits }))).toEqual(['essay'])
+    expect(keys(filterLibrary(entries, 'redis', { contentHits, tags: ['spec'] }))).toEqual([])
+    expect(keys(filterLibrary(entries, 'redis', { contentHits, all: true }))).toEqual(['jreview-1', 'essay'])
+  })
+})
+
+describe('libraryTags', () => {
+  it('counts the tags in use on the rows given, most used first', () => {
+    const entries = libraryEntries(
+      [meta('a', 'A', { tags: ['spec'] }), meta('b', 'B', { tags: ['spec'] }), meta('c', 'C', { tags: ['decision'] }), meta('d', 'D')],
+      [],
+    )
+    expect(libraryTags(entries)).toEqual([
+      { tag: 'spec', count: 2 },
+      { tag: 'decision', count: 1 },
+    ])
+  })
+})
+
+describe('toggleTag', () => {
+  it('adds a tag that is off and drops one that is on', () => {
+    expect(toggleTag(['a'], 'b')).toEqual(['a', 'b'])
+    expect(toggleTag(['a', 'b'], 'a')).toEqual(['b'])
+  })
+})
+
+describe('documentKindMeta', () => {
+  it('gives every kind the library lists, and every kind the engine files, its own look', () => {
+    const kinds = [...LIBRARY_KINDS, 'review-output', 'slice-report', 'outcome-report']
+    for (const kind of kinds) expect(DOCUMENT_KIND_META[kind], kind).toBeDefined()
+    const looks = Object.values(DOCUMENT_KIND_META).map((m) => `${m.icon} ${m.text}`)
+    expect(new Set(looks).size).toBe(looks.length)
+  })
+  it('keeps an unknown tag under its own name, and says when there is none', () => {
+    expect(documentKindMeta('post-mortem').label).toBe('post-mortem')
+    expect(documentKindMeta(undefined).label).toBe('Untagged')
+    expect(documentKindMeta('post-mortem').icon).toBe(documentKindMeta(null).icon)
   })
 })

@@ -59,6 +59,7 @@ export function matchPrompt(prompt: string, projects: { id: string; key: string;
   }
   if (slash === '/jslice-report' && project) return base('slice-report', project)
   if (slash === '/jrunplan' && project) return base('runplan-build', project)
+  if (slash === '/jplan-to-jtickets' && project) return base('ticketplan-build', project)
   if (slash === '/jreview-assess' && project) return base('pr-assess', project)
   if (slash === '/jdiff-tour' && project) return base('tour', project)
   if (/outcome report for jTicket project/i.test(text) && project) return base('outcome-report', project)

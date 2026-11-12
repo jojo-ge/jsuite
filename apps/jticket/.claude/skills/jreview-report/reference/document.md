@@ -27,18 +27,28 @@ Write it to `/tmp/jreview/<review>/reviewer-<n>.json`:
 {
   "key": "<doc>",
   "kicker": "Review · reviewer <n>",
+  "tags": ["review-output"],
   "title": "<repo dir name> — <BASE>...HEAD",
   "subtitle": "<VERDICT>, plus the finding count by severity (e.g. \"1 high · 3 medium · 2 low\").",
   "blocks": [ ... ]
 }
 ```
 
+On a plan review (`BASE:` reads `plan <PROJ-n>`) the title is
+`<PROJ-n> — plan review`, and the steps below that run git against `BASE`
+don't apply: there is no diff (marked **plan review** below).
+
+`tags` is exactly `["review-output"]` — the document's kind, and what keeps
+review reports out of the document library and its search until someone asks
+for them.
+
 Blocks, in order:
 
 1. `prose`, id `scope`: `## Scope`, then the fixed point (`BASE`), the commit
    list (run `git log <BASE>..HEAD --oneline` and include it as a list), which
    review skill ran (`SKILL`) and the spec/standards sources it used
-   (`SOURCES`).
+   (`SOURCES`). **Plan review:** the plan (`BASE`), the skill and the
+   `SOURCES` it read — no commit list.
 2. One `callout` per finding, ids `f1`, `f2`, … in dump order (the triager
    cites these ids):
    - `tone`: `warning` for critical/high, `insight` for medium, `aside` for low
@@ -50,7 +60,8 @@ Blocks, in order:
    those lines. For `path:start-end`, use a `code` block (`file`, `startLine`,
    `lang` from the extension, `highlight` = the `where` line when it's in
    range). For `diff <path>`, use a `diff` block with just the hunks of
-   `git diff <BASE>...HEAD -- <path>` that contain the `where` line. Give each
+   `git diff <BASE>...HEAD -- <path>` that contain the `where` line
+   (**plan review:** `code` blocks only). Give each
    one the id `f<k>-quote`.
 3. When the dump has an `APPROVAL:` line, a `callout` with id `approval`
    (tone `success` for approve / approve-with-nits, `warning` otherwise),

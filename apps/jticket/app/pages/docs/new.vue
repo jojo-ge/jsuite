@@ -19,8 +19,6 @@ async function onSave(payload: Parameters<typeof createDoc>[0]) {
 
 <template>
   <div class="min-h-screen bg-default">
-    <AppHeader />
-
     <UContainer class="py-8">
       <UButton icon="i-lucide-arrow-left" size="sm" color="neutral" variant="ghost" to="/docs" class="mb-4">
         All documents

@@ -33,6 +33,8 @@ export interface TourView {
   /** The target's detail tour, if one was built. */
   tour: Tour | null
   createdAt: string
+  /** The head commit the tour was written against ('' when it wasn't recorded). */
+  headOid: string
   /** A live Build tour session, if one is running. */
   job: { startedAt: number; agent: string } | null
   /** Why the last build failed, when it did and nothing newer landed. */
@@ -61,6 +63,15 @@ export function tourKeyFor(
   if (project.mode === 'prreview' && project.prReview) return String(project.prReview.pr.number)
   const branch = project.integrationBranch.trim()
   return branch ? `branch/${branch}` : null
+}
+
+/**
+ * Whether a tour was written against a different head than the diff now
+ * shows — the target was pushed to, re-fetched or rebased since, so the tour's
+ * line numbers may no longer land. Unknown (an unrecorded head) is not stale.
+ */
+export function tourIsStale(tourHeadOid: string | undefined, diffHeadOid: string | undefined): boolean {
+  return !!tourHeadOid && !!diffHeadOid && tourHeadOid !== diffHeadOid
 }
 
 /** The stop index a `?stop=` query names, or null. */

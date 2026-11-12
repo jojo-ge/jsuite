@@ -24,18 +24,16 @@ export const PROMPT_KINDS = [
   'standard:local',
   'standard:master',
   'standard:integration',
+  'standard:decision',
   'batch',
-  'wayfinder',
+  'plan',
   'todo',
-  'architect:scan',
-  'architect:grill',
   'predeploy',
   'merge',
   'worktree:kickoff',
   'worktree:connect',
   'runplan:build',
-  'prcheck',
-  'prreview:assess',
+  'ticketplan:build',
 ] as const
 export type PromptKind = (typeof PROMPT_KINDS)[number]
 export type PromptOverrides = Partial<Record<PromptKind, string>>
@@ -68,7 +66,8 @@ const MERGE_VARS = ['prs', 'projectKey', 'projectTitle', 'repo', 'integrationBra
 const KICKOFF_VARS = ['repo', 'worktreeGuide'] as const
 const CONNECT_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 const BUILD_PLAN_VARS = ['projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
-const BATCH_VARS = ['keys', 'handoffs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
+const TICKET_PLAN_VARS = ['projectKey', 'projectTitle', 'repo'] as const
+const BATCH_VARS = ['keys','handoffs', 'projectKey', 'projectTitle', 'repo', 'integrationBranch', 'worktreeGuide'] as const
 
 export const PROMPT_VAR_HINTS: Record<keyof PromptVars, string> = {
   key: "the ticket's key, e.g. TICK-42",
@@ -114,8 +113,8 @@ export interface PromptKindMeta {
 export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   'standard:local': {
     label: 'Local PR (merged in jTicket)',
-    hint: 'Standard tickets, with the hand-off picker set to a local PR.',
-    group: 'Implementation',
+    hint: 'Tickets in a build project, with the hand-off picker set to a local PR.',
+    group: 'Build',
     level: 'ticket',
     command: '/jimplement',
     vars: TICKET_VARS,
@@ -124,8 +123,8 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   },
   'standard:master': {
     label: 'PR to master',
-    hint: 'Standard tickets, with the hand-off picker set to master.',
-    group: 'Implementation',
+    hint: 'Tickets in a build project, with the hand-off picker set to master.',
+    group: 'Build',
     level: 'ticket',
     command: '/jimplement',
     vars: TICKET_VARS,
@@ -133,13 +132,29 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   },
   'standard:integration': {
     label: 'PR to integration branch',
-    hint: "Standard tickets, with the hand-off picker set to the project's integration branch.",
-    group: 'Implementation',
+    hint: "Tickets in a build project, with the hand-off picker set to the project's integration branch.",
+    group: 'Build',
     level: 'ticket',
     command: '/jimplement',
     vars: TICKET_VARS,
     template:
       '/jimplement {key} in a worktree and open a PR to the integration branch. When done tear down the worktree.',
+  },
+  // A HITL decision ticket on a standard board: there is no code to write, so
+  // the hand-off picker doesn't apply — the session interviews the human in
+  // its herdr pane and records what was decided. No branch is cut for it.
+  'standard:decision': {
+    label: 'Decision grilling',
+    hint: 'A HITL decision ticket in a build project — an interview in the herdr terminal, whatever the hand-off picker says.',
+    group: 'Build',
+    level: 'ticket',
+    command: '/grilling',
+    vars: TICKET_VARS,
+    template:
+      'Grill me to settle this decision — {key}: "{title}". Read the ticket first ' +
+      '(GET http://localhost:43000/api/tickets/{key}) and look up the facts it turns on yourself, ' +
+      'then run /grilling here in the terminal — I answer in this pane. When the grilling finishes, ' +
+      "write the decisions into {key}'s resolution and mark it done. No branch, no PR.",
   },
   // The board's "One session" button: the ticked tickets, worked one after
   // another by a single claude session in its own tab. Not the orchestrator —
@@ -151,7 +166,7 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
   batch: {
     label: 'One session (several tickets)',
     hint: "The board's One session button — the ticked tickets worked in order by a single session, each on its own hand-off.",
-    group: 'Implementation',
+    group: 'Build',
     level: 'project',
     command: 'One session',
     vars: BATCH_VARS,
@@ -162,14 +177,14 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       "Each ticket's hand-off, which you follow as written when its turn comes: {handoffs}",
     ].join(' '),
   },
-  wayfinder: {
-    label: 'Wayfinder ticket',
-    hint: 'Every ticket in a wayfinder project — research, prototypes, grillings.',
-    group: 'Wayfinder',
+  plan: {
+    label: 'Plan ticket',
+    hint: 'Every ticket in a plan project — research, prototypes, grillings.',
+    group: 'Plan',
     level: 'ticket',
-    command: '/jwayfinder',
+    command: '/jplan',
     vars: TICKET_VARS,
-    template: '/jwayfinder {key}',
+    template: '/jplan {key}',
   },
   todo: {
     label: 'Todo grilling',
@@ -183,24 +198,6 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       '(GET http://localhost:43000/api/tickets/{key}), then run /grilling here in the terminal — ' +
       'I answer in this pane. When the grilling finishes, write the decisions into ' +
       "{key}'s resolution. No branch, no PR.",
-  },
-  'architect:scan': {
-    label: 'Architecture scan',
-    hint: 'The arch:scan ticket — the pass that fills the board with graded candidates.',
-    group: 'Architecture',
-    level: 'ticket',
-    command: '/jarchitect-scan',
-    vars: TICKET_VARS,
-    template: '/jarchitect-scan {key}',
-  },
-  'architect:grill': {
-    label: 'Architecture candidate grilling',
-    hint: "A candidate's go/no-go interview. Dispatching it is the triage decision.",
-    group: 'Architecture',
-    level: 'ticket',
-    command: '/jarchitect-grill',
-    vars: TICKET_VARS,
-    template: '/jarchitect-grill {key}',
   },
   predeploy: {
     label: 'Pre-deploy reproduction',
@@ -276,37 +273,34 @@ export const PROMPT_KIND_META: Record<PromptKind, PromptKindMeta> = {
       "/jrunplan {projectKey} — build {projectKey} ({projectTitle})'s run plan.",
       'Read the project, its docs and every open ticket (GET http://localhost:43000/api/projects/{projectKey}, /api/docs?projectId={projectKey}, /api/tickets?projectId={projectKey}), then the code in {repo} (integration branch {integrationBranch}; worktree guide {worktreeGuide}) to judge what each ticket touches and how heavy it is.',
       'Group related small tickets under orchestrators and give heavy ones their own agent; pick the model and effort per agent to match the work; put merges where later tickets build on earlier ones; place reviews sparingly — a few implement steps and a good number of landed tickets between them, scaled to the project, always one at the end — and a gate only where a human must look.',
+      "Record a prediction for every ticket you place (weight, minutes, risk, why — its step's predictions): the run is scored against it.",
       'Save with PUT http://localhost:43000/api/projects/{projectKey}/run-plan until it reports no problems, then POST http://localhost:43000/api/projects/{projectKey}/run-plan/built.',
       "Don't ask questions — nobody is watching this pane.",
     ].join(' '),
   },
-  prcheck: {
-    label: 'PR check',
-    hint: "Every ticket in a PR review project — one check run against the PR head in a throwaway worktree: verdict recorded on the ticket, nothing committed or pushed.",
-    group: 'PR review',
-    level: 'ticket',
-    command: '/jpr-check',
-    vars: TICKET_VARS,
-    template: '/jpr-check {key}',
-  },
-  'prreview:assess': {
-    label: 'Assess the PR',
-    hint: "The Review setup tab's Assess button — one Fable 5.2 session reads the PR, writes the reviewers' shared brief, adds check tickets when the PR needs them, and saves the review plan. A codebase override is where to say \"always run the e2e suite\" or \"never more than 3 reviewers\".",
-    group: 'PR review',
+  // A plan project's Ticket plan button: one session turns the resolved plan
+  // into draft build tickets and a proposed graph shape. It proposes only —
+  // the human edits the drafts and approves; nothing is created or started.
+  'ticketplan:build': {
+    label: 'Draft the ticket plan',
+    hint: "A plan project's Ticket plan button — one session writes the spec, drafts the build tickets and proposes the builds and reviews they go into. A codebase or project override is where to say \"keep builds under 400 lines\" or \"always review\".",
+    group: 'Plan',
     level: 'project',
-    command: 'Assess PR',
-    vars: BUILD_PLAN_VARS,
+    command: '/jplan-to-jtickets',
+    vars: TICKET_PLAN_VARS,
     template: [
-      '/jreview-assess {projectKey} — assess the pull request {projectKey} ({projectTitle}) reviews, and build its review plan.',
-      'Read the project and its PR (GET http://localhost:43000/api/projects/{projectKey} — prReview.pr), then the PR itself with gh and the code in {repo} at {integrationBranch} (the PR head; worktree guide {worktreeGuide}).',
-      'Decide how many reviewers it needs (2–4) and what they focus on, publish the brief every reviewer will read, add check tickets only where running something proves more than reading does, and save the plan with PUT http://localhost:43000/api/projects/{projectKey}/review-plan until it reports no problems; then POST http://localhost:43000/api/projects/{projectKey}/pr-review/assessed.',
-      "Never commit, push or comment on GitHub. Don't ask questions — nobody is watching this pane.",
+      "/jplan-to-jtickets {projectKey} — turn the plan {projectKey} ({projectTitle}) into a ticket plan.",
+      'Read the map, every resolved ticket and the plan\'s docs (GET http://localhost:43000/api/projects/{projectKey}, /api/docs?projectId={projectKey}), then the code in {repo}.',
+      'Write the spec as a doc on {projectKey}, draft the build tickets on {projectKey} with plannedFor set to the proposed build each belongs to, and propose the graph\'s shape: builds sized so a person can review each roll-up PR in one sitting (split a large one into stacked builds), a Review after every build unless it is trivial, and a plan review first when the plan is large or risky.',
+      'Propose only — create no build projects and start nothing.',
+      'Check GET http://localhost:43000/api/projects/{projectKey}/ticket-plan until its warnings are the ones you mean, then POST http://localhost:43000/api/projects/{projectKey}/ticket-plan/built.',
+      "Don't ask questions — nobody is watching this pane.",
     ].join(' '),
   },
 }
 
 /** The editor's sections, in the order they render. */
-export const PROMPT_GROUPS = ['Implementation', 'Wayfinder', 'Todo', 'Architecture', 'Predeploy', 'Merge', 'Worktrees', 'Run setup', 'PR review'] as const
+export const PROMPT_GROUPS = ['Build', 'Plan', 'Todo', 'Predeploy', 'Merge', 'Worktrees', 'Run setup'] as const
 export function promptKindsInGroup(group: string): PromptKind[] {
   return PROMPT_KINDS.filter((k) => PROMPT_KIND_META[k].group === group)
 }
@@ -370,19 +364,27 @@ export function ticketPromptVars(
 
 // ── Which kind is this hand-off? ────────────────────────────────────────────
 // The same branching the dispatch used to do inline: a project's mode picks
-// the family, and inside architect mode the ticket's label picks the job.
-// Standard mode is the only one the hand-off picker applies to.
+// the family.
+// Standard mode is the only one the hand-off picker applies to — and there a
+// HITL decision ticket skips it: a decision is settled by an interview, not a PR.
+// A PR review project has no kind of its own: its tickets are records and are
+// never handed off (isRecordOnly in reviewFindings.ts), so what this answers
+// for one is never fired.
+
+/** A decision the human has to make: its hand-off is a grilling, and it gets no branch. */
+export function isDecisionGrilling(ticket: Pick<Ticket, 'labels'> & { type?: Ticket['type'] }): boolean {
+  return ticket.type === 'decision' && ticket.labels.includes('hitl')
+}
 
 export function promptKindFor(
   mode: ProjectMode,
-  ticket: Pick<Ticket, 'labels'>,
+  ticket: Pick<Ticket, 'labels'> & { type?: Ticket['type'] },
   target: 'local' | 'master' | 'integration',
 ): PromptKind {
-  if (mode === 'wayfinder') return 'wayfinder'
+  if (mode === 'plan') return 'plan'
   if (mode === 'todo') return 'todo'
-  if (mode === 'architect') return ticket.labels.includes('arch:scan') ? 'architect:scan' : 'architect:grill'
   if (mode === 'predeploy') return 'predeploy'
-  if (mode === 'prreview') return 'prcheck'
+  if (isDecisionGrilling(ticket)) return 'standard:decision'
   return `standard:${target}` as PromptKind
 }
 
@@ -421,7 +423,7 @@ export interface ResolvedPrompt {
 
 /** Every layer, for one ticket's hand-off. */
 export function resolveTicketPrompt(input: {
-  ticket: Pick<Ticket, 'key' | 'title' | 'labels'> & { branch?: string; prompt?: string; promptMode?: TicketPromptMode }
+  ticket: Pick<Ticket, 'key' | 'title' | 'labels'> & { type?: Ticket['type']; branch?: string; prompt?: string; promptMode?: TicketPromptMode }
   project: (Pick<Project, 'key' | 'title' | 'repo' | 'integrationBranch' | 'prompts'> & { repoPath?: string }) | null | undefined
   mode: ProjectMode
   target: 'local' | 'master' | 'integration'
@@ -487,13 +489,13 @@ export function resolveBuildPlanPrompt(
   return renderPrompt(template, projectLevelVars(project, project.repo))
 }
 
-/** The Review setup tab's Assess button — layers 2–5, like the run plan's Build (a project-level hand-off). */
-export function resolveAssessPrompt(
+/** A plan project's Ticket plan button — layers 2–5, like the run plan's Build (a project-level hand-off with no ticket). */
+export function resolveTicketPlanPrompt(
   project: ProjectForPrompt,
   defaults: PromptOverrides,
   codebase?: CodebasePrompts,
 ): string {
-  const { template } = promptTemplateFor('prreview:assess', project, defaults, codebase)
+  const { template } = promptTemplateFor('ticketplan:build', project, defaults, codebase)
   return renderPrompt(template, projectLevelVars(project, project.repo))
 }
 

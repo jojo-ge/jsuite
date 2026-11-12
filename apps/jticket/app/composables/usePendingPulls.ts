@@ -1,7 +1,7 @@
 // The serving side's pending pull approvals (jTicket sync, DOC-30). Pending
 // requests are in-memory on the server, so this polls GET /api/sync/pulls
 // rather than riding the store's SSE. Shared by the project page's approval
-// banner (SyncPullRequests) and the header's global indicator
+// banner (SyncPullRequests) and the sidebar's global indicator
 // (SyncPullIndicator); each picks its own cadence.
 import type { PendingPullView } from '~~/server/utils/syncServe'
 

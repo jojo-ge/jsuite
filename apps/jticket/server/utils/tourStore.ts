@@ -20,6 +20,8 @@ export interface SavedTour {
   variant?: TourVariant
   tour: Tour
   createdAt: string
+  /** The head commit the tour was written against. Absent on jDiff's rows and on tours built before jTicket recorded it. */
+  headOid?: string
 }
 
 const DIR = appDataDir('jdiff')

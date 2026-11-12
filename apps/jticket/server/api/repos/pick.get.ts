@@ -1,6 +1,6 @@
 // Native folder picker, so wiring a project to a repo is a click instead of a
 // typed path. macOS only (the suite is a local dev tool); the form falls back
-// to typing anywhere else. Same trick jDiff uses for its repo picker.
+// to typing anywhere else.
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 

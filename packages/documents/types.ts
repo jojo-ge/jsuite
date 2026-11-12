@@ -174,6 +174,11 @@ export interface Explainer {
   blocks: Block[]
   /** term -> definition; terms get dotted-underline hover definitions in prose. */
   glossary: Record<string, string>
+  /**
+   * What the document is about — lowercase kebab-case words the library
+   * filters on (see ./tags.ts). Absent on documents written before tags.
+   */
+  tags?: string[]
 }
 
 /**
@@ -217,4 +222,7 @@ export interface ExplainerMeta {
   blockCount: number
   chartCount: number
   noteCount: number
+  tags: string[]
+  /** Set by a search (`?q=`) that matched in the body: an excerpt around the hit. */
+  snippet?: string
 }

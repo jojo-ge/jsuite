@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const plan = coerceRunPlan(body)
   if (!plan) throw createError({ statusCode: 400, statusMessage: 'send {"steps": [...]}' })
   const store = loadStore()
-  const project = store.projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(store.projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   if (project.share && project.share.side !== 'creator') {
     throw createError({ statusCode: 409, statusMessage: `${project.key} is shared with you — only its creator's side can plan its runs` })

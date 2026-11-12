@@ -2,7 +2,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<Partial<Ticket>>(event)
   const store = loadStore()
-  const ticket = store.tickets.find((t) => t.id === id || t.key === id)
+  const ticket = findByRef(store.tickets, id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
 
   // The peer's half of a shared project is read-only here — sync is the only
@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     ticket.type = kind.type
     ticket.labels = kind.labels
   }
-  // The wayfinder answer. Pass '' to clear.
+  // The answer the ticket landed on. Pass '' to clear.
   if (body.resolution !== undefined) ticket.resolution = typeof body.resolution === 'string' ? body.resolution.trim() : ''
   // The ticket's work branch — usually set by POST /api/tickets/:id/branch,
   // but adoptable by hand. Pass '' to clear.
@@ -56,10 +56,11 @@ export default defineEventHandler(async (event) => {
   if (body.prompt !== undefined) ticket.prompt = cleanPromptText(body.prompt)
   if (body.promptMode !== undefined) ticket.promptMode = coercePromptMode(body.promptMode)
 
+  const fromProject = ticket.projectId
   if (body.projectId !== undefined) {
     let target: Project | null = null
     if (body.projectId !== null && body.projectId !== '') {
-      target = store.projects.find((p) => p.id === body.projectId || p.key === body.projectId) ?? null
+      target = findByRef(store.projects, body.projectId) ?? null
       if (!target) throw createError({ statusCode: 400, statusMessage: `unknown project: ${body.projectId}` })
     }
     // An actual move across the share boundary would smuggle in an unstamped,
@@ -70,6 +71,13 @@ export default defineEventHandler(async (event) => {
     }
     ticket.projectId = target?.id ?? null
   }
+
+  // A ticket-plan draft's build node (app/utils/ticketPlan.ts): moved to
+  // another build with plannedFor, made a plain ticket with null. A draft
+  // moved out of its plan by hand stops being one — the move is the human
+  // approving that one ticket.
+  if (body.plannedFor !== undefined) ticket.plannedFor = resolvePlannedFor(store, ticket.projectId, body.plannedFor)
+  else if (ticket.plannedFor && ticket.projectId !== fromProject) ticket.plannedFor = null
 
   if (body.blockedBy !== undefined) {
     // Resolve refs and forbid a ticket blocking itself.

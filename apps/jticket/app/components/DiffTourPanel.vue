@@ -15,6 +15,8 @@ const props = defineProps<{
   busy: boolean
   /** Why the last Build request failed to dispatch. */
   dispatchError: string
+  /** The target's head moved after the tour was built. */
+  stale: boolean
 }>()
 const emit = defineEmits<{ build: []; cancel: []; start: [index: number]; restart: [] }>()
 
@@ -74,6 +76,11 @@ const stopLink = (i: number) => ({ query: { ...route.query, stop: String(i) } })
         <span v-else class="text-xs text-dimmed">Start herdr to build a tour</span>
       </div>
     </div>
+
+    <p v-if="stale && tour && !building" class="mt-1.5 flex items-start gap-1.5 text-xs text-warning">
+      <UIcon name="i-lucide-history" class="mt-px size-3.5 shrink-0" />
+      This diff has changed since the tour was built, so its stops may point at the wrong lines. Rebuild the tour to match.
+    </p>
 
     <p v-if="failure && !building" class="mt-1.5 flex items-start gap-1.5 text-xs text-error">
       <UIcon name="i-lucide-triangle-alert" class="mt-px size-3.5 shrink-0" /> {{ failure }}

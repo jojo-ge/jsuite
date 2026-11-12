@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   const body = await readBody<{ branch?: string }>(event).catch(() => ({}) as { branch?: string })
   const store = loadStore()
-  const ticket = store.tickets.find((t) => t.id === id || t.key === id)
+  const ticket = findByRef(store.tickets, id)
   if (!ticket) throw createError({ statusCode: 404, statusMessage: 'ticket not found' })
   const cut = await cutTicketBranch(store, ticket, body?.branch ?? '')
   saveStore(store)
@@ -24,6 +24,6 @@ export default defineEventHandler(async (event) => {
     created: cut.created,
     adopted: cut.adopted,
     // The project's Diff tab on the branch, against what it was cut from.
-    diffUrl: diffTabUrl(store.projects.find((p) => p.id === ticket.projectId)?.key ?? ticket.projectId, { head: cut.branch, base: cut.base }),
+    diffUrl: diffTabUrl(store.projects.find((p) => p.id === ticket.projectId)?.key ?? ticket.projectId ?? '', { head: cut.branch, base: cut.base ?? undefined }),
   }
 })

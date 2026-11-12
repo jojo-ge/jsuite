@@ -62,7 +62,7 @@ describe('jTicket-owned skills reach reviews through jTicket', () => {
   })
 
   it('every review skill lives in jTicket', () => {
-    for (const name of ['jreview-report', 'jreview-triage', 'jreview-consensus', 'jarch-review', 'jreview-assess', 'jpr-check', 'make-jreview-project']) {
+    for (const name of ['jreview-report', 'jreview-triage', 'jreview-consensus', 'jarch-review']) {
       expect(existsSync(join(SKILLS_DIR, name, 'SKILL.md')), name).toBe(true)
     }
   })

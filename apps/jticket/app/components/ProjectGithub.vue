@@ -80,6 +80,8 @@ interface GithubInfo {
   mergedPrCount: number
   prs: ProjectPr[]
   prsError: string | null
+  /** A fresher copy of the GitHub side is being fetched. */
+  refreshing?: boolean
 }
 
 const toast = useToast()
@@ -87,15 +89,29 @@ const { refresh: refreshTracker, tickets, prs: trackerPrs } = useTracker()
 // `revision` bumps when the integration branch is cut, adopted or unset.
 const { revision } = useIntegrationBranch()
 
-const force = ref<string | undefined>(undefined)
+// The GitHub side of the answer comes from the server's cache; reload() is
+// the one read that skips it. `force` rides on that request alone — were it
+// part of the query it would stick, and every later refetch (each local PR
+// change, below) would hit GitHub again.
+let forceNext = false
 const { data, pending, error, refresh } = useFetch<GithubInfo>(
   () => `/api/projects/${props.project.id}/github`,
-  { query: { force }, lazy: true, server: false },
+  {
+    lazy: true,
+    server: false,
+    onRequest({ options }) {
+      if (!forceNext) return
+      forceNext = false
+      options.query = { ...options.query, force: 1 }
+    },
+  },
 )
 function reload() {
-  force.value = String(Date.now())
+  forceNext = true
   refresh()
 }
+// An aged answer is marked `refreshing`: ask again until the fresh one lands.
+useRefetchWhileRefreshing(data, () => refresh())
 
 // "2 hours ago" on each row; a minute's granularity is plenty.
 const now = ref(new Date())
@@ -109,7 +125,7 @@ watch(revision, () => reload())
 // Somebody else changed a PR — an agent merging over the API, a herdr sweep
 // landing the queue. The tracker's PR list arrives live over SSE, so a change
 // in THIS project's PRs is the signal to refetch the panel (plain refresh: the
-// local-PR/git side is always read fresh; only `gh` keeps its 30s cache).
+// local-PR/git side is always read fresh; the GitHub side comes from the cache).
 const prFingerprint = computed(() =>
   trackerPrs.value
     .filter((pr) => pr.projectId === props.project.id)

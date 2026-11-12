@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   if (orchestrator !== undefined && (!Number.isInteger(orchestrator) || orchestrator < 1)) {
     throw createError({ statusCode: 400, statusMessage: 'orchestrator must be a 1-based index' })
   }
-  const project = loadStore().projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(loadStore().projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   return claimForOrchestrator(project.id, key, orchestrator === undefined ? undefined : orchestrator - 1)
 })

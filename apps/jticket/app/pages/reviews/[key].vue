@@ -7,7 +7,7 @@
 // over the /watch SSE; the review watcher on the server moves the review
 // along, never this page.
 import type { Explainer } from '@jsuite/documents/types'
-import { unticketedFindings, type Review, type Reviewer } from '~/utils/reviewTypes'
+import { reviewTargetLabel, unticketedFindings, type Review, type Reviewer } from '~/utils/reviewTypes'
 
 // /r/<key> is jReview's old path, so a redirect from jreview.local keeps working.
 definePageMeta({ alias: '/r/:key' })
@@ -28,7 +28,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => es?.close())
 
-const { tickets } = useTracker()
+const { tickets, projects } = useTracker()
 const ticketByKey = computed(() => new Map(tickets.value.map((t) => [t.key, t])))
 
 const doneCount = computed(() => review.value?.reviewers.filter((r) => r.status === 'done').length ?? 0)
@@ -83,7 +83,25 @@ const selectedCount = computed(() => openFindings.value.filter((f) => !deselecte
 // Where the button files them: wherever the first batch went, else the
 // project the review belongs to. Never a new project — a review that predates
 // projects (it has neither) gets no button here.
-const ticketTarget = computed(() => review.value?.tickets?.projectKey ?? review.value?.project ?? null)
+//
+// That one review is *homeless*: jReview would have made it a project of its
+// own. Here the human picks an existing project (adoptKey) and the first
+// batch filed there makes it that project's.
+const homeless = computed(() => !!review.value && !review.value.tickets?.projectKey && !reviewProjectKey(review.value))
+const adoptKey = ref('')
+const adoptItems = computed(() => {
+  const repo = review.value?.repoPath ?? ''
+  const here = (p: { repo: string }) => (p.repo === repo ? 0 : 1)
+  return projects.value
+    .filter((p) => !isReviewProject(p))
+    .sort((a, b) => here(a) - here(b) || b.createdAt.localeCompare(a.createdAt))
+    .map((p) => ({ label: `${p.key} — ${p.title}`, value: p.key }))
+})
+const canAdopt = computed(() => {
+  const r = review.value
+  return !!r && homeless.value && !r.consensus && !r.agreement && r.status === 'triaged' && openFindings.value.length > 0
+})
+const ticketTarget = computed(() => review.value?.tickets?.projectKey ?? review.value?.project ?? (homeless.value && adoptKey.value ? adoptKey.value : null))
 function setSelected(id: string, on: boolean) {
   const next = new Set(deselected.value)
   on ? next.delete(id) : next.add(id)
@@ -104,7 +122,8 @@ function fail(title: string, err: any) {
 }
 // Every button goes through the project's routes (/api/projects/:id/reviews/:key/…),
 // which refuse a review that isn't the project's; /api/reviews/:key is only
-// read and watched from here. A review with no project gets no buttons.
+// read, watched and forgotten from here. A review with no project gets no
+// buttons but Forget, and the project picker that files its findings.
 const homeKey = computed(() => review.value?.tickets?.projectKey || (review.value ? reviewProjectKey(review.value) : '') || null)
 const api = (path: string) =>
   `/api/projects/${encodeURIComponent(homeKey.value ?? '')}/reviews/${encodeURIComponent(key.value)}${path}`
@@ -163,6 +182,33 @@ async function splitIntoTickets() {
   }
 }
 
+// Forget: the run record and the review's worktree go; tickets and report
+// documents stay. Not offered while a consensus or agreement review is in
+// flight — an auto loop or a PR review run is waiting on it, and would stall.
+const canForget = computed(() => {
+  const r = review.value
+  return !!r && !((r.consensus || r.agreement) && (r.status === 'reviewing' || r.status === 'triaging'))
+})
+async function forgetReview() {
+  const r = review.value
+  if (!r) return
+  const running = r.status === 'reviewing' || r.status === 'triaging'
+  const warn = running ? ' It is still running: its herdr sessions are left to finish on their own.' : ''
+  if (!window.confirm(`Forget this review?${warn} Its record and worktree are removed; its tickets and report documents stay.`)) return
+  busy.value = 'forget'
+  const back = projectKey.value ? `/projects/${encodeURIComponent(projectKey.value)}?tab=review` : '/reviews'
+  try {
+    es?.close()
+    await $fetch(`/api/reviews/${encodeURIComponent(key.value)}`, { method: 'DELETE' })
+    toast.add({ title: 'Review forgotten', description: r.title, icon: 'i-lucide-trash-2', color: 'success' })
+    await navigateTo(back)
+  } catch (err) {
+    fail('Could not forget the review', err)
+  } finally {
+    busy.value = ''
+  }
+}
+
 // ── Presentation ─────────────────────────────────────────────────────────────
 const reviewerBadge = (s: Reviewer['status']) =>
   ({
@@ -196,8 +242,6 @@ const projectLink = computed(() =>
 
 <template>
   <div class="flex h-screen flex-col bg-default">
-    <AppHeader />
-
     <div v-if="error" class="flex flex-col items-center gap-4 py-24 text-center">
       <UIcon name="i-lucide-search-x" class="size-12 text-muted" />
       <p class="text-lg font-medium">No review called <code class="font-mono">{{ key }}</code></p>
@@ -220,12 +264,22 @@ const projectLink = computed(() =>
             <UBadge :color="statusColor" variant="subtle" size="sm">{{ review.status }}</UBadge>
           </div>
           <p class="truncate text-xs text-muted">
-            <span class="font-mono">{{ review.repoPath }}</span> · <span class="font-mono">{{ review.base.length === 40 ? review.base.slice(0, 10) : review.base }}...{{ review.branch }}</span>
+            <span class="font-mono">{{ review.repoPath }}</span> · <span class="font-mono">{{ reviewTargetLabel(review) }}</span>
             <template v-if="review.pr"> · <a :href="review.pr.url" target="_blank" class="hover:underline">PR #{{ review.pr.number }}</a></template>
             <template v-if="review.worktree"> · worktree</template>
             <template v-if="projectLink"> · <NuxtLink :to="projectLink" class="hover:underline">{{ projectKey }}</NuxtLink></template>
           </p>
         </div>
+        <UButton
+          v-if="canForget"
+          icon="i-lucide-trash-2"
+          label="Forget"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          :loading="busy === 'forget'"
+          @click="forgetReview"
+        />
       </header>
 
       <div class="flex min-h-0 flex-1 flex-col md:flex-row">
@@ -341,6 +395,12 @@ const projectLink = computed(() =>
                   <NuxtLink v-if="projectLink" :to="projectLink" class="text-primary hover:underline">{{ projectKey }}'s Review tab</NuxtLink><template v-else>the project's Review tab</template>.
                 </p>
               </template>
+              <template v-if="canAdopt">
+                <p class="mb-2 text-muted">
+                  This review predates projects and belongs to none. Pick the project its findings become tickets on.
+                </p>
+                <USelectMenu v-model="adoptKey" :items="adoptItems" value-key="value" placeholder="Pick a project" class="mb-2 w-full" />
+              </template>
               <template v-if="canTicket">
                 <p class="mb-2 text-muted" :class="review.tickets && 'mt-2'">
                   {{ selectedCount }} of {{ openFindings.length }} {{ review.tickets ? 'remaining ' : '' }}findings selected.
@@ -364,7 +424,7 @@ const projectLink = computed(() =>
               <p v-else-if="!review.tickets && ticketTarget" class="text-muted">
                 Yours to press once triage is in — one ticket per finding, added to {{ ticketTarget }}.
               </p>
-              <p v-else-if="!review.tickets" class="text-muted">
+              <p v-else-if="!review.tickets && !canAdopt" class="text-muted">
                 This review predates projects and belongs to none, so its findings have no board to land on. New reviews always
                 start from a project.
               </p>
@@ -425,7 +485,7 @@ const projectLink = computed(() =>
                 v-for="f in review.findings"
                 :key="f.id"
                 :finding="f"
-                :selectable="canTicket && openFindings.includes(f)"
+                :selectable="(canTicket || canAdopt) && openFindings.includes(f)"
                 :selected="!deselected.has(f.id)"
                 :ticket="f.ticketKey ? ticketByKey.get(f.ticketKey) : null"
                 @update:selected="setSelected(f.id, $event)"

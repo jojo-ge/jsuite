@@ -1,13 +1,16 @@
 <script setup lang="ts">
 // The global face of pending pull approvals (TICK-307). A pull request
 // surfaces on its project's page (SyncPullRequests), but the human may be on
-// any page when it arrives — and it expires unanswered. So the header shows
+// any page when it arrives — and it expires unanswered. So the sidebar shows
 // a badge that leads to the project page, where approve/deny lives.
 // Requester names come from the server's own record (project.share.peerName),
 // never wire text.
 //
 // 5s against a 120s request TTL: prompt enough to be seen, and the endpoint
 // is an in-memory read.
+// `compact`: the collapsed sidebar — the icon and the count, no label.
+const props = defineProps<{ compact?: boolean }>()
+
 const { pulls } = usePendingPulls(5000)
 
 // All pending pulls on one project → the button links straight to it;
@@ -40,10 +43,11 @@ const items = computed(() =>
         color="primary"
         variant="soft"
         size="sm"
+        :block="!props.compact"
         :to="`/projects/${soleProjectPull.projectId}`"
         aria-label="Pending pull request — open the project page"
       >
-        <span class="hidden lg:inline">Pull request</span>
+        <span v-if="!props.compact" class="min-w-0 flex-1 truncate text-left">Pull request</span>
         <UBadge color="primary" variant="subtle" size="sm">{{ pulls.length }}</UBadge>
       </UButton>
     </UTooltip>
@@ -53,9 +57,10 @@ const items = computed(() =>
         color="primary"
         variant="soft"
         size="sm"
+        :block="!props.compact"
         aria-label="Pending pull requests"
       >
-        <span class="hidden lg:inline">Pull requests</span>
+        <span v-if="!props.compact" class="min-w-0 flex-1 truncate text-left">Pull requests</span>
         <UBadge color="primary" variant="subtle" size="sm">{{ pulls.length }}</UBadge>
       </UButton>
     </UDropdownMenu>

@@ -23,10 +23,15 @@ import { reviewPath, type Finding, type Review } from '../../app/utils/reviewTyp
 import { entityOwnership, sharedTicketKey } from './ownership'
 import { cleanLabels, isFinishedStatus, newId, nextKey, stampCompletion, type Project, type Store, type Ticket } from './store'
 
-type ReviewForTicket = Pick<Review, 'key' | 'title' | 'pr' | 'triage' | 'agreement'>
+type ReviewForTicket = Pick<Review, 'key' | 'title' | 'pr' | 'triage' | 'agreement'> & Partial<Pick<Review, 'subject'>>
 
-/** A new ticket on `project`, minted the way /api/import mints one. */
-function mintTicket(store: Store, project: Project, fields: Pick<Ticket, 'title' | 'description' | 'acceptanceCriteria' | 'labels' | 'finding'>, ts: string): Ticket {
+/** A new ticket on `project`, minted the way /api/import mints one — a bug unless `type` says otherwise. */
+export function mintTicket(
+  store: Store,
+  project: Project,
+  fields: Pick<Ticket, 'title' | 'description' | 'acceptanceCriteria' | 'labels'> & Partial<Pick<Ticket, 'finding' | 'type'>>,
+  ts: string,
+): Ticket {
   const ticket: Ticket = {
     id: newId('tick'),
     // A shared project mints under the shared key with this side's parity.
@@ -34,7 +39,7 @@ function mintTicket(store: Store, project: Project, fields: Pick<Ticket, 'title'
     title: fields.title,
     description: fields.description,
     acceptanceCriteria: fields.acceptanceCriteria,
-    type: 'bug',
+    type: fields.type ?? 'bug',
     status: 'todo',
     projectId: project.id,
     assignee: '',
@@ -76,6 +81,7 @@ export function triageTicketDescription(r: ReviewForTicket, f: Finding, base: st
 
 /** An agreement finding's ticket: a record of what the review found in the PR — scope, verdict, file and line included. */
 export function agreementTicketDescription(r: ReviewForTicket, f: Finding, base: string): string {
+  if (r.subject?.kind === 'plan') return planFindingDescription(r, f, base)
   const facts = [
     `**Severity:** ${f.severity}`,
     `**Category:** ${f.category}`,
@@ -95,6 +101,34 @@ export function agreementTicketDescription(r: ReviewForTicket, f: Finding, base:
     '---',
     `A record, not work: ${f.reviewers.length ? `every reviewer (${f.reviewers.join(', ')}) raised this` : 'a check raised this'} in the review [${r.title}](${base}${reviewPath(r.key)})${r.agreement?.loop ? ` (run ${r.agreement.loop})` : ''} of ${pr} — see the [consensus report](${base}/e/${r.triage.docKey}). ` +
       'The code is someone else\'s, so nothing here is dispatched or fixed: post it to the PR from the project\'s Review tab, or close it when it no longer stands.',
+  ].join('\n')
+}
+
+/**
+ * A plan review's finding ticket: what every reviewer found in the plan. The
+ * build, ticket or decision it concerns is in its title and summary (a plan
+ * finding is pinned to a file only when it is about code). The footer opens
+ * "A record, not work:" like a PR finding's, so Send back strips it the same way.
+ */
+function planFindingDescription(r: ReviewForTicket, f: Finding, base: string): string {
+  const plan = r.subject!.projectKey
+  const facts = [
+    `**Severity:** ${f.severity}`,
+    `**Category:** ${f.category}`,
+    ...(f.file ? [`**Where:** ${findingWhere(f)}`] : []),
+    ...(f.verdict ? [`**Verdict:** ${f.verdict}`] : []),
+  ]
+  return [
+    facts.join(' · '),
+    '',
+    f.summary,
+    '',
+    f.detail,
+    ...(f.verification ? ['', `**Verification:** ${f.verification}`] : []),
+    '',
+    '---',
+    `A record, not work: ${f.reviewers.length ? `every reviewer (${f.reviewers.join(', ')}) raised this` : 'a check raised this'} in the plan review [${r.title}](${base}${reviewPath(r.key)})${r.agreement?.loop ? ` (run ${r.agreement.loop})` : ''} of [${plan}](${base}/projects/${plan}) — see the [consensus report](${base}/e/${r.triage.docKey}). ` +
+      'Nothing here is dispatched: Send back makes it a decision ticket on the plan, from this project\'s Review tab; or close it when it no longer stands.',
   ].join('\n')
 }
 

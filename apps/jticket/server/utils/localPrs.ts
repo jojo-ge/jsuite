@@ -15,6 +15,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { LocalPr, Store, Ticket } from './store'
+import { findByRef } from './ids'
 import { parseWorktreeList } from './worktrees'
 import type { WorktreeEntry } from './worktrees'
 import { assertCommandAllowed } from './sandbox'
@@ -202,7 +203,7 @@ export async function squashMergePr(
 /** Resolve a PR by id or key. */
 export function findPrRef(store: Store, ref: unknown): LocalPr | undefined {
   if (typeof ref !== 'string' || !ref) return undefined
-  return store.prs.find((pr) => pr.id === ref || pr.key === ref)
+  return findByRef(store.prs, ref)
 }
 
 /** The default branch name for a ticket's work: 'tick/TICK-7-persist-cart'. */

@@ -2,6 +2,7 @@
 // told once a project has no open ticket left. Pure (no Nuxt, no store): the
 // engine (autoLoop.ts) gathers the inputs. See outcomeReport.test.ts.
 import { OUTCOME_LABEL, OUTCOME_WORD_LIMIT } from '../../app/utils/autoLoop'
+import { OUTCOME_REPORT_TAG } from '../../app/utils/documentLibrary'
 
 const API = 'http://localhost:43000'
 /** Enough commits to find the project's work; beyond this the session asks the API. */
@@ -29,7 +30,7 @@ export function outcomeReportPrompt({ project, existingDoc, merged, sliceDocs = 
     : `No local PR of its was merged; read its tickets' resolutions and the code on ${project.integrationBranch} to see what it did.`
   const publish = existingDoc
     ? `The project already has an outcome report, ${existingDoc}: rewrite it in place to cover the project as it stands now — PATCH ${API}/api/docs/${existingDoc} with the new "blocks" (keep its "${OUTCOME_LABEL}" label).`
-    : `Create it: POST ${API}/api/docs with {"title": "${key} outcome report — ${title}", "project": "${key}", "labels": ["${OUTCOME_LABEL}"], "status": "ready", "blocks": [...]}.`
+    : `Create it: POST ${API}/api/docs with {"title": "${key} outcome report — ${title}", "project": "${key}", "labels": ["${OUTCOME_LABEL}"], "tags": ["${OUTCOME_REPORT_TAG}"], "status": "ready", "blocks": [...]}.`
   return [
     `Write the outcome report for jTicket project ${key} "${title}": the auto loop has finished every ticket, and this report is how a reviewer learns what the project achieved before reading its diff.`,
     `In at most ${OUTCOME_WORD_LIMIT} words, explain what was built and how it works: what now exists, how the pieces fit together and where they live, and anything deliberately left out or surprising. No ticket-by-ticket changelog, no padding.`,
@@ -38,7 +39,7 @@ export function outcomeReportPrompt({ project, existingDoc, merged, sliceDocs = 
       ? [`Start from the run's slice reports — ${sliceDocs.join(', ')} (GET ${API}/api/docs/<key> is the record; its content is at GET ${API}/api/documents/<its documentKey>) — each a facts-only record of one slice's decisions and outcomes; synthesise them, and read the code to fill what they don't cover.`]
       : []),
     commits,
-    `Publish it as a jTicket doc in the block-document format (the /to-jspec skill has the block shapes). ${publish}`,
+    `Publish it as a jTicket doc in the block-document format (the /to-jdoc skill has the block shapes). ${publish}`,
     `Then report back to the auto loop, which waits on this before it finishes: POST ${API}/api/projects/${key}/auto/outcome-report with JSON {"doc": "<the doc's DOC key>"}.`,
   ].join(' ')
 }

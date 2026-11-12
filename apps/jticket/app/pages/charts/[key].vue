@@ -60,32 +60,54 @@ const initialScene = computed<Scene>(() => ({
 
 // ── saving ────────────────────────────────────────────────────────────────────
 
+// Both saves are debounced. Each keeps what it is waiting to send, so leaving
+// the page inside the debounce window sends it at once instead of dropping
+// the last edit (flushPending, on unmount). The key is captured when the edit
+// is queued: by unmount the route may already name another chart.
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let notesTimer: ReturnType<typeof setTimeout> | null = null
+let pendingScene: (() => Promise<void>) | null = null
+let pendingNotes: (() => Promise<unknown>) | null = null
+let removed = false
 
-async function saveChart(patch: Record<string, unknown>) {
+async function saveChart(patch: Record<string, unknown>, chartKey = key.value) {
   status.value = 'saving'
   try {
-    await $fetch(`/api/charts/${encodeURIComponent(key.value)}`, { method: 'PUT', body: patch })
+    await $fetch(`/api/charts/${encodeURIComponent(chartKey)}`, { method: 'PUT', body: patch })
     status.value = 'saved'
   } catch {
     status.value = 'error'
   }
 }
 
-function onSceneChange(scene: Scene) {
+function flushScene() {
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => saveChart({ scene }), 400)
+  saveTimer = null
+  const send = pendingScene
+  pendingScene = null
+  return send?.()
+}
+function flushNotes() {
+  if (notesTimer) clearTimeout(notesTimer)
+  notesTimer = null
+  const send = pendingNotes
+  pendingNotes = null
+  return send?.()
+}
+
+function onSceneChange(scene: Scene) {
+  const chartKey = key.value
+  pendingScene = () => saveChart({ scene }, chartKey)
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(flushScene, 400)
 }
 
 function queueNotesSave() {
+  const chartKey = key.value
+  const body = { general: general.value, notes: notes.value }
+  pendingNotes = () => $fetch(`/api/charts/${encodeURIComponent(chartKey)}/notes`, { method: 'PUT', body })
   if (notesTimer) clearTimeout(notesTimer)
-  notesTimer = setTimeout(async () => {
-    await $fetch(`/api/charts/${encodeURIComponent(key.value)}/notes`, {
-      method: 'PUT',
-      body: { general: general.value, notes: notes.value },
-    })
-  }, 500)
+  notesTimer = setTimeout(flushNotes, 500)
 }
 watch([general, notes], queueNotesSave, { deep: true })
 
@@ -158,13 +180,19 @@ async function copyNotes() {
 
 async function removeChart() {
   if (!window.confirm(deleteChartPrompt(title.value || key.value))) return
+  removed = true
   await $fetch(`/api/charts/${encodeURIComponent(key.value)}`, { method: 'DELETE' })
   await navigateTo('/charts')
 }
 
+// Leaving with a save still queued sends it now — unless the chart was just
+// deleted, where a late notes save would write its sidecar file back.
 onBeforeUnmount(() => {
-  if (saveTimer) clearTimeout(saveTimer)
-  if (notesTimer) clearTimeout(notesTimer)
+  if (removed) {
+    pendingScene = pendingNotes = null
+  }
+  void flushScene()
+  void Promise.resolve(flushNotes()).catch(() => {})
 })
 
 useHead(() => ({ title: title.value || key.value }))
@@ -176,8 +204,6 @@ const statusLabel = computed(
 
 <template>
   <div class="flex h-screen flex-col bg-default">
-    <AppHeader />
-
     <div v-if="error || !chart" class="flex flex-col items-center gap-4 py-24 text-center">
       <UIcon name="i-lucide-shapes" class="size-12 text-muted" />
       <div>

@@ -7,7 +7,7 @@
 // build whose session is still live. Returns { agent, paneId }.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  const project = loadStore().projects.find((p) => p.id === id || p.key === id)
+  const project = findByRef(loadStore().projects, id)
   if (!project) throw createError({ statusCode: 404, statusMessage: 'project not found' })
   const res = await startRunPlanBuild(project.id)
   setResponseStatus(event, 202)

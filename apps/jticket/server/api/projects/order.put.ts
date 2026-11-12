@@ -10,11 +10,11 @@ export default defineEventHandler(async (event) => {
   }
   const store = loadStore()
   const ids = body.ids as string[]
-  const missing = ids.filter((ref) => !store.projects.some((p) => p.id === ref || p.key === ref))
+  const missing = ids.filter((ref) => !findByRef(store.projects, ref))
   if (missing.length) throw createError({ statusCode: 404, statusMessage: `unknown project: ${missing.join(', ')}` })
 
   ids.forEach((ref, i) => {
-    const project = store.projects.find((p) => p.id === ref || p.key === ref)!
+    const project = findByRef(store.projects, ref)!
     project.position = i
   })
   saveStore(store)
